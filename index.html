@@ -2386,7 +2386,7 @@ const _origDoSubmit = typeof doSubmit==='function' ? doSubmit : null;
 async function doSubmitOnline(dir) {
   if (_origDoSubmit) _origDoSubmit(dir);
   if (API_URL) {
-    const last = txLog[0];
+    const last = txLog[txLog.length-1];
     if (last) await api('addTx', last);
   }
 }
@@ -2395,7 +2395,7 @@ const _origDoSubmitNG = typeof doSubmitNG==='function' ? doSubmitNG : null;
 async function doSubmitNGOnline(dir) {
   if (_origDoSubmitNG) _origDoSubmitNG(dir);
   if (API_URL) {
-    const last = ngLog[0];
+    const last = ngLog[ngLog.length-1];
     if (last) await api('addNG', last);
   }
 }
