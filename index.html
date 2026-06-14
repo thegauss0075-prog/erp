@@ -2109,13 +2109,21 @@ async function syncNow() {
     const [ar, tr, nr] = await Promise.all([api('getAll'), api('getTxLog'), api('getNGAll')]);
     if (ar.ok && ar.data) {
       const d = ar.data;
-      const fix = arr => (arr||[]).map(r=>({...r,prev:+r.prev||0,cur:+r.cur||0,wip:+r.wip||0,total:+r.total||0}));
-      // Sheets에 데이터가 있을 때만 덮어씀 (빈 데이터면 로컬 유지)
-      if(d.tp   && d.tp.length>0)   DB.tp   = fix(d.tp);
-      if(d.btp  && d.btp.length>0)  DB.btp  = fix(d.btp);
-      if(d.kr   && d.kr.length>0)   DB.kr   = fix(d.kr);
-      if(d.vn   && d.vn.length>0)   DB.vn   = fix(d.vn);
-      if(d.vtth && d.vtth.length>0) DB.vtth = fix(d.vtth);
+      // Sheets ITEMS에서 prev/wip/model/sub만 업데이트 (cur는 TXLOG로 재계산)
+      const mergePrev = (local, remote) => {
+        if (!remote || !remote.length) return local;
+        return local.map(item => {
+          const r = remote.find(x => x.code === item.code);
+          if (!r) return item;
+          return {...item, prev:+r.prev||item.prev, wip:+r.wip||item.wip,
+                  model:r.model||item.model, sub:r.sub||item.sub, unit:r.unit||item.unit};
+        });
+      };
+      if(d.tp)   DB.tp   = mergePrev(DB.tp,   d.tp);
+      if(d.btp)  DB.btp  = mergePrev(DB.btp,  d.btp);
+      if(d.kr)   DB.kr   = mergePrev(DB.kr,   d.kr);
+      if(d.vn)   DB.vn   = mergePrev(DB.vn,   d.vn);
+      if(d.vtth) DB.vtth = mergePrev(DB.vtth, d.vtth);
     }
     if (tr.ok && tr.data) txLog = tr.data.map(r=>({...r,id:+r.id||0,qty:+r.qty||0}));
     if (nr.ok) {
@@ -2422,11 +2430,28 @@ async function confirmDelOnline() {
 
 // ── Sheets에서 받은 기준 재고 + txLog 기반 재계산
 function recalcStock() {
-  // txLog 기반 재고 재계산
-  // Sheets의 cur 값은 이미 입출고가 반영된 값이므로 그대로 사용
-  // (updStock이 Sheets에서 cur를 직접 업데이트함)
-  // 로컬에서는 doSubmit이 이미 cur를 업데이트하므로 별도 재계산 불필요
-  // → syncNow로 받아온 cur 값을 그대로 사용
+  // TXLOG 기반으로 모든 품목 현재고 재계산
+  // Sheets ITEMS의 cur는 테스트 데이터 오염 가능성이 있으므로
+  // prev(전월재고, 로컬 기본값) + TXLOG 합산으로 계산
+  ['tp','btp','kr','vn','vtth'].forEach(cat => {
+    (DB[cat]||[]).forEach(item => {
+      const logs = txLog.filter(t =>
+        t.code === item.code &&
+        ['in','omt','tp-in','otp'].includes(t.type)
+      );
+      if (!logs.length) return; // 이력 없으면 prev 값 유지
+
+      // prev에서 시작해서 TXLOG 순서대로 계산
+      const sorted = [...logs].sort((a,b) => a.id - b.id); // 오래된 순서대로
+      let calc = +item.prev || 0;
+      sorted.forEach(t => {
+        if (t.type==='in' || t.type==='tp-in') calc += +t.qty||0;
+        else calc = Math.max(0, calc - (+t.qty||0));
+      });
+      item.cur   = calc;
+      item.total = calc + (+item.wip||0);
+    });
+  });
 }
 
 function initMultiUser() {
