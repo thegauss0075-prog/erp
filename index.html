@@ -2422,23 +2422,11 @@ async function confirmDelOnline() {
 
 // ── Sheets에서 받은 기준 재고 + txLog 기반 재계산
 function recalcStock() {
-  // 각 품목의 cur를 prev 기준 + txLog 합산으로 재계산
-  ['tp','btp','kr','vn','vtth'].forEach(cat => {
-    (DB[cat]||[]).forEach(item => {
-      const code = item.code;
-      // 해당 품목의 모든 입출고 이력
-      const logs = txLog.filter(t => t.code === code && ['in','omt','tp-in','otp'].includes(t.type));
-      if (!logs.length) return;
-      // prev(전월재고)에서 시작해서 입출고 반영
-      let calc = +item.prev || 0;
-      logs.forEach(t => {
-        if (t.type==='in'||t.type==='tp-in') calc += +t.qty||0;
-        else calc = Math.max(0, calc - (+t.qty||0));
-      });
-      item.cur = calc;
-      item.total = calc + (+item.wip||0);
-    });
-  });
+  // txLog 기반 재고 재계산
+  // Sheets의 cur 값은 이미 입출고가 반영된 값이므로 그대로 사용
+  // (updStock이 Sheets에서 cur를 직접 업데이트함)
+  // 로컬에서는 doSubmit이 이미 cur를 업데이트하므로 별도 재계산 불필요
+  // → syncNow로 받아온 cur 값을 그대로 사용
 }
 
 function initMultiUser() {
