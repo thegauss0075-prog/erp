@@ -456,7 +456,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <table class="cp-table" id="cp-in-tbl"></table>
       <div class="cp-actions">
         <button class="cp-back" onclick="hideCP('in')">◀ 수정하기 / Sửa lại</button>
-        <button class="cp-ok-in" onclick="(API_URL?doSubmitOnline:doSubmit)('in')">✔ 최종 등록 / Xác nhận</button>
+        <button class="cp-ok-in" onclick="doSubmitOnline('in')">✔ 최종 등록 / Xác nhận</button>
       </div>
     </div>
   </div>
@@ -503,7 +503,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <table class="cp-table" id="cp-omt-tbl"></table>
       <div class="cp-actions">
         <button class="cp-back" onclick="hideCP('omt')">◀ 수정하기 / Sửa lại</button>
-        <button class="cp-ok-omt" onclick="(API_URL?doSubmitOnline:doSubmit)('omt')">✔ 최종 등록 / Xác nhận</button>
+        <button class="cp-ok-omt" onclick="doSubmitOnline('omt')">✔ 최종 등록 / Xác nhận</button>
       </div>
     </div>
   </div>
@@ -533,7 +533,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <table class="cp-table" id="cp-tp-in-tbl"></table>
       <div class="cp-actions">
         <button class="cp-back" onclick="hideCP('tp-in')">◀ 수정하기 / Sửa lại</button>
-        <button style="background:#3730a3;color:#fff;padding:9px 22px;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600;border:none" onclick="(API_URL?doSubmitOnline:doSubmit)('tp-in')">✔ 최종 등록 / Xác nhận</button>
+        <button style="background:#3730a3;color:#fff;padding:9px 22px;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600;border:none" onclick="doSubmitOnline('tp-in')">✔ 최종 등록 / Xác nhận</button>
       </div>
     </div>
   </div>
@@ -571,7 +571,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <table class="cp-table" id="cp-otp-tbl"></table>
       <div class="cp-actions">
         <button class="cp-back" onclick="hideCP('otp')">◀ 수정하기 / Sửa lại</button>
-        <button class="cp-ok-otp" onclick="(API_URL?doSubmitOnline:doSubmit)('otp')">✔ 최종 등록 / Xác nhận</button>
+        <button class="cp-ok-otp" onclick="doSubmitOnline('otp')">✔ 최종 등록 / Xác nhận</button>
       </div>
     </div>
   </div>
@@ -620,7 +620,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <table class="cp-table" id="cp-ngi-tbl"></table>
       <div class="cp-actions">
         <button class="cp-back" onclick="hideCPng('ngi')">◀ 수정하기 / Sửa lại</button>
-        <button class="cp-ok-ng-in" onclick="(API_URL?doSubmitNGOnline:doSubmitNG)('ngi')">✔ 최종 등록 / Xác nhận</button>
+        <button class="cp-ok-ng-in" onclick="doSubmitNGOnline('ngi')">✔ 최종 등록 / Xác nhận</button>
       </div>
     </div>
   </div>
@@ -678,7 +678,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <table class="cp-table" id="cp-ngo-tbl"></table>
       <div class="cp-actions">
         <button class="cp-back" onclick="hideCPng('ngo')">◀ 수정하기 / Sửa lại</button>
-        <button class="cp-ok-ng-out" onclick="(API_URL?doSubmitNGOnline:doSubmitNG)('ngo')">✔ 최종 등록 / Xác nhận</button>
+        <button class="cp-ok-ng-out" onclick="doSubmitNGOnline('ngo')">✔ 최종 등록 / Xác nhận</button>
       </div>
     </div>
   </div>
@@ -832,7 +832,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <div class="ov-fr"><label>비고</label><input id="edit-note"></div>
     <div class="ov-actions">
       <button class="ov-cancel" onclick="closeOv('edit-ov')">취소</button>
-      <button class="ov-save" onclick="(API_URL?saveEditOnline:saveEdit)()">✔ 저장</button>
+      <button class="ov-save" onclick="saveEditOnline()">✔ 저장</button>
     </div>
   </div>
 </div>
@@ -845,7 +845,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <p style="font-size:13px;color:#b91c1c;font-weight:600">삭제하면 재고 수량이 원복됩니다. 계속하시겠습니까?</p>
     <div class="ov-actions">
       <button class="ov-cancel" onclick="closeOv('del-ov')">취소</button>
-      <button class="ov-del-btn" onclick="(API_URL?confirmDelOnline:confirmDel)()">🗑️ 삭제</button>
+      <button class="ov-del-btn" onclick="confirmDelOnline()">🗑️ 삭제</button>
     </div>
   </div>
 </div>
@@ -1891,7 +1891,10 @@ function doSubmitNG(dir){
 
   const now=new Date();
   const dt=`${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
-  ngLog.push({id:Date.now(),type:isIn?'ng-in':'ng-out',code,name,cat,unit,qty,note,reason,dt});
+  // ✅ 수정: cat 변수 undefined 버그 - codeEl의 dataset.invcat에서 읽기
+  const codeEl2=document.getElementById(dir+'-code');
+  const cat=(codeEl2&&codeEl2.dataset&&codeEl2.dataset.invcat?codeEl2.dataset.invcat:'').toUpperCase()||ngItem.type||'KR';
+  ngLog.push({id:Date.now(),type:isIn?'ng-in':'ng-out',code,name,cat,unit,qty,note,reason,dt,user:CURRENT_USER||''});
 
   ['q','code','name','cat','unit','qty','note','lot'].forEach(f=>{const el=document.getElementById(dir+'-'+f);if(el)el.value='';});
   // 제조사 필드 초기화
@@ -2393,37 +2396,68 @@ async function submitItem() {
 const _origDoSubmit = typeof doSubmit==='function' ? doSubmit : null;
 async function doSubmitOnline(dir) {
   if (_origDoSubmit) _origDoSubmit(dir);
-  if (API_URL) {
-    const last = txLog[txLog.length-1];
-    if (last) await api('addTx', last);
+  // ✅ 수정: IS_GAS 포함, 로컬 처리 후 서버에 동기화
+  if (API_URL || IS_GAS) {
+    // doSubmit이 txLog 앞에 push하지 않고 뒤에 push하므로 마지막 항목 사용
+    const last = txLog[txLog.length - 1];
+    if (last) {
+      const res = await api('addTx', {...last, user: CURRENT_USER || ''});
+      if (!res || !res.ok) {
+        console.error('addTx 서버 저장 실패:', res);
+        alert('⚠️ 서버 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'));
+      }
+    }
   }
 }
 
 const _origDoSubmitNG = typeof doSubmitNG==='function' ? doSubmitNG : null;
 async function doSubmitNGOnline(dir) {
   if (_origDoSubmitNG) _origDoSubmitNG(dir);
-  if (API_URL) {
-    const last = ngLog[ngLog.length-1];
-    if (last) await api('addNG', last);
+  // ✅ 수정: IS_GAS 포함
+  if (API_URL || IS_GAS) {
+    const last = ngLog[ngLog.length - 1];
+    if (last) {
+      const res = await api('addNG', {...last, user: CURRENT_USER || ''});
+      if (!res || !res.ok) {
+        console.error('addNG 서버 저장 실패:', res);
+        alert('⚠️ 서버 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'));
+      }
+    }
   }
 }
 
 const _origSaveEdit = typeof saveEdit==='function' ? saveEdit : null;
 async function saveEditOnline() {
   if (_origSaveEdit) _origSaveEdit();
-  if (API_URL) {
-    const id  = (document.getElementById('edit-idx')||{}).value;
-    const qty = parseInt((document.getElementById('edit-qty')||{}).value)||0;
-    const note= (document.getElementById('edit-note')||{}).value||'';
-    await api('editTx',{id,qty,note});
+  // ✅ 수정: IS_GAS(google.script.run 환경)도 포함, NG/일반 이력 분기 처리
+  if (API_URL || IS_GAS) {
+    const rawId = (document.getElementById('edit-idx')||{}).value || '';
+    const isNG  = String(rawId).startsWith('ng-');
+    const id    = isNG ? parseInt(rawId.replace('ng-','')) : parseInt(rawId);
+    const qty   = parseFloat((document.getElementById('edit-qty')||{}).value)||0;
+    const note  = (document.getElementById('edit-note')||{}).value||'';
+    if (isNG) {
+      await api('editNG', {id, qty, note, token: ADMIN_TOKEN});
+    } else {
+      await api('editTx', {id, qty, note, token: ADMIN_TOKEN});
+    }
   }
 }
 
 const _origConfirmDel = typeof confirmDel==='function' ? confirmDel : null;
 async function confirmDelOnline() {
-  const id = typeof delTargetId!=='undefined' ? delTargetId : null;
+  const rawId = typeof delTargetId !== 'undefined' ? String(delTargetId) : null;
   if (_origConfirmDel) _origConfirmDel();
-  if (API_URL && id) await api('deleteTx',{id});
+  // ✅ 수정: IS_GAS 포함, NG/일반 이력 분기 처리
+  if ((API_URL || IS_GAS) && rawId) {
+    const isNG = rawId.startsWith('ng-');
+    const id   = isNG ? parseInt(rawId.replace('ng-','')) : parseInt(rawId);
+    if (isNG) {
+      await api('deleteNG', {id, token: ADMIN_TOKEN});
+    } else {
+      await api('deleteTx', {id, token: ADMIN_TOKEN});
+    }
+  }
 }
 
 // ── 초기화
