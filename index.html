@@ -437,6 +437,16 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
           <label>LOT No. / Số LOT <button type="button" onclick="openLotCal('in')" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #166534;background:#f0fdf4;color:#166534;font-size:11px;cursor:pointer">📅 날짜선택 생성</button></label>
           <input id="in-lot" placeholder="LOT 자동생성 또는 직접입력">
         </div>
+        <div class="fr" id="in-maker-row" style="display:none">
+          <label>제조사 / Nhà sản xuất</label>
+          <select id="in-maker">
+            <option value="">-- 선택 --</option>
+            <option value="CSC">CSC</option>
+            <option value="POCO">POCO</option>
+            <option value="ELECTRO M">ELECTRO M</option>
+            <option value="ACHROMAT">ACHROMAT</option>
+          </select>
+        </div>
         <div class="fr"><label>비고 / Ghi chú</label><input id="in-note" placeholder="(선택사항)"></div>
       </div>
       <div class="form-actions"><button class="btn-confirm-in" onclick="showCP('in')">✅ 등록 확인 / Xác nhận</button></div>
@@ -474,6 +484,16 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
           </select>
         </div>
         <div id="omt-lot-info" style="display:none;background:#eff6ff;border-radius:7px;padding:8px 12px;font-size:12px;color:#1e3a8a;margin-top:4px"></div>
+        <div class="fr" id="omt-maker-row" style="display:none">
+          <label>제조사 / Nhà sản xuất</label>
+          <select id="omt-maker">
+            <option value="">-- 선택 --</option>
+            <option value="CSC">CSC</option>
+            <option value="POCO">POCO</option>
+            <option value="ELECTRO M">ELECTRO M</option>
+            <option value="ACHROMAT">ACHROMAT</option>
+          </select>
+        </div>
         <div class="fr"><label>비고 / Ghi chú</label><input id="omt-note" placeholder="(선택사항)"></div>
       </div>
       <div class="form-actions"><button class="btn-confirm-omt" onclick="showCP('omt')">✅ 등록 확인 / Xác nhận</button></div>
@@ -1243,6 +1263,16 @@ function fillForm(dir,item){
   // 출고 시: 입고된 LOT 목록 드롭다운 채우기
   if(dir==='omt') fillLotDropdown(item.code, item.unit);
 
+  // CORE 자재일 때 제조사 필드 표시
+  const makerRow = document.getElementById(dir+'-maker-row');
+  if (makerRow) {
+    const isCore = (item.sub||'').toUpperCase() === 'CORE' ||
+                   (item.name||'').toUpperCase().includes('CORE');
+    makerRow.style.display = isCore ? 'block' : 'none';
+    const makerSel = document.getElementById(dir+'-maker');
+    if (makerSel) makerSel.value = '';
+  }
+
   document.getElementById(dir+'-qty').focus();
 }
 
@@ -1331,7 +1361,10 @@ function showCP(dir){
   const catTxt=document.getElementById(dir+'-cat').value.trim();
   const unit=document.getElementById(dir+'-unit').value.trim();
   const qty=parseFloat(document.getElementById(dir+'-qty').value)||0;
-  const note=document.getElementById(dir+'-note').value.trim();
+  const noteBase=document.getElementById(dir+'-note').value.trim();
+  const makerElD=document.getElementById(dir+'-maker');
+  const makerVal=makerElD?makerElD.value:'';
+  const note = makerVal ? (noteBase ? `[${makerVal}] ${noteBase}` : `[제조사: ${makerVal}]`) : noteBase;
   const lotEl=document.getElementById(dir+'-lot');
   const lot=lotEl?(lotEl.tagName==='SELECT'?lotEl.value:lotEl.value.trim()):'';
   // LOT 잔여량 경고 체크 (출고 시)
@@ -1361,6 +1394,10 @@ function showCP(dir){
   if(lot && lot!=='__nolot__') rows.push(['LOT No.',`<strong style="color:#1d4ed8;font-family:monospace">${lot}</strong>${lotWarn?` <span style="color:#b91c1c;font-size:12px"> ${lotWarn}</span>`:''}`]);
   if(lot==='__nolot__') rows.push(['LOT No.','<span style="color:#92400e">⚠️ LOT 미지정 출고</span>']);
   if(dest)rows.push(['출고처',`<span class="badge ${dest==='KR'?'b-dest-kr':'b-dest-sol'}">${dest==='KR'?'🏠 한국 (KR)':'🏭 솔루엠비나'}</span>`]);
+  // 제조사 (CORE 자재)
+  const makerEl = document.getElementById(dir+'-maker');
+  const maker = makerEl ? makerEl.value : '';
+  if(maker) rows.push(['제조사', `<strong style="color:#7c3aed">${maker}</strong>`]);
   if(note)rows.push(['비고',note]);
   const cpEl=document.getElementById('cp-'+dir);
   if(!cpEl){alert('확인 창을 찾을 수 없습니다.');return;}
@@ -1380,7 +1417,10 @@ function doSubmit(dir){
   const catTxt=document.getElementById(dir+'-cat').value.trim();
   const unit=document.getElementById(dir+'-unit').value.trim();
   const qty=parseFloat(document.getElementById(dir+'-qty').value)||0;
-  const note=document.getElementById(dir+'-note').value.trim();
+  const noteBase=document.getElementById(dir+'-note').value.trim();
+  const makerElD=document.getElementById(dir+'-maker');
+  const makerVal=makerElD?makerElD.value:'';
+  const note = makerVal ? (noteBase ? `[${makerVal}] ${noteBase}` : `[제조사: ${makerVal}]`) : noteBase;
   const lotEl=document.getElementById(dir+'-lot');
   const lot=lotEl?(lotEl.tagName==='SELECT'?lotEl.value:lotEl.value.trim()):'';
   // LOT 잔여량 경고 체크 (출고 시)
@@ -1407,6 +1447,9 @@ function doSubmit(dir){
     else{item.cur=Math.max(0,item.cur-qty);item.total=Math.max(0,item.total-qty);}
   }
   ['q','code','name','cat','unit','qty','note','lot'].forEach(f=>{const el=document.getElementById(dir+'-'+f);if(el)el.value='';});
+  // 제조사 필드 초기화
+  const mkEl=document.getElementById(dir+'-maker');if(mkEl)mkEl.value='';
+  const mkRow=document.getElementById(dir+'-maker-row');if(mkRow)mkRow.style.display='none';
   // omt 출고 시 LOT 드롭다운 초기화
   if(dir==='omt'){
     const sel=document.getElementById('omt-lot');
@@ -1851,6 +1894,9 @@ function doSubmitNG(dir){
   ngLog.push({id:Date.now(),type:isIn?'ng-in':'ng-out',code,name,cat,unit,qty,note,reason,dt});
 
   ['q','code','name','cat','unit','qty','note','lot'].forEach(f=>{const el=document.getElementById(dir+'-'+f);if(el)el.value='';});
+  // 제조사 필드 초기화
+  const mkEl=document.getElementById(dir+'-maker');if(mkEl)mkEl.value='';
+  const mkRow=document.getElementById(dir+'-maker-row');if(mkRow)mkRow.style.display='none';
   // omt 출고 시 LOT 드롭다운 초기화
   if(dir==='omt'){
     const sel=document.getElementById('omt-lot');
