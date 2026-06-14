@@ -303,7 +303,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <div style="flex:1"></div>
   <span id="user-badge" style="font-size:12px;padding:5px 12px;border-radius:7px;background:#f0f4ff;color:#1d4ed8;border:1px solid #c7d7fe">👤 <span id="user-label">-</span></span>
   <button onclick="logoutUser()" style="padding:6px 12px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555" title="로그아웃">🚪 로그아웃</button>
-  <button id="admin-btn" onclick="openAdminLogin()" style="padding:6px 14px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555">🔐 관리자</button>
+  <button id="admin-btn" onclick="openAdminLogin()" style="padding:6px 14px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555;display:none">🔐 관리자</button>
   <button onclick="document.getElementById('api-ov').classList.add('show')" style="padding:6px 10px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#888" title="API 설정">⚙️</button>
 </div>
 
@@ -2129,7 +2129,7 @@ function applyRoleUI() {
   } else if (USER_ROLE === 'user') {
     // 베트남 일반: 입출고 가능, 수정/삭제 불가
     setSyncBadge('ok', '✅ 베트남 일반');
-    if (adminBtn) { adminBtn.style.display='none'; }
+    if (adminBtn) { adminBtn.style.display='inline-block'; }
 
   } else if (USER_ROLE === 'admin') {
     // 베트남 관리자: 전체
@@ -2242,6 +2242,7 @@ async function doAdminLogin() {
 function applyAdminUI(on) {
   const btn = document.getElementById('admin-btn');
   if (btn) {
+    btn.style.display = 'inline-block';
     btn.textContent = on ? '🔓 관리자 ON' : '🔐 관리자';
     btn.style.background   = on ? '#fef3c7' : '#fff';
     btn.style.color        = on ? '#92400e' : '#555';
