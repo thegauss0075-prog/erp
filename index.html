@@ -2215,17 +2215,58 @@ function loginViewer() {
 }
 
 // ── 베트남 로그인 (이름만 입력, 비밀번호 불필요)
-function loginVN() {
+async function loginVN() {
   const name  = (document.getElementById('vn-name-input').value||'').trim();
+  const pw    = (document.getElementById('vn-pw-input').value||'').trim();
   const errEl = document.getElementById('vn-login-err');
+  errEl.style.display = 'none';
+
   if (!name) { errEl.textContent='이름을 입력해주세요. / Vui lòng nhập tên.'; errEl.style.display='block'; return; }
-  CURRENT_USER = name;
-  USER_ROLE    = 'user';
-  safeLSSet('erp_username', name);
-  safeLSSet('erp_role', 'user');
-  closeLoginModal();
-  applyRoleUI();
-  startAutoSync();
+  if (!pw)   { errEl.textContent='비밀번호를 입력해주세요. / Vui lòng nhập mật khẩu.'; errEl.style.display='block'; return; }
+
+  // ✅ 관리자 비밀번호 체크
+  if (pw === 'tgvn2025!') {
+    CURRENT_USER = name;
+    USER_ROLE    = 'admin';
+    // 서버에서 admin 토큰 발급
+    const res = await api('adminLogin', {password: pw});
+    if (res.ok) {
+      ADMIN_TOKEN = res.token;
+      try { safeLSSet('_adm', res.token); } catch(e){}
+    }
+    try { safeLSSet('erp_username', name); safeLSSet('erp_role', 'admin'); } catch(e){}
+    closeLoginModal();
+    applyRoleUI();
+    startAutoSync();
+    return;
+  }
+
+  // ✅ 직원 비밀번호 체크 - 서버에서 staff 토큰 발급
+  if (pw === 'staff2025') {
+    CURRENT_USER = name;
+    USER_ROLE    = 'user';
+    // 서버에서 staff 토큰 발급 받기
+    const res = await api('staffLogin', {password: pw});
+    if (res.ok && res.token) {
+      ADMIN_TOKEN = res.token; // staff 토큰도 ADMIN_TOKEN 변수에 저장 (api() 함수가 자동 전송)
+      try { safeLSSet('_stf', res.token); } catch(e){}
+    } else {
+      errEl.textContent = '서버 연결 실패. 잠시 후 다시 시도해주세요.';
+      errEl.style.display = 'block';
+      return;
+    }
+    try { safeLSSet('erp_username', name); safeLSSet('erp_role', 'user'); } catch(e){}
+    closeLoginModal();
+    applyRoleUI();
+    startAutoSync();
+    return;
+  }
+
+  // 비밀번호 불일치
+  errEl.textContent = '비밀번호가 틀렸습니다. / Mật khẩu sai.';
+  errEl.style.display = 'block';
+  document.getElementById('vn-pw-input').value = '';
+  document.getElementById('vn-pw-input').focus();
 }
 
 function closeLoginModal() {
@@ -2239,10 +2280,9 @@ function saveUserName() { IS_VN ? loginVN() : loginViewer(); }
 function logoutUser() {
   if (!confirm('로그아웃 하시겠습니까?')) return;
   try { safeLSRemove('erp_username'); safeLSRemove('erp_role'); } catch(e){}
-  try { safeLSRemove('_adm'); } catch(e){}
+  try { safeLSRemove('_adm'); safeLSRemove('_stf'); } catch(e){}  // ✅ staff 토큰도 삭제
   CURRENT_USER=''; USER_ROLE='viewer'; isAdmin=false; ADMIN_TOKEN='';
   applyAdminUI(false);
-  // 모달 재표시
   const ov = document.getElementById('user-ov');
   if (ov) ov.style.display = 'flex';
   if (IS_VN) {
@@ -2497,7 +2537,18 @@ function initMultiUser() {
       if (savedRole && savedName) {
         CURRENT_USER = savedName;
         USER_ROLE    = savedRole;
-        if (savedRole === 'admin') ADMIN_TOKEN = 'local-admin';
+        if (savedRole === 'admin') {
+          ADMIN_TOKEN = safeLSGet('_adm','') || 'local-admin';
+        } else if (savedRole === 'user') {
+          // ✅ staff 토큰 복원 - 없으면 재로그인 유도
+          const stfToken = safeLSGet('_stf','') || '';
+          if (!stfToken) {
+            // 토큰 없으면 재로그인 필요
+            showLoginModal();
+            return;
+          }
+          ADMIN_TOKEN = stfToken;
+        }
         closeLoginModal();
         applyRoleUI();
         startAutoSync();
@@ -2505,7 +2556,6 @@ function initMultiUser() {
       }
     } catch(e){}
   }
-
   // 로그인 모달 강제 표시
   showLoginModal();
 }
@@ -3258,15 +3308,19 @@ if (document.readyState === 'loading') {
       <p style="font-size:13px;color:#666;margin-bottom:16px">베트남 로그인 / Đăng nhập</p>
       <div class="ov-fr" style="text-align:left">
         <label>이름 / Tên *</label>
-        <input id="vn-name-input" placeholder="예: Nguyen Van A" maxlength="30"
+        <input id="vn-name-input" placeholder="예: Nguyen Van A" maxlength="30">
+      </div>
+      <div class="ov-fr" style="text-align:left;margin-top:8px">
+        <label>비밀번호 / Mật khẩu *</label>
+        <input id="vn-pw-input" type="password" placeholder="비밀번호 입력"
           onkeydown="if(event.key==='Enter')loginVN()">
       </div>
       <div id="vn-login-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
       <button class="ov-save" style="width:100%;padding:11px;margin-top:12px" onclick="loginVN()">
-        ✅ 시작하기 / Bắt đầu
+        ✅ 로그인 / Đăng nhập
       </button>
       <p style="font-size:11px;color:#bbb;margin-top:12px">
-        관리자 로그인은 우측 상단 🔐 버튼 사용
+        일반직원: staff2025 · 관리자: tgvn2025!
       </p>
     </div>
 
