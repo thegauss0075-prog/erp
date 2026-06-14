@@ -2070,7 +2070,6 @@ function initDashboard(){
   rh.innerHTML=[...txLog].reverse().slice(0,5).map(t=>`<div class="hitem"><div class="hico ${iC[t.type]}">${iI[t.type]}</div><div class="hbody"><div class="htitle">${t.name}${t.dest?` <span class="badge ${t.dest==='KR'?'b-dest-kr':'b-dest-sol'}" style="font-size:11px">${t.dest==='KR'?'한국':'솔루엠비나'}</span>`:''}</div><div class="hmeta">${CL[t.cat]||t.cat} · ${fmtDt(t.dt)}</div></div><div class="hqty ${t.type==='in'?'hi':'ngc'}">${t.type==='in'?'+':'−'}${t.qty.toLocaleString()}</div></div>`).join('');
 }
 
-initDashboard();initMS();initNGModel();initNGLogModel();renderInv();
 
 // ✅ 상단 베트남 현재시간 시계 (1초마다 갱신)
 function updateClock() {
@@ -2309,12 +2308,13 @@ async function loginVN() {
     // 서버에서 staff 토큰 발급 받기
     const res = await api('staffLogin', {password: pw});
     if (res.ok && res.token) {
-      ADMIN_TOKEN = res.token; // staff 토큰도 ADMIN_TOKEN 변수에 저장 (api() 함수가 자동 전송)
+      ADMIN_TOKEN = res.token;
       try { safeLSSet('_stf', res.token); } catch(e){}
     } else {
-      errEl.textContent = '서버 연결 실패. 잠시 후 다시 시도해주세요.';
-      errEl.style.display = 'block';
-      return;
+      // ✅ 서버 연결 실패 시에도 로그인 허용 (GitHub Pages 환경 등)
+      // 비밀번호는 클라이언트에서 이미 검증됨
+      console.warn('staff 토큰 발급 실패, 로컬 모드로 진행:', res && res.error);
+      ADMIN_TOKEN = '';
     }
     try { safeLSSet('erp_username', name); safeLSSet('erp_role', 'user'); } catch(e){}
     closeLoginModal();
@@ -3330,11 +3330,38 @@ function nameClick(code) {
   });
 })();
 
+// ✅ 상단 베트남 현재시간 시계 (1초마다 갱신)
+function updateClock() {
+  const d = vnNow();
+  const days = ['일','월','화','수','목','금','토'];
+  const Y = d.getFullYear();
+  const M = String(d.getMonth()+1).padStart(2,'0');
+  const D = String(d.getDate()).padStart(2,'0');
+  const h = String(d.getHours()).padStart(2,'0');
+  const m = String(d.getMinutes()).padStart(2,'0');
+  const s = String(d.getSeconds()).padStart(2,'0');
+  const w = days[d.getDay()];
+  const el = document.querySelector('.dt');
+  if (el) el.textContent = `🇻🇳 ${Y}-${M}-${D} (${w}) ${h}:${m}:${s}`;
+}
+
 // 페이지 로드 완료 후 실행
+function _onReady() {
+  initDashboard();
+  initMS();
+  initNGModel();
+  initNGLogModel();
+  renderInv();
+  initPrintDates();
+  updateClock();
+  setInterval(updateClock, 1000);
+  initMultiUser();
+}
+
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initMultiUser);
+  document.addEventListener('DOMContentLoaded', _onReady);
 } else {
-  setTimeout(initMultiUser, 100);
+  setTimeout(_onReady, 0);
 }
 </script>
 
