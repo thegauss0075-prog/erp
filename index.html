@@ -2154,40 +2154,18 @@ function loginViewer() {
   startAutoSync();
 }
 
-// ── 베트남 로그인
-async function loginVN() {
-  const name = (document.getElementById('vn-name-input').value||'').trim();
-  const pw   = (document.getElementById('vn-pw-input').value||'').trim();
-  const errEl= document.getElementById('vn-login-err');
-  if (!name) { errEl.textContent='이름을 입력해주세요.'; errEl.style.display='block'; return; }
-  if (!pw)   { errEl.textContent='비밀번호를 입력해주세요.'; errEl.style.display='block'; return; }
-
-  if (pw === VN_ADMIN_PW) {
-    CURRENT_USER = name;
-    USER_ROLE    = 'admin';
-    ADMIN_TOKEN  = 'local-admin'; // API 연결 전 로컬 관리자
-    try { if(!IS_GAS){ safeLSSet('erp_username',name); safeLSSet('erp_role','admin'); } } catch(e){}
-    // 서버 관리자 토큰 발급
-    if (API_URL) {
-      const res = await api('adminLogin', {password: pw});
-      if (res.ok) { ADMIN_TOKEN = res.token; try{safeLSSet('_adm',res.token);}catch(e){} }
-    }
-    closeLoginModal();
-    applyRoleUI();
-    startAutoSync();
-
-  } else if (pw === VN_STAFF_PW) {
-    CURRENT_USER = name;
-    USER_ROLE    = 'user';
-    try { if(!IS_GAS){ safeLSSet('erp_username',name); safeLSSet('erp_role','user'); } } catch(e){}
-    closeLoginModal();
-    applyRoleUI();
-    startAutoSync();
-
-  } else {
-    errEl.textContent = '비밀번호가 틀렸습니다. / Mật khẩu sai.';
-    errEl.style.display = 'block';
-  }
+// ── 베트남 로그인 (이름만 입력, 비밀번호 불필요)
+function loginVN() {
+  const name  = (document.getElementById('vn-name-input').value||'').trim();
+  const errEl = document.getElementById('vn-login-err');
+  if (!name) { errEl.textContent='이름을 입력해주세요. / Vui lòng nhập tên.'; errEl.style.display='block'; return; }
+  CURRENT_USER = name;
+  USER_ROLE    = 'user';
+  safeLSSet('erp_username', name);
+  safeLSSet('erp_role', 'user');
+  closeLoginModal();
+  applyRoleUI();
+  startAutoSync();
 }
 
 function closeLoginModal() {
@@ -3161,19 +3139,15 @@ if (document.readyState === 'loading') {
       <p style="font-size:13px;color:#666;margin-bottom:16px">베트남 로그인 / Đăng nhập</p>
       <div class="ov-fr" style="text-align:left">
         <label>이름 / Tên *</label>
-        <input id="vn-name-input" placeholder="예: Nguyen Van A" maxlength="30">
-      </div>
-      <div class="ov-fr" style="text-align:left;margin-top:8px">
-        <label>비밀번호 / Mật khẩu *</label>
-        <input id="vn-pw-input" type="password" placeholder="비밀번호 입력"
+        <input id="vn-name-input" placeholder="예: Nguyen Van A" maxlength="30"
           onkeydown="if(event.key==='Enter')loginVN()">
       </div>
       <div id="vn-login-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
       <button class="ov-save" style="width:100%;padding:11px;margin-top:12px" onclick="loginVN()">
-        ✅ 로그인 / Đăng nhập
+        ✅ 시작하기 / Bắt đầu
       </button>
       <p style="font-size:11px;color:#bbb;margin-top:12px">
-        일반직원: staff2025 · 관리자: tgvn2025!
+        관리자 로그인은 우측 상단 🔐 버튼 사용
       </p>
     </div>
 
