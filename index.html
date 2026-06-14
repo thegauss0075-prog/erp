@@ -2122,6 +2122,8 @@ async function syncNow() {
       if(nr.items) DB.ng = nr.items.map(r=>({...r,prev:+r.prev||0,inng:+r.inng||0,cur:+r.cur||0}));
       if(nr.logs)  ngLog = nr.logs.map(r=>({...r,id:+r.id||0,qty:+r.qty||0}));
     }
+    // txLog 기반으로 재고 재계산 (Sheets 수량 기준으로 재적용)
+    recalcStock();
     initDashboard(); renderInv(); renderNG(); renderNGLog(); renderHist(); renderIOTable();
     setSyncBadge('ok','✅ '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 동기화');
   } catch(e) {
@@ -2417,6 +2419,28 @@ async function confirmDelOnline() {
 }
 
 // ── 초기화
+
+// ── Sheets에서 받은 기준 재고 + txLog 기반 재계산
+function recalcStock() {
+  // 각 품목의 cur를 prev 기준 + txLog 합산으로 재계산
+  ['tp','btp','kr','vn','vtth'].forEach(cat => {
+    (DB[cat]||[]).forEach(item => {
+      const code = item.code;
+      // 해당 품목의 모든 입출고 이력
+      const logs = txLog.filter(t => t.code === code && ['in','omt','tp-in','otp'].includes(t.type));
+      if (!logs.length) return;
+      // prev(전월재고)에서 시작해서 입출고 반영
+      let calc = +item.prev || 0;
+      logs.forEach(t => {
+        if (t.type==='in'||t.type==='tp-in') calc += +t.qty||0;
+        else calc = Math.max(0, calc - (+t.qty||0));
+      });
+      item.cur = calc;
+      item.total = calc + (+item.wip||0);
+    });
+  });
+}
+
 function initMultiUser() {
   // localStorage 복원 시도 (로컬 파일 환경만)
   if (!IS_GAS) {
