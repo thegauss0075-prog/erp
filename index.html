@@ -335,12 +335,12 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   </div>
 
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:1.25rem">
-    <div class="ms-card" onclick="go('inv');setIC('TP')"><div class="ms-name">완제품 (TP)</div><div class="ms-row"><div class="ms-stat"><div class="ms-val">16</div><div class="ms-lbl">품목</div></div><div class="ms-stat"><div class="ms-val hi" id="d-tp">-</div><div class="ms-lbl">총합</div></div></div></div>
-    <div class="ms-card" onclick="go('inv');setIC('BTP')"><div class="ms-name">반제품 (BTP)</div><div class="ms-row"><div class="ms-stat"><div class="ms-val">9</div><div class="ms-lbl">품목</div></div><div class="ms-stat"><div class="ms-val hi" id="d-btp">-</div><div class="ms-lbl">총합</div></div></div></div>
-    <div class="ms-card" onclick="go('inv');setIC('KR')"><div class="ms-name">원자재 KR</div><div class="ms-row"><div class="ms-stat"><div class="ms-val">59</div><div class="ms-lbl">품목</div></div></div></div>
-    <div class="ms-card" onclick="go('inv');setIC('VN')"><div class="ms-name">원자재 VN</div><div class="ms-row"><div class="ms-stat"><div class="ms-val">22</div><div class="ms-lbl">품목</div></div></div></div>
-    <div class="ms-card" onclick="go('inv');setIC('VTTH')"><div class="ms-name">소모품</div><div class="ms-row"><div class="ms-stat"><div class="ms-val">35</div><div class="ms-lbl">품목</div></div></div></div>
-    <div class="ms-card" onclick="go('ng')"><div class="ms-name" style="color:#b91c1c">불량 (NG)</div><div class="ms-row"><div class="ms-stat"><div class="ms-val ngc">32</div><div class="ms-lbl">품목</div></div></div></div>
+    <div class="ms-card" onclick="go('inv');setIC('TP')"><div class="ms-name">완제품 (TP)</div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-tp-cnt">-</div><div class="ms-lbl">품목</div></div><div class="ms-stat"><div class="ms-val hi" id="d-tp">-</div><div class="ms-lbl">총합</div></div></div></div>
+    <div class="ms-card" onclick="go('inv');setIC('BTP')"><div class="ms-name">반제품 (BTP)</div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-btp-cnt">-</div><div class="ms-lbl">품목</div></div><div class="ms-stat"><div class="ms-val hi" id="d-btp">-</div><div class="ms-lbl">총합</div></div></div></div>
+    <div class="ms-card" onclick="go('inv');setIC('KR')"><div class="ms-name">원자재 KR</div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-kr-cnt">-</div><div class="ms-lbl">품목</div></div></div></div>
+    <div class="ms-card" onclick="go('inv');setIC('VN')"><div class="ms-name">원자재 VN</div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-vn-cnt">-</div><div class="ms-lbl">품목</div></div></div></div>
+    <div class="ms-card" onclick="go('inv');setIC('VTTH')"><div class="ms-name">소모품</div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-vtth-cnt">-</div><div class="ms-lbl">품목</div></div></div></div>
+    <div class="ms-card" onclick="go('ng')"><div class="ms-name" style="color:#b91c1c">불량 (NG)</div><div class="ms-row"><div class="ms-stat"><div class="ms-val ngc" id="d-ng-cnt">-</div><div class="ms-lbl">품목</div></div></div></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem">
     <div style="background:#fff;border:1px solid #e0e0e8;border-radius:12px;padding:1.1rem"><div style="font-size:14px;font-weight:700;margin-bottom:10px">완제품 현황</div><div id="tp-bars"></div></div>
@@ -2169,8 +2169,17 @@ function initPrintDates(){
 }
 
 function initDashboard(){
-  document.getElementById('d-tp').textContent=DB.tp.reduce((s,r)=>s+r.total,0).toLocaleString();
-  document.getElementById('d-btp').textContent=DB.btp.reduce((s,r)=>s+r.total,0).toLocaleString();
+  // ✅ 품목 수 동적 계산 (하드코딩 제거)
+  const el = id => document.getElementById(id);
+  if(el('d-tp-cnt'))   el('d-tp-cnt').textContent   = DB.tp.length;
+  if(el('d-btp-cnt'))  el('d-btp-cnt').textContent  = DB.btp.length;
+  if(el('d-kr-cnt'))   el('d-kr-cnt').textContent   = DB.kr.length;
+  if(el('d-vn-cnt'))   el('d-vn-cnt').textContent   = DB.vn.length;
+  if(el('d-vtth-cnt')) el('d-vtth-cnt').textContent = DB.vtth.length;
+  if(el('d-ng-cnt'))   el('d-ng-cnt').textContent   = DB.ng.length;
+
+  el('d-tp').textContent=DB.tp.reduce((s,r)=>s+r.total,0).toLocaleString();
+  el('d-btp').textContent=DB.btp.reduce((s,r)=>s+r.total,0).toLocaleString();
   const tpD=DB.tp.filter(r=>r.total>0).sort((a,b)=>b.total-a.total).slice(0,6);
   const tpMax=Math.max(...tpD.map(r=>r.total),1);
   document.getElementById('tp-bars').innerHTML=tpD.map(r=>`<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px;color:#555;overflow:hidden;text-overflow:ellipsis;max-width:160px">${r.name}</span><span style="font-size:13px;font-weight:700;color:#1a1a2e;margin-left:8px;flex-shrink:0">${r.total.toLocaleString()}</span></div><div class="bar-wrap"><div class="bar-fill-blue" style="width:${Math.round(r.total/tpMax*100)}%"></div></div></div>`).join('');
@@ -2618,9 +2627,20 @@ async function submitItem() {
     if(errEl){errEl.textContent='코드, 품명, 단위는 필수입니다.';errEl.style.display='block';}
     return;
   }
-  if (API_URL) {
+  if (API_URL || IS_GAS) {
+    // ✅ 서버 전송 전 로컬 DB에서 먼저 중복 체크
+    const allLocal = [...DB.tp,...DB.btp,...DB.kr,...DB.vn,...DB.vtth];
+    if (!itemEditMode && allLocal.find(r=>r.code===body.code)) {
+      if(errEl){errEl.textContent='이미 존재하는 코드입니다 (로컬): '+body.code;errEl.style.display='block';}
+      return;
+    }
     const res=await api(itemEditMode?'editItem':'addItem', body);
     if (!res.ok) { if(errEl){errEl.textContent=res.error;errEl.style.display='block';} return; }
+    // 로컬 DB에도 즉시 반영
+    if (!itemEditMode) {
+      const arr = DB[body.cat];
+      if (arr) arr.push(body);
+    }
     await syncNow();
   } else {
     const arr=DB[body.cat];
