@@ -1434,12 +1434,12 @@ function showCP(dir){
   if(!code){alert('품목을 먼저 검색·선택하세요.\n먼저 위 검색창에서 품목을 선택해주세요.');return;}
   if(!qty||qty<=0){alert('수량을 올바르게 입력하세요.');return;}
 
-  // ── 출고 시 현재고 초과 차단 (DB에서 직접 조회 - 가장 정확)
+  // ── 출고 시 현재고 초과 차단 (code로 전체 DB 직접 검색 - catKey 의존 제거)
   const isOutType = ['omt','otp'].includes(dir);
   if(isOutType){
-    const cat2   = catKey(catTxt);
-    const arr2   = {TP:DB.tp,BTP:DB.btp,KR:DB.kr,VN:DB.vn,VTTH:DB.vtth}[cat2];
-    const item2  = arr2 && arr2.find(r=>r.code===code);
+    // 모든 카테고리에서 code로 직접 찾기
+    const allItems = [...DB.tp,...DB.btp,...DB.kr,...DB.vn,...DB.vtth];
+    const item2 = allItems.find(r=>r.code===code);
     const curStock = item2 ? (+item2.cur||0) : 0;
     if(curStock <= 0){
       alert(`⛔ 출고 불가 / Không thể xuất kho\n\n【${name}】\n현재고: 0 ${unit}\n현재고가 없습니다. 출고할 수 없습니다.\nTồn kho bằng 0, không thể xuất.`);
@@ -1520,13 +1520,12 @@ function doSubmit(dir){
   const lot=lotEl?(lotEl.tagName==='SELECT'?lotEl.value:lotEl.value.trim()):'';
   const dest=dir==='otp'?curDest:null;
 
-  // ✅ 2차 방어: 출고 시 현재 DB 재고 직접 조회 후 초과 차단
+  // ✅ 2차 방어: 전체 DB에서 code로 직접 조회
   const isOutType = ['omt','otp'].includes(dir);
   if(isOutType){
-    const cat2=catKey(catTxt);
-    const arr2={TP:DB.tp,BTP:DB.btp,KR:DB.kr,VN:DB.vn,VTTH:DB.vtth}[cat2];
-    const item2=arr2&&arr2.find(r=>r.code===code);
-    const curStock=item2?item2.cur:0;
+    const allItems = [...DB.tp,...DB.btp,...DB.kr,...DB.vn,...DB.vtth];
+    const item2 = allItems.find(r=>r.code===code);
+    const curStock = item2 ? (+item2.cur||0) : 0;
     if(curStock<=0||qty>curStock){
       alert(`⛔ 출고 불가\n현재고: ${curStock.toLocaleString()} ${unit}\n요청: ${qty.toLocaleString()} ${unit}`);
       return;
@@ -2252,29 +2251,38 @@ async function syncNow() {
     const [ar, tr, nr] = await Promise.all([api('getAll'), api('getTxLog'), api('getNGAll')]);
     if (ar.ok && ar.data) {
       const d = ar.data;
-      // Sheets ITEMS에서 prev/wip/model/sub만 업데이트 (cur는 TXLOG로 재계산)
-      const mergePrev = (local, remote) => {
+      // ✅ Sheets ITEMS 값을 전부 반영 (cur 포함) - 서버가 진실의 원천
+      const mergeAll = (local, remote) => {
         if (!remote || !remote.length) return local;
+        // remote에 있는 항목은 Sheets 값으로 완전 덮어쓰기
+        const remoteMap = {};
+        remote.forEach(r => { remoteMap[r.code] = r; });
         return local.map(item => {
-          const r = remote.find(x => x.code === item.code);
+          const r = remoteMap[item.code];
           if (!r) return item;
-          return {...item, prev:+r.prev||item.prev, wip:+r.wip||item.wip,
-                  model:r.model||item.model, sub:r.sub||item.sub, unit:r.unit||item.unit};
+          return {
+            ...item,
+            prev:  +r.prev  !== undefined ? +r.prev  : item.prev,
+            cur:   +r.cur   !== undefined ? +r.cur   : item.cur,
+            wip:   +r.wip   !== undefined ? +r.wip   : item.wip,
+            total: +r.total !== undefined ? +r.total : item.total,
+            model: r.model || item.model,
+            sub:   r.sub   || item.sub,
+            unit:  r.unit  || item.unit,
+          };
         });
       };
-      if(d.tp)   DB.tp   = mergePrev(DB.tp,   d.tp);
-      if(d.btp)  DB.btp  = mergePrev(DB.btp,  d.btp);
-      if(d.kr)   DB.kr   = mergePrev(DB.kr,   d.kr);
-      if(d.vn)   DB.vn   = mergePrev(DB.vn,   d.vn);
-      if(d.vtth) DB.vtth = mergePrev(DB.vtth, d.vtth);
+      if(d.tp)   DB.tp   = mergeAll(DB.tp,   d.tp);
+      if(d.btp)  DB.btp  = mergeAll(DB.btp,  d.btp);
+      if(d.kr)   DB.kr   = mergeAll(DB.kr,   d.kr);
+      if(d.vn)   DB.vn   = mergeAll(DB.vn,   d.vn);
+      if(d.vtth) DB.vtth = mergeAll(DB.vtth, d.vtth);
     }
     if (tr.ok && tr.data) txLog = tr.data.map(r=>({...r,id:+r.id||0,qty:+r.qty||0}));
     if (nr.ok) {
       if(nr.items) DB.ng = nr.items.map(r=>({...r,prev:+r.prev||0,inng:+r.inng||0,cur:+r.cur||0}));
       if(nr.logs)  ngLog = nr.logs.map(r=>({...r,id:+r.id||0,qty:+r.qty||0}));
     }
-    // txLog 기반으로 재고 재계산 (Sheets 수량 기준으로 재적용)
-    recalcStock();
     initDashboard(); renderInv(); renderNG(); renderNGLog(); renderHist(); renderIOTable();
     setSyncBadge('ok','✅ '+vnNow().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 동기화');
   } catch(e) {
@@ -2576,8 +2584,33 @@ async function submitItem() {
 // ── doSubmit 온라인 래퍼
 const _origDoSubmit = typeof doSubmit==='function' ? doSubmit : null;
 async function doSubmitOnline(dir) {
+  // ✅ 출고 시: 서버 최신 재고 확인 후 재검증 (동기화 지연 방지)
+  const isOut = ['omt','otp'].includes(dir);
+  if (isOut && (API_URL || IS_GAS)) {
+    const code = document.getElementById(dir+'-code').value.trim();
+    const unit = document.getElementById(dir+'-unit').value.trim();
+    const qty  = parseFloat(document.getElementById(dir+'-qty').value)||0;
+    // 서버에서 최신 재고 조회
+    const ar = await api('getAll');
+    if (ar.ok && ar.data) {
+      const d = ar.data;
+      const allRemote = [...(d.tp||[]),...(d.btp||[]),...(d.kr||[]),...(d.vn||[]),...(d.vtth||[])];
+      const remote = allRemote.find(r=>r.code===code);
+      const serverStock = remote ? (+remote.cur||0) : 0;
+      if (serverStock <= 0 || qty > serverStock) {
+        alert(`⛔ 서버 재고 부족으로 출고 취소\n\n서버 현재고: ${serverStock.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}\n\n동기화 후 재시도해주세요.`);
+        // 로컬 DB 및 txLog 롤백
+        await syncNow();
+        return;
+      }
+      // 로컬 DB도 서버 값으로 업데이트
+      const allLocal = [...DB.tp,...DB.btp,...DB.kr,...DB.vn,...DB.vtth];
+      const localItem = allLocal.find(r=>r.code===code);
+      if (localItem && remote) localItem.cur = +remote.cur||0;
+    }
+  }
+
   if (_origDoSubmit) _origDoSubmit(dir);
-  // ✅ 수정: IS_GAS 포함, 로컬 처리 후 서버에 동기화
   if (API_URL || IS_GAS) {
     // doSubmit이 txLog 앞에 push하지 않고 뒤에 push하므로 마지막 항목 사용
     const last = txLog[txLog.length - 1];
