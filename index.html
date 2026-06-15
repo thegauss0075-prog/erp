@@ -557,7 +557,13 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
         <div class="fr"><label>단위 / Đơn vị</label><input id="otp-unit" readonly placeholder="자동입력"></div>
         <div class="fr"><label>현재고 / Tồn kho</label><input id="otp-stock" readonly placeholder="자동입력" style="color:#1d4ed8;font-weight:700"></div>
         <div class="fr"><label>수량 * / Số lượng *</label><input id="otp-qty" type="number" min="1" placeholder="0"></div>
-        <div class="fr"><label>LOT No. / Số LOT <button type="button" onclick="openLotCal('otp')" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #1e3a8a;background:#eff6ff;color:#1e3a8a;font-size:11px;cursor:pointer">📅 날짜선택 생성</button></label><input id="otp-lot" placeholder="LOT 자동생성 또는 직접입력"></div>
+        <div class="fr">
+          <label>LOT No. 선택 * / Chọn LOT <span id="otp-lot-count" style="font-size:11px;color:#888"></span></label>
+          <select id="otp-lot" style="font-family:monospace;font-weight:600;color:#1d4ed8">
+            <option value="">-- 품목 선택 후 LOT 목록 표시 --</option>
+          </select>
+          <div id="otp-lot-info" style="display:none;background:#eff6ff;border-radius:7px;padding:8px 12px;font-size:12px;color:#1e3a8a;margin-top:4px"></div>
+        </div>
         <div class="fr">
           <label>출고처 * / Điểm xuất *</label>
           <div class="dest-btns">
@@ -1310,7 +1316,8 @@ function fillForm(dir,item){
   if(stockEl) stockEl.value=(item.cur>0?item.cur.toLocaleString():'0')+' '+item.unit;
 
   // 출고 시: 입고된 LOT 목록 드롭다운 채우기
-  if(dir==='omt') fillLotDropdown(item.code, item.unit);
+  if(dir==='omt') fillLotDropdown(item.code, item.unit, 'omt', 'in',    'omt');
+  if(dir==='otp') fillLotDropdown(item.code, item.unit, 'otp', 'tp-in', 'otp');
 
   // CORE 자재일 때 제조사 필드 표시
   const makerRow = document.getElementById(dir+'-maker-row');
@@ -1325,10 +1332,15 @@ function fillForm(dir,item){
   document.getElementById(dir+'-qty').focus();
 }
 
-function fillLotDropdown(code, unit) {
-  const sel   = document.getElementById('omt-lot');
-  const info  = document.getElementById('omt-lot-info');
-  const count = document.getElementById('omt-lot-count');
+// dir: 'omt'(자재출고) 또는 'otp'(완제품출고)
+function fillLotDropdown(code, unit, dir, inType, outType) {
+  dir     = dir     || 'omt';
+  inType  = inType  || 'in';
+  outType = outType || 'omt';
+
+  const sel   = document.getElementById(dir+'-lot');
+  const info  = document.getElementById(dir+'-lot-info');
+  const count = document.getElementById(dir+'-lot-count');
   if (!sel) return;
 
   // 해당 품목의 입고 이력에서 LOT별 잔여량 계산
@@ -1336,23 +1348,23 @@ function fillLotDropdown(code, unit) {
   const lotMap = {};
 
   // 입고 집계
-  allTx.filter(t => t.type === 'in' && t.lot).forEach(t => {
+  allTx.filter(t => t.type === inType && t.lot).forEach(t => {
     const lot = t.lot;
     if (!lotMap[lot]) lotMap[lot] = {inQty:0, outQty:0, dt:t.dt||''};
     lotMap[lot].inQty += +t.qty||0;
     if (!lotMap[lot].dt || t.dt < lotMap[lot].dt) lotMap[lot].dt = t.dt;
   });
   // 출고 차감
-  allTx.filter(t => t.type === 'omt' && t.lot).forEach(t => {
+  allTx.filter(t => t.type === outType && t.lot).forEach(t => {
     const lot = t.lot;
     if (lotMap[lot]) lotMap[lot].outQty += +t.qty||0;
   });
 
-  // 잔여량 있는 LOT만 필터
+  // 잔여량 있는 LOT만 필터 (FIFO 순서)
   const activeLots = Object.entries(lotMap)
     .map(([lot, d]) => ({lot, remain: d.inQty - d.outQty, inQty: d.inQty, outQty: d.outQty, dt: d.dt}))
     .filter(d => d.remain > 0)
-    .sort((a,b) => a.dt.localeCompare(b.dt)); // FIFO 순서
+    .sort((a,b) => a.dt.localeCompare(b.dt));
 
   if (!activeLots.length) {
     sel.innerHTML = '<option value="">-- 입고된 LOT 없음 (LOT 없이 등록된 입고 있음) --</option>';
@@ -1361,21 +1373,21 @@ function fillLotDropdown(code, unit) {
     return;
   }
 
-  // LOT 없이 입고된 수량 확인
-  const noLotIn  = allTx.filter(t=>t.type==='in' && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
-  const noLotOut = allTx.filter(t=>t.type==='omt'&& !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
+  // LOT 없이 입고된 잔여 수량
+  const noLotIn     = allTx.filter(t=>t.type===inType  && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
+  const noLotOut    = allTx.filter(t=>t.type===outType  && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
   const noLotRemain = noLotIn - noLotOut;
 
   sel.innerHTML =
     (noLotRemain > 0 ? `<option value="__nolot__">⚠️ LOT 미지정 재고 (${noLotRemain} ${unit})</option>` : '') +
     activeLots.map(d =>
-      `<option value="${d.lot}">📦 ${d.lot}  ·  잔여: ${d.remain} ${unit}  (입고: ${d.inQty})`+
+      `<option value="${d.lot}">📦 ${d.lot}  ·  잔여: ${d.remain} ${unit}  (입고: ${d.inQty})` +
       `${d.outQty ? ' / 출고: '+d.outQty : ''}</option>`
     ).join('');
 
   if (count) count.textContent = `(${activeLots.length}개 LOT)`;
 
-  // LOT 선택 시 정보 표시
+  // LOT 선택 시 상세 정보 표시
   sel.onchange = function() {
     const val = this.value;
     if (!val || val === '__nolot__') { if(info) info.style.display='none'; return; }
@@ -1498,13 +1510,13 @@ function doSubmit(dir){
   // 제조사 필드 초기화
   const mkEl=document.getElementById(dir+'-maker');if(mkEl)mkEl.value='';
   const mkRow=document.getElementById(dir+'-maker-row');if(mkRow)mkRow.style.display='none';
-  // omt 출고 시 LOT 드롭다운 초기화
-  if(dir==='omt'){
-    const sel=document.getElementById('omt-lot');
+  // omt/otp 출고 시 LOT 드롭다운 초기화
+  if(dir==='omt'||dir==='otp'){
+    const sel=document.getElementById(dir+'-lot');
     if(sel){sel.innerHTML='<option value="">-- 품목 선택 후 LOT 목록 표시 --</option>';}
-    const info=document.getElementById('omt-lot-info');
+    const info=document.getElementById(dir+'-lot-info');
     if(info)info.style.display='none';
-    const cnt=document.getElementById('omt-lot-count');
+    const cnt=document.getElementById(dir+'-lot-count');
     if(cnt)cnt.textContent='';
   }
   const stockEl=document.getElementById(dir+'-stock');if(stockEl)stockEl.value='';
@@ -1535,8 +1547,8 @@ function renderIOTable(){
       <td>${t.dest?`<span class="badge ${t.dest==='KR'?'b-dest-kr':'b-dest-sol'}">${t.dest==='KR'?'한국':'솔루엠비나'}</span>`:t.reason||'<span class="dim">—</span>'}</td>
       <td style="font-size:12px;color:#888">${t.note||'—'}</td>
       <td style="display:flex;gap:5px">
-        <button class="edit-btn" onclick="openEditUnified(${t.id},'${t.type}')">✏️</button>
-        <button class="del-btn" onclick="openDelUnified(${t.id},'${t.type}')">🗑️</button>
+        ${isAdmin ? `<button class="edit-btn" onclick="openEditUnified(${t.id},'${t.type}')">✏️</button>
+        <button class="del-btn" onclick="openDelUnified(${t.id},'${t.type}')">🗑️</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -1947,13 +1959,13 @@ function doSubmitNG(dir){
   // 제조사 필드 초기화
   const mkEl=document.getElementById(dir+'-maker');if(mkEl)mkEl.value='';
   const mkRow=document.getElementById(dir+'-maker-row');if(mkRow)mkRow.style.display='none';
-  // omt 출고 시 LOT 드롭다운 초기화
-  if(dir==='omt'){
-    const sel=document.getElementById('omt-lot');
+  // omt/otp 출고 시 LOT 드롭다운 초기화
+  if(dir==='omt'||dir==='otp'){
+    const sel=document.getElementById(dir+'-lot');
     if(sel){sel.innerHTML='<option value="">-- 품목 선택 후 LOT 목록 표시 --</option>';}
-    const info=document.getElementById('omt-lot-info');
+    const info=document.getElementById(dir+'-lot-info');
     if(info)info.style.display='none';
-    const cnt=document.getElementById('omt-lot-count');
+    const cnt=document.getElementById(dir+'-lot-count');
     if(cnt)cnt.textContent='';
   }
   const stockEl=document.getElementById(dir+'-stock');if(stockEl)stockEl.value='';
@@ -2019,8 +2031,8 @@ function renderNGLog(){
       <td style="font-size:12px;color:#888">${t.reason||'—'}</td>
       <td style="font-size:12px;color:#888">${t.note||'—'}</td>
       <td style="display:flex;gap:5px;white-space:nowrap">
-        <button class="edit-btn" onclick="openNGEdit(${t.id})">✏️</button>
-        <button class="del-btn" onclick="openNGDel(${t.id})">🗑️</button>
+        ${isAdmin ? `<button class="edit-btn" onclick="openNGEdit(${t.id})">✏️</button>
+        <button class="del-btn" onclick="openNGDel(${t.id})">🗑️</button>` : ''}
       </td>
     </tr>`;
   }).join('');
