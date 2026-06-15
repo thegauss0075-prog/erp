@@ -129,8 +129,15 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 .cp-ok-otp{background:#1e3a8a;color:#fff}.cp-ok-otp:hover{background:#1e40af}
 .cp-ok-omt{background:#92400e;color:#fff}.cp-ok-omt:hover{background:#78350f}
 
-/* edit/del buttons */
-.edit-btn{font-size:12px;padding:3px 9px;border-radius:6px;border:1px solid #dde;background:#fff;cursor:pointer;color:#555;font-weight:500}
+/* 기간 필터 버튼 */
+.period-btns{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.period-btn{padding:6px 12px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:12px;cursor:pointer;color:#555;font-weight:500;transition:all .15s;white-space:nowrap}
+.period-btn.on{background:#185FA5;border-color:#185FA5;color:#fff;font-weight:700}
+.period-btn:hover:not(.on){background:#eef2fb}
+.period-sep{width:1px;height:20px;background:#e0e0e8;margin:0 4px}
+.date-range{display:flex;gap:4px;align-items:center}
+.date-range input[type=date]{padding:5px 8px;font-size:12px;border-radius:7px;border:1px solid #dde;background:#fff;color:#1a1a2e;cursor:pointer}
+.date-range span{font-size:12px;color:#888}
 .edit-btn:hover{background:#f0f4ff}
 .del-btn{font-size:12px;padding:3px 9px;border-radius:6px;border:1px solid #fca5a5;background:#fff;cursor:pointer;color:#b91c1c;font-weight:500}
 .del-btn:hover{background:#fee2e2}
@@ -706,6 +713,20 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
         <option value="ng-out">불량 출고 / Xuất NG</option>
       </select>
     </div>
+    <div class="toolbar" style="margin-bottom:8px">
+      <div class="period-btns">
+        <button class="period-btn on" id="io-p-1m"  onclick="setPeriod('io','1m')">최근 1개월</button>
+        <button class="period-btn"    id="io-p-3m"  onclick="setPeriod('io','3m')">최근 3개월</button>
+        <button class="period-btn"    id="io-p-all" onclick="setPeriod('io','all')">전체</button>
+        <div class="period-sep"></div>
+        <div class="date-range">
+          <input type="date" id="io-date-from" onchange="setPeriod('io','custom')">
+          <span>~</span>
+          <input type="date" id="io-date-to" onchange="setPeriod('io','custom')">
+        </div>
+      </div>
+      <span id="io-period-label" style="font-size:12px;color:#185FA5;font-weight:600"></span>
+    </div>
     <div class="tw"><table><thead><tr>
       <th>일시 / Ngày</th><th>구분 / Loại</th><th>품목코드 / Mã SP</th><th>품명 / Tên SP</th>
       <th>단위</th><th style="text-align:right">수량 / SL</th><th>LOT No.</th><th>출고처 / Điểm xuất</th><th>비고 / Ghi chú</th><th>수정/삭제</th>
@@ -731,6 +752,20 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <option value="adjust">🔧 재고 조정</option>
       <option value="deactivate">🔴 품목 비활성화</option>
     </select>
+  </div>
+  <div class="toolbar" style="margin-bottom:8px">
+    <div class="period-btns">
+      <button class="period-btn on" id="hist-p-1m"  onclick="setPeriod('hist','1m')">최근 1개월</button>
+      <button class="period-btn"    id="hist-p-3m"  onclick="setPeriod('hist','3m')">최근 3개월</button>
+      <button class="period-btn"    id="hist-p-all" onclick="setPeriod('hist','all')">전체</button>
+      <div class="period-sep"></div>
+      <div class="date-range">
+        <input type="date" id="hist-date-from" onchange="setPeriod('hist','custom')">
+        <span>~</span>
+        <input type="date" id="hist-date-to" onchange="setPeriod('hist','custom')">
+      </div>
+    </div>
+    <span id="hist-period-label" style="font-size:12px;color:#185FA5;font-weight:600"></span>
   </div>
   <div id="hist-list"></div>
 </div>
@@ -782,27 +817,41 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 </tr></thead><tbody id="ng-body"></tbody></table></div>
 
   <!-- 구분선 -->
-  <div style="margin:1.5rem 0 1rem;border-top:2px solid #fee2e2;padding-top:1rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-    <span style="font-size:15px;font-weight:700;color:#991b1b">📋 불량 입출고 이력 / Lịch sử nhập xuất NG</span>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <div class="sw" style="min-width:180px"><span class="si">🔍</span><input id="ng-log-q" placeholder="코드·품명 검색..." oninput="renderNGLog()"></div>
-      <!-- 입출고 유형 -->
-      <select id="ng-log-io" onchange="renderNGLog()" style="min-width:130px">
-        <option value="">입고+출고 전체</option>
-        <option value="ng-in">불량 입고만</option>
-        <option value="ng-out">불량 출고만</option>
-      </select>
-      <!-- 자재 유형별 구분 핵심 필터 -->
-      <select id="ng-log-mat" onchange="renderNGLog()" style="min-width:160px">
-        <option value="">전체 자재 유형</option>
-        <option value="TP">완성품 NG / Thành phẩm</option>
-        <option value="copper">동선 NG / Dây đồng</option>
-        <option value="mat">원자재 NG / NVL</option>
-      </select>
-      <!-- 모델별 -->
-      <select id="ng-log-model" onchange="renderNGLog()" style="min-width:160px">
-        <option value="">전체 모델</option>
-      </select>
+  <div style="margin:1.5rem 0 1rem;border-top:2px solid #fee2e2;padding-top:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <span style="font-size:15px;font-weight:700;color:#991b1b">📋 불량 입출고 이력 / Lịch sử nhập xuất NG</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <div class="sw" style="min-width:180px"><span class="si">🔍</span><input id="ng-log-q" placeholder="코드·품명 검색..." oninput="renderNGLog()"></div>
+        <select id="ng-log-io" onchange="renderNGLog()" style="min-width:130px">
+          <option value="">입고+출고 전체</option>
+          <option value="ng-in">불량 입고만</option>
+          <option value="ng-out">불량 출고만</option>
+        </select>
+        <select id="ng-log-mat" onchange="renderNGLog()" style="min-width:160px">
+          <option value="">전체 자재 유형</option>
+          <option value="TP">완성품 NG / Thành phẩm</option>
+          <option value="copper">동선 NG / Dây đồng</option>
+          <option value="mat">원자재 NG / NVL</option>
+        </select>
+        <select id="ng-log-model" onchange="renderNGLog()" style="min-width:160px">
+          <option value="">전체 모델</option>
+        </select>
+      </div>
+    </div>
+    <!-- 기간 필터 -->
+    <div class="toolbar" style="margin-bottom:8px">
+      <div class="period-btns">
+        <button class="period-btn on" id="ng-p-1m"  onclick="setPeriod('ng','1m')">최근 1개월</button>
+        <button class="period-btn"    id="ng-p-3m"  onclick="setPeriod('ng','3m')">최근 3개월</button>
+        <button class="period-btn"    id="ng-p-all" onclick="setPeriod('ng','all')">전체</button>
+        <div class="period-sep"></div>
+        <div class="date-range">
+          <input type="date" id="ng-date-from" onchange="setPeriod('ng','custom')">
+          <span>~</span>
+          <input type="date" id="ng-date-to" onchange="setPeriod('ng','custom')">
+        </div>
+      </div>
+      <span id="ng-period-label" style="font-size:12px;color:#185FA5;font-weight:600"></span>
     </div>
   </div>
 
@@ -1237,6 +1286,114 @@ function setSub(s){
 }
 let curDest='KR',editDest='KR',delTargetId=null;
 
+// ════════════════════════════════════════════════════════════
+//  기간 필터 시스템
+//  탭별 상태: io(입출고), hist(이력), ng(NG이력)
+// ════════════════════════════════════════════════════════════
+const periodState = {
+  io:   { mode:'1m', from:'', to:'' },
+  hist: { mode:'1m', from:'', to:'' },
+  ng:   { mode:'1m', from:'', to:'' },
+};
+
+// 기간 설정
+function setPeriod(tab, mode) {
+  const s = periodState[tab];
+  s.mode = mode;
+
+  const now   = vnNow();
+  const today = now.toISOString().slice(0,10);
+
+  if (mode === '1m') {
+    const from = new Date(now); from.setMonth(from.getMonth()-1);
+    s.from = from.toISOString().slice(0,10);
+    s.to   = today;
+    setDateInputs(tab, s.from, s.to);
+  } else if (mode === '3m') {
+    const from = new Date(now); from.setMonth(from.getMonth()-3);
+    s.from = from.toISOString().slice(0,10);
+    s.to   = today;
+    setDateInputs(tab, s.from, s.to);
+  } else if (mode === 'all') {
+    s.from = ''; s.to = '';
+    setDateInputs(tab, '', '');
+  } else if (mode === 'custom') {
+    s.from = (document.getElementById(tab+'-date-from')||{}).value || '';
+    s.to   = (document.getElementById(tab+'-date-to')  ||{}).value || '';
+  }
+
+  // 버튼 활성화
+  ['1m','3m','all'].forEach(m => {
+    const btn = document.getElementById(tab+'-p-'+m);
+    if(btn) btn.classList.toggle('on', m === mode);
+  });
+  // custom 선택 시 버튼 모두 비활성화
+  if(mode === 'custom') {
+    ['1m','3m','all'].forEach(m => {
+      const btn = document.getElementById(tab+'-p-'+m);
+      if(btn) btn.classList.remove('on');
+    });
+  }
+
+  // 라벨 업데이트
+  updatePeriodLabel(tab);
+
+  // 렌더 함수 호출
+  if(tab==='io')   renderIOTable();
+  if(tab==='hist') renderHist();
+  if(tab==='ng')   renderNGLog();
+}
+
+function setDateInputs(tab, from, to) {
+  const ef = document.getElementById(tab+'-date-from');
+  const et = document.getElementById(tab+'-date-to');
+  if(ef) ef.value = from;
+  if(et) et.value = to;
+}
+
+function updatePeriodLabel(tab) {
+  const s = periodState[tab];
+  const el = document.getElementById(tab+'-period-label');
+  if(!el) return;
+  if(s.mode==='all' || (!s.from && !s.to)) {
+    el.textContent = '전체 기간';
+  } else {
+    el.textContent = (s.from||'~') + ' ~ ' + (s.to||'~');
+  }
+}
+
+// dt 문자열("MM/dd HH:mm" 또는 ISO)을 Date로 변환
+function dtToDate(dt) {
+  if(!dt) return null;
+  const s = String(dt);
+  // ISO 형식
+  if(s.includes('T') || s.match(/^\d{4}-\d{2}-\d{2}/)) {
+    return new Date(s);
+  }
+  // MM/dd HH:mm 형식 → 현재 연도 기준
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\s+(\d{2}):(\d{2})$/);
+  if(m) {
+    const year = vnNow().getFullYear();
+    return new Date(year, +m[1]-1, +m[2], +m[3], +m[4]);
+  }
+  return null;
+}
+
+// 기간 필터 적용 함수
+function filterByPeriod(logs, tab) {
+  const s = periodState[tab];
+  if(!s || s.mode==='all' || (!s.from && !s.to)) return logs;
+  const from = s.from ? new Date(s.from + 'T00:00:00') : null;
+  const to   = s.to   ? new Date(s.to   + 'T23:59:59') : null;
+  return logs.filter(t => {
+    const d = dtToDate(t.dt);
+    if(!d) return true; // 날짜 파싱 불가 시 포함
+    if(from && d < from) return false;
+    if(to   && d > to)   return false;
+    return true;
+  });
+}
+
 function allRows(){return[...DB.tp.map(r=>({...r,cat:'TP',model:getModel(r.code,r.name)})),...DB.btp.map(r=>({...r,cat:'BTP',model:getModel(r.code,r.name)})),...DB.kr.map(r=>({...r,cat:'KR'})),...DB.vn.map(r=>({...r,cat:'VN'})),...DB.vtth.map(r=>({...r,cat:'VTTH',model:'소모품'}))];}
 function n(v){if(v===0||v===undefined)return '<span class="dim">—</span>';return Number(v).toLocaleString();}
 function hl(t,q){if(!q)return String(t);return String(t).replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');}
@@ -1616,6 +1773,9 @@ function renderIOTable(){
   let logs=[...txLog,...ngLog].sort((a,b)=>b.id-a.id);
   if(q)logs=logs.filter(l=>l.code.toLowerCase().includes(q)||l.name.toLowerCase().includes(q));
   if(tp)logs=logs.filter(l=>l.type===tp);
+  // ✅ 기간 필터
+  logs = filterByPeriod(logs, 'io');
+  updatePeriodLabel('io');
   const tbody=document.getElementById('io-body');
   const tB={in:'b-in',omt:'b-out-mat','tp-in':'b-btp',otp:'b-out-tp','ng-in':'b-ng','ng-out':'b-kr'};
   if(!logs.length){tbody.innerHTML=`<tr><td colspan="9"><div class="empty">등록된 입출고 내역이 없습니다 / Chưa có dữ liệu</div></td></tr>`;document.getElementById('io-pi').textContent='';return;}
@@ -1725,8 +1885,11 @@ function renderHist(){
   let logs=[...txLog,...ngLog].sort((a,b)=>b.id-a.id);
   if(q)logs=logs.filter(l=>l.code.toLowerCase().includes(q)||l.name.toLowerCase().includes(q));
   if(tp)logs=logs.filter(l=>l.type===tp);
+  // ✅ 기간 필터
+  logs = filterByPeriod(logs, 'hist');
+  updatePeriodLabel('hist');
   const el=document.getElementById('hist-list');
-  if(!logs.length){el.innerHTML=`<div class="empty">이력이 없습니다</div>`;return;}
+  if(!logs.length){el.innerHTML=`<div class="empty">해당 기간에 이력이 없습니다</div>`;return;}
   const iC={in:'h-in',otp:'h-out-tp',omt:'h-out-mat','tp-in':'h-in','ng-in':'h-out-mat','ng-out':'h-out-tp',adjust:'h-in',deactivate:'h-out-tp'};
   const iI={in:'📥',otp:'🚚',omt:'📤','tp-in':'📦','ng-in':'⚠️','ng-out':'🗑️',adjust:'🔧',deactivate:'🔴'};
   const tL={in:'자재 입고',otp:'완제품 출고',omt:'자재 출고','tp-in':'완제품 입고','ng-in':'불량 입고','ng-out':'불량 출고',adjust:'재고 조정',deactivate:'품목 비활성화'};
@@ -2103,6 +2266,9 @@ function renderNGLog(){
   if(io) logs=logs.filter(l=>l.type===io);
   if(mat) logs=logs.filter(l=>getNGMatType(l.code)===mat);
   if(model) logs=logs.filter(l=>getNGModel(l.code)===model);
+  // ✅ 기간 필터
+  logs = filterByPeriod(logs, 'ng');
+  updatePeriodLabel('ng');
 
   const tbody=document.getElementById('ng-log-body');
   if(!tbody)return;
@@ -3660,6 +3826,10 @@ function _onReady() {
   initPrintDates();
   updateClock();
   setInterval(updateClock, 1000);
+  // ✅ 기간 필터 초기값 설정 (최근 1개월)
+  setPeriod('io',   '1m');
+  setPeriod('hist', '1m');
+  setPeriod('ng',   '1m');
   initMultiUser();
 }
 
