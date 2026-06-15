@@ -2080,9 +2080,18 @@ function initDashboard(){
   // 결재란 렌더링
   if(typeof renderApv === 'function') { try { renderApv(); } catch(e){} }
   const rh=document.getElementById('d-hist');
-  if(!txLog.length){rh.innerHTML=`<div style="font-size:14px;color:#aaa;padding:.5rem 0">입출고 탭에서 등록하면 여기에 표시됩니다.</div>`;return;}
-  const iC={in:'h-in',otp:'h-out-tp',omt:'h-out-mat'};const iI={in:'📥',otp:'📦',omt:'🔧'};
-  rh.innerHTML=[...txLog].reverse().slice(0,5).map(t=>`<div class="hitem"><div class="hico ${iC[t.type]}">${iI[t.type]}</div><div class="hbody"><div class="htitle">${t.name}${t.dest?` <span class="badge ${t.dest==='KR'?'b-dest-kr':'b-dest-sol'}" style="font-size:11px">${t.dest==='KR'?'한국':'솔루엠비나'}</span>`:''}</div><div class="hmeta">${CL[t.cat]||t.cat} · ${fmtDt(t.dt)}</div></div><div class="hqty ${t.type==='in'?'hi':'ngc'}">${t.type==='in'?'+':'−'}${t.qty.toLocaleString()}</div></div>`).join('');
+  if(!txLog.length&&!ngLog.length){rh.innerHTML=`<div style="font-size:14px;color:#aaa;padding:.5rem 0">입출고 탭에서 등록하면 여기에 표시됩니다.</div>`;return;}
+  const iC={in:'h-in',otp:'h-out-tp',omt:'h-out-mat','tp-in':'h-in','ng-in':'h-out-mat','ng-out':'h-out-tp',adjust:'h-in',deactivate:'h-out-tp'};
+  const iI={in:'📥',otp:'🚚',omt:'📤','tp-in':'📦','ng-in':'⚠️','ng-out':'🗑️',adjust:'🔧',deactivate:'🔴'};
+  const isInMap={in:true,'tp-in':true,'ng-in':true};
+  const allLogs=[...txLog,...ngLog].sort((a,b)=>b.id-a.id).slice(0,5);
+  rh.innerHTML=allLogs.map(t=>{
+    const icon=iI[t.type]||'•';
+    const cls=iC[t.type]||'h-in';
+    const isIn=!!isInMap[t.type];
+    const qty=t.qty%1?t.qty.toFixed(2):t.qty.toLocaleString();
+    return`<div class="hitem"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle">${t.name}${t.dest?` <span class="badge ${t.dest==='KR'?'b-dest-kr':'b-dest-sol'}" style="font-size:11px">${t.dest==='KR'?'한국':'솔루엠비나'}</span>`:''}</div><div class="hmeta">${CL[t.cat]||t.cat||''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div></div>`;
+  }).join('');
 }
 
 
