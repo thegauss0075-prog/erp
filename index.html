@@ -2304,10 +2304,11 @@ async function syncNow() {
       // ✅ Sheets ITEMS 값을 전부 반영 (cur 포함) - 서버가 진실의 원천
       const mergeAll = (local, remote) => {
         if (!remote || !remote.length) return local;
-        // remote에 있는 항목은 Sheets 값으로 완전 덮어쓰기
+        // ✅ 로컬 신규 항목 유지 + Sheets 항목 수량 반영 + Sheets 신규 항목 추가
         const remoteMap = {};
         remote.forEach(r => { remoteMap[r.code] = r; });
-        return local.map(item => {
+        // 로컬 항목: Sheets에 있으면 수량 반영, 없으면 그대로 유지(신규 품목)
+        const updated = local.map(item => {
           const r = remoteMap[item.code];
           if (!r) return item;
           return {
@@ -2321,6 +2322,11 @@ async function syncNow() {
             unit:  r.unit  || item.unit,
           };
         });
+        // Sheets에만 있는 항목 추가 (다른 기기에서 등록한 신규 품목)
+        const localCodes = new Set(local.map(x=>x.code));
+        const remoteOnly = remote.filter(r => !localCodes.has(r.code))
+          .map(r=>({...r, prev:+r.prev||0, cur:+r.cur||0, wip:+r.wip||0, total:+r.total||0}));
+        return [...updated, ...remoteOnly];
       };
       if(d.tp)   DB.tp   = mergeAll(DB.tp,   d.tp);
       if(d.btp)  DB.btp  = mergeAll(DB.btp,  d.btp);
