@@ -615,7 +615,10 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
       <!-- 품목 검색 -->
       <div class="fr ac-wrap" style="margin-bottom:12px">
-        <label>② 품목 검색 (코드·품명) / Tìm kiếm</label>
+        <label style="display:flex;align-items:center;justify-content:space-between">
+          <span>② 품목 검색 (코드·품명) / Tìm kiếm</span>
+          <button type="button" onclick="openAddNGItem()" style="padding:3px 10px;border-radius:6px;border:1px solid #991b1b;background:#fff1f2;color:#991b1b;font-size:11px;cursor:pointer;font-weight:600">➕ 신규 품목 추가</button>
+        </label>
         <input id="ngi-q" placeholder="코드 또는 품명 입력..." autocomplete="off" oninput="acSearchNG('ngi')" onkeydown="acKeyNG(event,'ngi')">
         <div class="ac-drop" id="ngi-drop"></div>
       </div>
@@ -3707,6 +3710,115 @@ function confirmApvCancel() {
 // 추적 버튼은 renderHist 내부 템플릿에 포함됨 (오버라이드 불필요)
 
 // ════════════════════════════════════════════════════════════
+//  불량 신규 품목 추가
+// ════════════════════════════════════════════════════════════
+function openAddNGItem() {
+  const errEl = document.getElementById('ng-item-err');
+  if(errEl) errEl.style.display='none';
+
+  // 코드 자동 생성
+  updateNGItemCode();
+
+  // 모델 목록 채우기
+  const modelSel = document.getElementById('ng-item-model');
+  if(modelSel) {
+    modelSel.innerHTML = '<option value="">-- 선택 --</option>' +
+      MODEL_LIST.map(m=>`<option value="${m}">${m}</option>`).join('');
+  }
+
+  ['ng-item-name','ng-item-unit'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+
+  document.getElementById('ng-item-ov').classList.add('show');
+  setTimeout(()=>{ const el=document.getElementById('ng-item-name'); if(el)el.focus(); }, 100);
+}
+
+// 유형 선택 시 다음 코드 자동 생성
+function updateNGItemCode() {
+  const type = (document.getElementById('ng-item-type')||{}).value || 'mat';
+  const hintEl = document.getElementById('ng-item-code-hint');
+  const codeEl = document.getElementById('ng-item-code');
+
+  // 유형별 코드 패턴
+  let prefix = '', nums = [];
+  if(type === 'TP') {
+    prefix = 'TP-';
+    nums = DB.ng.filter(r=>r.code.match(/^TP-\d+$/)).map(r=>parseInt(r.code.split('-')[1]));
+  } else if(type === 'copper') {
+    prefix = 'Dây đồng-';
+    nums = DB.ng.filter(r=>r.code.match(/^Dây đồng-\d+$/)).map(r=>parseInt(r.code.split('-')[1]));
+  } else {
+    prefix = 'NVL-';
+    nums = DB.ng.filter(r=>r.code.match(/^NVL-\d+$/)).map(r=>parseInt(r.code.split('-')[1]));
+  }
+
+  const nextNum = nums.length ? Math.max(...nums) + 1 : 1;
+  const nextCode = prefix + nextNum;
+
+  if(codeEl) codeEl.value = nextCode;
+  if(hintEl) hintEl.textContent = `(자동: ${nextCode})`;
+}
+
+// 불량 신규 품목 저장 + 즉시 입고 폼으로 이동
+async function submitNGItem() {
+  const errEl  = document.getElementById('ng-item-err');
+  const type   = document.getElementById('ng-item-type').value;
+  const code   = document.getElementById('ng-item-code').value.trim();
+  const name   = document.getElementById('ng-item-name').value.trim();
+  const unit   = document.getElementById('ng-item-unit').value.trim();
+  const model  = document.getElementById('ng-item-model').value || '기타';
+
+  if(!code){ errEl.textContent='품목코드를 입력하세요.'; errEl.style.display='block'; return; }
+  if(!name){ errEl.textContent='품명을 입력하세요.';     errEl.style.display='block'; return; }
+  if(!unit){ errEl.textContent='단위를 입력하세요.';     errEl.style.display='block'; return; }
+
+  // 중복 체크
+  if(DB.ng.find(r=>r.code===code)){
+    errEl.textContent='이미 존재하는 코드입니다: ' + code;
+    errEl.style.display='block'; return;
+  }
+
+  // ✅ DB.ng에 즉시 추가
+  const newNGItem = { type, code, name, unit, prev:0, inng:0, cur:0, model };
+  DB.ng.push(newNGItem);
+
+  // ✅ Sheets NG_ITEMS에도 저장 (관리자 권한 필요)
+  if(API_URL || IS_GAS) {
+    const res = await api('addNGItem', { type, code, name, unit, model, token: ADMIN_TOKEN });
+    if(res && !res.ok && res.error) {
+      // 서버 저장 실패해도 로컬은 유지, 경고만 표시
+      console.warn('NG_ITEMS 서버 저장 실패:', res.error);
+    }
+  }
+
+  closeOv('ng-item-ov');
+
+  // ✅ 불량 입고 폼에 자동 입력
+  document.getElementById('ngi-q').value = code + ' — ' + name;
+  document.getElementById('ngi-code').value = code;
+  document.getElementById('ngi-name').value = name;
+  document.getElementById('ngi-unit').value = unit;
+  document.getElementById('ngi-stock').value = '0 ' + unit;
+
+  // codeEl에 model/type 데이터 저장 (doSubmitNG에서 사용)
+  const codeEl = document.getElementById('ngi-code');
+  if(codeEl) { codeEl.dataset.model = model; codeEl.dataset.type = type; codeEl.dataset.invcat = 'NG'; }
+
+  // 카테고리 표시
+  const catTxt = type==='TP'?'완제품 NG':type==='copper'?'동선 / 스크랩 NG':'원자재 NG';
+  document.getElementById('ngi-cat').value = catTxt;
+
+  // NG 현황 갱신
+  initNGModel(); renderNG(); initDashboard();
+
+  // 수량 입력으로 포커스
+  document.getElementById('ngi-qty').focus();
+
+  alert(`✅ 불량 품목 추가 완료!\n[${code}] ${name}\n이제 수량을 입력하고 등록해주세요.`);
+}
+
+// ════════════════════════════════════════════════════════════
 //  LOT 자동생성 + 품명 클릭 이력 추적
 // ════════════════════════════════════════════════════════════
 
@@ -4029,6 +4141,47 @@ else location.reload();
     <div class="ov-actions">
       <button class="cp-back" onclick="closeOv('item-del-ov')">취소</button>
       <button class="ov-del-btn" onclick="confirmItemDel()">🗑️ 비활성화</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 불량 신규 품목 추가 모달 ── -->
+<div class="ov-bg" id="ng-item-ov">
+  <div class="ov-box" style="max-width:480px">
+    <h3>⚠️ 불량 신규 품목 추가</h3>
+    <p style="font-size:12px;color:#888;margin-bottom:14px">검색에 없는 품목을 불량 목록에 직접 추가합니다. 추가 후 바로 입고 등록으로 이동합니다.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="ov-fr">
+        <label>불량 유형 *</label>
+        <select id="ng-item-type" onchange="updateNGItemCode()">
+          <option value="TP">완성품 NG</option>
+          <option value="copper">동선 / 스크랩 NG</option>
+          <option value="mat" selected>원자재 NG</option>
+        </select>
+      </div>
+      <div class="ov-fr">
+        <label>품목코드 * <span id="ng-item-code-hint" style="font-size:10px;color:#185FA5"></span></label>
+        <input id="ng-item-code" placeholder="예: NVL-16">
+      </div>
+      <div class="ov-fr" style="grid-column:1/-1">
+        <label>품명 * / Tên SP</label>
+        <input id="ng-item-name" placeholder="예: Core-PFC-신규 NG">
+      </div>
+      <div class="ov-fr">
+        <label>단위 * / Đơn vị</label>
+        <input id="ng-item-unit" placeholder="Ea / Kg">
+      </div>
+      <div class="ov-fr">
+        <label>모델 / Model</label>
+        <select id="ng-item-model">
+          <option value="">-- 선택 --</option>
+        </select>
+      </div>
+    </div>
+    <div id="ng-item-err" style="color:#b91c1c;font-size:12px;margin-top:8px;display:none"></div>
+    <div class="ov-actions">
+      <button class="cp-back" onclick="closeOv('ng-item-ov')">취소</button>
+      <button class="ov-save" style="background:#991b1b" onclick="submitNGItem()">⚠️ 추가 후 입고 등록</button>
     </div>
   </div>
 </div>
