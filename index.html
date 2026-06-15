@@ -2236,8 +2236,14 @@ function doSubmitNG(dir){
   }
   const stockEl=document.getElementById(dir+'-stock');if(stockEl)stockEl.value='';
 
-  go('ng'); renderNG(); renderNGLog(); initNGModel(); initNGLogModel();
+  // ✅ 모든 탭 데이터 갱신
+  renderIOTable(); renderHist();
+  renderNG(); renderNGLog(); initNGModel(); initNGLogModel();
   initDashboard();
+
+  // 등록 후 입출고 이력 테이블로 스크롤 (현재 탭 유지)
+  const ioBody = document.getElementById('io-body');
+  if(ioBody) window.scrollTo({top: ioBody.getBoundingClientRect().top + window.scrollY - 80, behavior:'smooth'});
 }
 
 /* ── NG 이력 테이블 ── */
