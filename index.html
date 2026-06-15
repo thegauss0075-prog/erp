@@ -1192,7 +1192,7 @@ function n(v){if(v===0||v===undefined)return '<span class="dim">—</span>';retu
 function hl(t,q){if(!q)return String(t);return String(t).replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');}
 function chkXb(i,x){document.getElementById(x).style.display=document.getElementById(i).value?'block':'none';}
 function clr(i,x){document.getElementById(i).value='';if(x)document.getElementById(x).style.display='none';}
-function catKey(txt){return Object.entries(CL).find(([k,v])=>v===txt) ? [0] : undefined||'TP';}
+function catKey(txt){const found=Object.entries(CL).find(([k,v])=>v===txt);return found?found[0]:'TP';}
 
 function go(id){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
@@ -1434,18 +1434,19 @@ function showCP(dir){
   if(!code){alert('품목을 먼저 검색·선택하세요.\n먼저 위 검색창에서 품목을 선택해주세요.');return;}
   if(!qty||qty<=0){alert('수량을 올바르게 입력하세요.');return;}
 
-  // ── 출고 시 현재고 초과 차단 (omt/otp 모두)
+  // ── 출고 시 현재고 초과 차단 (DB에서 직접 조회 - 가장 정확)
   const isOutType = ['omt','otp'].includes(dir);
   if(isOutType){
-    const stockEl  = document.getElementById(dir+'-stock');
-    const stockRaw = stockEl ? stockEl.value.replace(/[^0-9.]/g,'') : '0';
-    const curStock = parseFloat(stockRaw)||0;
+    const cat2   = catKey(catTxt);
+    const arr2   = {TP:DB.tp,BTP:DB.btp,KR:DB.kr,VN:DB.vn,VTTH:DB.vtth}[cat2];
+    const item2  = arr2 && arr2.find(r=>r.code===code);
+    const curStock = item2 ? (+item2.cur||0) : 0;
     if(curStock <= 0){
-      alert(`⛔ 출고 불가 / Không thể xuất kho\n\n현재고: 0 ${unit}\n현재고가 없습니다. 출고할 수 없습니다.\nTồn kho bằng 0, không thể xuất.`);
+      alert(`⛔ 출고 불가 / Không thể xuất kho\n\n【${name}】\n현재고: 0 ${unit}\n현재고가 없습니다. 출고할 수 없습니다.\nTồn kho bằng 0, không thể xuất.`);
       return;
     }
     if(qty > curStock){
-      alert(`⛔ 출고 불가 / Không thể xuất kho\n\n현재고: ${curStock.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}\n부족: ${(qty-curStock).toLocaleString()} ${unit}\n\n현재고보다 많은 수량은 출고할 수 없습니다.\nSố lượng xuất không được vượt quá tồn kho.`);
+      alert(`⛔ 출고 불가 / Không thể xuất kho\n\n【${name}】\n현재고: ${curStock.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}\n부족: ${(qty-curStock).toLocaleString()} ${unit}\n\n현재고보다 많은 수량은 출고할 수 없습니다.\nSố lượng xuất không được vượt quá tồn kho.`);
       return;
     }
   }
