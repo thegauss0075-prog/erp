@@ -2965,16 +2965,28 @@ async function saveItemEdit() {
 
   // ✅ API 서버 반영 - IS_GAS 포함
   if (API_URL || IS_GAS) {
-    const res = await api('editItem', {
+    // 먼저 editItem 시도, 품목 없음 오류 시 addItem으로 신규 추가
+    let res = await api('editItem', {
       code:orig.code, name:newName, unit:newUnit, model:newModel,
       sub:newSub, cat:newCat.toUpperCase(), cur:newCur, prev:newPrev, wip:newWip,
       total:newCur + newWip,
       token: ADMIN_TOKEN
     });
+    // Sheets에 없는 품목이면 addItem으로 추가
     if (!res || !res.ok) {
-      errEl.textContent = '서버 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류');
-      errEl.style.display = 'block';
-      return;
+      if (res && res.error && res.error.includes('품목 없음')) {
+        res = await api('addItem', {
+          code:orig.code, name:newName, unit:newUnit, model:newModel,
+          sub:newSub, cat:newCat.toUpperCase(), cur:newCur, prev:newPrev, wip:newWip,
+          total:newCur + newWip,
+          token: ADMIN_TOKEN
+        });
+      }
+      if (!res || !res.ok) {
+        errEl.textContent = '서버 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류');
+        errEl.style.display = 'block';
+        return;
+      }
     }
     // 재고 조정 이력도 서버에 저장
     if (stockChanged) {
