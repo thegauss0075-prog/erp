@@ -2967,7 +2967,8 @@ function lotEncMonth(m) { return m<=9?String(m):['O','N','D'][m-10]; }
 function lotEncDay(d)   { return d<=9?String(d):String.fromCharCode(65+(d-10)); }
 
 // LOT 문자열 생성
-function buildLot(date, dir, serial) {
+// maker: 제조사 코드 (C=CSC, P=POCO, E=ELECTRO M, A=ACHROMAT) - 완제품만 사용
+function buildLot(date, dir, serial, maker) {
   const Y = lotEncYear(date.getFullYear());
   const M = lotEncMonth(date.getMonth()+1);
   const D = lotEncDay(date.getDate());
@@ -2981,16 +2982,45 @@ function buildLot(date, dir, serial) {
     const s    = String(serial||1).padStart(2,'0');
     return `LOT-${yyyy}${mm}${dd}-${s}`;
   } else {
-    // 완제품: TGCY[M][D]V-NNNN
-    return `TGC${Y}${M}${D}V-${seq}`;
+    // 완제품: TGC[Y][M][D][maker]V-NNNN
+    // 예: TGCG6FC V-0001 (CSC 제조사, C 삽입)
+    const m = maker || 'C'; // 기본값 C(CSC)
+    return `TGC${Y}${M}${D}${m}V-${seq}`;
   }
+}
+
+// 현재 선택된 제조사 코드 (C/P/E/A)
+var lotMakerCode = 'C'; // 기본값 CSC
+
+// 제조사 버튼 선택
+function setLotMaker(code, name) {
+  lotMakerCode = code;
+  // 버튼 활성화
+  ['C','P','E','A'].forEach(c => {
+    const btn = document.getElementById('maker-btn-'+c);
+    if (btn) btn.classList.toggle('on', c===code);
+  });
+  const lbl = document.getElementById('lot-maker-label');
+  if (lbl) lbl.textContent = `선택: ${name} (코드: ${code})`;
+  // 미리보기 갱신
+  if (lotCalSelected) updateLotPreview(lotCalSelected);
 }
 
 // 달력 열기
 function openLotCal(dir) {
-  lotCalDir  = dir;
-  lotCalDate = new Date();
+  lotCalDir      = dir;
+  lotCalDate     = vnNow();
   lotCalSelected = null;
+  lotMakerCode   = 'C'; // 초기화
+
+  // 완제품 입고/출고일 때만 제조사 선택 표시
+  const makerWrap = document.getElementById('lot-maker-wrap');
+  const isTP = (dir==='tp-in' || dir==='otp');
+  if (makerWrap) makerWrap.style.display = isTP ? 'block' : 'none';
+
+  // 제조사 버튼 초기화 (C 선택)
+  if (isTP) setLotMaker('C', 'CSC');
+
   renderLotCal();
   updateLotPreview(null);
   const ov = document.getElementById('lot-cal-ov');
@@ -3013,19 +3043,17 @@ function lotCalMove(dir) {
 function renderLotCal() {
   const y = lotCalDate.getFullYear();
   const m = lotCalDate.getMonth();
-  const today = new Date();
+  const today = vnNow();
 
   const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   document.getElementById('lot-cal-title').textContent = `${y}년 ${monthNames[m]}`;
 
-  const first   = new Date(y, m, 1).getDay(); // 0=일
+  const first   = new Date(y, m, 1).getDay();
   const lastDay = new Date(y, m+1, 0).getDate();
   const grid    = document.getElementById('lot-cal-grid');
 
   let html = '';
-  // 빈 칸
   for (let i=0; i<first; i++) html += '<div></div>';
-  // 날짜
   for (let d=1; d<=lastDay; d++) {
     const isToday = y===today.getFullYear() && m===today.getMonth() && d===today.getDate();
     const isSelected = lotCalSelected &&
@@ -3035,8 +3063,7 @@ function renderLotCal() {
       background:${isSelected?'#1d4ed8':isToday?'#eff6ff':'transparent'};
       color:${isSelected?'#fff':isToday?'#1d4ed8':'#1a1a2e'};
       border:${isSelected?'2px solid #1d4ed8':isToday?'1px solid #93c5fd':'1px solid transparent'};
-    " onmouseover="this.style.background=this.style.background||'#f5f6f8'"
-    >${d}</div>`;
+    ">${d}</div>`;
   }
   grid.innerHTML = html;
 }
@@ -3054,7 +3081,6 @@ function updateLotPreview(date) {
   if (!preview) return;
   if (!date) { preview.textContent = '날짜를 선택하세요'; return; }
 
-  // 시리얼: 선택 날짜의 기존 이력 건수 기반
   const mm = String(date.getMonth()+1).padStart(2,'0');
   const dd = String(date.getDate()).padStart(2,'0');
   const prefix = mm+'/'+dd;
@@ -3063,7 +3089,8 @@ function updateLotPreview(date) {
     (isTP ? (t.type==='tp-in'||t.type==='otp') : (t.type==='in'||t.type==='omt'))
   ).length + 1;
 
-  preview.textContent = buildLot(date, lotCalDir, seq);
+  // ✅ 완제품 입고 시 제조사 코드 포함
+  preview.textContent = buildLot(date, lotCalDir, seq, isTP ? lotMakerCode : null);
 }
 
 // LOT 확정 적용
@@ -3074,11 +3101,19 @@ function confirmLotCal() {
   const dd = String(lotCalSelected.getDate()).padStart(2,'0');
   const prefix = mm+'/'+dd;
   const isTP = (lotCalDir==='tp-in'||lotCalDir==='otp');
+
+  // 완제품 입고이면 제조사 선택 확인
+  if (isTP && !lotMakerCode) {
+    alert('제조사를 선택해주세요. / Vui lòng chọn nhà sản xuất.');
+    return;
+  }
+
   const seq = txLog.filter(t=>t.dt&&t.dt.startsWith(prefix)&&
     (isTP ? (t.type==='tp-in'||t.type==='otp') : (t.type==='in'||t.type==='omt'))
   ).length + 1;
 
-  const lot = buildLot(lotCalSelected, lotCalDir, seq);
+  // ✅ 제조사 코드 포함하여 LOT 생성
+  const lot = buildLot(lotCalSelected, lotCalDir, seq, isTP ? lotMakerCode : null);
   const el  = document.getElementById(lotCalDir+'-lot');
   if (el) {
     el.value = lot;
@@ -3591,7 +3626,18 @@ else location.reload();
 
 <!-- ── LOT 달력 생성기 ── -->
 <div id="lot-cal-ov" style="display:none;position:fixed;z-index:9999;background:rgba(0,0,0,0.3);top:0;left:0;width:100%;height:100%;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:14px;padding:20px;min-width:320px;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
+  <div style="background:#fff;border-radius:14px;padding:20px;min-width:340px;box-shadow:0 8px 32px rgba(0,0,0,0.18)">
+    <!-- 제조사 선택 (완제품 입고 시만 표시) -->
+    <div id="lot-maker-wrap" style="display:none;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:700;color:#1a1a2e;margin-bottom:7px">🏭 CORE 제조사 선택 / Chọn nhà sản xuất</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="ng-cat-btn on" id="maker-btn-C" onclick="setLotMaker('C','CSC')">C — CSC</button>
+        <button class="ng-cat-btn" id="maker-btn-P" onclick="setLotMaker('P','POCO')">P — POCO</button>
+        <button class="ng-cat-btn" id="maker-btn-E" onclick="setLotMaker('E','ELECTRO M')">E — ELECTRO M</button>
+        <button class="ng-cat-btn" id="maker-btn-A" onclick="setLotMaker('A','ACHROMAT')">A — ACHROMAT</button>
+      </div>
+      <div id="lot-maker-label" style="font-size:11px;color:#185FA5;margin-top:6px;font-weight:600"></div>
+    </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <button onclick="lotCalMove(-1)" style="border:none;background:#f5f6f8;border-radius:7px;padding:5px 12px;cursor:pointer;font-size:16px">◀</button>
       <span id="lot-cal-title" style="font-size:15px;font-weight:700;color:#1a1a2e"></span>
