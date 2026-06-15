@@ -1428,20 +1428,53 @@ function showCP(dir){
   const note = makerVal ? (noteBase ? `[${makerVal}] ${noteBase}` : `[제조사: ${makerVal}]`) : noteBase;
   const lotEl=document.getElementById(dir+'-lot');
   const lot=lotEl?(lotEl.tagName==='SELECT'?lotEl.value:lotEl.value.trim()):'';
-  // LOT 잔여량 경고 체크 (출고 시)
+  const dest=dir==='otp'?curDest:null;
+
+  // ── 기본 유효성 검사
+  if(!code){alert('품목을 먼저 검색·선택하세요.\n먼저 위 검색창에서 품목을 선택해주세요.');return;}
+  if(!qty||qty<=0){alert('수량을 올바르게 입력하세요.');return;}
+
+  // ── 출고 시 현재고 초과 차단 (omt/otp 모두)
+  const isOutType = ['omt','otp'].includes(dir);
+  if(isOutType){
+    const stockEl  = document.getElementById(dir+'-stock');
+    const stockRaw = stockEl ? stockEl.value.replace(/[^0-9.]/g,'') : '0';
+    const curStock = parseFloat(stockRaw)||0;
+    if(curStock <= 0){
+      alert(`⛔ 출고 불가 / Không thể xuất kho\n\n현재고: 0 ${unit}\n현재고가 없습니다. 출고할 수 없습니다.\nTồn kho bằng 0, không thể xuất.`);
+      return;
+    }
+    if(qty > curStock){
+      alert(`⛔ 출고 불가 / Không thể xuất kho\n\n현재고: ${curStock.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}\n부족: ${(qty-curStock).toLocaleString()} ${unit}\n\n현재고보다 많은 수량은 출고할 수 없습니다.\nSố lượng xuất không được vượt quá tồn kho.`);
+      return;
+    }
+  }
+
+  // ── LOT 잔여량 초과 차단 (자재 출고 omt, SELECT 드롭다운 LOT 선택 시)
   let lotWarn = '';
   if(dir==='omt' && lot && lot!=='__nolot__') {
-    const code = document.getElementById('omt-code').value;
-    const qty  = parseFloat(document.getElementById('omt-qty').value)||0;
     const allTx = [...txLog,...ngLog].filter(t=>t.code===code);
     const inQ   = allTx.filter(t=>t.type==='in'&&t.lot===lot).reduce((s,t)=>s+(+t.qty||0),0);
     const outQ  = allTx.filter(t=>t.type==='omt'&&t.lot===lot).reduce((s,t)=>s+(+t.qty||0),0);
     const remain = inQ - outQ;
-    if (qty > remain) lotWarn = `⚠️ LOT 잔여량(${remain}) 초과 출고입니다!`;
+    if(qty > remain){
+      alert(`⛔ LOT 잔여량 초과 / Vượt số lượng LOT\n\nLOT: ${lot}\nLOT 잔여량: ${remain.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}\n\n해당 LOT의 잔여량을 초과할 수 없습니다.`);
+      return;
+    }
+    if(remain <= 0) lotWarn = `⚠️ LOT 소진됨`;
   }
-  const dest=dir==='otp'?curDest:null;
-  if(!code){alert('품목을 먼저 검색·선택하세요.\n먼저 위 검색창에서 품목을 선택해주세요.');return;}
-  if(!qty||qty<=0){alert('수량을 올바르게 입력하세요.');return;}
+  // 완제품 출고 LOT 잔여량 초과 차단
+  if(dir==='otp' && lot && lot!=='__nolot__') {
+    const allTx = [...txLog].filter(t=>t.code===code);
+    const inQ   = allTx.filter(t=>t.type==='tp-in'&&t.lot===lot).reduce((s,t)=>s+(+t.qty||0),0);
+    const outQ  = allTx.filter(t=>t.type==='otp'&&t.lot===lot).reduce((s,t)=>s+(+t.qty||0),0);
+    const remain = inQ - outQ;
+    if(qty > remain && remain > 0){
+      alert(`⛔ LOT 잔여량 초과 / Vượt số lượng LOT\n\nLOT: ${lot}\nLOT 잔여량: ${remain.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}`);
+      return;
+    }
+  }
+
   const isIn=!!IS_IN_TYPE[dir];
   const col=TYPE_COLOR[dir]||'#166534';
   const rows=[
@@ -1484,21 +1517,24 @@ function doSubmit(dir){
   const note = makerVal ? (noteBase ? `[${makerVal}] ${noteBase}` : `[제조사: ${makerVal}]`) : noteBase;
   const lotEl=document.getElementById(dir+'-lot');
   const lot=lotEl?(lotEl.tagName==='SELECT'?lotEl.value:lotEl.value.trim()):'';
-  // LOT 잔여량 경고 체크 (출고 시)
-  let lotWarn = '';
-  if(dir==='omt' && lot && lot!=='__nolot__') {
-    const code = document.getElementById('omt-code').value;
-    const qty  = parseFloat(document.getElementById('omt-qty').value)||0;
-    const allTx = [...txLog,...ngLog].filter(t=>t.code===code);
-    const inQ   = allTx.filter(t=>t.type==='in'&&t.lot===lot).reduce((s,t)=>s+(+t.qty||0),0);
-    const outQ  = allTx.filter(t=>t.type==='omt'&&t.lot===lot).reduce((s,t)=>s+(+t.qty||0),0);
-    const remain = inQ - outQ;
-    if (qty > remain) lotWarn = `⚠️ LOT 잔여량(${remain}) 초과 출고입니다!`;
-  }
   const dest=dir==='otp'?curDest:null;
+
+  // ✅ 2차 방어: 출고 시 현재 DB 재고 직접 조회 후 초과 차단
+  const isOutType = ['omt','otp'].includes(dir);
+  if(isOutType){
+    const cat2=catKey(catTxt);
+    const arr2={TP:DB.tp,BTP:DB.btp,KR:DB.kr,VN:DB.vn,VTTH:DB.vtth}[cat2];
+    const item2=arr2&&arr2.find(r=>r.code===code);
+    const curStock=item2?item2.cur:0;
+    if(curStock<=0||qty>curStock){
+      alert(`⛔ 출고 불가\n현재고: ${curStock.toLocaleString()} ${unit}\n요청: ${qty.toLocaleString()} ${unit}`);
+      return;
+    }
+  }
+
   const cat=catKey(catTxt);
   const isIn=!!IS_IN_TYPE[dir];
-  const dt=vnDt(); // ✅ 베트남 시간(UTC+7) 기준
+  const dt=vnDt();
   txLog.push({id:Date.now(),type:dir,code,name,cat,unit,qty,note,lot,dt,dest});
   const arr={TP:DB.tp,BTP:DB.btp,KR:DB.kr,VN:DB.vn,VTTH:DB.vtth}[cat];
   const item=arr&&arr.find(r=>r.code===code);
@@ -1898,6 +1934,20 @@ function showCPng(dir){
   const reason=dir==='ngo'?document.getElementById('ngo-reason').value:'';
   if(!code){alert('② 품목을 먼저 검색·선택하세요.');return;}
   if(!qty||qty<=0){alert('불량 수량을 올바르게 입력하세요.');return;}
+
+  // ✅ 불량 출고 시 현재 NG 재고 초과 차단 (DB.ng에서 직접 조회)
+  if(dir==='ngo'){
+    const ngItem = DB.ng.find(r=>r.code===code);
+    const curNGStock = ngItem ? (+ngItem.cur||0) : 0;
+    if(curNGStock<=0){
+      alert(`⛔ 불량 출고 불가 / Không thể xuất NG\n\n현재 불량 재고: 0 ${unit}\n불량 재고가 없습니다.`);
+      return;
+    }
+    if(qty > curNGStock){
+      alert(`⛔ 불량 출고 불가 / Không thể xuất NG\n\n현재 불량 재고: ${curNGStock.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}\n부족: ${(qty-curNGStock).toLocaleString()} ${unit}\n\n불량 재고를 초과할 수 없습니다.`);
+      return;
+    }
+  }
   const isIn=dir==='ngi';
 
   // 코드 element에서 모델/분류 정보 읽기
