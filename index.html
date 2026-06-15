@@ -3712,9 +3712,100 @@ function confirmApvCancel() {
 // ════════════════════════════════════════════════════════════
 //  불량 신규 품목 추가
 // ════════════════════════════════════════════════════════════
+
+// 재고 품목 검색 자동완성
+let ngItemAcIdx = -1, ngItemAcRes = [];
+
+function ngItemSearch() {
+  const q = (document.getElementById('ng-item-search').value||'').toLowerCase().trim();
+  const drop = document.getElementById('ng-item-drop');
+  if(!q){ drop.style.display='none'; ngItemAcRes=[]; return; }
+  const pool = allRows();
+  const res = pool.filter(r=>r.code.toLowerCase().includes(q)||r.name.toLowerCase().includes(q)).slice(0,15);
+  ngItemAcRes=res; ngItemAcIdx=-1;
+  if(!res.length){ drop.style.display='none'; return; }
+  drop.innerHTML=res.map((r,i)=>{
+    const bc={TP:'b-tp',BTP:'b-btp',KR:'b-kr',VN:'b-vn',VTTH:'b-vtth'}[r.cat]||'b-kr';
+    const cn={TP:'완제품',BTP:'반제품',KR:'원자재KR',VN:'원자재VN',VTTH:'소모품'}[r.cat]||r.cat;
+    return`<div class="ac-item" data-i="${i}" onmousedown="ngItemPick(${i})">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-family:monospace;font-size:11px">${r.code}</span>
+        <span class="badge ${bc}" style="font-size:10px;padding:1px 6px">${cn}</span>
+        ${r.model?`<span style="font-size:10px;color:#888">${r.model}</span>`:''}
+      </div>
+      <div class="ac-sub">${r.name} · ${r.unit}</div>
+    </div>`;
+  }).join('');
+  drop.style.display='block';
+}
+
+function ngItemSearchKey(e) {
+  const items=document.querySelectorAll('#ng-item-drop .ac-item');
+  if(e.key==='ArrowDown'){e.preventDefault();ngItemAcIdx=Math.min(ngItemAcIdx+1,items.length-1);items.forEach((el,i)=>el.classList.toggle('sel',i===ngItemAcIdx));}
+  else if(e.key==='ArrowUp'){e.preventDefault();ngItemAcIdx=Math.max(ngItemAcIdx-1,0);items.forEach((el,i)=>el.classList.toggle('sel',i===ngItemAcIdx));}
+  else if(e.key==='Enter'&&ngItemAcIdx>=0) ngItemPick(ngItemAcIdx);
+  else if(e.key==='Escape') document.getElementById('ng-item-drop').style.display='none';
+}
+
+function ngItemPick(i) {
+  const item=ngItemAcRes[i]; if(!item) return;
+  document.getElementById('ng-item-drop').style.display='none';
+  document.getElementById('ng-item-search').value=item.code+' — '+item.name;
+  const errEl=document.getElementById('ng-item-err');
+
+  // 이미 DB.ng에 있으면 경고
+  const alreadyNG=DB.ng.find(r=>r.code===item.code);
+  if(alreadyNG){
+    errEl.textContent='이미 불량 목록에 있는 품목입니다: '+item.code;
+    errEl.style.display='block';
+  } else {
+    errEl.style.display='none';
+  }
+
+  // ✅ 재고 코드·품명·단위 그대로 자동입력
+  document.getElementById('ng-item-code').value=item.code;
+  document.getElementById('ng-item-name').value=item.name;
+  document.getElementById('ng-item-unit').value=item.unit;
+
+  // 불량 유형 자동 판별
+  let ngType='mat';
+  if(item.cat==='TP'||item.cat==='BTP') ngType='TP';
+  else if((item.sub||'').toUpperCase()==='WIRE'||item.name.toUpperCase().includes('WIRE')||item.name.toUpperCase().includes('COIL')) ngType='copper';
+  document.getElementById('ng-item-type').value=ngType;
+
+  // 코드 힌트 (자동생성 아님, 재고코드 사용)
+  const hint=document.getElementById('ng-item-code-hint');
+  if(hint) hint.textContent='(재고 코드)';
+
+  // 모델 자동 선택
+  const modelSel=document.getElementById('ng-item-model');
+  if(modelSel&&item.model){
+    const opt=[...modelSel.options].find(o=>o.value===item.model);
+    if(opt) modelSel.value=item.model;
+    else { // 목록에 없으면 추가
+      const o=document.createElement('option');
+      o.value=item.model; o.textContent=item.model; o.selected=true;
+      modelSel.appendChild(o);
+    }
+  }
+}
+
+// 드롭다운 외부 클릭 시 닫기
+document.addEventListener('click', e=>{
+  const drop=document.getElementById('ng-item-drop');
+  if(drop&&!drop.contains(e.target)&&e.target.id!=='ng-item-search') drop.style.display='none';
+});
+
 function openAddNGItem() {
   const errEl = document.getElementById('ng-item-err');
   if(errEl) errEl.style.display='none';
+
+  // 검색창 초기화
+  const srch = document.getElementById('ng-item-search');
+  if(srch) srch.value='';
+  const drop = document.getElementById('ng-item-drop');
+  if(drop) drop.style.display='none';
+  ngItemAcRes=[]; ngItemAcIdx=-1;
 
   // 코드 자동 생성
   updateNGItemCode();
@@ -4147,9 +4238,19 @@ else location.reload();
 
 <!-- ── 불량 신규 품목 추가 모달 ── -->
 <div class="ov-bg" id="ng-item-ov">
-  <div class="ov-box" style="max-width:480px">
+  <div class="ov-box" style="max-width:500px">
     <h3>⚠️ 불량 신규 품목 추가</h3>
-    <p style="font-size:12px;color:#888;margin-bottom:14px">검색에 없는 품목을 불량 목록에 직접 추가합니다. 추가 후 바로 입고 등록으로 이동합니다.</p>
+    <p style="font-size:12px;color:#888;margin-bottom:14px">재고 품목을 검색해서 선택하거나, 직접 입력하세요.</p>
+
+    <!-- 재고 품목 검색 -->
+    <div class="ov-fr ac-wrap" style="margin-bottom:14px">
+      <label>재고 품목 검색 (선택 시 자동입력) / Tìm kiếm từ tồn kho</label>
+      <input id="ng-item-search" placeholder="코드 또는 품명 입력..." autocomplete="off"
+        oninput="ngItemSearch()" onkeydown="ngItemSearchKey(event)"
+        style="width:100%;font-size:14px;padding:8px 10px;border-radius:8px;border:1px solid #dde;background:#fff">
+      <div class="ac-drop" id="ng-item-drop"></div>
+    </div>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="ov-fr">
         <label>불량 유형 *</label>
