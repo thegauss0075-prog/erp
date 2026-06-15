@@ -808,6 +808,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <col style="width:68pt"><col style="width:72pt"><col style="width:68pt">
   <col style="width:*">
   <col style="width:28pt"><col style="width:44pt"><col style="width:52pt"><col style="width:46pt">
+  <col style="width:50pt" class="no-print">
 </colgroup><thead><tr>
   <th>구분 / Loại</th>
   <th>모델 / Model</th>
@@ -817,6 +818,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <th style="text-align:right">전월재고</th>
   <th style="text-align:right">입고(불량)</th>
   <th style="text-align:right">현재고</th>
+  <th class="no-print"></th>
 </tr></thead><tbody id="ng-body"></tbody></table></div>
 
   <!-- 구분선 -->
@@ -1934,15 +1936,20 @@ function renderNG(){
   const tl={TP:'완성품 NG / Thành phẩm NG',copper:'동선 NG / Dây đồng NG',mat:'원자재 NG / NVL NG'};
   const tb={TP:'b-ng',copper:'b-kr',mat:'b-vtth'};
   const tbody=document.getElementById('ng-body');
-  if(!rows.length){tbody.innerHTML=`<tr><td colspan="8"><div class="empty">검색 결과 없음 / Không có kết quả</div></td></tr>`;return;}
+  if(!rows.length){tbody.innerHTML=`<tr><td colspan="9"><div class="empty">검색 결과 없음 / Không có kết quả</div></td></tr>`;return;}
   const grp={};
   rows.forEach(r=>{const m=r.model||'기타 / Khác';(grp[m]=grp[m]||[]).push(r);});
   let html='';
   Object.entries(grp).sort(([a],[b])=>a.localeCompare(b)).forEach(([m,items])=>{
     const totalNG=items.reduce((s,r)=>s+(r.inng||0),0);
-    html+=`<tr style="background:#fff8f8"><td colspan="8" style="padding:8px 12px;font-weight:700;font-size:13px;color:#991b1b;border-top:2px solid #fca5a5">⚙️ ${m} <span style="font-size:11px;font-weight:400;color:#aaa;margin-left:6px">${items.length}개 품목${totalNG>0?' · 이번달 불량 입고: '+totalNG.toFixed(2).replace(/\.00$/,''):''}</span></td></tr>`;
+    html+=`<tr style="background:#fff8f8"><td colspan="9" style="padding:8px 12px;font-weight:700;font-size:13px;color:#991b1b;border-top:2px solid #fca5a5">⚙️ ${m} <span style="font-size:11px;font-weight:400;color:#aaa;margin-left:6px">${items.length}개 품목${totalNG>0?' · 이번달 불량 입고: '+totalNG.toFixed(2).replace(/\.00$/,''):''}</span></td></tr>`;
     items.forEach(r=>{
-      html+=`<tr>
+      // 관리자 버튼
+      const adminBtns = isAdmin
+        ? `<button class="edit-btn" onclick="openNGItemEdit('${r.code}')" style="background:#fef3c7;border-color:#f59e0b" title="불량 품목 수정">✏️</button>
+           <button class="edit-btn" onclick="openNGItemDel('${r.code}')" style="background:#fee2e2;border-color:#fca5a5;color:#b91c1c" title="불량 품목 숨김">🗑️</button>`
+        : '';
+      html+=`<tr ${r.active===false?'style="opacity:0.4"':''}>
         <td style="overflow:hidden;text-overflow:ellipsis"><span class="badge ${tb[r.type]}">${tl[r.type]}</span></td>
         <td style="font-size:12px;color:#888;overflow:hidden;text-overflow:ellipsis">${m}</td>
         <td style="font-family:monospace;font-size:12px">${r.code}</td>
@@ -1951,6 +1958,7 @@ function renderNG(){
         <td style="text-align:right">${r.prev%1?r.prev.toFixed(2):n(r.prev)}</td>
         <td style="text-align:right" class="${r.inng>0?'ngc':''}">${r.inng>0?(r.inng%1?r.inng.toFixed(2):r.inng.toLocaleString()):'<span class="dim">—</span>'}</td>
         <td style="text-align:right;font-weight:700" class="ngc">${r.cur%1?r.cur.toFixed(2):r.cur.toLocaleString()}</td>
+        <td class="no-print" style="display:flex;gap:4px;padding:6px 8px">${adminBtns}</td>
       </tr>`;
     });
   });
