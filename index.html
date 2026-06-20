@@ -375,7 +375,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <div class="toolbar">
     <button onclick="window.print()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🖨️ 인쇄 / In</button>
     <button id="add-item-btn" onclick="openAddItem()" style="display:none;padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 품목 추가</button>
-    <button id="month-close-btn" onclick="openMonthClose()" style="display:none;padding:7px 14px;border-radius:7px;border:1px solid #7c3aed;background:#faf5ff;color:#7c3aed;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">📅 월말 마감</button>
+    <button id="month-close-btn" onclick="openMonthClose()" style="display:none;padding:7px 14px;border-radius:7px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(124,58,237,.3)">📅 월말 마감</button>
     <button id="sync-btn" onclick="syncNow()" style="padding:7px 14px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555;white-space:nowrap">🔄 동기화</button>
     <div class="sw"><span class="si">🔍</span><input id="inv-q" placeholder="코드·품명 검색..." oninput="chkXb('inv-q','inv-xb');renderInv()"><button class="xb" id="inv-xb" onclick="clr('inv-q','inv-xb');renderInv()">✕</button></div>
     <select id="inv-cat" onchange="initMS();initSubFilter();renderInv()">
@@ -3400,7 +3400,7 @@ var lotCalDate    = new Date(); // 달력 기준 날짜
 var lotCalSelected= null;     // 선택된 날짜
 
 // LOT 인코딩 함수
-function lotEncYear(y)  { return String.fromCharCode(66+(y-2021)); } // B=2021,G=2026
+function lotEncYear(y)  { return String.fromCharCode(67+(y-2022)); } // C=2022,D=2023,E=2024,F=2025,G=2026
 function lotEncMonth(m) { return m<=9?String(m):['O','N','D'][m-10]; }
 function lotEncDay(d)   { return d<=9?String(d):String.fromCharCode(65+(d-10)); }
 
@@ -4108,7 +4108,7 @@ async function submitNGItem() {
 //   일: 1~9, A=10,B=11,...V=31
 //   생산지: A=한국, V=베트남(기본)
 
-function encodeYear(y)  { return String.fromCharCode(66 + (y - 2021)); } // B=2021
+function encodeYear(y)  { return String.fromCharCode(67 + (y - 2022)); } // C=2022,D=2023,E=2024,F=2025,G=2026
 function encodeMonth(m) { return m<=9?String(m):['O','N','D'][m-10]; }
 function encodeDay(d)   {
   if(d<=9) return String(d);
