@@ -375,6 +375,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <div class="toolbar">
     <button onclick="window.print()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🖨️ 인쇄 / In</button>
     <button id="add-item-btn" onclick="openAddItem()" style="display:none;padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 품목 추가</button>
+    <button id="month-close-btn" onclick="openMonthClose()" style="display:none;padding:7px 14px;border-radius:7px;border:1px solid #7c3aed;background:#faf5ff;color:#7c3aed;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">📅 월말 마감</button>
     <button id="sync-btn" onclick="syncNow()" style="padding:7px 14px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555;white-space:nowrap">🔄 동기화</button>
     <div class="sw"><span class="si">🔍</span><input id="inv-q" placeholder="코드·품명 검색..." oninput="chkXb('inv-q','inv-xb');renderInv()"><button class="xb" id="inv-xb" onclick="clr('inv-q','inv-xb');renderInv()">✕</button></div>
     <select id="inv-cat" onchange="initMS();initSubFilter();renderInv()">
@@ -2746,6 +2747,8 @@ function applyAdminUI(on) {
   }
   const addBtn = document.getElementById('add-item-btn');
   if (addBtn) addBtn.style.display = on ? 'inline-block' : 'none';
+  const mcBtn = document.getElementById('month-close-btn');
+  if (mcBtn) mcBtn.style.display = on ? 'inline-block' : 'none';
 }
 
 // ── API URL 저장
@@ -3103,14 +3106,14 @@ async function saveItemEdit() {
   const newSub   = document.getElementById('ie-sub').value.trim();
   const newCat   = document.getElementById('ie-cat').value; // 소문자 (tp/btp/kr/vn/vtth)
   const newCur   = parseFloat(document.getElementById('ie-cur').value) || 0;
-  const newPrev  = parseFloat(document.getElementById('ie-prev').value) || 0;
+  const newPrev  = +orig.prev || 0; // ✅ 전월재고는 화면에서 수정 불가, 원래값 유지
   const newWip   = parseFloat(document.getElementById('ie-wip').value) || 0;
   const reason   = document.getElementById('ie-reason').value.trim();
 
   if (!newName) { errEl.textContent='품명은 필수입니다.'; errEl.style.display='block'; return; }
 
-  // 재고 변경 시 사유 필수
-  const stockChanged = (newCur !== +orig.cur) || (newPrev !== +orig.prev) || (newWip !== +orig.wip);
+  // 재고 변경 시 사유 필수 (전월재고는 변경 대상에서 제외)
+  const stockChanged = (newCur !== +orig.cur) || (newWip !== +orig.wip);
   if (stockChanged && !reason) {
     errEl.textContent = '재고 수량 변경 시 조정 사유를 반드시 입력해야 합니다.';
     errEl.style.display = 'block';
@@ -3724,6 +3727,75 @@ function confirmApvCancel() {
 // 추적 버튼은 renderHist 내부 템플릿에 포함됨 (오버라이드 불필요)
 
 // ════════════════════════════════════════════════════════════
+//  월말 마감 (관리자) - 현재고 → 전월재고 일괄 복사
+// ════════════════════════════════════════════════════════════
+function openMonthClose() {
+  if(!isAdmin){ alert('관리자 로그인이 필요합니다.'); return; }
+
+  const itemCount = DB.tp.length + DB.btp.length + DB.kr.length + DB.vn.length + DB.vtth.length;
+  const ngCount = DB.ng.length;
+
+  document.getElementById('mc-cnt-items').textContent = itemCount + '개';
+  document.getElementById('mc-cnt-ng').textContent = ngCount + '개';
+  document.getElementById('mc-confirm-input').value = '';
+  const errEl = document.getElementById('mc-err');
+  if(errEl) errEl.style.display='none';
+
+  document.getElementById('month-close-ov').classList.add('show');
+}
+
+async function confirmMonthClose() {
+  const input = (document.getElementById('mc-confirm-input').value||'').trim().toUpperCase();
+  const errEl = document.getElementById('mc-err');
+
+  if(input !== 'CONFIRM') {
+    errEl.textContent = '"CONFIRM"을 정확히 입력해주세요.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const monthLabel = vnNow().getFullYear() + '.' + String(vnNow().getMonth()+1).padStart(2,'0');
+
+  // ✅ 일반 재고: 현재고 → 전월재고 복사 (로컬)
+  const allArrs = [DB.tp, DB.btp, DB.kr, DB.vn, DB.vtth];
+  let updatedItems = [];
+  allArrs.forEach(arr => {
+    arr.forEach(item => {
+      if(item.active === false) return; // 비활성 품목 제외
+      item.prev = +item.cur || 0;
+      updatedItems.push({code:item.code, prev:item.prev});
+    });
+  });
+
+  // ✅ 불량 재고도 동일 처리
+  DB.ng.forEach(item => {
+    if(item.active === false) return;
+    item.prev = +item.cur || 0;
+    item.inng = 0; // 이번달 불량입고 누계 초기화
+  });
+
+  // ✅ 서버 반영 (Sheets ITEMS/NG_ITEMS의 prev 컬럼 일괄 업데이트)
+  if(API_URL || IS_GAS) {
+    const res = await api('monthClose', { items: updatedItems, token: ADMIN_TOKEN });
+    if(res && !res.ok) {
+      errEl.textContent = '서버 반영 실패: ' + (res.error||'알 수 없는 오류') + ' (로컬은 반영됨)';
+      errEl.style.display = 'block';
+    }
+  }
+
+  // 마감 이력 기록
+  txLog.unshift({
+    id: Date.now(), type:'monthclose', code:'SYSTEM', name:`${monthLabel} 월말 마감`,
+    cat:'SYS', unit:'', qty:0, note:`전월재고 일괄 갱신 (${updatedItems.length}개 품목)`,
+    lot:'', dt:vnDt(), dest:'', user: CURRENT_USER||'관리자'
+  });
+
+  closeOv('month-close-ov');
+  renderInv(); renderNG(); initDashboard(); renderHist();
+  alert(`✅ ${monthLabel} 월말 마감 완료!\n${updatedItems.length}개 품목의 전월재고가 갱신됐습니다.`);
+}
+
+// ════════════════════════════════════════════════════════════
 //  불량 품목 수정 / 숨김 (관리자)
 // ════════════════════════════════════════════════════════════
 let ngItemEditTarget = null;
@@ -3740,7 +3812,6 @@ function openNGItemEdit(code) {
   document.getElementById('ng-ie-unit').value  = item.unit || '';
   document.getElementById('ng-ie-type').value  = item.type || 'mat';
   document.getElementById('ng-ie-model').value = item.model || '';
-  document.getElementById('ng-ie-prev').value  = item.prev || 0;
   const errEl = document.getElementById('ng-ie-err');
   if(errEl) errEl.style.display='none';
   document.getElementById('ng-item-edit-ov').classList.add('show');
@@ -3753,22 +3824,20 @@ async function saveNGItemEdit() {
   const newUnit  = document.getElementById('ng-ie-unit').value.trim();
   const newType  = document.getElementById('ng-ie-type').value;
   const newModel = document.getElementById('ng-ie-model').value.trim();
-  const newPrev  = parseFloat(document.getElementById('ng-ie-prev').value)||0;
 
   if(!newName){ errEl.textContent='품명은 필수입니다.'; errEl.style.display='block'; return; }
 
   // 로컬 DB.ng 업데이트
   const idx = DB.ng.findIndex(r=>r.code===ngItemEditTarget.code);
   if(idx>=0){
-    DB.ng[idx] = {...DB.ng[idx], name:newName, unit:newUnit, type:newType, model:newModel, prev:newPrev};
+    DB.ng[idx] = {...DB.ng[idx], name:newName, unit:newUnit, type:newType, model:newModel};
   }
 
-  // 서버 반영 (NG_ITEMS 시트 업데이트)
+  // 서버 반영
   if(API_URL || IS_GAS){
     const res = await api('editNGItem', {
       code: ngItemEditTarget.code,
-      name: newName, unit: newUnit, type: newType,
-      model: newModel, prev: newPrev,
+      name: newName, unit: newUnit, type: newType, model: newModel,
       token: ADMIN_TOKEN
     });
     if(res && !res.ok){
@@ -4222,6 +4291,34 @@ if (document.readyState === 'loading') {
   </div>
 </div>
 
+<!-- ── 월말 마감 모달 (관리자) ── -->
+<div class="ov-bg" id="month-close-ov">
+  <div class="ov-box" style="max-width:460px">
+    <h3>📅 월말 마감</h3>
+    <p style="font-size:13px;color:#555;margin-bottom:14px;line-height:1.6">
+      모든 품목의 <strong>현재고</strong>를 <strong>전월재고</strong>로 복사합니다.<br>
+      <span style="color:#b91c1c;font-weight:600">⚠️ 이 작업은 되돌릴 수 없습니다.</span>
+    </p>
+    <div style="background:#faf5ff;border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span>일반 재고 품목</span><strong id="mc-cnt-items">-</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span>불량(NG) 품목</span><strong id="mc-cnt-ng">-</strong>
+      </div>
+    </div>
+    <div class="ov-fr">
+      <label>마감 확인 (대문자로 "CONFIRM" 입력)</label>
+      <input id="mc-confirm-input" placeholder="CONFIRM" style="text-transform:uppercase">
+    </div>
+    <div id="mc-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
+    <div class="ov-actions">
+      <button class="cp-back" onclick="closeOv('month-close-ov')">취소</button>
+      <button class="ov-save" style="background:#7c3aed" onclick="confirmMonthClose()">📅 마감 실행</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── 품목 추가/수정 모달 (관리자) ── -->
 <div class="ov-bg" id="item-ov">
   <div class="ov-box" style="max-width:500px">
@@ -4244,7 +4341,7 @@ if (document.readyState === 'loading') {
         <select id="item-sub"><option value="">-- 선택 --</option></select>
       </div>
       <div class="ov-fr"><label>현재고</label><input id="item-cur" type="number" value="0"></div>
-      <div class="ov-fr"><label>전월재고</label><input id="item-prev" type="number" value="0"></div>
+      <input type="hidden" id="item-prev" value="0">
     </div>
     <div id="item-ov-err" style="color:#b91c1c;font-size:12px;margin-top:8px;display:none"></div>
     <div class="ov-actions">
@@ -4314,10 +4411,10 @@ else location.reload();
     <hr style="margin:14px 0;border-color:#eee">
     <div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:8px">📦 재고 직접 조정</div>
     <p style="font-size:12px;color:#b91c1c;margin-bottom:10px">⚠️ 수량 변경 시 반드시 조정 사유를 입력하세요 (이력에 자동 기록)</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div class="ov-fr"><label>현재고</label><input id="ie-cur" type="number"></div>
-      <div class="ov-fr"><label>전월재고</label><input id="ie-prev" type="number"></div>
       <div class="ov-fr"><label>재공</label><input id="ie-wip" type="number"></div>
+      <input type="hidden" id="ie-prev" value="0">
     </div>
     <div class="ov-fr" style="margin-top:6px">
       <label>조정 사유 * (재고 변경 시 필수)</label>
@@ -4381,10 +4478,6 @@ else location.reload();
       <div class="ov-fr">
         <label>모델</label>
         <input id="ng-ie-model" placeholder="모델명">
-      </div>
-      <div class="ov-fr">
-        <label>전월재고</label>
-        <input id="ng-ie-prev" type="number" value="0">
       </div>
     </div>
     <div id="ng-ie-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
