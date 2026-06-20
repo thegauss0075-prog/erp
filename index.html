@@ -3420,10 +3420,10 @@ function buildLot(date, dir, serial, maker) {
     const s    = String(serial||1).padStart(2,'0');
     return `LOT-${yyyy}${mm}${dd}-${s}`;
   } else {
-    // 완제품: TGC[Y][M][D][maker]V-NNNN
-    // 예: TGCG6FC V-0001 (CSC 제조사, C 삽입)
+    // 완제품: TG[Y][M][D][maker]V-NNNN
+    // 예: TGGF6CV-0001 (2026년6월15일, CSC 제조사)
     const m = maker || 'C'; // 기본값 C(CSC)
-    return `TGC${Y}${M}${D}${m}V-${seq}`;
+    return `TG${Y}${M}${D}${m}V-${seq}`;
   }
 }
 
@@ -4102,11 +4102,11 @@ async function submitNGItem() {
 // LOT 자동생성: LOT-YYMMDD-XXX 형식
 // ── LOT 생성 규칙
 // 자재(in/omt):   LOT-20250614-01
-// 완제품(tp-in/otp): [제품코드]-TGC[년][월][일]V-[시리얼4자리]
-//   년: B=2021,C=2022,D=2023,E=2024,F=2025,G=2026...
+// 완제품(tp-in/otp): [제품코드]-TG[년][월][일][제조사]V-[시리얼4자리]
+//   년: C=2022,D=2023,E=2024,F=2025,G=2026...
 //   월: 1~9, O=10, N=11, D=12
 //   일: 1~9, A=10,B=11,...V=31
-//   생산지: A=한국, V=베트남(기본)
+//   제조사: C=CSC, P=POCO, E=ELECTRO M, A=ACHROMAT
 
 function encodeYear(y)  { return String.fromCharCode(67 + (y - 2022)); } // C=2022,D=2023,E=2024,F=2025,G=2026
 function encodeMonth(m) { return m<=9?String(m):['O','N','D'][m-10]; }
@@ -4125,14 +4125,15 @@ function autoLot(dir) {
   let lot = '';
 
   if (dir === 'tp-in' || dir === 'otp') {
-    // 완제품 LOT: [제품코드]-TGC[Y][M][D]V-[SERIAL]
+    // 완제품 LOT: [제품코드]-TG[Y][M][D][maker]V-[SERIAL]
     const prodCode = (document.getElementById(dir+'-code')||{}).value || '';
     const Y = encodeYear(now.getFullYear());
     const M = encodeMonth(now.getMonth()+1);
     const D = encodeDay(now.getDate());
+    const maker = (typeof lotMakerCode!=='undefined' && lotMakerCode) || 'C'; // 기본값 C(CSC)
     // 오늘 완제품 이력 시리얼
     const seq = txLog.filter(t=>t.dt&&t.dt.startsWith(todayPrefix)&&(t.type==='tp-in'||t.type==='otp')).length + 1;
-    lot = `${prodCode}-TGC${Y}${M}${D}V-${String(seq).padStart(4,'0')}`;
+    lot = `${prodCode}-TG${Y}${M}${D}${maker}V-${String(seq).padStart(4,'0')}`;
   } else {
     // 자재 LOT: LOT-20250614-01
     const seq = txLog.filter(t=>t.dt&&t.dt.startsWith(todayPrefix)).length + 1;
