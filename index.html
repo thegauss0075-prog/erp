@@ -3075,7 +3075,13 @@ let itemDelTarget  = null; // 현재 삭제 대상 품목
 // ── 품목 수정 모달 열기
 function openItemEdit(code) {
   if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
-  const item = allRows().find(r => r.code === code);
+  // ✅ allRows()는 복사본을 반환하므로, DB 원본에서 직접 조회
+  const allDBArrs0 = [DB.tp, DB.btp, DB.kr, DB.vn, DB.vtth];
+  let item = null;
+  for (const arr of allDBArrs0) {
+    const found = arr && arr.find(r => r.code === code);
+    if (found) { item = found; break; }
+  }
   if (!item) return;
   itemEditTarget = item;
 
@@ -3098,7 +3104,18 @@ function openItemEdit(code) {
 async function saveItemEdit() {
   if (!itemEditTarget) return;
   const errEl = document.getElementById('ie-err');
-  const orig  = itemEditTarget;
+
+  // ✅ 핵심 버그 수정: itemEditTarget은 모달 열 때의 스냅샷일 수 있으므로
+  //    저장 직전 DB에서 code로 최신 객체를 다시 조회한다.
+  //    (이전엔 orig가 갱신 안 된 옛 객체를 계속 참조해서 같은 -3이 반복 적용됨)
+  const liveCode = itemEditTarget.code;
+  const allDBArrsLive = [DB.tp, DB.btp, DB.kr, DB.vn, DB.vtth];
+  let orig = null;
+  for (const arr of allDBArrsLive) {
+    const found = arr && arr.find(r => r.code === liveCode);
+    if (found) { orig = found; break; }
+  }
+  if (!orig) orig = itemEditTarget; // 혹시 못 찾으면 기존 값으로 폴백
 
   const newName  = document.getElementById('ie-name').value.trim();
   const newUnit  = document.getElementById('ie-unit').value.trim();
@@ -3114,15 +3131,23 @@ async function saveItemEdit() {
 
   // 재고 변경 시 사유 필수 (전월재고는 변경 대상에서 제외)
   const stockChanged = (newCur !== +orig.cur) || (newWip !== +orig.wip);
-  if (stockChanged && !reason) {
-    errEl.textContent = '재고 수량 변경 시 조정 사유를 반드시 입력해야 합니다.';
+
+  // ✅ 변경사항 없으면 그냥 닫기 (불필요한 이력/서버호출 방지)
+  if (!stockChanged && newName===orig.name && newUnit===(orig.unit||'') &&
+      newModel===(orig.model||'') && newSub===(orig.sub||'')) {
+    closeOv('item-edit-ov');
+    return;
+  }
+
+  if (stockChanged && (!reason || reason.length < 2 || /^[.\s]+$/.test(reason))) {
+    errEl.textContent = '재고 수량 변경 시 의미 있는 조정 사유를 2자 이상 입력해야 합니다.';
     errEl.style.display = 'block';
     return;
   }
 
   // ✅ 로컬 DB 업데이트 - code로 전체 DB 검색 (cat 불일치 문제 해결)
   const allDBArrs = [DB.tp, DB.btp, DB.kr, DB.vn, DB.vtth];
-  let updated = false;
+  let updatedRef = null;
   allDBArrs.forEach(arr => {
     const idx = arr ? arr.findIndex(r => r.code === orig.code) : -1;
     if (idx >= 0) {
@@ -3131,9 +3156,11 @@ async function saveItemEdit() {
         cat: newCat.toUpperCase(),
         cur:newCur, prev:newPrev, wip:newWip, total:newCur + newWip
       };
-      updated = true;
+      updatedRef = arr[idx];
     }
   });
+  // ✅ itemEditTarget을 갱신된 새 객체로 다시 연결 (다음 저장 시 정확한 기준값 사용)
+  if (updatedRef) itemEditTarget = updatedRef;
 
   // 재고 조정 이력 자동 생성
   if (stockChanged) {
@@ -3190,7 +3217,12 @@ async function saveItemEdit() {
 // ── 품목 비활성화 모달
 function openItemDel(code) {
   if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
-  const item = allRows().find(r => r.code === code);
+  const allDBArrs0b = [DB.tp, DB.btp, DB.kr, DB.vn, DB.vtth];
+  let item = null;
+  for (const arr of allDBArrs0b) {
+    const found = arr && arr.find(r => r.code === code);
+    if (found) { item = found; break; }
+  }
   if (!item) return;
   itemDelTarget = item;
 
