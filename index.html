@@ -108,6 +108,8 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 .dest-btn{flex:1;padding:8px 10px;border-radius:8px;border:1px solid #dde;background:#f5f6f8;font-size:13px;cursor:pointer;color:#555;font-weight:500;transition:all .15s}
 .dest-btn.on{background:#1d4ed8;color:#fff;border-color:#1d4ed8;font-weight:700}
 .dest-btn:hover:not(.on){background:#eef2fb}
+#dest-ng.on{background:#991b1b!important;border-color:#991b1b!important;color:#fff!important}
+#dest-ng:hover:not(.on){background:#fee2e2!important}
 
 /* ── 등록 확인 패널 (폼 바로 아래) ── */
 .cp{display:none;border-radius:12px;padding:1.4rem;margin-bottom:1rem}
@@ -577,7 +579,12 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
           <div class="dest-btns">
             <button class="dest-btn on" id="dest-kr" onclick="setDest('KR')">🏠 한국 (KR)</button>
             <button class="dest-btn" id="dest-sol" onclick="setDest('Soluem Vina')">🏭 솔루엠비나</button>
+            <button class="dest-btn" id="dest-ng" onclick="setDest('NG')" style="border-color:#fca5a5">⚠️ NG 창고 (불량 이동)</button>
           </div>
+        </div>
+        <div class="fr" id="otp-ng-reason-row" style="display:none;grid-column:1/-1">
+          <label>불량 원인 / Lý do NG *</label>
+          <input id="otp-ng-reason" placeholder="예: 외관 불량, 치수 불량 등">
         </div>
         <div class="fr"><label>비고 / Ghi chú</label><input id="otp-note" placeholder="(선택사항)"></div>
       </div>
@@ -1433,7 +1440,16 @@ function setIOTab(t){
   });
 }
 
-function setDest(d){curDest=d;document.getElementById('dest-kr').classList.toggle('on',d==='KR');document.getElementById('dest-sol').classList.toggle('on',d==='Soluem Vina');}
+function setDest(d){
+  curDest=d;
+  document.getElementById('dest-kr').classList.toggle('on',d==='KR');
+  document.getElementById('dest-sol').classList.toggle('on',d==='Soluem Vina');
+  const ngBtn = document.getElementById('dest-ng');
+  if(ngBtn) ngBtn.classList.toggle('on', d==='NG');
+  // ✅ NG 창고 선택 시 불량 원인 입력란 표시
+  const reasonRow = document.getElementById('otp-ng-reason-row');
+  if(reasonRow) reasonRow.style.display = (d==='NG') ? 'block' : 'none';
+}
 function setED(d){editDest=d;document.getElementById('edit-dest-kr').classList.toggle('on',d==='KR');document.getElementById('edit-dest-sol').classList.toggle('on',d==='Soluem Vina');}
 
 function initMS(){
@@ -1664,6 +1680,16 @@ function showCP(dir){
     }
   }
 
+  // ✅ NG 창고 이동 시 불량 원인 필수
+  let ngReason = '';
+  if(dir==='otp' && dest==='NG'){
+    ngReason = (document.getElementById('otp-ng-reason')||{}).value?.trim() || '';
+    if(!ngReason || ngReason.length < 2){
+      alert('⚠️ NG 창고로 이동 시 불량 원인을 2자 이상 입력해야 합니다.');
+      return;
+    }
+  }
+
   // ── LOT 잔여량 초과 차단 (자재 출고 omt, SELECT 드롭다운 LOT 선택 시)
   let lotWarn = '';
   if(dir==='omt' && lot && lot!=='__nolot__') {
@@ -1701,7 +1727,12 @@ function showCP(dir){
   ];
   if(lot && lot!=='__nolot__') rows.push(['LOT No.',`<strong style="color:#1d4ed8;font-family:monospace">${lot}</strong>${lotWarn?` <span style="color:#b91c1c;font-size:12px"> ${lotWarn}</span>`:''}`]);
   if(lot==='__nolot__') rows.push(['LOT No.','<span style="color:#92400e">⚠️ LOT 미지정 출고</span>']);
-  if(dest)rows.push(['출고처',`<span class="badge ${dest==='KR'?'b-dest-kr':'b-dest-sol'}">${dest==='KR'?'🏠 한국 (KR)':'🏭 솔루엠비나'}</span>`]);
+  if(dest==='NG'){
+    rows.push(['출고처',`<span class="badge b-ng">⚠️ NG 창고 (불량 이동)</span>`]);
+    rows.push(['불량 원인',`<strong style="color:#991b1b">${ngReason}</strong>`]);
+  } else if(dest){
+    rows.push(['출고처',`<span class="badge ${dest==='KR'?'b-dest-kr':'b-dest-sol'}">${dest==='KR'?'🏠 한국 (KR)':'🏭 솔루엠비나'}</span>`]);
+  }
   // 제조사 (CORE 자재)
   const makerEl = document.getElementById(dir+'-maker');
   const maker = makerEl ? makerEl.value : '';
@@ -1728,10 +1759,18 @@ function doSubmit(dir){
   const noteBase=document.getElementById(dir+'-note').value.trim();
   const makerElD=document.getElementById(dir+'-maker');
   const makerVal=makerElD?makerElD.value:'';
-  const note = makerVal ? (noteBase ? `[${makerVal}] ${noteBase}` : `[제조사: ${makerVal}]`) : noteBase;
+  let note = makerVal ? (noteBase ? `[${makerVal}] ${noteBase}` : `[제조사: ${makerVal}]`) : noteBase;
   const lotEl=document.getElementById(dir+'-lot');
   const lot=lotEl?(lotEl.tagName==='SELECT'?lotEl.value:lotEl.value.trim()):'';
   const dest=dir==='otp'?curDest:null;
+
+  // ✅ NG 창고 이동 여부 및 사유
+  const isNGMove = (dir==='otp' && dest==='NG');
+  let ngReason = '';
+  if(isNGMove){
+    ngReason = (document.getElementById('otp-ng-reason')||{}).value?.trim() || '';
+    note = note ? `[NG이동] ${ngReason} / ${note}` : `[NG이동] ${ngReason}`;
+  }
 
   // ✅ 2차 방어: 전체 DB에서 code로 직접 조회
   const isOutType = ['omt','otp'].includes(dir);
@@ -1748,6 +1787,7 @@ function doSubmit(dir){
   const cat=catKey(catTxt);
   const isIn=!!IS_IN_TYPE[dir];
   const dt=vnDt();
+  // NG 이동인 경우 dest는 'NG'로 기록되어 이력에서 구분 가능
   txLog.push({id:Date.now(),type:dir,code,name,cat,unit,qty,note,lot,dt,dest});
   const arr={TP:DB.tp,BTP:DB.btp,KR:DB.kr,VN:DB.vn,VTTH:DB.vtth}[cat];
   const item=arr&&arr.find(r=>r.code===code);
@@ -1755,10 +1795,44 @@ function doSubmit(dir){
     if(isIn){item.cur+=qty;item.total+=qty;}
     else{item.cur=Math.max(0,item.cur-qty);item.total=Math.max(0,item.total-qty);}
   }
+
+  // ✅ NG 창고 이동: 완제품 재고 차감(위에서 처리됨) + 불량(NG) 재고에 동시 입고
+  if(isNGMove){
+    const model = item ? (item.model || getModel(item.code, item.name)) : getModel(code, name);
+    let ngItem = DB.ng.find(r=>r.code===code);
+    if(!ngItem){
+      ngItem = {type:'TP', code, name, unit, prev:0, inng:0, cur:0, model: model||'기타'};
+      DB.ng.push(ngItem);
+    }
+    ngItem.cur  = +(ngItem.cur  + qty).toFixed(4);
+    ngItem.inng = +(ngItem.inng + qty).toFixed(4);
+
+    // 불량 입고 이력도 함께 생성 (불량(NG) 탭 이력에도 표시되도록)
+    const ngLogEntry = {
+      id: Date.now()+1, type:'ng-in', code, name,
+      cat:'TP', unit, qty,
+      note: `[완제품→NG 이동] ${ngReason}`,
+      reason: ngReason,
+      dt, user: CURRENT_USER||''
+    };
+    ngLog.push(ngLogEntry);
+
+    // 서버에도 NG 입고 반영 (doSubmitOnline에서 addTx는 처리하지만 addNG는 별도 필요)
+    if(API_URL || IS_GAS){
+      api('addNG', {...ngLogEntry, token: ADMIN_TOKEN}).catch(()=>{});
+    }
+  }
+
   ['q','code','name','cat','unit','qty','note','lot'].forEach(f=>{const el=document.getElementById(dir+'-'+f);if(el)el.value='';});
   // 제조사 필드 초기화
   const mkEl=document.getElementById(dir+'-maker');if(mkEl)mkEl.value='';
   const mkRow=document.getElementById(dir+'-maker-row');if(mkRow)mkRow.style.display='none';
+  // ✅ NG 사유 입력란 및 출고처 선택 초기화
+  if(dir==='otp'){
+    const ngReasonEl=document.getElementById('otp-ng-reason'); if(ngReasonEl) ngReasonEl.value='';
+    const ngReasonRow=document.getElementById('otp-ng-reason-row'); if(ngReasonRow) ngReasonRow.style.display='none';
+    setDest('KR'); // 출고처 기본값으로 복귀
+  }
   // omt/otp 출고 시 LOT 드롭다운 초기화
   if(dir==='omt'||dir==='otp'){
     const sel=document.getElementById(dir+'-lot');
@@ -1769,7 +1843,7 @@ function doSubmit(dir){
     if(cnt)cnt.textContent='';
   }
   const stockEl=document.getElementById(dir+'-stock');if(stockEl)stockEl.value='';
-  renderIOTable();initDashboard(); initPrintDates();
+  renderIOTable();initDashboard(); initPrintDates(); renderNG(); renderNGLog();
   window.scrollTo({top:document.getElementById('io-body').getBoundingClientRect().top+window.scrollY-80,behavior:'smooth'});
 }
 
