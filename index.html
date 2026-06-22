@@ -3145,7 +3145,43 @@ async function saveItemEdit() {
     return;
   }
 
-  // ✅ 로컬 DB 업데이트 - code로 전체 DB 검색 (cat 불일치 문제 해결)
+  // ✅ 핵심 수정: 서버 반영을 먼저 확정한 뒤에만 로컬 DB/이력을 변경한다.
+  //    (기존엔 로컬을 먼저 바꾸고 서버가 실패하면, 다음 자동 syncNow가
+  //     서버의 옛 값으로 로컬을 덮어써서 "이력만 쌓이고 수량은 안 바뀌는" 현상 발생)
+  if (API_URL || IS_GAS) {
+    let res = await api('editItem', {
+      code:orig.code, name:newName, unit:newUnit, model:newModel,
+      sub:newSub, cat:newCat.toUpperCase(), cur:newCur, prev:newPrev, wip:newWip,
+      total:newCur + newWip,
+      token: ADMIN_TOKEN
+    });
+
+    // 토큰 문제면 즉시 중단 + 재로그인 안내 (로컬 변경 전혀 없음)
+    if (res && res.error && (res.error.includes('토큰') || res.error.includes('세션') || res.error.includes('로그인'))) {
+      errEl.textContent = '⚠️ ' + res.error + ' (관리자 로그아웃 후 재로그인 필요)';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    // Sheets에 없는 품목이면 addItem으로 추가
+    if (!res || !res.ok) {
+      if (res && res.error && res.error.includes('품목 없음')) {
+        res = await api('addItem', {
+          code:orig.code, name:newName, unit:newUnit, model:newModel,
+          sub:newSub, cat:newCat.toUpperCase(), cur:newCur, prev:newPrev, wip:newWip,
+          total:newCur + newWip,
+          token: ADMIN_TOKEN
+        });
+      }
+      if (!res || !res.ok) {
+        errEl.textContent = '서버 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류') + ' (로컬도 변경되지 않았습니다)';
+        errEl.style.display = 'block';
+        return; // ✅ 서버 실패 시 아래 로컬 DB/이력 코드까지 도달하지 않음
+      }
+    }
+  }
+
+  // ✅ 서버 반영 성공(또는 서버 미연동 환경) 후에만 로컬 DB 업데이트
   const allDBArrs = [DB.tp, DB.btp, DB.kr, DB.vn, DB.vtth];
   let updatedRef = null;
   allDBArrs.forEach(arr => {
@@ -3159,10 +3195,9 @@ async function saveItemEdit() {
       updatedRef = arr[idx];
     }
   });
-  // ✅ itemEditTarget을 갱신된 새 객체로 다시 연결 (다음 저장 시 정확한 기준값 사용)
   if (updatedRef) itemEditTarget = updatedRef;
 
-  // 재고 조정 이력 자동 생성
+  // 재고 조정 이력 자동 생성 (서버 반영 성공 후에만)
   if (stockChanged) {
     const adjLog = {
       id: Date.now(), type: 'adjust', code: orig.code, name: newName,
@@ -3174,38 +3209,13 @@ async function saveItemEdit() {
       prevStock: +orig.cur, newStock: newCur, reason
     };
     txLog.unshift(adjLog);
+    // 이력도 서버에 저장
+    if (API_URL || IS_GAS) {
+      await api('addTx', {...adjLog, token: ADMIN_TOKEN});
+    }
   }
 
-  // ✅ API 서버 반영 - IS_GAS 포함
   if (API_URL || IS_GAS) {
-    // 먼저 editItem 시도, 품목 없음 오류 시 addItem으로 신규 추가
-    let res = await api('editItem', {
-      code:orig.code, name:newName, unit:newUnit, model:newModel,
-      sub:newSub, cat:newCat.toUpperCase(), cur:newCur, prev:newPrev, wip:newWip,
-      total:newCur + newWip,
-      token: ADMIN_TOKEN
-    });
-    // Sheets에 없는 품목이면 addItem으로 추가
-    if (!res || !res.ok) {
-      if (res && res.error && res.error.includes('품목 없음')) {
-        res = await api('addItem', {
-          code:orig.code, name:newName, unit:newUnit, model:newModel,
-          sub:newSub, cat:newCat.toUpperCase(), cur:newCur, prev:newPrev, wip:newWip,
-          total:newCur + newWip,
-          token: ADMIN_TOKEN
-        });
-      }
-      if (!res || !res.ok) {
-        errEl.textContent = '서버 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류');
-        errEl.style.display = 'block';
-        return;
-      }
-    }
-    // 재고 조정 이력도 서버에 저장
-    if (stockChanged) {
-      await api('addTx', {...txLog[0], token: ADMIN_TOKEN});
-    }
-    // 동기화로 서버 최신값 반영
     await syncNow();
   }
 
