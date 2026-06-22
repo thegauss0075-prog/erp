@@ -1245,6 +1245,21 @@ function fmtDt(str) {
   return s; // 이미 "MM/dd HH:mm" 형식
 }
 
+// ✅ 출고처(dest) 배지 HTML 생성 공통 함수 - KR/솔루엠비나/NG 정확히 구분
+// (이전엔 dest==='KR' 가 아니면 무조건 "솔루엠비나"로 표시하는 버그가 있었음)
+function destBadge(dest) {
+  if (!dest) return '';
+  if (dest === 'KR')  return ` <span class="badge b-dest-kr">한국</span>`;
+  if (dest === 'NG')  return ` <span class="badge b-ng">⚠️ NG창고</span>`;
+  return ` <span class="badge b-dest-sol">솔루엠비나</span>`;
+}
+function destText(dest) {
+  if (!dest) return '';
+  if (dest === 'KR') return '한국';
+  if (dest === 'NG') return 'NG창고';
+  return '솔루엠비나';
+}
+
 let txLog=[],acIdx={in:-1,otp:-1,omt:-1},acResults={in:[],otp:[],omt:[]};
 let curSubFilter='';
 
@@ -1816,11 +1831,7 @@ function doSubmit(dir){
       dt, user: CURRENT_USER||''
     };
     ngLog.push(ngLogEntry);
-
-    // 서버에도 NG 입고 반영 (doSubmitOnline에서 addTx는 처리하지만 addNG는 별도 필요)
-    if(API_URL || IS_GAS){
-      api('addNG', {...ngLogEntry, token: ADMIN_TOKEN}).catch(()=>{});
-    }
+    // ✅ 서버 전송은 doSubmitOnline에서 await로 책임지고 처리 (경쟁상태 방지)
   }
 
   ['q','code','name','cat','unit','qty','note','lot'].forEach(f=>{const el=document.getElementById(dir+'-'+f);if(el)el.value='';});
@@ -1870,7 +1881,7 @@ function renderIOTable(){
       <td style="color:#666">${t.unit}</td>
       <td style="text-align:right;font-weight:700" class="${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty}</td>
       <td style="font-family:monospace;font-size:12px;color:#1d4ed8">${t.lot||'<span class="dim">—</span>'}</td>
-      <td>${t.dest?`<span class="badge ${t.dest==='KR'?'b-dest-kr':'b-dest-sol'}">${t.dest==='KR'?'한국':'솔루엠비나'}</span>`:t.reason||'<span class="dim">—</span>'}</td>
+      <td>${t.dest?destBadge(t.dest):t.reason||'<span class="dim">—</span>'}</td>
       <td style="font-size:12px;color:#888">${t.note||'—'}</td>
       <td style="display:flex;gap:5px">
         ${isAdmin ? `<button class="edit-btn" onclick="openEditUnified(${t.id},'${t.type}')">✏️</button>
@@ -1932,7 +1943,7 @@ function saveEdit(){
 function openDel(id){
   delTargetId=id;const t=txLog.find(x=>x.id===id);if(!t)return;
   const tL={in:'자재 입고',otp:'완제품 출고',omt:'자재 출고'};
-  document.getElementById('del-info').innerHTML=`<strong>${tL[t.type]}</strong> · ${t.code}<br>${t.name} · <strong>${t.type==='in'?'+':'−'}${t.qty.toLocaleString()} ${t.unit}</strong>${t.dest?` · ${t.dest==='KR'?'한국':'솔루엠비나'}`:''}<br><small>${fmtDt(t.dt)}</small>`;
+  document.getElementById('del-info').innerHTML=`<strong>${tL[t.type]}</strong> · ${t.code}<br>${t.name} · <strong>${t.type==='in'?'+':'−'}${t.qty.toLocaleString()} ${t.unit}</strong>${t.dest?` · ${destText(t.dest)}`:''}<br><small>${fmtDt(t.dt)}</small>`;
   document.getElementById('del-ov').classList.add('show');
 }
 function confirmDel(){
@@ -1981,7 +1992,7 @@ function renderHist(){
     const isIn=!!isInType[t.type];
     const qty=t.qty%1?t.qty.toFixed(2):t.qty.toLocaleString();
     const catName=CL[t.cat]||t.cat||'';
-    return`<div class="hitem" data-code="${t.code}"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle"><span onclick="openTrace('${t.code}')" style="cursor:pointer;font-weight:600" title="이력 추적">${t.name}</span> <code style="font-size:11px;color:#888">${t.code}</code>${t.dest?` <span class="badge ${t.dest==='KR'?'b-dest-kr':'b-dest-sol'}" style="font-size:11px">${t.dest==='KR'?'한국':'솔루엠비나'}</span>`:t.lot?` <span style="font-size:11px;color:#1d4ed8;font-family:monospace">LOT:${t.lot}</span>`:''}</div><div class="hmeta">${typeName}${catName?' · '+catName:''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div>
+    return`<div class="hitem" data-code="${t.code}"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle"><span onclick="openTrace('${t.code}')" style="cursor:pointer;font-weight:600" title="이력 추적">${t.name}</span> <code style="font-size:11px;color:#888">${t.code}</code>${t.dest?destBadge(t.dest):t.lot?` <span style="font-size:11px;color:#1d4ed8;font-family:monospace">LOT:${t.lot}</span>`:''}</div><div class="hmeta">${typeName}${catName?' · '+catName:''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div>
       <button onclick="openTrace('${t.code}')" title="이력 추적" style="padding:2px 7px;border-radius:4px;border:1px solid #7c3aed;background:#faf5ff;color:#7c3aed;cursor:pointer;font-size:11px;margin-left:4px;white-space:nowrap">🔍</button>
     </div>`;
   }).join('');
@@ -2457,7 +2468,7 @@ function initDashboard(){
     const cls=iC[t.type]||'h-in';
     const isIn=!!isInMap[t.type];
     const qty=t.qty%1?t.qty.toFixed(2):t.qty.toLocaleString();
-    return`<div class="hitem"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle">${t.name}${t.dest?` <span class="badge ${t.dest==='KR'?'b-dest-kr':'b-dest-sol'}" style="font-size:11px">${t.dest==='KR'?'한국':'솔루엠비나'}</span>`:''}</div><div class="hmeta">${CL[t.cat]||t.cat||''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div></div>`;
+    return`<div class="hitem"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle">${t.name}${t.dest?destBadge(t.dest):''}</div><div class="hmeta">${CL[t.cat]||t.cat||''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div></div>`;
   }).join('');
 }
 
@@ -2996,7 +3007,11 @@ async function doSubmitOnline(dir) {
     }
   }
 
+  // ✅ NG 창고 이동 여부 - doSubmit 실행 전에 미리 판단 (curDest는 doSubmit 안에서 리셋되므로 먼저 캡처)
+  const isNGMoveOnline = (dir==='otp' && curDest==='NG');
+
   if (_origDoSubmit) _origDoSubmit(dir);
+
   if (API_URL || IS_GAS) {
     // doSubmit이 txLog 앞에 push하지 않고 뒤에 push하므로 마지막 항목 사용
     const last = txLog[txLog.length - 1];
@@ -3006,6 +3021,25 @@ async function doSubmitOnline(dir) {
         console.warn('addTx 서버 저장 실패 (로컬에는 저장됨):', res && res.error);
       }
     }
+
+    // ✅ NG 이동이었으면 addNG도 반드시 await로 완료 보장 (경쟁상태 방지 핵심 수정)
+    if (isNGMoveOnline) {
+      const lastNG = ngLog[ngLog.length - 1];
+      if (lastNG) {
+        let ngRes = await api('addNG', {...lastNG, token: ADMIN_TOKEN});
+        // 실패 시 1회 재시도
+        if (!ngRes || !ngRes.ok) {
+          console.warn('addNG 1차 실패, 재시도:', ngRes && ngRes.error);
+          ngRes = await api('addNG', {...lastNG, token: ADMIN_TOKEN});
+        }
+        if (!ngRes || !ngRes.ok) {
+          alert(`⚠️ 불량(NG) 재고 서버 반영 실패: ${ngRes && ngRes.error ? ngRes.error : '알 수 없는 오류'}\n\n로컬에는 반영되었으나, 다음 동기화 시 누락될 수 있습니다.\n관리자에게 문의하거나 잠시 후 다시 동기화해주세요.`);
+        }
+      }
+    }
+
+    // ✅ 모든 서버 저장이 끝난 뒤에만 동기화 (그래야 NG 변경이 덮어써지지 않음)
+    await syncNow();
   }
 }
 
