@@ -104,8 +104,8 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 .ac-sub{font-size:11px;color:#888;margin-top:2px}
 
 /* dest buttons */
-.dest-btns{display:flex;gap:8px;margin-top:4px}
-.dest-btn{flex:1;padding:8px 10px;border-radius:8px;border:1px solid #dde;background:#f5f6f8;font-size:13px;cursor:pointer;color:#555;font-weight:500;transition:all .15s}
+.dest-btns{display:flex;gap:8px;margin-top:4px;flex-wrap:wrap}
+.dest-btn{flex:1;min-width:140px;padding:8px 10px;border-radius:8px;border:1px solid #dde;background:#f5f6f8;font-size:13px;cursor:pointer;color:#555;font-weight:500;transition:all .15s;white-space:nowrap}
 .dest-btn.on{background:#1d4ed8;color:#fff;border-color:#1d4ed8;font-weight:700}
 .dest-btn:hover:not(.on){background:#eef2fb}
 #dest-ng.on{background:#991b1b!important;border-color:#991b1b!important;color:#fff!important}
@@ -574,12 +574,12 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
           </select>
           <div id="otp-lot-info" style="display:none;background:#eff6ff;border-radius:7px;padding:8px 12px;font-size:12px;color:#1e3a8a;margin-top:4px"></div>
         </div>
-        <div class="fr">
+        <div class="fr" style="grid-column:1/-1">
           <label>출고처 * / Điểm xuất *</label>
           <div class="dest-btns">
             <button class="dest-btn on" id="dest-kr" onclick="setDest('KR')">🏠 한국 (KR)</button>
             <button class="dest-btn" id="dest-sol" onclick="setDest('Soluem Vina')">🏭 솔루엠비나</button>
-            <button class="dest-btn" id="dest-ng" onclick="setDest('NG')" style="border-color:#fca5a5">⚠️ NG 창고 (불량 이동)</button>
+            <button class="dest-btn" id="dest-ng" onclick="setDest('NG')" style="border-color:#fca5a5;border-width:2px">⚠️ NG 창고 (불량 이동)</button>
           </div>
         </div>
         <div class="fr" id="otp-ng-reason-row" style="display:none;grid-column:1/-1">
