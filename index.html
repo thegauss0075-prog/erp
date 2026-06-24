@@ -1769,7 +1769,7 @@ function hideCP(dir){
   const cp=document.getElementById('cp-'+dir);if(cp)cp.style.display='none';
 }
 
-function doSubmit(dir){
+async function doSubmit(dir){
   hideCP(dir);
   const code=document.getElementById(dir+'-code').value.trim();
   const name=document.getElementById(dir+'-name').value.trim();
@@ -1784,15 +1784,19 @@ function doSubmit(dir){
   const lot=lotEl?(lotEl.tagName==='SELECT'?lotEl.value:lotEl.value.trim()):'';
   const dest=dir==='otp'?curDest:null;
 
-  // ✅ NG 창고 이동 여부 및 사유
+  if(!code){ alert('품목을 먼저 선택하세요.'); return; }
+  if(!qty || qty<=0){ alert('수량을 올바르게 입력하세요.'); return; }
+
+  // ✅ NG 창고 이동 여부 및 사유 (curDest는 아래에서 리셋되므로 미리 캡처)
   const isNGMove = (dir==='otp' && dest==='NG');
   let ngReason = '';
   if(isNGMove){
     ngReason = (document.getElementById('otp-ng-reason')||{}).value?.trim() || '';
+    if(!ngReason || ngReason.length<2){ alert('⚠️ NG 창고 이동 시 불량 원인을 2자 이상 입력해주세요.'); return; }
     note = note ? `[NG이동] ${ngReason} / ${note}` : `[NG이동] ${ngReason}`;
   }
 
-  // ✅ 2차 방어: 전체 DB에서 code로 직접 조회
+  // ✅ 출고 시 현재 DB 재고로 1차 검증 (서버 호출 전)
   const isOutType = ['omt','otp'].includes(dir);
   if(isOutType){
     const allItems = [...DB.tp,...DB.btp,...DB.kr,...DB.vn,...DB.vtth];
@@ -1807,8 +1811,68 @@ function doSubmit(dir){
   const cat=catKey(catTxt);
   const isIn=!!IS_IN_TYPE[dir];
   const dt=vnDt();
-  // NG 이동인 경우 dest는 'NG'로 기록되어 이력에서 구분 가능
-  txLog.push({id:Date.now(),type:dir,code,name,cat,unit,qty,note,lot,dt,dest});
+  const txEntry = {id:Date.now(),type:dir,code,name,cat,unit,qty,note,lot,dt,dest};
+
+  // NG 이동 시 동시에 생성할 불량입고 이력
+  let ngLogEntry = null;
+  if(isNGMove){
+    ngLogEntry = {
+      id: Date.now()+1, type:'ng-in', code, name, cat:'TP', unit, qty,
+      note: `[완제품→NG 이동] ${ngReason}`, reason: ngReason, dt, user: CURRENT_USER||''
+    };
+  }
+
+  // ✅ 핵심 수정: 서버 반영을 먼저 확정한 뒤에만 로컬 DB/이력을 변경한다.
+  //    (기존엔 로컬을 먼저 바꾸고 서버 호출이 실패하면, 다음 자동 syncNow가
+  //     서버의 옛 값으로 로컬을 덮어써서 "출고/이동했는데 사라지는" 현상이 발생했음)
+  if (API_URL || IS_GAS) {
+    // 1) 서버 최신 재고로 재검증 (다른 사용자가 그 사이 출고했을 가능성 대비)
+    if (isOutType) {
+      const ar = await api('getAll');
+      if (ar.ok && ar.data) {
+        const allRemote = [...(ar.data.tp||[]),...(ar.data.btp||[]),...(ar.data.kr||[]),...(ar.data.vn||[]),...(ar.data.vtth||[])];
+        const remote = allRemote.find(r=>r.code===code);
+        const serverStock = remote ? (+remote.cur||0) : 0;
+        if (serverStock <= 0 || qty > serverStock) {
+          alert(`⛔ 서버 재고 부족으로 출고 취소\n\n서버 현재고: ${serverStock.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}\n\n동기화 후 재시도해주세요.`);
+          await syncNow();
+          return;
+        }
+      }
+    }
+
+    // 2) addTx 확정
+    let res = await api('addTx', {...txEntry, token: ADMIN_TOKEN, user: CURRENT_USER||''});
+    if (!res || !res.ok) {
+      console.warn('addTx 1차 실패, 재시도:', res && res.error);
+      res = await api('addTx', {...txEntry, token: ADMIN_TOKEN, user: CURRENT_USER||''});
+    }
+    if (res && res.error && (res.error.includes('토큰')||res.error.includes('세션')||res.error.includes('로그인'))) {
+      alert(`⚠️ ${res.error}\n관리자 로그아웃 후 재로그인이 필요합니다.\n등록이 저장되지 않았습니다.`);
+      return; // ✅ 로컬도 전혀 변경하지 않음
+    }
+    if (!res || !res.ok) {
+      alert(`⚠️ 서버 저장 실패: ${res && res.error ? res.error : '알 수 없는 오류'}\n등록이 저장되지 않았습니다.`);
+      return; // ✅ 서버 실패 시 로컬도 변경하지 않음
+    }
+
+    // 3) NG 이동이면 addNG도 반드시 확정
+    if (isNGMove) {
+      let ngRes = await api('addNG', {...ngLogEntry, token: ADMIN_TOKEN});
+      if (!ngRes || !ngRes.ok) {
+        console.warn('addNG 1차 실패, 재시도:', ngRes && ngRes.error);
+        ngRes = await api('addNG', {...ngLogEntry, token: ADMIN_TOKEN});
+      }
+      if (!ngRes || !ngRes.ok) {
+        alert(`⚠️ 완제품 출고는 서버에 반영됐지만, 불량(NG) 재고 반영은 실패했습니다: ${ngRes && ngRes.error ? ngRes.error : '알 수 없는 오류'}\n\n불량(NG) 탭에서 해당 품목을 확인하고 필요 시 수동으로 보정해주세요.`);
+        // ✅ 완제품 출고분은 이미 서버에 확정됐으므로 그대로 로컬에 반영 (NG만 누락된 상태로 진행)
+        ngLogEntry = null;
+      }
+    }
+  }
+
+  // ✅ 서버 반영 성공(또는 서버 미연동 환경) 후에만 로컬 DB/이력 반영
+  txLog.push(txEntry);
   const arr={TP:DB.tp,BTP:DB.btp,KR:DB.kr,VN:DB.vn,VTTH:DB.vtth}[cat];
   const item=arr&&arr.find(r=>r.code===code);
   if(item){
@@ -1816,8 +1880,7 @@ function doSubmit(dir){
     else{item.cur=Math.max(0,item.cur-qty);item.total=Math.max(0,item.total-qty);}
   }
 
-  // ✅ NG 창고 이동: 완제품 재고 차감(위에서 처리됨) + 불량(NG) 재고에 동시 입고
-  if(isNGMove){
+  if(isNGMove && ngLogEntry){
     const model = item ? (item.model || getModel(item.code, item.name)) : getModel(code, name);
     let ngItem = DB.ng.find(r=>r.code===code);
     if(!ngItem){
@@ -1826,17 +1889,7 @@ function doSubmit(dir){
     }
     ngItem.cur  = +(ngItem.cur  + qty).toFixed(4);
     ngItem.inng = +(ngItem.inng + qty).toFixed(4);
-
-    // 불량 입고 이력도 함께 생성 (불량(NG) 탭 이력에도 표시되도록)
-    const ngLogEntry = {
-      id: Date.now()+1, type:'ng-in', code, name,
-      cat:'TP', unit, qty,
-      note: `[완제품→NG 이동] ${ngReason}`,
-      reason: ngReason,
-      dt, user: CURRENT_USER||''
-    };
     ngLog.push(ngLogEntry);
-    // ✅ 서버 전송은 doSubmitOnline에서 await로 책임지고 처리 (경쟁상태 방지)
   }
 
   ['q','code','name','cat','unit','qty','note','lot'].forEach(f=>{const el=document.getElementById(dir+'-'+f);if(el)el.value='';});
@@ -1860,7 +1913,16 @@ function doSubmit(dir){
   }
   const stockEl=document.getElementById(dir+'-stock');if(stockEl)stockEl.value='';
   renderIOTable();initDashboard(); initPrintDates(); renderNG(); renderNGLog();
+
+  // ✅ 동기화로 서버 최신값 재확인
+  if (API_URL || IS_GAS) await syncNow();
+
   window.scrollTo({top:document.getElementById('io-body').getBoundingClientRect().top+window.scrollY-80,behavior:'smooth'});
+}
+
+// ✅ doSubmit이 이제 서버 호출까지 모두 책임지므로, 이 함수는 단순 위임만 한다.
+async function doSubmitOnline(dir) {
+  await doSubmit(dir);
 }
 
 function renderIOTable(){
@@ -2299,7 +2361,7 @@ function showCPng(dir){
 }
 function hideCPng(dir){const cp=document.getElementById('cp-'+dir);if(cp)cp.style.display='none';}
 
-function doSubmitNG(dir){
+async function doSubmitNG(dir){
   hideCPng(dir);
   const code=document.getElementById(dir+'-code').value.trim();
   const name=document.getElementById(dir+'-name').value.trim();
@@ -2310,27 +2372,58 @@ function doSubmitNG(dir){
   const reason=dir==='ngo'?document.getElementById('ngo-reason').value:'';
   const isIn=dir==='ngi';
 
-  // DB.ng에 해당 품목 있으면 업데이트, 없으면 신규 추가
-  let ngItem=DB.ng.find(r=>r.code===code);
+  if(!code){ alert('품목을 먼저 선택하세요.'); return; }
+  if(!qty || qty<=0){ alert('수량을 올바르게 입력하세요.'); return; }
+
+  // 기존 품목 정보(있으면) + 신규 시 메타정보 준비 (로컬엔 아직 반영 안 함)
+  const codeEl=document.getElementById(dir+'-code');
+  const savedModel=codeEl?codeEl.dataset.model||'':'';
+  const savedType=codeEl?codeEl.dataset.type||'mat':'mat';
+  const srcItem=allRows().find(r=>r.code===code);
+  const finalModel=savedModel||(srcItem&&srcItem.model?srcItem.model:'기타');
+  const existing = DB.ng.find(r=>r.code===code);
+
+  // ✅ 출고 시 현재 불량재고로 초과 출고 차단 (서버 호출 전 1차 체크)
+  if(!isIn){
+    const curStock = existing ? (+existing.cur||0) : 0;
+    if(curStock<=0 || qty>curStock){
+      alert(`⛔ 불량 출고 불가\n현재 불량재고: ${curStock.toLocaleString()} ${unit}\n요청: ${qty.toLocaleString()} ${unit}`);
+      return;
+    }
+  }
+
+  const dt=vnDt();
+  const cat=(codeEl&&codeEl.dataset&&codeEl.dataset.invcat?codeEl.dataset.invcat:'').toUpperCase()||savedType||'KR';
+  const ngLogEntry={id:Date.now(),type:isIn?'ng-in':'ng-out',code,name,cat,unit,qty,note,reason,dt,user:CURRENT_USER||'',model:existing?existing.model:finalModel};
+
+  // ✅ 핵심 수정: 서버 반영을 먼저 확정한 뒤에만 로컬 DB/이력을 변경한다.
+  //    (기존엔 로컬을 먼저 바꾸고 서버 호출이 실패하면, 다음 자동 syncNow가
+  //     서버의 옛 값으로 로컬을 덮어써서 "누적이 안 되는" 현상이 발생했음)
+  if(API_URL || IS_GAS){
+    let res = await api('addNG', {...ngLogEntry, token: ADMIN_TOKEN});
+    if(!res || !res.ok){
+      console.warn('addNG 1차 실패, 재시도:', res && res.error);
+      res = await api('addNG', {...ngLogEntry, token: ADMIN_TOKEN}); // 1회 재시도
+    }
+    if(res && res.error && (res.error.includes('토큰')||res.error.includes('세션')||res.error.includes('로그인'))){
+      alert(`⚠️ ${res.error}\n관리자 로그아웃 후 재로그인이 필요합니다.\n등록이 저장되지 않았습니다.`);
+      return; // ✅ 로컬도 전혀 변경하지 않음
+    }
+    if(!res || !res.ok){
+      alert(`⚠️ 불량(NG) 서버 저장 실패: ${res && res.error ? res.error : '알 수 없는 오류'}\n등록이 저장되지 않았습니다. 동기화 상태를 확인 후 다시 시도해주세요.`);
+      return; // ✅ 서버 실패 시 로컬도 변경하지 않음 → 더 이상 "유령 등록" 없음
+    }
+  }
+
+  // ✅ 서버 반영 성공(또는 서버 미연동 환경) 후에만 로컬 DB 업데이트
+  let ngItem = DB.ng.find(r=>r.code===code);
   if(!ngItem){
-    // acPickNG에서 저장한 model/type 정보 활용
-    const codeEl=document.getElementById(dir+'-code');
-    const savedModel=codeEl?codeEl.dataset.model||'':'';
-    const savedType=codeEl?codeEl.dataset.type||'mat':'mat';
-    // 전체 재고에서 모델 보완
-    const srcItem=allRows().find(r=>r.code===code);
-    const finalModel=savedModel||(srcItem&&srcItem.model?srcItem.model:'기타');
     ngItem={type:savedType,code,name,unit,prev:0,inng:0,cur:0,model:finalModel};
     DB.ng.push(ngItem);
   }
   if(isIn){ngItem.cur=+(ngItem.cur+qty).toFixed(4);ngItem.inng=+(ngItem.inng+qty).toFixed(4);}
   else{ngItem.cur=+Math.max(0,ngItem.cur-qty).toFixed(4);}
-
-  const dt=vnDt(); // ✅ 베트남 시간(UTC+7) 기준
-  // ✅ 수정: cat 변수 undefined 버그 - codeEl의 dataset.invcat에서 읽기
-  const codeEl2=document.getElementById(dir+'-code');
-  const cat=(codeEl2&&codeEl2.dataset&&codeEl2.dataset.invcat?codeEl2.dataset.invcat:'').toUpperCase()||ngItem.type||'KR';
-  ngLog.push({id:Date.now(),type:isIn?'ng-in':'ng-out',code,name,cat,unit,qty,note,reason,dt,user:CURRENT_USER||'',model:ngItem.model||''});
+  ngLog.push(ngLogEntry);
 
   ['q','code','name','cat','unit','qty','note','lot'].forEach(f=>{const el=document.getElementById(dir+'-'+f);if(el)el.value='';});
   // 제조사 필드 초기화
@@ -2351,6 +2444,9 @@ function doSubmitNG(dir){
   renderIOTable(); renderHist();
   renderNG(); renderNGLog(); initNGModel(); initNGLogModel();
   initDashboard();
+
+  // ✅ 동기화로 서버 최신값 재확인 (등록 직후 한 번 더 정확히 맞춤)
+  if(API_URL || IS_GAS) await syncNow();
 
   // 등록 후 입출고 이력 테이블로 스크롤 (현재 탭 유지)
   const ioBody = document.getElementById('io-body');
@@ -3030,89 +3126,14 @@ async function submitItem() {
   closeOv('item-ov');
 }
 
-// ── doSubmit 온라인 래퍼
-const _origDoSubmit = typeof doSubmit==='function' ? doSubmit : null;
-async function doSubmitOnline(dir) {
-  // ✅ 출고 시: 서버 최신 재고 확인 후 재검증 (동기화 지연 방지)
-  const isOut = ['omt','otp'].includes(dir);
-  if (isOut && (API_URL || IS_GAS)) {
-    const code = document.getElementById(dir+'-code').value.trim();
-    const unit = document.getElementById(dir+'-unit').value.trim();
-    const qty  = parseFloat(document.getElementById(dir+'-qty').value)||0;
-    // 서버에서 최신 재고 조회
-    const ar = await api('getAll');
-    if (ar.ok && ar.data) {
-      const d = ar.data;
-      const allRemote = [...(d.tp||[]),...(d.btp||[]),...(d.kr||[]),...(d.vn||[]),...(d.vtth||[])];
-      const remote = allRemote.find(r=>r.code===code);
-      const serverStock = remote ? (+remote.cur||0) : 0;
-      if (serverStock <= 0 || qty > serverStock) {
-        alert(`⛔ 서버 재고 부족으로 출고 취소\n\n서버 현재고: ${serverStock.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}\n\n동기화 후 재시도해주세요.`);
-        // 로컬 DB 및 txLog 롤백
-        await syncNow();
-        return;
-      }
-      // 로컬 DB도 서버 값으로 업데이트
-      const allLocal = [...DB.tp,...DB.btp,...DB.kr,...DB.vn,...DB.vtth];
-      const localItem = allLocal.find(r=>r.code===code);
-      if (localItem && remote) localItem.cur = +remote.cur||0;
-    }
-  }
-
-  // ✅ NG 창고 이동 여부 - doSubmit 실행 전에 미리 판단 (curDest는 doSubmit 안에서 리셋되므로 먼저 캡처)
-  const isNGMoveOnline = (dir==='otp' && curDest==='NG');
-
-  if (_origDoSubmit) _origDoSubmit(dir);
-
-  if (API_URL || IS_GAS) {
-    // doSubmit이 txLog 앞에 push하지 않고 뒤에 push하므로 마지막 항목 사용
-    const last = txLog[txLog.length - 1];
-    if (last) {
-      const res = await api('addTx', {...last, user: CURRENT_USER || ''});
-      if (!res || !res.ok) {
-        console.warn('addTx 서버 저장 실패 (로컬에는 저장됨):', res && res.error);
-      }
-    }
-
-    // ✅ NG 이동이었으면 addNG도 반드시 await로 완료 보장 (경쟁상태 방지 핵심 수정)
-    if (isNGMoveOnline) {
-      const lastNG = ngLog[ngLog.length - 1];
-      if (lastNG) {
-        let ngRes = await api('addNG', {...lastNG, token: ADMIN_TOKEN});
-        // 실패 시 1회 재시도
-        if (!ngRes || !ngRes.ok) {
-          console.warn('addNG 1차 실패, 재시도:', ngRes && ngRes.error);
-          ngRes = await api('addNG', {...lastNG, token: ADMIN_TOKEN});
-        }
-        if (!ngRes || !ngRes.ok) {
-          alert(`⚠️ 불량(NG) 재고 서버 반영 실패: ${ngRes && ngRes.error ? ngRes.error : '알 수 없는 오류'}\n\n로컬에는 반영되었으나, 다음 동기화 시 누락될 수 있습니다.\n관리자에게 문의하거나 잠시 후 다시 동기화해주세요.`);
-        }
-      }
-    }
-
-    // ✅ 모든 서버 저장이 끝난 뒤에만 동기화 (그래야 NG 변경이 덮어써지지 않음)
-    await syncNow();
-  }
-}
+// ── doSubmit 온라인 래퍼 (참고: doSubmit 함수가 서버 호출까지 이미 책임지므로 별도 처리 불필요)
+const _origDoSubmit = null; // 더 이상 사용 안 함 (하위 호환용으로만 보존)
 
 const _origDoSubmitNG = typeof doSubmitNG==='function' ? doSubmitNG : null;
+// ✅ doSubmitNG가 이제 서버 호출까지 모두 책임지므로, 이 함수는 단순 위임만 한다.
+//    (과거엔 로컬변경(doSubmitNG)과 서버호출이 분리되어 있어 race condition이 있었음)
 async function doSubmitNGOnline(dir) {
-  if (_origDoSubmitNG) _origDoSubmitNG(dir);
-  // ✅ 수정: IS_GAS 포함
-  if (API_URL || IS_GAS) {
-    const last = ngLog[ngLog.length - 1];
-    if (last) {
-      let res = await api('addNG', {...last, user: CURRENT_USER || ''});
-      // 실패 시 1회 재시도 (네트워크/락 경쟁 대비)
-      if (!res || !res.ok) {
-        console.warn('addNG 1차 실패, 재시도:', res && res.error);
-        res = await api('addNG', {...last, user: CURRENT_USER || ''});
-      }
-      if (!res || !res.ok) {
-        alert(`⚠️ 불량(NG) 재고 서버 반영 실패: ${res && res.error ? res.error : '알 수 없는 오류'}\n\n로컬에는 반영되었으나, 다음 자동 동기화 시 화면에서 사라질 수 있습니다.\n동기화 버튼을 누르지 말고 관리자에게 문의해주세요.`);
-      }
-    }
-  }
+  await doSubmitNG(dir);
 }
 
 const _origSaveEdit = typeof saveEdit==='function' ? saveEdit : null;
