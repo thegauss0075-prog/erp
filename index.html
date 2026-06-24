@@ -2573,6 +2573,14 @@ function setSyncBadge(state, msg) {
 var _syncing = false;
 async function syncNow() {
   if (_syncing) return;
+  // ✅ 관리자가 수량을 수정 중인 모달이 열려있으면 동기화를 미루어
+  //    "화면에 보이는 옛 수량 + 방금 동기화된 실제 수량" 혼선으로 인한 오차 사고를 예방
+  const editModalOpen =
+    document.getElementById('item-edit-ov')?.classList.contains('show') ||
+    document.getElementById('ng-item-edit-ov')?.classList.contains('show') ||
+    document.getElementById('edit-ov')?.classList.contains('show');
+  if (editModalOpen) { console.log('수정 모달 열림 - 동기화 보류'); return; }
+
   _syncing = true;
   setSyncBadge('loading');
   try {
@@ -3183,6 +3191,8 @@ let itemEditTarget = null; // 현재 수정 중인 품목
 let itemDelTarget  = null; // 현재 삭제 대상 품목
 
 // ── 품목 수정 모달 열기
+let itemEditSnapshotCur = 0; // ✅ 모달을 열었을 때의 cur 값 (저장 시 변경 감지용)
+
 function openItemEdit(code) {
   if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
   // ✅ allRows()는 복사본을 반환하므로, DB 원본에서 직접 조회
@@ -3194,6 +3204,7 @@ function openItemEdit(code) {
   }
   if (!item) return;
   itemEditTarget = item;
+  itemEditSnapshotCur = +item.cur || 0; // ✅ 스냅샷 캡처
 
   document.getElementById('ie-code').value  = item.code;
   document.getElementById('ie-name').value  = item.name;
@@ -3217,7 +3228,6 @@ async function saveItemEdit() {
 
   // ✅ 핵심 버그 수정: itemEditTarget은 모달 열 때의 스냅샷일 수 있으므로
   //    저장 직전 DB에서 code로 최신 객체를 다시 조회한다.
-  //    (이전엔 orig가 갱신 안 된 옛 객체를 계속 참조해서 같은 -3이 반복 적용됨)
   const liveCode = itemEditTarget.code;
   const allDBArrsLive = [DB.tp, DB.btp, DB.kr, DB.vn, DB.vtth];
   let orig = null;
@@ -3236,6 +3246,16 @@ async function saveItemEdit() {
   const newPrev  = +orig.prev || 0; // ✅ 전월재고는 화면에서 수정 불가, 원래값 유지
   const newWip   = parseFloat(document.getElementById('ie-wip').value) || 0;
   const reason   = document.getElementById('ie-reason').value.trim();
+
+  // ✅ 근본 수정: 모달을 열었을 때 채워둔 기준값(snapshot)과 지금 DB의 실제 값을 비교.
+  //    모달이 열려있는 동안 자동 동기화로 DB가 바뀌었는데 화면 입력값은 그대로면,
+  //    사용자가 본 적 없는 수량으로 저장돼버리는 사고를 막기 위해 반드시 경고하고 중단한다.
+  if (orig.cur !== itemEditSnapshotCur) {
+    errEl.textContent = `⚠️ 이 품목의 재고가 수정 중에 변경되었습니다 (현재 서버 값: ${orig.cur.toLocaleString()} ${orig.unit||''}, 화면에 표시된 값: ${itemEditSnapshotCur.toLocaleString()}). ` +
+                         `모달을 닫고 다시 열어 최신 값을 확인한 뒤 수정해주세요.`;
+    errEl.style.display = 'block';
+    return;
+  }
 
   if (!newName) { errEl.textContent='품명은 필수입니다.'; errEl.style.display='block'; return; }
 
@@ -3305,7 +3325,10 @@ async function saveItemEdit() {
       updatedRef = arr[idx];
     }
   });
-  if (updatedRef) itemEditTarget = updatedRef;
+  if (updatedRef) {
+    itemEditTarget = updatedRef;
+    itemEditSnapshotCur = +updatedRef.cur || 0; // ✅ 스냅샷도 최신화
+  }
 
   // 재고 조정 이력 자동 생성 (서버 반영 성공 후에만)
   if (stockChanged) {
