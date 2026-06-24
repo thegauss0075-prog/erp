@@ -378,7 +378,6 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <button onclick="window.print()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🖨️ 인쇄 / In</button>
     <button id="add-item-btn" onclick="openAddItem()" style="display:none;padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 품목 추가</button>
     <button id="month-close-btn" onclick="openMonthClose()" style="display:none;padding:7px 14px;border-radius:7px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(124,58,237,.3)">📅 월말 마감</button>
-    <button id="tp-diagnose-btn" onclick="openTPDiagnose()" style="display:none;padding:7px 14px;border-radius:7px;border:2px solid #dc2626;background:#fff;color:#dc2626;font-size:13px;cursor:pointer;font-weight:700;white-space:nowrap">🔍 완제품 위치 진단</button>
     <button id="sync-btn" onclick="syncNow()" style="padding:7px 14px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555;white-space:nowrap">🔄 동기화</button>
     <div class="sw"><span class="si">🔍</span><input id="inv-q" placeholder="코드·품명 검색..." oninput="chkXb('inv-q','inv-xb');renderInv()"><button class="xb" id="inv-xb" onclick="clr('inv-q','inv-xb');renderInv()">✕</button></div>
     <select id="inv-cat" onchange="initMS();initSubFilter();renderInv()">
@@ -945,6 +944,18 @@ const MODELS=['3.2KW OUT L','30KW OUT L1','30KW OUT L2','30KW OUT L3','30KW PFC 
 function getModel(c,nm){if(MODEL_MAP[c])return MODEL_MAP[c];for(const m of MODELS.slice(0,-1))if(nm.toUpperCase().includes(m.toUpperCase()))return m;return '기타';}
 const CL={TP:'완제품',BTP:'반제품',KR:'원자재 KR',VN:'원자재 VN',VTTH:'소모품'};
 const CB={TP:'b-tp',BTP:'b-btp',KR:'b-kr',VN:'b-vn',VTTH:'b-vtth'};
+
+// ════════════════════════════════════════════════════════════
+//  완제품(TP) 코드 고정 목록 - syncNow에서 서버 cat 값을 신뢰하지 않고
+//  이 목록 기준으로 강제 분류한다 (Sheets의 cat 오염이 반복돼도 영향받지 않음)
+// ════════════════════════════════════════════════════════════
+const TP_CANONICAL_CODES = [
+  'ML27A040118A','ML27M040145A','ML27A040091A','ML27A040090A',
+  'ML27A040127A','ML27A040112A','ML27M020003A','ML27M040025A',
+  'AIR_COIL#0','AIR_COIL#1','AIR_COIL#2','AIR_COIL#3','AIR_COIL#4',
+  'CH330125 IND-5T','CH330125 IND-8T','ML27M040143A'
+];
+
 const DB={
   tp:[
     {code:'ML27A040118A',name:'3.2KW OUT L',unit:'Ea',prev:6000,cur:6000,wip:440,total:6440},
@@ -2721,6 +2732,30 @@ async function syncNow() {
     const [ar, tr, nr] = await Promise.all([api('getAll'), api('getTxLog'), api('getNGAll')]);
     if (ar.ok && ar.data) {
       const d = ar.data;
+
+      // ✅ 근본 해결: 서버(Sheets)가 보낸 cat 컬럼 값을 그대로 신뢰하지 않는다.
+      //    Sheets에 과거 사고로 잘못된 cat이 남아있으면, 동기화할 때마다
+      //    클라이언트 쪽 수정이 매번 무효화되는 문제가 있었다(코드를 고쳐도 끝없이 재발).
+      //    완제품 16개는 코드 자체가 고정되어 있으므로, TP_CANONICAL_CODES에 있으면
+      //    서버가 뭐라고 응답하든 무조건 TP로 분류한다. 이게 가장 확실한 해결책이다.
+      const tpSet = new Set(TP_CANONICAL_CODES);
+      const allRemote = [...(d.tp||[]), ...(d.btp||[]), ...(d.kr||[]), ...(d.vn||[]), ...(d.vtth||[])];
+      // 서버가 보낸 cat은 무시하고, 코드 기준으로 재분류
+      const reclassified = { tp:[], btp:[], kr:[], vn:[], vtth:[] };
+      const seenTP = new Set();
+      allRemote.forEach(r => {
+        if (tpSet.has(r.code)) {
+          // 완제품 고정 코드 - 무조건 TP (단, 같은 코드가 여러 번 와도 한 번만)
+          if (!seenTP.has(r.code)) { reclassified.tp.push(r); seenTP.add(r.code); }
+        } else {
+          // 나머지는 서버가 보낸 카테고리 그대로 신뢰 (BTP/KR/VN/VTTH는 cat 오염 사례가 없었음)
+          const cat = (r.cat||'').toLowerCase();
+          if (reclassified[cat]) reclassified[cat].push(r);
+        }
+      });
+      // BTP는 완제품과 같은 코드를 공유하는 게 정상 설계이므로 별도로 그대로 포함
+      if (d.btp) reclassified.btp = d.btp;
+
       // ✅ Sheets ITEMS 값을 전부 반영 (cur 포함) - 서버가 진실의 원천
       const mergeAll = (local, remote) => {
         if (!remote || !remote.length) return local;
@@ -2748,39 +2783,17 @@ async function syncNow() {
           .map(r=>({...r, prev:+r.prev||0, cur:+r.cur||0, wip:+r.wip||0, total:+r.total||0}));
         return [...updated, ...remoteOnly];
       };
-      if(d.tp)   DB.tp   = mergeAll(DB.tp,   d.tp);
-      if(d.btp)  DB.btp  = mergeAll(DB.btp,  d.btp);
-      if(d.kr)   DB.kr   = mergeAll(DB.kr,   d.kr);
-      if(d.vn)   DB.vn   = mergeAll(DB.vn,   d.vn);
-      if(d.vtth) DB.vtth = mergeAll(DB.vtth, d.vtth);
+      DB.tp   = mergeAll(DB.tp,   reclassified.tp);
+      DB.btp  = mergeAll(DB.btp,  reclassified.btp);
+      DB.kr   = mergeAll(DB.kr,   reclassified.kr);
+      DB.vn   = mergeAll(DB.vn,   reclassified.vn);
+      DB.vtth = mergeAll(DB.vtth, reclassified.vtth);
 
-      // ✅ 보정: 같은 code가 여러 카테고리 배열에 동시 존재하면(과거 cat 오기록 사고로 분열된 경우)
-      //    서버가 실제로 분류한 카테고리(d.xx에 들어있는 쪽)만 남기고 나머지에서 제거한다.
-      //    ✅ 단, 복구 작업이 진행 중이면(_tpRecovering) 건너뛴다 — 복구 직후 서버 반영이
-      //       완전히 퍼지기 전에 이 로직이 먼저 돌면 방금 복구한 걸 다시 지워버릴 수 있다.
-      if (!window._tpRecovering) {
-        const catArrPairs = [['tp',d.tp],['btp',d.btp],['kr',d.kr],['vn',d.vn],['vtth',d.vtth]];
-        const serverCatOf = {}; // code -> 서버가 분류한 실제 카테고리
-        catArrPairs.forEach(([key, remote]) => {
-          if (!remote) return;
-          remote.forEach(r => { serverCatOf[r.code] = key; });
-        });
-        const dbArrMap = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
-        Object.keys(dbArrMap).forEach(myKey => {
-          const arr = dbArrMap[myKey];
-          if (!arr) return;
-          const cleaned = arr.filter(item => {
-            const realCat = serverCatOf[item.code];
-            if (!realCat) return true; // 서버에 정보 없으면(신규 로컬 항목 등) 그대로 유지
-            return realCat === myKey;  // 서버가 분류한 카테고리와 다르면 이 배열에서는 제거(중복 제거)
-          });
-          if (cleaned.length !== arr.length) {
-            console.warn(`분열된 품목 정리: ${myKey} 배열에서 ${arr.length - cleaned.length}건 제거`);
-          }
-          dbArrMap[myKey] = cleaned;
-        });
-        DB.tp = dbArrMap.tp; DB.btp = dbArrMap.btp; DB.kr = dbArrMap.kr; DB.vn = dbArrMap.vn; DB.vtth = dbArrMap.vtth;
-      }
+      // ✅ 완제품 16개는 항상 DB.tp에만 존재해야 하므로, kr/vn/vtth에 행여 섞여 들어간
+      //    사본이 있으면(과거 데이터 잔존 등) 조용히 제거한다 (반복 경고 없이 1회성 정리).
+      DB.kr   = DB.kr.filter(r => !tpSet.has(r.code));
+      DB.vn   = DB.vn.filter(r => !tpSet.has(r.code));
+      DB.vtth = DB.vtth.filter(r => !tpSet.has(r.code));
     }
     if (tr.ok && tr.data) txLog = tr.data.map(r=>({...r,id:+r.id||0,qty:+r.qty||0}));
     if (nr.ok) {
@@ -3048,8 +3061,6 @@ function applyAdminUI(on) {
   if (mcBtn) mcBtn.style.display = on ? 'inline-block' : 'none';
   const cleanupBtn = document.getElementById('ng-cleanup-btn');
   if (cleanupBtn) cleanupBtn.style.display = on ? 'inline-block' : 'none';
-  const tpDiagBtn = document.getElementById('tp-diagnose-btn');
-  if (tpDiagBtn) tpDiagBtn.style.display = on ? 'inline-block' : 'none';
 }
 
 // ── API URL 저장
@@ -4223,131 +4234,6 @@ async function confirmNGCleanup(legacyItems, legacyLogs) {
 
   alert(`✅ 레거시 데이터 정리 완료!\n품목 ${legacyItems.length}개, 이력 ${legacyLogs.length}건 삭제됨.` +
         (serverOk ? '' : '\n\n⚠️ 서버(Sheets) 반영은 실패했습니다. Sheets에서 직접 삭제해주세요.'));
-}
-
-// ════════════════════════════════════════════════════════════
-//  완제품(TP) 카테고리 오염 진단 및 복구 (관리자)
-//  - 과거 사고로 cat이 KR 등으로 잘못 바뀌어 DB.kr/vn/vtth 등에
-//    들어가 있는 원래 완제품 코드를 찾아서 DB.tp로 되돌린다.
-// ════════════════════════════════════════════════════════════
-const TP_CANONICAL_CODES = [
-  'ML27A040118A','ML27M040145A','ML27A040091A','ML27A040090A',
-  'ML27A040127A','ML27A040112A','ML27M020003A','ML27M040025A',
-  'AIR_COIL#0','AIR_COIL#1','AIR_COIL#2','AIR_COIL#3','AIR_COIL#4',
-  'CH330125 IND-5T','CH330125 IND-8T','ML27M040143A'
-];
-
-function openTPDiagnose() {
-  if(!isAdmin){ alert('관리자 로그인이 필요합니다.'); return; }
-
-  const dbMap = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
-  const report = [];
-  TP_CANONICAL_CODES.forEach(code => {
-    const foundIn = [];
-    Object.entries(dbMap).forEach(([key, arr]) => {
-      if (arr && arr.find(r => r.code === code)) foundIn.push(key);
-    });
-    report.push({ code, foundIn });
-  });
-
-  const missing = report.filter(r => !r.foundIn.includes('tp'));
-  const ok = report.filter(r => r.foundIn.includes('tp') && r.foundIn.length === 1);
-
-  let msg = `🔍 완제품(TP) 위치 진단 결과\n\n`;
-  msg += `정상 (TP에만 존재): ${ok.length}개\n`;
-  msg += `문제 (TP에 없거나 다른 곳에도 존재): ${missing.length}개\n\n`;
-  if (missing.length) {
-    msg += `문제 품목 목록:\n`;
-    missing.forEach(r => msg += `  - ${r.code} : 현재 위치 [${r.foundIn.join(', ')||'어디에도 없음'}]\n`);
-    msg += `\n이 품목들을 TP로 복구하시겠습니까?\n`;
-    msg += `(서버 Sheets ITEMS의 cat 컬럼도 'TP'로 함께 수정됩니다)`;
-  } else {
-    msg += `✅ 모든 완제품이 정상 위치에 있습니다.`;
-  }
-
-  if (!missing.length) { alert(msg); return; }
-  if (!confirm(msg)) return;
-
-  confirmTPRecover(missing);
-}
-
-async function confirmTPRecover(missingList) {
-  window._tpRecovering = true; // ✅ 복구 중에는 syncNow의 분열정리 로직을 잠시 멈춤
-  const dbMap = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
-  let recovered = 0;
-  const failedCodes = [];
-
-  for (const { code, foundIn } of missingList) {
-    // 다른 카테고리 배열에 들어가 있는 사본을 찾아서 데이터(cur/wip 등)를 가져온다
-    let bestData = null;
-    for (const key of foundIn) {
-      const item = dbMap[key].find(r => r.code === code);
-      if (item) { bestData = item; break; }
-    }
-    // TP 배열에 이미 있으면 그 데이터를 기준으로, 없으면 찾은 사본 데이터를 사용
-    const existingInTP = DB.tp.find(r => r.code === code);
-    const finalData = existingInTP || bestData;
-    if (!finalData) continue;
-
-    // ✅ 핵심 수정: 서버 반영 결과를 반드시 확인한다.
-    //    (기존엔 결과를 검증 안 해서, 실패해도 "성공"으로 표시되고
-    //     다음 자동 syncNow의 분열정리 로직이 서버의 옛 cat(KR 등)을 보고
-    //     방금 복구한 걸 다시 제거해버리는 자기파괴적 현상이 있었음)
-    let serverOk = true;
-    if (API_URL || IS_GAS) {
-      let res = await api('editItem', {
-        code, cat: 'TP', name: finalData.name, unit: finalData.unit,
-        model: finalData.model||'', sub: finalData.sub||'',
-        cur: finalData.cur||0, prev: finalData.prev||0, wip: finalData.wip||0,
-        total: (finalData.cur||0)+(finalData.wip||0),
-        token: ADMIN_TOKEN
-      });
-      if (!res || !res.ok) {
-        console.warn('TP 복구 1차 실패, 재시도:', code, res && res.error);
-        res = await api('editItem', {
-          code, cat: 'TP', name: finalData.name, unit: finalData.unit,
-          model: finalData.model||'', sub: finalData.sub||'',
-          cur: finalData.cur||0, prev: finalData.prev||0, wip: finalData.wip||0,
-          total: (finalData.cur||0)+(finalData.wip||0),
-          token: ADMIN_TOKEN
-        });
-      }
-      if (!res || !res.ok) {
-        serverOk = false;
-        failedCodes.push(`${code} (${res && res.error ? res.error : '알 수 없는 오류'})`);
-      }
-    }
-    if (!serverOk) continue; // ✅ 서버 반영 실패한 항목은 로컬도 건드리지 않음 (분열 재발 방지)
-
-    // 서버 반영 성공한 항목만 로컬 정리
-    const tpIdx = DB.tp.findIndex(r => r.code === code);
-    if (tpIdx >= 0) DB.tp[tpIdx] = { ...DB.tp[tpIdx], ...finalData };
-    else DB.tp.push({ ...finalData });
-    foundIn.filter(k => k !== 'tp').forEach(key => {
-      dbMap[key] = dbMap[key].filter(r => r.code !== code);
-    });
-    recovered++;
-  }
-  DB.kr = dbMap.kr; DB.vn = dbMap.vn; DB.vtth = dbMap.vtth; DB.btp = dbMap.btp;
-
-  renderInv(); initDashboard();
-
-  if (failedCodes.length) {
-    window._tpRecovering = false; // ✅ 해제 (실패 있어도 다음 동기화는 정상 동작해야 함)
-    alert(`⚠️ ${recovered}개는 복구 성공했지만, ${failedCodes.length}개는 서버 반영에 실패했습니다:\n\n${failedCodes.join('\n')}\n\n실패한 품목은 다음 동기화 때 다시 원래 위치로 표시될 수 있습니다. 관리자 로그아웃 후 재로그인하고 다시 시도해주세요.`);
-  } else {
-    // ✅ 복구 직후 실제로 서버가 TP로 응답하는지 그 자리에서 재확인
-    //    (이 시점엔 아직 _tpRecovering=true 상태라 분열정리가 건너뛰어지므로,
-    //     서버가 진짜로 TP라고 답하는지 순수하게 확인할 수 있다)
-    await syncNow();
-    window._tpRecovering = false; // ✅ 검증 끝났으니 정리 로직 다시 활성화
-    const stillMissing = TP_CANONICAL_CODES.filter(c => !DB.tp.find(r=>r.code===c));
-    if (stillMissing.length) {
-      alert(`⚠️ 서버에는 저장됐다고 응답했지만, 재동기화 후에도 다음 품목이 여전히 TP에 없습니다:\n${stillMissing.join(', ')}\n\nSheets ITEMS 시트를 직접 열어 해당 코드의 cat 컬럼 값을 확인해주세요. 같은 코드가 두 줄로 중복되어 있을 수 있습니다.`);
-    } else {
-      alert(`✅ ${recovered}개 완제품을 TP로 복구했고, 재동기화로 서버 반영까지 확인했습니다.`);
-    }
-  }
 }
 
 function openMonthClose() {
