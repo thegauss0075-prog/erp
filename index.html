@@ -2627,12 +2627,14 @@ async function syncNow() {
 
       // ✅ 보정: NG_LOG(이력)에는 있지만 NG_ITEMS(현황)에 없는 품목을 이력 기반으로 복원
       //    (addNG가 NG_ITEMS에 행을 못 만들었던 과거 데이터로 인한 "이력은 있는데 사라짐" 현상 복구)
+      //    ※ NG_LOG 시트엔 model 컬럼이 없으므로, 재고현황(allRows/getModel)에서 모델을 정확히 추론한다.
       const ngItemCodes = new Set(DB.ng.map(r=>r.code));
       const missingCodes = [...new Set(ngLog.filter(l=>!ngItemCodes.has(l.code)).map(l=>l.code))];
+      const invPoolForModel = allRows(); // 재고현황 전체 (TP/BTP/KR/VN/VTTH)
       missingCodes.forEach(code => {
         const logsForCode = ngLog.filter(l=>l.code===code);
         if(!logsForCode.length) return;
-        const ref = logsForCode[logsForCode.length-1]; // 가장 오래된(또는 가장 최근) 항목에서 메타 정보 추출
+        const ref = logsForCode[logsForCode.length-1];
         let cur = 0, inng = 0;
         logsForCode.forEach(l=>{
           if(l.type==='ng-in'){ cur += (+l.qty||0); inng += (+l.qty||0); }
@@ -2640,8 +2642,12 @@ async function syncNow() {
         });
         const ngType = (ref.cat||'mat').toUpperCase()==='TP' ? 'TP'
                      : (ref.cat||'').toLowerCase()==='copper' ? 'copper' : 'mat';
-        DB.ng.push({type:ngType, code, name:ref.name||code, unit:ref.unit||'', prev:0, inng, cur, model:ref.model||'기타'});
-        console.log('NG 품목 자동 복구:', code, 'cur=', cur);
+        // ✅ 모델 추론: 1) 재고현황에 같은 코드가 있으면 그 model 사용
+        //             2) 없으면 getModel(code,name)으로 추정 (완제품 패턴 매칭)
+        const invMatch = invPoolForModel.find(r=>r.code===code);
+        const inferredModel = (invMatch && invMatch.model) ? invMatch.model : getModel(code, ref.name||'');
+        DB.ng.push({type:ngType, code, name:ref.name||code, unit:ref.unit||'', prev:0, inng, cur, model:inferredModel});
+        console.log('NG 품목 자동 복구:', code, 'cur=', cur, 'model=', inferredModel);
       });
     }
     initDashboard(); renderInv(); renderNG(); renderNGLog(); renderHist(); renderIOTable();
