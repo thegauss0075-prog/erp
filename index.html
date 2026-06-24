@@ -3242,13 +3242,31 @@ function openItemEdit(code) {
   document.getElementById('ie-model').value = item.model || '';
   document.getElementById('ie-sub').value   = item.sub || '';
   document.getElementById('ie-cat').value   = (item.cat || 'kr').toLowerCase();
-  document.getElementById('ie-cur').value   = item.cur || 0;
+  document.getElementById('ie-cur').value   = item.cur || 0; // hidden: 기준 현재고
+  document.getElementById('ie-cur-display').textContent = (item.cur||0).toLocaleString();
+  document.getElementById('ie-unit-display').textContent = item.unit || '';
+  document.getElementById('ie-cur-delta').value = 0; // ✅ 조정량은 항상 0부터 시작 (절대값 입력 사고 방지)
   document.getElementById('ie-prev').value  = item.prev || 0;
   document.getElementById('ie-wip').value   = item.wip || 0;
   document.getElementById('ie-reason').value = '';
+  document.getElementById('ie-preview-result').textContent = '';
   const errEl = document.getElementById('ie-err');
   if (errEl) errEl.style.display = 'none';
   document.getElementById('item-edit-ov').classList.add('show');
+
+  // ✅ 조정량 입력 시 결과 미리보기 (예: 320 + 50 = 370)
+  const deltaEl = document.getElementById('ie-cur-delta');
+  if (deltaEl) {
+    deltaEl.oninput = () => {
+      const base  = +document.getElementById('ie-cur').value || 0;
+      const delta = parseFloat(deltaEl.value) || 0;
+      const result = base + delta;
+      const preview = document.getElementById('ie-preview-result');
+      if (delta === 0) { preview.textContent = ''; return; }
+      preview.innerHTML = `변경 후 현재고: <strong>${base.toLocaleString()} ${delta>0?'+':''}${delta.toLocaleString()} = ${result.toLocaleString()}</strong> ${item.unit||''}`;
+      preview.style.color = result < 0 ? '#b91c1c' : '#166534';
+    };
+  }
 }
 
 // ── 품목 수정 저장
@@ -3272,7 +3290,11 @@ async function saveItemEdit() {
   const newModel = document.getElementById('ie-model').value.trim();
   const newSub   = document.getElementById('ie-sub').value.trim();
   const newCat   = document.getElementById('ie-cat').value; // 소문자 (tp/btp/kr/vn/vtth)
-  const newCur   = parseFloat(document.getElementById('ie-cur').value) || 0;
+  // ✅ 근본 수정: "현재고"를 절대값으로 직접 입력받지 않고, "조정량(delta)"만 입력받아
+  //    저장 직전의 최신 orig.cur에 더한다. 이렇게 하면 사용자가 화면에 떠있던 옛 값을
+  //    실수로 0으로 바꿔버려 전체 재고가 날아가는 사고가 구조적으로 불가능해진다.
+  const curDelta = parseFloat(document.getElementById('ie-cur-delta').value) || 0;
+  const newCur   = +orig.cur + curDelta;
   const newPrev  = +orig.prev || 0; // ✅ 전월재고는 화면에서 수정 불가, 원래값 유지
   const newWip   = parseFloat(document.getElementById('ie-wip').value) || 0;
   const reason   = document.getElementById('ie-reason').value.trim();
@@ -3291,6 +3313,13 @@ async function saveItemEdit() {
 
   // 재고 변경 시 사유 필수 (전월재고는 변경 대상에서 제외)
   const stockChanged = (newCur !== +orig.cur) || (newWip !== +orig.wip);
+
+  // ✅ 조정 결과가 음수면 명백한 실수일 가능성이 높으므로 차단
+  if (newCur < 0) {
+    errEl.textContent = `⚠️ 조정 결과가 음수(${newCur.toLocaleString()})입니다. 현재고(${(+orig.cur).toLocaleString()})보다 큰 음수 조정량은 입력할 수 없습니다.`;
+    errEl.style.display = 'block';
+    return;
+  }
 
   // ✅ 변경사항 없으면 그냥 닫기 (불필요한 이력/서버호출 방지)
   if (!stockChanged && newName===orig.name && newUnit===(orig.unit||'') &&
@@ -4738,12 +4767,23 @@ else location.reload();
     </div>
     <hr style="margin:14px 0;border-color:#eee">
     <div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:8px">📦 재고 직접 조정</div>
-    <p style="font-size:12px;color:#b91c1c;margin-bottom:10px">⚠️ 수량 변경 시 반드시 조정 사유를 입력하세요 (이력에 자동 기록)</p>
+    <div style="background:#eff6ff;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:13px">
+      현재고: <strong id="ie-cur-display" style="color:#1d4ed8;font-size:15px">-</strong> <span id="ie-unit-display" style="color:#888"></span>
+    </div>
+    <p style="font-size:12px;color:#b91c1c;margin-bottom:10px">⚠️ 절대값이 아닌 <strong>조정량</strong>을 입력하세요. 예) 늘리려면 +50, 줄이려면 -50</p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div class="ov-fr"><label>현재고</label><input id="ie-cur" type="number"></div>
-      <div class="ov-fr"><label>재공</label><input id="ie-wip" type="number"></div>
+      <div class="ov-fr">
+        <label>현재고 조정량 (+/-)</label>
+        <input id="ie-cur-delta" type="number" placeholder="0" value="0">
+      </div>
+      <div class="ov-fr">
+        <label>재공</label>
+        <input id="ie-wip" type="number">
+      </div>
+      <input type="hidden" id="ie-cur" value="0">
       <input type="hidden" id="ie-prev" value="0">
     </div>
+    <div style="font-size:12px;color:#166534;margin-top:6px" id="ie-preview-result"></div>
     <div class="ov-fr" style="margin-top:6px">
       <label>조정 사유 * (재고 변경 시 필수)</label>
       <input id="ie-reason" placeholder="예: 실사 후 재고 조정, 오입력 수정...">
