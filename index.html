@@ -4032,18 +4032,25 @@ async function confirmMonthClose() {
 // ════════════════════════════════════════════════════════════
 let ngItemEditTarget = null;
 let ngItemDelTarget  = null;
+let ngItemEditSnapshotCur  = 0; // ✅ 모달 열었을 때의 cur 스냅샷 (경쟁상태 방지)
+let ngItemEditSnapshotInng = 0;
 
 function openNGItemEdit(code) {
   if(!isAdmin){ alert('관리자 로그인이 필요합니다.'); return; }
   const item = DB.ng.find(r=>r.code===code);
   if(!item) return;
   ngItemEditTarget = item;
+  ngItemEditSnapshotCur  = +item.cur  || 0; // ✅ 스냅샷 캡처
+  ngItemEditSnapshotInng = +item.inng || 0;
 
   document.getElementById('ng-ie-code').value  = item.code;
   document.getElementById('ng-ie-name').value  = item.name;
   document.getElementById('ng-ie-unit').value  = item.unit || '';
   document.getElementById('ng-ie-type').value  = item.type || 'mat';
   document.getElementById('ng-ie-model').value = item.model || '';
+  document.getElementById('ng-ie-cur').value   = item.cur  || 0;
+  document.getElementById('ng-ie-inng').value  = item.inng || 0;
+  document.getElementById('ng-ie-reason').value = '';
   const errEl = document.getElementById('ng-ie-err');
   if(errEl) errEl.style.display='none';
   document.getElementById('ng-item-edit-ov').classList.add('show');
@@ -4052,35 +4059,93 @@ function openNGItemEdit(code) {
 async function saveNGItemEdit() {
   if(!ngItemEditTarget) return;
   const errEl = document.getElementById('ng-ie-err');
-  const newName  = document.getElementById('ng-ie-name').value.trim();
-  const newUnit  = document.getElementById('ng-ie-unit').value.trim();
-  const newType  = document.getElementById('ng-ie-type').value;
-  const newModel = document.getElementById('ng-ie-model').value.trim();
+
+  // ✅ 저장 직전 DB에서 최신 객체를 다시 조회 (참조 갱신 안 되는 문제 방지)
+  const liveCode = ngItemEditTarget.code;
+  let orig = DB.ng.find(r=>r.code===liveCode);
+  if(!orig) orig = ngItemEditTarget;
+
+  const newName   = document.getElementById('ng-ie-name').value.trim();
+  const newUnit   = document.getElementById('ng-ie-unit').value.trim();
+  const newType   = document.getElementById('ng-ie-type').value;
+  const newModel  = document.getElementById('ng-ie-model').value.trim();
+  const newCur    = parseFloat(document.getElementById('ng-ie-cur').value) || 0;
+  const newInng   = parseFloat(document.getElementById('ng-ie-inng').value) || 0;
+  const reason    = document.getElementById('ng-ie-reason').value.trim();
 
   if(!newName){ errEl.textContent='품명은 필수입니다.'; errEl.style.display='block'; return; }
 
-  // 로컬 DB.ng 업데이트
-  const idx = DB.ng.findIndex(r=>r.code===ngItemEditTarget.code);
-  if(idx>=0){
-    DB.ng[idx] = {...DB.ng[idx], name:newName, unit:newUnit, type:newType, model:newModel};
+  // ✅ 모달이 열려있는 동안 동기화로 값이 바뀌었는지 검증 (재고현황 수정과 동일한 안전장치)
+  if (orig.cur !== ngItemEditSnapshotCur) {
+    errEl.textContent = `⚠️ 이 품목의 불량 재고가 수정 중에 변경되었습니다 (현재 서버 값: ${orig.cur.toLocaleString()} ${orig.unit||''}). ` +
+                         `모달을 닫고 다시 열어 최신 값을 확인한 뒤 수정해주세요.`;
+    errEl.style.display = 'block';
+    return;
   }
 
-  // 서버 반영
+  const stockChanged = (newCur !== +orig.cur) || (newInng !== +orig.inng);
+  if (stockChanged && (!reason || reason.length < 2 || /^[.\s]+$/.test(reason))) {
+    errEl.textContent = '재고 수량 변경 시 의미 있는 조정 사유를 2자 이상 입력해야 합니다.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  // ✅ 서버 반영을 먼저 확정한 뒤에만 로컬 DB/이력을 변경 (race condition 방지)
   if(API_URL || IS_GAS){
     const res = await api('editNGItem', {
-      code: ngItemEditTarget.code,
-      name: newName, unit: newUnit, type: newType, model: newModel,
+      code: orig.code, name: newName, unit: newUnit, type: newType, model: newModel,
+      cur: newCur, inng: newInng,
       token: ADMIN_TOKEN
     });
-    if(res && !res.ok){
-      errEl.textContent = '서버 저장 실패: ' + (res.error||'알 수 없는 오류');
-      errEl.style.display='block'; return;
+    if(res && res.error && (res.error.includes('토큰') || res.error.includes('세션') || res.error.includes('로그인'))) {
+      errEl.textContent = '⚠️ ' + res.error + ' (관리자 로그아웃 후 재로그인 필요)';
+      errEl.style.display = 'block';
+      return;
+    }
+    if(!res || !res.ok){
+      errEl.textContent = '서버 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류') + ' (로컬도 변경되지 않았습니다)';
+      errEl.style.display='block';
+      return; // ✅ 서버 실패 시 로컬 변경하지 않음
     }
   }
 
+  // ✅ 서버 성공 후에만 로컬 DB 업데이트
+  const idx = DB.ng.findIndex(r=>r.code===orig.code);
+  let updatedRef = null;
+  if(idx>=0){
+    DB.ng[idx] = {...DB.ng[idx], name:newName, unit:newUnit, type:newType, model:newModel, cur:newCur, inng:newInng};
+    updatedRef = DB.ng[idx];
+  }
+  if(updatedRef){
+    ngItemEditTarget = updatedRef;
+    ngItemEditSnapshotCur  = +updatedRef.cur  || 0; // ✅ 스냅샷도 최신화
+    ngItemEditSnapshotInng = +updatedRef.inng || 0;
+  }
+
+  // 재고 조정 이력 자동 생성
+  if (stockChanged) {
+    const adjLog = {
+      id: Date.now(), type:'adjust', code: orig.code, name: newName,
+      cat:'NG', unit: newUnit,
+      qty: newCur - (+orig.cur),
+      note: `[불량재고조정] ${reason}`,
+      lot:'', dt: vnDt(),
+      dest:'', user: CURRENT_USER || '관리자',
+      prevStock: +orig.cur, newStock: newCur, reason
+    };
+    txLog.unshift(adjLog);
+    if(API_URL || IS_GAS){
+      await api('addTx', {...adjLog, token: ADMIN_TOKEN});
+    }
+  }
+
+  if(API_URL || IS_GAS){
+    await syncNow();
+  }
+
   closeOv('ng-item-edit-ov');
-  renderNG(); initNGModel(); initDashboard();
-  alert('✅ 불량 품목 수정 완료');
+  renderNG(); initNGModel(); initDashboard(); renderHist();
+  alert(`✅ 불량 품목 수정 완료${stockChanged ? '\n재고 조정 이력이 기록됐습니다.' : ''}`);
 }
 
 function openNGItemDel(code) {
@@ -4712,6 +4777,17 @@ else location.reload();
         <label>모델</label>
         <input id="ng-ie-model" placeholder="모델명">
       </div>
+    </div>
+    <hr style="margin:14px 0;border-color:#eee">
+    <div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:8px">📦 불량 재고 직접 조정</div>
+    <p style="font-size:12px;color:#b91c1c;margin-bottom:10px">⚠️ 수량 변경 시 반드시 조정 사유를 입력하세요 (이력에 자동 기록)</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="ov-fr"><label>현재 불량 재고</label><input id="ng-ie-cur" type="number"></div>
+      <div class="ov-fr"><label>이번달 불량입고 누계</label><input id="ng-ie-inng" type="number"></div>
+    </div>
+    <div class="ov-fr" style="margin-top:6px">
+      <label>조정 사유 * (재고 변경 시 필수)</label>
+      <input id="ng-ie-reason" placeholder="예: 실사 후 재고 조정, 오입력 수정...">
     </div>
     <div id="ng-ie-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div class="ov-actions">
