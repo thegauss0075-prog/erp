@@ -809,6 +809,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <select id="ng-model" onchange="renderNG()"><option value="">전체 모델 / Tất cả Model</option></select>
     <button style="padding:8px 16px;background:#991b1b;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600" onclick="go('io');setIOTab('ng-in')">📥 불량 입고 등록</button>
     <button style="padding:8px 16px;background:#92400e;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600" onclick="go('io');setIOTab('ng-out')">📤 불량 출고 등록</button>
+    <button id="ng-cleanup-btn" onclick="openNGCleanup()" style="display:none;padding:8px 16px;background:#fff;color:#dc2626;border:2px solid #dc2626;border-radius:8px;font-size:13px;cursor:pointer;font-weight:700">🧹 레거시 코드 정리</button>
   </div>
 
   <!-- 재고 현황 테이블 -->
@@ -2833,6 +2834,8 @@ function applyAdminUI(on) {
   if (addBtn) addBtn.style.display = on ? 'inline-block' : 'none';
   const mcBtn = document.getElementById('month-close-btn');
   if (mcBtn) mcBtn.style.display = on ? 'inline-block' : 'none';
+  const cleanupBtn = document.getElementById('ng-cleanup-btn');
+  if (cleanupBtn) cleanupBtn.style.display = on ? 'inline-block' : 'none';
 }
 
 // ── API URL 저장
@@ -3878,6 +3881,63 @@ function confirmApvCancel() {
 // ════════════════════════════════════════════════════════════
 //  월말 마감 (관리자) - 현재고 → 전월재고 일괄 복사
 // ════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
+//  레거시 NG 코드 정리 (관리자) - TP-xx/NVL-xx/Dây đồng-xx 패턴 일괄 삭제
+//  (재고현황 실제 코드로 전환 후, 남아있는 구버전 데이터 청소용)
+// ════════════════════════════════════════════════════════════
+function isLegacyNGCode(code) {
+  return /^TP-\d+$/.test(code) || /^NVL-\d+$/.test(code) || /^Dây đồng-\d+$/.test(code);
+}
+
+function openNGCleanup() {
+  if(!isAdmin){ alert('관리자 로그인이 필요합니다.'); return; }
+
+  const legacyItems = DB.ng.filter(r => isLegacyNGCode(r.code));
+  const legacyLogs   = ngLog.filter(l => isLegacyNGCode(l.code));
+
+  if(legacyItems.length===0 && legacyLogs.length===0){
+    alert('✅ 정리할 레거시 데이터가 없습니다.\n(TP-xx / NVL-xx / Dây đồng-xx 패턴 없음)');
+    return;
+  }
+
+  let msg = `⚠️ 레거시 NG 코드 정리\n\n`;
+  msg += `발견된 레거시 품목: ${legacyItems.length}개\n`;
+  legacyItems.slice(0,10).forEach(r => msg += `  - ${r.code} (${r.name})\n`);
+  if(legacyItems.length>10) msg += `  ... 외 ${legacyItems.length-10}개\n`;
+  msg += `\n발견된 레거시 이력: ${legacyLogs.length}건\n\n`;
+  msg += `이 작업은 로컬과 서버(Sheets)에서 위 데이터를 영구 삭제합니다.\n계속하시겠습니까?`;
+
+  if(!confirm(msg)) return;
+
+  confirmNGCleanup(legacyItems, legacyLogs);
+}
+
+async function confirmNGCleanup(legacyItems, legacyLogs) {
+  // 1) 로컬 DB.ng에서 레거시 품목 제거
+  DB.ng = DB.ng.filter(r => !isLegacyNGCode(r.code));
+  // 2) 로컬 ngLog에서 레거시 이력 제거
+  ngLog = ngLog.filter(l => !isLegacyNGCode(l.code));
+
+  // 3) 서버에도 삭제 요청 (Sheets NG_ITEMS / NG_LOG)
+  let serverOk = true;
+  if(API_URL || IS_GAS){
+    const res = await api('cleanupLegacyNG', {
+      codes: legacyItems.map(r=>r.code),
+      logCodes: legacyLogs.map(l=>l.code),
+      token: ADMIN_TOKEN
+    });
+    if(!res || !res.ok){
+      serverOk = false;
+      console.warn('서버 레거시 정리 실패:', res && res.error);
+    }
+  }
+
+  renderNG(); renderNGLog(); initNGModel(); initNGLogModel(); initDashboard(); renderHist();
+
+  alert(`✅ 레거시 데이터 정리 완료!\n품목 ${legacyItems.length}개, 이력 ${legacyLogs.length}건 삭제됨.` +
+        (serverOk ? '' : '\n\n⚠️ 서버(Sheets) 반영은 실패했습니다. Sheets에서 직접 삭제해주세요.'));
+}
+
 function openMonthClose() {
   if(!isAdmin){ alert('관리자 로그인이 필요합니다.'); return; }
 
