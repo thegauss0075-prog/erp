@@ -893,7 +893,11 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <input type="hidden" id="edit-idx">
     <div class="ov-fr"><label>품목코드</label><input id="edit-code" readonly></div>
     <div class="ov-fr"><label>품명</label><input id="edit-name" readonly></div>
-    <div class="ov-fr"><label>수량</label><input id="edit-qty" type="number" min="1"></div>
+    <div class="ov-fr" style="background:#eff6ff;border-radius:8px;padding:8px 10px">
+      <label>현재 수량</label><strong id="edit-qty-base" style="display:block;color:#1d4ed8;font-size:15px">-</strong>
+    </div>
+    <p style="font-size:12px;color:#b91c1c;margin:8px 0">⚠️ 절대값이 아닌 <strong>조정량</strong>을 입력하세요. 예) +5, -5</p>
+    <div class="ov-fr"><label>수량 조정량 (+/-)</label><input id="edit-qty-delta" type="number" placeholder="0" value="0"></div>
     <div class="ov-fr" id="edit-dest-row">
       <label>출고처</label>
       <div class="dest-btns">
@@ -902,6 +906,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       </div>
     </div>
     <div class="ov-fr"><label>비고</label><input id="edit-note"></div>
+    <div id="edit-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div class="ov-actions">
       <button class="ov-cancel" onclick="closeOv('edit-ov')">취소</button>
       <button class="ov-save" onclick="saveEditOnline()">✔ 저장</button>
@@ -1901,13 +1906,17 @@ function openDelUnified(id,type){
   if(isNG){openNGDel(id);}else{openDel(id);}
 }
 
+let editSnapshotQty = 0; // ✅ 모달 열 때의 이력 수량 스냅샷
 function openEdit(id){
   const t=txLog.find(x=>x.id===id);if(!t)return;
   document.getElementById('edit-idx').value=id;
   document.getElementById('edit-code').value=t.code;
   document.getElementById('edit-name').value=t.name;
-  document.getElementById('edit-qty').value=t.qty;
+  document.getElementById('edit-qty-base').textContent=t.qty.toLocaleString()+' '+(t.unit||'');
+  document.getElementById('edit-qty-delta').value=0; // ✅ 조정량은 항상 0부터
+  editSnapshotQty = +t.qty || 0;
   document.getElementById('edit-note').value=t.note||'';
+  document.getElementById('edit-err').style.display='none';
   const dr=document.getElementById('edit-dest-row');
   if(t.type==='otp'){dr.style.display='block';editDest=t.dest||'KR';setED(editDest);}else dr.style.display='none';
   document.getElementById('edit-ov').classList.add('show');
@@ -1915,12 +1924,17 @@ function openEdit(id){
 function saveEdit(){
   const rawId=document.getElementById('edit-idx').value;
   const isNG=String(rawId).startsWith('ng-');
+  const delta=parseFloat(document.getElementById('edit-qty-delta').value)||0;
+
   if(isNG){
     const id=parseInt(rawId.replace('ng-',''));
     const idx=ngLog.findIndex(x=>x.id===id);if(idx<0)return;
-    const t=ngLog[idx];const nq=parseFloat(document.getElementById('edit-qty').value)||0;
-    if(!nq){alert('수량을 입력하세요.');return;}
-    const diff=nq-t.qty;
+    const t=ngLog[idx];
+    // ✅ 스냅샷 검증
+    if(+t.qty !== editSnapshotQty){ alert('⚠️ 이 이력이 수정 중에 변경되었습니다. 모달을 닫고 다시 열어주세요.'); return; }
+    const nq=+t.qty+delta;
+    if(nq<=0){ alert('⚠️ 조정 결과 수량이 0 이하가 됩니다.'); return; }
+    const diff=delta; // nq - t.qty === delta
     const item=DB.ng.find(r=>r.code===t.code);
     if(item){
       if(t.type==='ng-in'){item.cur=+Math.max(0,item.cur+diff).toFixed(4);item.inng=+Math.max(0,item.inng+diff).toFixed(4);}
@@ -1931,9 +1945,12 @@ function saveEdit(){
   }
   const id=parseInt(rawId);
   const idx=txLog.findIndex(x=>x.id===id);if(idx<0)return;
-  const t=txLog[idx];const nq=parseInt(document.getElementById('edit-qty').value)||0;
-  if(!nq){alert('수량을 입력하세요.');return;}
-  const diff=nq-t.qty;
+  const t=txLog[idx];
+  // ✅ 스냅샷 검증
+  if(+t.qty !== editSnapshotQty){ alert('⚠️ 이 이력이 수정 중에 변경되었습니다. 모달을 닫고 다시 열어주세요.'); return; }
+  const nq=+t.qty+delta;
+  if(nq<=0){ alert('⚠️ 조정 결과 수량이 0 이하가 됩니다.'); return; }
+  const diff=delta;
   const arr={TP:DB.tp,BTP:DB.btp,KR:DB.kr,VN:DB.vn,VTTH:DB.vtth}[t.cat];
   const item=arr&&arr.find(r=>r.code===t.code);
   if(item){if(t.type==='in'){item.cur+=diff;item.total+=diff;}else{item.cur=Math.max(0,item.cur-diff);item.total=Math.max(0,item.total-diff);}}
@@ -3100,20 +3117,58 @@ async function doSubmitNGOnline(dir) {
 
 const _origSaveEdit = typeof saveEdit==='function' ? saveEdit : null;
 async function saveEditOnline() {
-  if (_origSaveEdit) _origSaveEdit();
-  // ✅ 수정: IS_GAS(google.script.run 환경)도 포함, NG/일반 이력 분기 처리
+  const rawId = (document.getElementById('edit-idx')||{}).value || '';
+  const isNG  = String(rawId).startsWith('ng-');
+  const delta = parseFloat((document.getElementById('edit-qty-delta')||{}).value) || 0;
+  const note  = (document.getElementById('edit-note')||{}).value||'';
+  const errEl = document.getElementById('edit-err');
+
+  // 로컬 데이터에서 대상 찾기 (스냅샷 검증 포함, _origSaveEdit와 동일 로직을 먼저 점검)
+  let target, currentQty;
+  if (isNG) {
+    const id = parseInt(rawId.replace('ng-',''));
+    target = ngLog.find(x=>x.id===id);
+  } else {
+    const id = parseInt(rawId);
+    target = txLog.find(x=>x.id===id);
+  }
+  if (!target) { closeOv('edit-ov'); return; }
+  currentQty = +target.qty;
+
+  if (currentQty !== editSnapshotQty) {
+    errEl.textContent = '⚠️ 이 이력이 수정 중에 변경되었습니다. 모달을 닫고 다시 열어주세요.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const newQty = currentQty + delta;
+  if (newQty <= 0) {
+    errEl.textContent = '⚠️ 조정 결과 수량이 0 이하가 됩니다.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  // ✅ 서버 반영을 먼저 확정한 뒤에만 로컬을 변경 (race condition 방지)
   if (API_URL || IS_GAS) {
-    const rawId = (document.getElementById('edit-idx')||{}).value || '';
-    const isNG  = String(rawId).startsWith('ng-');
-    const id    = isNG ? parseInt(rawId.replace('ng-','')) : parseInt(rawId);
-    const qty   = parseFloat((document.getElementById('edit-qty')||{}).value)||0;
-    const note  = (document.getElementById('edit-note')||{}).value||'';
-    if (isNG) {
-      await api('editNG', {id, qty, note, token: ADMIN_TOKEN});
-    } else {
-      await api('editTx', {id, qty, note, token: ADMIN_TOKEN});
+    const idNum = isNG ? parseInt(rawId.replace('ng-','')) : parseInt(rawId);
+    let res;
+    if (isNG) res = await api('editNG', {id: idNum, qty: newQty, note, token: ADMIN_TOKEN});
+    else      res = await api('editTx', {id: idNum, qty: newQty, note, token: ADMIN_TOKEN});
+
+    if (res && res.error && (res.error.includes('토큰')||res.error.includes('세션')||res.error.includes('로그인'))) {
+      errEl.textContent = '⚠️ ' + res.error + ' (관리자 로그아웃 후 재로그인 필요)';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (!res || !res.ok) {
+      errEl.textContent = '서버 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류') + ' (로컬도 변경되지 않았습니다)';
+      errEl.style.display = 'block';
+      return; // ✅ 서버 실패 시 로컬 변경 코드까지 도달하지 않음
     }
   }
+
+  // ✅ 서버 성공 후에만 로컬 반영
+  if (_origSaveEdit) _origSaveEdit();
+  if (API_URL || IS_GAS) await syncNow();
 }
 
 const _origConfirmDel = typeof confirmDel==='function' ? confirmDel : null;
@@ -4128,12 +4183,39 @@ function openNGItemEdit(code) {
   document.getElementById('ng-ie-unit').value  = item.unit || '';
   document.getElementById('ng-ie-type').value  = item.type || 'mat';
   document.getElementById('ng-ie-model').value = item.model || '';
-  document.getElementById('ng-ie-cur').value   = item.cur  || 0;
-  document.getElementById('ng-ie-inng').value  = item.inng || 0;
+  document.getElementById('ng-ie-cur').value   = item.cur  || 0; // hidden 기준값
+  document.getElementById('ng-ie-inng').value  = item.inng || 0; // hidden 기준값
+  document.getElementById('ng-ie-cur-display').textContent  = (item.cur||0).toLocaleString()  + ' ' + (item.unit||'');
+  document.getElementById('ng-ie-inng-display').textContent = (item.inng||0).toLocaleString() + ' ' + (item.unit||'');
+  document.getElementById('ng-ie-cur-delta').value = 0; // ✅ 조정량은 항상 0부터
+  document.getElementById('ng-ie-inng-delta').value = 0;
   document.getElementById('ng-ie-reason').value = '';
+  document.getElementById('ng-ie-preview-result').innerHTML = '';
   const errEl = document.getElementById('ng-ie-err');
   if(errEl) errEl.style.display='none';
   document.getElementById('ng-item-edit-ov').classList.add('show');
+
+  const updatePreview = () => {
+    const baseCur  = +document.getElementById('ng-ie-cur').value || 0;
+    const baseInng = +document.getElementById('ng-ie-inng').value || 0;
+    const curD  = parseFloat(document.getElementById('ng-ie-cur-delta').value) || 0;
+    const inngD = parseFloat(document.getElementById('ng-ie-inng-delta').value) || 0;
+    const preview = document.getElementById('ng-ie-preview-result');
+    const lines = [];
+    if (curD !== 0) {
+      const r = baseCur + curD;
+      lines.push(`불량재고: ${baseCur.toLocaleString()} ${curD>0?'+':''}${curD.toLocaleString()} = <strong style="color:${r<0?'#b91c1c':'#166534'}">${r.toLocaleString()}</strong> ${item.unit||''}`);
+    }
+    if (inngD !== 0) {
+      const r = baseInng + inngD;
+      lines.push(`이번달누계: ${baseInng.toLocaleString()} ${inngD>0?'+':''}${inngD.toLocaleString()} = <strong style="color:${r<0?'#b91c1c':'#166534'}">${r.toLocaleString()}</strong> ${item.unit||''}`);
+    }
+    preview.innerHTML = lines.join('<br>');
+  };
+  const curDeltaEl = document.getElementById('ng-ie-cur-delta');
+  const inngDeltaEl = document.getElementById('ng-ie-inng-delta');
+  if (curDeltaEl) curDeltaEl.oninput = updatePreview;
+  if (inngDeltaEl) inngDeltaEl.oninput = updatePreview;
 }
 
 async function saveNGItemEdit() {
@@ -4149,21 +4231,37 @@ async function saveNGItemEdit() {
   const newUnit   = document.getElementById('ng-ie-unit').value.trim();
   const newType   = document.getElementById('ng-ie-type').value;
   const newModel  = document.getElementById('ng-ie-model').value.trim();
-  const newCur    = parseFloat(document.getElementById('ng-ie-cur').value) || 0;
-  const newInng   = parseFloat(document.getElementById('ng-ie-inng').value) || 0;
+  // ✅ 근본 수정: 절대값이 아닌 조정량(delta)을 받아서 최신 orig 값에 더한다.
+  const curDelta  = parseFloat(document.getElementById('ng-ie-cur-delta').value) || 0;
+  const inngDelta = parseFloat(document.getElementById('ng-ie-inng-delta').value) || 0;
+  const newCur    = +orig.cur  + curDelta;
+  const newInng   = +orig.inng + inngDelta;
   const reason    = document.getElementById('ng-ie-reason').value.trim();
 
   if(!newName){ errEl.textContent='품명은 필수입니다.'; errEl.style.display='block'; return; }
 
   // ✅ 모달이 열려있는 동안 동기화로 값이 바뀌었는지 검증 (재고현황 수정과 동일한 안전장치)
-  if (orig.cur !== ngItemEditSnapshotCur) {
-    errEl.textContent = `⚠️ 이 품목의 불량 재고가 수정 중에 변경되었습니다 (현재 서버 값: ${orig.cur.toLocaleString()} ${orig.unit||''}). ` +
+  if (orig.cur !== ngItemEditSnapshotCur || orig.inng !== ngItemEditSnapshotInng) {
+    errEl.textContent = `⚠️ 이 품목의 불량 재고가 수정 중에 변경되었습니다 (현재 서버 값: 불량재고 ${orig.cur.toLocaleString()}, 누계 ${orig.inng.toLocaleString()} ${orig.unit||''}). ` +
                          `모달을 닫고 다시 열어 최신 값을 확인한 뒤 수정해주세요.`;
     errEl.style.display = 'block';
     return;
   }
 
   const stockChanged = (newCur !== +orig.cur) || (newInng !== +orig.inng);
+
+  // ✅ 음수 결과 차단
+  if (newCur < 0) {
+    errEl.textContent = `⚠️ 불량재고 조정 결과가 음수(${newCur.toLocaleString()})입니다.`;
+    errEl.style.display = 'block';
+    return;
+  }
+  if (newInng < 0) {
+    errEl.textContent = `⚠️ 이번달 누계 조정 결과가 음수(${newInng.toLocaleString()})입니다.`;
+    errEl.style.display = 'block';
+    return;
+  }
+
   if (stockChanged && (!reason || reason.length < 2 || /^[.\s]+$/.test(reason))) {
     errEl.textContent = '재고 수량 변경 시 의미 있는 조정 사유를 2자 이상 입력해야 합니다.';
     errEl.style.display = 'block';
@@ -4877,11 +4975,22 @@ else location.reload();
     </div>
     <hr style="margin:14px 0;border-color:#eee">
     <div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:8px">📦 불량 재고 직접 조정</div>
-    <p style="font-size:12px;color:#b91c1c;margin-bottom:10px">⚠️ 수량 변경 시 반드시 조정 사유를 입력하세요 (이력에 자동 기록)</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div class="ov-fr"><label>현재 불량 재고</label><input id="ng-ie-cur" type="number"></div>
-      <div class="ov-fr"><label>이번달 불량입고 누계</label><input id="ng-ie-inng" type="number"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div style="background:#fef2f2;border-radius:8px;padding:10px 12px;font-size:13px">
+        현재 불량재고: <strong id="ng-ie-cur-display" style="color:#991b1b;font-size:15px">-</strong>
+      </div>
+      <div style="background:#fffbeb;border-radius:8px;padding:10px 12px;font-size:13px">
+        이번달 누계: <strong id="ng-ie-inng-display" style="color:#92400e;font-size:15px">-</strong>
+      </div>
     </div>
+    <p style="font-size:12px;color:#b91c1c;margin-bottom:10px">⚠️ 절대값이 아닌 <strong>조정량</strong>을 입력하세요. 예) +5, -5</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="ov-fr"><label>불량재고 조정량 (+/-)</label><input id="ng-ie-cur-delta" type="number" placeholder="0" value="0"></div>
+      <div class="ov-fr"><label>이번달 누계 조정량 (+/-)</label><input id="ng-ie-inng-delta" type="number" placeholder="0" value="0"></div>
+      <input type="hidden" id="ng-ie-cur" value="0">
+      <input type="hidden" id="ng-ie-inng" value="0">
+    </div>
+    <div style="font-size:12px;color:#166534;margin-top:6px" id="ng-ie-preview-result"></div>
     <div class="ov-fr" style="margin-top:6px">
       <label>조정 사유 * (재고 변경 시 필수)</label>
       <input id="ng-ie-reason" placeholder="예: 실사 후 재고 조정, 오입력 수정...">
