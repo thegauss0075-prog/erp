@@ -1515,8 +1515,8 @@ function renderInv(){
 }
 function rRow(r,q){
   const adminBtns = (typeof isAdmin !== 'undefined' && isAdmin)
-    ? `<button class="edit-btn" onclick="openItemEdit('${r.code}')" title="품목 수정" style="margin-left:3px;background:#fef3c7;border-color:#f59e0b">✏️</button>
-       <button class="edit-btn" onclick="openItemDel('${r.code}')" title="품목 숨김" style="margin-left:2px;background:#fee2e2;border-color:#fca5a5">🗑️</button>`
+    ? `<button class="edit-btn" onclick="openItemEdit('${r.code}','${r.cat}')" title="품목 수정" style="margin-left:3px;background:#fef3c7;border-color:#f59e0b">✏️</button>
+       <button class="edit-btn" onclick="openItemDel('${r.code}','${r.cat}')" title="품목 숨김" style="margin-left:2px;background:#fee2e2;border-color:#fca5a5">🗑️</button>`
     : '';
   return`<tr ${r.active===false?'style="opacity:0.4"':''}><td><span class="badge ${CB[r.cat]}">${CL[r.cat]}</span></td><td style="font-family:monospace;font-size:11px">${hl(r.code,q)}</td><td><span onclick="nameClick('${r.code}')" style="cursor:pointer;color:inherit" title="클릭하면 이력 추적">${hl(r.name,q)}</span></td><td style="color:#666;text-align:center">${r.unit}</td><td style="text-align:right">${n(r.prev)}</td><td style="text-align:right" class="${r.cur>0?'hi':''}">${n(r.cur)}</td><td style="text-align:right">${n(r.wip)}</td><td style="text-align:right;font-weight:700">${n(r.total)}</td><td class="no-print"><button class="edit-btn" onclick="prefillIO('${r.cat}','${r.code}')">🔄</button>${adminBtns}</td></tr>`;
 }
@@ -2752,6 +2752,30 @@ async function syncNow() {
       if(d.kr)   DB.kr   = mergeAll(DB.kr,   d.kr);
       if(d.vn)   DB.vn   = mergeAll(DB.vn,   d.vn);
       if(d.vtth) DB.vtth = mergeAll(DB.vtth, d.vtth);
+
+      // ✅ 보정: 같은 code가 여러 카테고리 배열에 동시 존재하면(과거 cat 오기록 사고로 분열된 경우)
+      //    서버가 실제로 분류한 카테고리(d.xx에 들어있는 쪽)만 남기고 나머지에서 제거한다.
+      const catArrPairs = [['tp',d.tp],['btp',d.btp],['kr',d.kr],['vn',d.vn],['vtth',d.vtth]];
+      const serverCatOf = {}; // code -> 서버가 분류한 실제 카테고리
+      catArrPairs.forEach(([key, remote]) => {
+        if (!remote) return;
+        remote.forEach(r => { serverCatOf[r.code] = key; });
+      });
+      const dbArrMap = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
+      Object.keys(dbArrMap).forEach(myKey => {
+        const arr = dbArrMap[myKey];
+        if (!arr) return;
+        const cleaned = arr.filter(item => {
+          const realCat = serverCatOf[item.code];
+          if (!realCat) return true; // 서버에 정보 없으면(신규 로컬 항목 등) 그대로 유지
+          return realCat === myKey;  // 서버가 분류한 카테고리와 다르면 이 배열에서는 제거(중복 제거)
+        });
+        if (cleaned.length !== arr.length) {
+          console.warn(`분열된 품목 정리: ${myKey} 배열에서 ${arr.length - cleaned.length}건 제거`);
+        }
+        dbArrMap[myKey] = cleaned;
+      });
+      DB.tp = dbArrMap.tp; DB.btp = dbArrMap.btp; DB.kr = dbArrMap.kr; DB.vn = dbArrMap.vn; DB.vtth = dbArrMap.vtth;
     }
     if (tr.ok && tr.data) txLog = tr.data.map(r=>({...r,id:+r.id||0,qty:+r.qty||0}));
     if (nr.ok) {
@@ -3336,18 +3360,30 @@ let itemDelTarget  = null; // 현재 삭제 대상 품목
 // ── 품목 수정 모달 열기
 let itemEditSnapshotCur = 0; // ✅ 모달을 열었을 때의 cur 값 (저장 시 변경 감지용)
 let itemEditSnapshotWip = 0; // ✅ 모달을 열었을 때의 wip 값 (저장 시 변경 감지용)
+let itemEditOrigCatKey  = 'kr'; // ✅ 모달을 열었을 때 실제 위치했던 배열(tp/btp/kr/vn/vtth)
 
-function openItemEdit(code) {
+function openItemEdit(code, catHint) {
   if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
   // ✅ allRows()는 복사본을 반환하므로, DB 원본에서 직접 조회
-  const allDBArrs0 = [DB.tp, DB.btp, DB.kr, DB.vn, DB.vtth];
-  let item = null;
-  for (const arr of allDBArrs0) {
+  //    동시에 어느 배열(tp/btp/kr/vn/vtth)에서 찾았는지를 정확히 기록한다.
+  //    (기존엔 item.cat 필드 자체가 DB 원본 데이터에 없어서 항상 'kr'로 잘못 표시되던 버그)
+  // ✅ catHint가 주어지면 그 배열을 먼저(우선) 검색한다.
+  //    (완제품TP와 반제품BTP가 같은 code를 공유하는 9개 품목이 있어서,
+  //     힌트 없이 순서대로만 찾으면 항상 TP 사본이 열리고 BTP 사본은 수정이 불가능했음)
+  const dbMap = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
+  const order = ['tp','btp','kr','vn','vtth'];
+  const sortedOrder = catHint && dbMap[catHint.toLowerCase()]
+    ? [catHint.toLowerCase(), ...order.filter(k=>k!==catHint.toLowerCase())]
+    : order;
+  let item = null, foundCatKey = 'kr';
+  for (const key of sortedOrder) {
+    const arr = dbMap[key];
     const found = arr && arr.find(r => r.code === code);
-    if (found) { item = found; break; }
+    if (found) { item = found; foundCatKey = key; break; }
   }
   if (!item) return;
   itemEditTarget = item;
+  itemEditOrigCatKey = foundCatKey; // ✅ 원래 위치한 배열을 끝까지 기억 (저장 시 비교용)
   itemEditSnapshotCur = +item.cur || 0; // ✅ 스냅샷 캡처
   itemEditSnapshotWip = +item.wip || 0;
 
@@ -3356,7 +3392,7 @@ function openItemEdit(code) {
   document.getElementById('ie-unit').value  = item.unit || '';
   document.getElementById('ie-model').value = item.model || '';
   document.getElementById('ie-sub').value   = item.sub || '';
-  document.getElementById('ie-cat').value   = (item.cat || 'kr').toLowerCase();
+  document.getElementById('ie-cat').value   = foundCatKey; // ✅ 실제 위치한 배열 기준 (item.cat 필드는 신뢰 불가)
   document.getElementById('ie-cur').value   = item.cur || 0; // hidden: 기준 현재고
   document.getElementById('ie-wip').value   = item.wip || 0; // hidden: 기준 재공
   document.getElementById('ie-cur-display').textContent = (item.cur||0).toLocaleString();
@@ -3403,10 +3439,17 @@ async function saveItemEdit() {
 
   // ✅ 핵심 버그 수정: itemEditTarget은 모달 열 때의 스냅샷일 수 있으므로
   //    저장 직전 DB에서 code로 최신 객체를 다시 조회한다.
+  //    ✅ itemEditOrigCatKey(모달 열 때 실제 위치)를 우선 검색해서
+  //       TP/BTP처럼 같은 code를 공유하는 경우에도 정확한 사본을 찾는다.
   const liveCode = itemEditTarget.code;
-  const allDBArrsLive = [DB.tp, DB.btp, DB.kr, DB.vn, DB.vtth];
+  const dbMapLive = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
+  const orderLive = ['tp','btp','kr','vn','vtth'];
+  const sortedOrderLive = dbMapLive[itemEditOrigCatKey]
+    ? [itemEditOrigCatKey, ...orderLive.filter(k=>k!==itemEditOrigCatKey)]
+    : orderLive;
   let orig = null;
-  for (const arr of allDBArrsLive) {
+  for (const key of sortedOrderLive) {
+    const arr = dbMapLive[key];
     const found = arr && arr.find(r => r.code === liveCode);
     if (found) { orig = found; break; }
   }
@@ -3416,7 +3459,14 @@ async function saveItemEdit() {
   const newUnit  = document.getElementById('ie-unit').value.trim();
   const newModel = document.getElementById('ie-model').value.trim();
   const newSub   = document.getElementById('ie-sub').value.trim();
-  const newCat   = document.getElementById('ie-cat').value; // 소문자 (tp/btp/kr/vn/vtth)
+  // ✅ 핵심 수정: 카테고리는 화면 select 값을 그대로 믿지 않고, 모달을 열 때
+  //    실제로 위치했던 배열(itemEditOrigCatKey)을 그대로 사용한다.
+  //    (기존엔 item.cat 필드가 DB 원본에 없어 select가 항상 'kr'로 잘못 표시됐고,
+  //     그 잘못된 값이 그대로 저장되어 서버 ITEMS 시트의 cat 컬럼이 TP→KR로 바뀌어버림.
+  //     그 결과 같은 코드가 DB.tp와 DB.kr 양쪽에 분열되어 존재하게 되고,
+  //     "완제품" 쪽 사본은 갱신이 안 된 옛 값을 계속 보여줘서
+  //     "수정해도 재접속하면 복구된다"는 증상으로 나타났음)
+  const newCat   = itemEditOrigCatKey;
   // ✅ 근본 수정: "현재고"/"재공"을 절대값으로 직접 입력받지 않고, "조정량(delta)"만 입력받아
   //    저장 직전의 최신 orig 값에 더한다. 이렇게 하면 사용자가 화면에 떠있던 옛 값을
   //    실수로 0으로 바꿔버려 전체 재고가 날아가는 사고가 구조적으로 불가능해진다.
@@ -3504,19 +3554,23 @@ async function saveItemEdit() {
   }
 
   // ✅ 서버 반영 성공(또는 서버 미연동 환경) 후에만 로컬 DB 업데이트
-  const allDBArrs = [DB.tp, DB.btp, DB.kr, DB.vn, DB.vtth];
+  //    ✅ 핵심 수정: 모든 배열을 순회하며 code가 일치하면 전부 바꾸던 기존 방식은
+  //       TP/BTP처럼 같은 code를 공유하는 품목에서 한쪽만 수정해도 둘 다 같은 값으로
+  //       덮어써버리는 심각한 데이터 오염을 일으켰다. newCat(=itemEditOrigCatKey)에
+  //       해당하는 배열 단 하나만 정확히 찾아서 업데이트한다.
+  const dbMapSave = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
+  const targetArr = dbMapSave[newCat];
   let updatedRef = null;
-  allDBArrs.forEach(arr => {
-    const idx = arr ? arr.findIndex(r => r.code === orig.code) : -1;
+  if (targetArr) {
+    const idx = targetArr.findIndex(r => r.code === orig.code);
     if (idx >= 0) {
-      arr[idx] = { ...arr[idx],
+      targetArr[idx] = { ...targetArr[idx],
         name:newName, unit:newUnit, model:newModel, sub:newSub,
-        cat: newCat.toUpperCase(),
         cur:newCur, prev:newPrev, wip:newWip, total:newCur + newWip
       };
-      updatedRef = arr[idx];
+      updatedRef = targetArr[idx];
     }
-  });
+  }
   if (updatedRef) {
     itemEditTarget = updatedRef;
     itemEditSnapshotCur = +updatedRef.cur || 0; // ✅ 스냅샷도 최신화
@@ -3551,22 +3605,30 @@ async function saveItemEdit() {
 }
 
 // ── 품목 비활성화 모달
-function openItemDel(code) {
+let itemDelCatKey = 'kr'; // ✅ 모달 열 때 실제 위치했던 배열 기억
+
+function openItemDel(code, catHint) {
   if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
-  const allDBArrs0b = [DB.tp, DB.btp, DB.kr, DB.vn, DB.vtth];
-  let item = null;
-  for (const arr of allDBArrs0b) {
+  const dbMapDel = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
+  const orderDel = ['tp','btp','kr','vn','vtth'];
+  const sortedOrderDel = catHint && dbMapDel[catHint.toLowerCase()]
+    ? [catHint.toLowerCase(), ...orderDel.filter(k=>k!==catHint.toLowerCase())]
+    : orderDel;
+  let item = null, foundKey = 'kr';
+  for (const key of sortedOrderDel) {
+    const arr = dbMapDel[key];
     const found = arr && arr.find(r => r.code === code);
-    if (found) { item = found; break; }
+    if (found) { item = found; foundKey = key; break; }
   }
   if (!item) return;
   itemDelTarget = item;
+  itemDelCatKey = foundKey; // ✅ 정확한 카테고리 기억 (TP/BTP 구분용)
 
   // 해당 품목의 이력 건수 확인
   const histCount = txLog.filter(t => t.code === code).length;
   document.getElementById('item-del-info').innerHTML =
     `<strong>${item.name}</strong><br>
-     코드: <code>${item.code}</code> · ${CL[item.cat]||item.cat}<br>
+     코드: <code>${item.code}</code> · ${CL[foundKey.toUpperCase()]||foundKey.toUpperCase()}<br>
      현재고: <strong>${item.cur || 0} ${item.unit}</strong><br>
      <span style="color:#92400e">연관 이력: ${histCount}건 (이력은 보존됨)</span>`;
   document.getElementById('item-del-reason').value = '';
@@ -3582,26 +3644,28 @@ async function confirmItemDel() {
   const errEl  = document.getElementById('item-del-err');
   if (!reason) { errEl.textContent='비활성화 사유를 입력하세요.'; errEl.style.display='block'; return; }
 
-  // ✅ active:false 플래그 - code로 전체 DB 검색
-  const allDBArrs2 = [DB.tp, DB.btp, DB.kr, DB.vn, DB.vtth];
-  allDBArrs2.forEach(arr => {
-    const idx = arr ? arr.findIndex(r => r.code === itemDelTarget.code) : -1;
-    if (idx >= 0) arr[idx] = { ...arr[idx], active: false, deactivateReason: reason };
-  });
+  // ✅ 핵심 수정: itemDelCatKey(모달 열 때 정확히 위치했던 배열)만 비활성화한다.
+  //    (기존엔 모든 배열을 순회해서 code가 같으면 전부 비활성화 → TP를 끄면 BTP도 같이 사라지는 사고)
+  const dbMapDelConfirm = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
+  const targetArrDel = dbMapDelConfirm[itemDelCatKey];
+  if (targetArrDel) {
+    const idx = targetArrDel.findIndex(r => r.code === itemDelTarget.code);
+    if (idx >= 0) targetArrDel[idx] = { ...targetArrDel[idx], active: false, deactivateReason: reason };
+  }
 
   // 비활성화 이력 기록
   const adjLog = {
     id: Date.now(), type: 'deactivate', code: itemDelTarget.code, name: itemDelTarget.name,
-    cat: (itemDelTarget.cat||'').toUpperCase(), unit: itemDelTarget.unit || '',
+    cat: itemDelCatKey.toUpperCase(), unit: itemDelTarget.unit || '',
     qty: 0, note: `[품목비활성화] ${reason}`, lot: '',
     dt: vnDt(),
     dest: '', user: CURRENT_USER || '관리자', reason
   };
   txLog.unshift(adjLog);
 
-  // ✅ IS_GAS 포함
+  // ✅ IS_GAS 포함, cat을 함께 전달해야 서버가 TP/BTP를 정확히 구분함
   if (API_URL || IS_GAS) {
-    await api('editItem', { code: itemDelTarget.code, active: false, token: ADMIN_TOKEN });
+    await api('editItem', { code: itemDelTarget.code, cat: itemDelCatKey.toUpperCase(), active: false, token: ADMIN_TOKEN });
     await api('addTx', {...adjLog, token: ADMIN_TOKEN});
   }
 
@@ -4934,8 +4998,8 @@ else location.reload();
       <div class="ov-fr"><label>단위</label><input id="ie-unit" placeholder="Ea / Kg"></div>
       <div class="ov-fr"><label>모델</label><input id="ie-model" placeholder="모델명"></div>
       <div class="ov-fr"><label>Sub 분류</label><input id="ie-sub" placeholder="CORE / WIRE..."></div>
-      <div class="ov-fr"><label>카테고리</label>
-        <select id="ie-cat">
+      <div class="ov-fr"><label>카테고리 (읽기전용)</label>
+        <select id="ie-cat" disabled style="background:#f5f6f8;color:#888">
           <option value="tp">완제품 (TP)</option><option value="btp">반제품 (BTP)</option>
           <option value="kr">원자재 KR</option><option value="vn">원자재 VN</option>
           <option value="vtth">소모품 (VTTH)</option>
