@@ -378,6 +378,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <button onclick="window.print()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🖨️ 인쇄 / In</button>
     <button id="add-item-btn" onclick="openAddItem()" style="display:none;padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 품목 추가</button>
     <button id="month-close-btn" onclick="openMonthClose()" style="display:none;padding:7px 14px;border-radius:7px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(124,58,237,.3)">📅 월말 마감</button>
+    <button id="tp-diagnose-btn" onclick="openTPDiagnose()" style="display:none;padding:7px 14px;border-radius:7px;border:2px solid #dc2626;background:#fff;color:#dc2626;font-size:13px;cursor:pointer;font-weight:700;white-space:nowrap">🔍 완제품 위치 진단</button>
     <button id="sync-btn" onclick="syncNow()" style="padding:7px 14px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555;white-space:nowrap">🔄 동기화</button>
     <div class="sw"><span class="si">🔍</span><input id="inv-q" placeholder="코드·품명 검색..." oninput="chkXb('inv-q','inv-xb');renderInv()"><button class="xb" id="inv-xb" onclick="clr('inv-q','inv-xb');renderInv()">✕</button></div>
     <select id="inv-cat" onchange="initMS();initSubFilter();renderInv()">
@@ -3043,6 +3044,8 @@ function applyAdminUI(on) {
   if (mcBtn) mcBtn.style.display = on ? 'inline-block' : 'none';
   const cleanupBtn = document.getElementById('ng-cleanup-btn');
   if (cleanupBtn) cleanupBtn.style.display = on ? 'inline-block' : 'none';
+  const tpDiagBtn = document.getElementById('tp-diagnose-btn');
+  if (tpDiagBtn) tpDiagBtn.style.display = on ? 'inline-block' : 'none';
 }
 
 // ── API URL 저장
@@ -4216,6 +4219,99 @@ async function confirmNGCleanup(legacyItems, legacyLogs) {
 
   alert(`✅ 레거시 데이터 정리 완료!\n품목 ${legacyItems.length}개, 이력 ${legacyLogs.length}건 삭제됨.` +
         (serverOk ? '' : '\n\n⚠️ 서버(Sheets) 반영은 실패했습니다. Sheets에서 직접 삭제해주세요.'));
+}
+
+// ════════════════════════════════════════════════════════════
+//  완제품(TP) 카테고리 오염 진단 및 복구 (관리자)
+//  - 과거 사고로 cat이 KR 등으로 잘못 바뀌어 DB.kr/vn/vtth 등에
+//    들어가 있는 원래 완제품 코드를 찾아서 DB.tp로 되돌린다.
+// ════════════════════════════════════════════════════════════
+const TP_CANONICAL_CODES = [
+  'ML27A040118A','ML27M040145A','ML27A040091A','ML27A040090A',
+  'ML27A040127A','ML27A040112A','ML27M020003A','ML27M040025A',
+  'AIR_COIL#0','AIR_COIL#1','AIR_COIL#2','AIR_COIL#3','AIR_COIL#4',
+  'CH330125 IND-5T','CH330125 IND-8T','ML27M040143A'
+];
+
+function openTPDiagnose() {
+  if(!isAdmin){ alert('관리자 로그인이 필요합니다.'); return; }
+
+  const dbMap = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
+  const report = [];
+  TP_CANONICAL_CODES.forEach(code => {
+    const foundIn = [];
+    Object.entries(dbMap).forEach(([key, arr]) => {
+      if (arr && arr.find(r => r.code === code)) foundIn.push(key);
+    });
+    report.push({ code, foundIn });
+  });
+
+  const missing = report.filter(r => !r.foundIn.includes('tp'));
+  const ok = report.filter(r => r.foundIn.includes('tp') && r.foundIn.length === 1);
+
+  let msg = `🔍 완제품(TP) 위치 진단 결과\n\n`;
+  msg += `정상 (TP에만 존재): ${ok.length}개\n`;
+  msg += `문제 (TP에 없거나 다른 곳에도 존재): ${missing.length}개\n\n`;
+  if (missing.length) {
+    msg += `문제 품목 목록:\n`;
+    missing.forEach(r => msg += `  - ${r.code} : 현재 위치 [${r.foundIn.join(', ')||'어디에도 없음'}]\n`);
+    msg += `\n이 품목들을 TP로 복구하시겠습니까?\n`;
+    msg += `(서버 Sheets ITEMS의 cat 컬럼도 'TP'로 함께 수정됩니다)`;
+  } else {
+    msg += `✅ 모든 완제품이 정상 위치에 있습니다.`;
+  }
+
+  if (!missing.length) { alert(msg); return; }
+  if (!confirm(msg)) return;
+
+  confirmTPRecover(missing);
+}
+
+async function confirmTPRecover(missingList) {
+  const dbMap = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
+  let recovered = 0;
+
+  for (const { code, foundIn } of missingList) {
+    // 다른 카테고리 배열에 들어가 있는 사본을 찾아서 데이터(cur/wip 등)를 가져온다
+    let bestData = null;
+    for (const key of foundIn) {
+      const item = dbMap[key].find(r => r.code === code);
+      if (item) { bestData = item; break; }
+    }
+    // TP 배열에 이미 있으면 그 데이터를 기준으로, 없으면 찾은 사본 데이터를 사용
+    const existingInTP = DB.tp.find(r => r.code === code);
+    const finalData = existingInTP || bestData;
+    if (!finalData) continue;
+
+    // TP 배열에 정확한 데이터로 보정
+    const tpIdx = DB.tp.findIndex(r => r.code === code);
+    if (tpIdx >= 0) {
+      DB.tp[tpIdx] = { ...DB.tp[tpIdx], ...finalData };
+    } else {
+      DB.tp.push({ ...finalData });
+    }
+
+    // 다른 배열(kr/vn/vtth/btp)에 잘못 들어간 사본 제거
+    foundIn.filter(k => k !== 'tp').forEach(key => {
+      dbMap[key] = dbMap[key].filter(r => r.code !== code);
+    });
+
+    // 서버 Sheets ITEMS의 cat을 TP로 수정
+    if (API_URL || IS_GAS) {
+      await api('editItem', {
+        code, cat: 'TP', name: finalData.name, unit: finalData.unit,
+        model: finalData.model||'', sub: finalData.sub||'',
+        cur: finalData.cur||0, prev: finalData.prev||0, wip: finalData.wip||0,
+        total: (finalData.cur||0)+(finalData.wip||0),
+        token: ADMIN_TOKEN
+      });
+    }
+    recovered++;
+  }
+  DB.kr = dbMap.kr; DB.vn = dbMap.vn; DB.vtth = dbMap.vtth; DB.btp = dbMap.btp;
+
+  renderInv(); initDashboard();
+  alert(`✅ ${recovered}개 완제품을 TP로 복구했습니다.\n서버(Sheets)에도 반영했습니다.`);
 }
 
 function openMonthClose() {
