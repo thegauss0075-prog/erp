@@ -2651,14 +2651,34 @@ function api(action, body={}) {
         data:  JSON.stringify({...body, pw: _pw}),
         callback: cb
       });
+      let settled = false; // ✅ 이미 resolve됐는지 추적 (타임아웃 후 늦게 와도 안전하게 무시)
+      // ✅ 핵심 수정: 타임아웃이 지나도 콜백 함수 자체는 즉시 지우지 않고,
+      //    "지연 응답을 조용히 흡수하는 빈 함수"로 교체한다.
+      //    (기존엔 delete로 완전히 제거해서, GAS 응답이 늦게 도착하면
+      //     <script> 태그가 실행될 때 "cb_xxx is not defined" 에러가 났고,
+      //     이게 반복되며 동기화가 계속 실패/재시도되는 원인이 됐었음)
       window[cb] = function(data) {
+        if (settled) return; // 이미 타임아웃 처리됐으면 결과를 조용히 버림
+        settled = true;
         try{delete window[cb];}catch(e){}
         resolve(data);
       };
-      setTimeout(()=>{ if(window[cb]){delete window[cb]; resolve({ok:false,error:'timeout'});}},8000);
+      const timeoutId = setTimeout(()=>{
+        if (settled) return;
+        settled = true;
+        // ✅ delete 대신 빈 함수로 교체 → 늦게 도착해도 ReferenceError 없이 조용히 무시됨
+        window[cb] = function(){ try{delete window[cb];}catch(e){} };
+        resolve({ok:false,error:'timeout'});
+      }, 20000); // ✅ 8초 → 20초로 연장 (GAS 응답 지연 대비)
       const s=document.createElement('script');
       s.src=API_URL+'?'+params.toString();
-      s.onerror=()=>{ delete window[cb]; resolve({ok:false,error:'네트워크 오류'}); };
+      s.onerror=()=>{
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        window[cb] = function(){ try{delete window[cb];}catch(e){} };
+        resolve({ok:false,error:'네트워크 오류'});
+      };
       let c=document.getElementById('jsonp-container');
       if(!c){c=document.createElement('div');c.id='jsonp-container';c.style.display='none';document.body.appendChild(c);}
       c.appendChild(s);
@@ -2741,9 +2761,13 @@ async function syncNow() {
       // ✅ 보정: NG_LOG(이력)에는 있지만 NG_ITEMS(현황)에 없는 품목을 이력 기반으로 복원
       //    (addNG가 NG_ITEMS에 행을 못 만들었던 과거 데이터로 인한 "이력은 있는데 사라짐" 현상 복구)
       //    ※ NG_LOG 시트엔 model 컬럼이 없으므로, 재고현황(allRows/getModel)에서 모델을 정확히 추론한다.
+      //    ✅ 핵심 수정: 복구한 항목을 서버 NG_ITEMS에도 즉시 등록한다.
+      //       (기존엔 로컬에서만 매번 다시 만들고 버려져서, 동기화마다 똑같은 복구 로그가
+      //        무한 반복되는 원인이 됐었음 - "13~17분 간격으로 같은 코드가 자동 복구됨" 증상)
       const ngItemCodes = new Set(DB.ng.map(r=>r.code));
       const missingCodes = [...new Set(ngLog.filter(l=>!ngItemCodes.has(l.code)).map(l=>l.code))];
       const invPoolForModel = allRows(); // 재고현황 전체 (TP/BTP/KR/VN/VTTH)
+      const recoveredForServer = [];
       missingCodes.forEach(code => {
         const logsForCode = ngLog.filter(l=>l.code===code);
         if(!logsForCode.length) return;
@@ -2755,13 +2779,26 @@ async function syncNow() {
         });
         const ngType = (ref.cat||'mat').toUpperCase()==='TP' ? 'TP'
                      : (ref.cat||'').toLowerCase()==='copper' ? 'copper' : 'mat';
-        // ✅ 모델 추론: 1) 재고현황에 같은 코드가 있으면 그 model 사용
-        //             2) 없으면 getModel(code,name)으로 추정 (완제품 패턴 매칭)
         const invMatch = invPoolForModel.find(r=>r.code===code);
         const inferredModel = (invMatch && invMatch.model) ? invMatch.model : getModel(code, ref.name||'');
-        DB.ng.push({type:ngType, code, name:ref.name||code, unit:ref.unit||'', prev:0, inng, cur, model:inferredModel});
+        const recovered = {type:ngType, code, name:ref.name||code, unit:ref.unit||'', prev:0, inng, cur, model:inferredModel};
+        DB.ng.push(recovered);
+        recoveredForServer.push(recovered);
         console.log('NG 품목 자동 복구:', code, 'cur=', cur, 'model=', inferredModel);
       });
+      // ✅ 서버에도 영구 등록 (다음 동기화부터는 더 이상 복구가 필요 없게 됨)
+      if (recoveredForServer.length && (API_URL || IS_GAS)) {
+        for (const r of recoveredForServer) {
+          api('addNGItem', {type:r.type, code:r.code, name:r.name, unit:r.unit, model:r.model, token:ADMIN_TOKEN})
+            .then(res => {
+              if (res && res.ok) {
+                // 등록 성공 후 실제 수량(cur/inng)까지 정확히 반영
+                api('editNGItem', {code:r.code, cur:r.cur, inng:r.inng, name:r.name, unit:r.unit, type:r.type, model:r.model, token:ADMIN_TOKEN});
+              }
+            })
+            .catch(()=>{});
+        }
+      }
     }
     initDashboard(); renderInv(); renderNG(); renderNGLog(); renderHist(); renderIOTable();
     setSyncBadge('ok','✅ '+vnNow().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 동기화');
