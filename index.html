@@ -1530,7 +1530,7 @@ function rRow(r,q){
     ? `<button class="edit-btn" onclick="openItemEdit('${r.code}','${r.cat}')" title="품목 수정" style="margin-left:3px;background:#fef3c7;border-color:#f59e0b">✏️</button>
        <button class="edit-btn" onclick="openItemDel('${r.code}','${r.cat}')" title="품목 숨김" style="margin-left:2px;background:#fee2e2;border-color:#fca5a5">🗑️</button>`
     : '';
-  return`<tr ${r.active===false?'style="opacity:0.4"':''}><td><span class="badge ${CB[r.cat]}">${CL[r.cat]}</span></td><td style="font-family:monospace;font-size:11px">${hl(r.code,q)}</td><td><span onclick="nameClick('${r.code}')" style="cursor:pointer;color:inherit" title="클릭하면 이력 추적">${hl(r.name,q)}</span></td><td style="color:#666;text-align:center">${r.unit}</td><td style="text-align:right">${n(r.prev)}</td><td style="text-align:right" class="${r.cur>0?'hi':''}">${n(r.cur)}</td><td style="text-align:right">${n(r.wip)}</td><td style="text-align:right;font-weight:700">${n(r.total)}</td><td class="no-print"><button class="edit-btn" onclick="prefillIO('${r.cat}','${r.code}')">🔄</button>${adminBtns}</td></tr>`;
+  return`<tr ${r.active===false?'style="opacity:0.4"':''}><td><span class="badge ${CB[r.cat]}">${CL[r.cat]}</span></td><td style="font-family:monospace;font-size:11px">${hl(r.code,q)}</td><td><span onclick="nameClick('${r.code}','${r.cat}')" style="cursor:pointer;color:inherit" title="클릭하면 이력 추적">${hl(r.name,q)}</span></td><td style="color:#666;text-align:center">${r.unit}</td><td style="text-align:right">${n(r.prev)}</td><td style="text-align:right" class="${r.cur>0?'hi':''}">${n(r.cur)}</td><td style="text-align:right">${n(r.wip)}</td><td style="text-align:right;font-weight:700">${n(r.total)}</td><td class="no-print"><button class="edit-btn" onclick="prefillIO('${r.cat}','${r.code}')">🔄</button>${adminBtns}</td></tr>`;
 }
 
 function prefillIO(cat,code){
@@ -3411,6 +3411,9 @@ function openItemEdit(code, catHint) {
   document.getElementById('ie-model').value = item.model || '';
   document.getElementById('ie-sub').value   = item.sub || '';
   document.getElementById('ie-cat').value   = foundCatKey; // ✅ 실제 위치한 배열 기준 (item.cat 필드는 신뢰 불가)
+  const catLabelMap = {tp:'완제품(TP)', btp:'반제품(BTP)', kr:'원자재 KR', vn:'원자재 VN', vtth:'소모품'};
+  const catDisplayEl = document.getElementById('ie-cat-display-text');
+  if (catDisplayEl) catDisplayEl.textContent = catLabelMap[foundCatKey] || foundCatKey;
   document.getElementById('ie-cur').value   = item.cur || 0; // hidden: 기준 현재고
   document.getElementById('ie-wip').value   = item.wip || 0; // hidden: 기준 재공
   document.getElementById('ie-cur-display').textContent = (item.cur||0).toLocaleString();
@@ -3711,19 +3714,29 @@ function openTraceSearch() {
 }
 
 // ── 재고현황 행 클릭으로 이력 추적
-function openTrace(code) {
-  const item = allRows().find(r => r.code === code);
+function openTrace(code, catHint) {
+  // ✅ 핵심 수정: code만으로는 TP/BTP/NG가 같은 코드를 공유하는 경우를 구분할 수 없다.
+  //    catHint가 있으면 정확히 그 카테고리의 품목을 우선 찾는다.
+  const pool = allRows();
+  let item = catHint ? pool.find(r => r.code === code && r.cat === catHint.toUpperCase()) : null;
+  if (!item) item = pool.find(r => r.code === code);
   if (!item) { alert('품목을 찾을 수 없습니다: ' + code); return; }
 
   document.getElementById('trace-title').innerHTML =
-    `🔍 <strong>${item.name}</strong> <code style="font-size:12px;color:#888;font-weight:400">${item.code}</code>`;
+    `🔍 <strong>${item.name}</strong> <code style="font-size:12px;color:#888;font-weight:400">${item.code}</code> ` +
+    `<span class="badge ${CB[item.cat]||''}" style="font-size:11px">${CL[item.cat]||item.cat}</span>`;
 
-  const txs = [...txLog, ...ngLog].filter(t => t.code === code).sort((a,b) => b.id - a.id);
+  // ✅ 핵심 수정: txLog(일반 입출고)만 이 화면의 본체로 쓰고,
+  //    ngLog(불량 입출고)는 같은 코드를 공유하는 NG 품목의 이력이므로 완전히 분리해서
+  //    별도 섹션으로만 보여준다. 이전엔 둘을 그냥 합쳐서 보여줘서,
+  //    "완제품을 봤는데 불량 조정 이력이 같이 나타나 혼란"을 일으켰다.
+  const txs = txLog.filter(t => t.code === code).sort((a,b) => b.id - a.id);
+  const ngTxs = ngLog.filter(t => t.code === code).sort((a,b) => b.id - a.id);
   const inTxs  = txs.filter(t => ['in','tp-in'].includes(t.type));
   const outTxs = txs.filter(t => ['omt','otp'].includes(t.type));
   const inQty  = inTxs.reduce((s,t)  => s+(+t.qty||0), 0);
   const outQty = outTxs.reduce((s,t) => s+(+t.qty||0), 0);
-  const ngQty  = txs.filter(t=>['ng-in'].includes(t.type)).reduce((s,t)=>s+(+t.qty||0),0);
+  const ngQty  = ngTxs.filter(t=>t.type==='ng-in').reduce((s,t)=>s+(+t.qty||0),0);
 
   // ── 요약 카드
   document.getElementById('trace-summary').innerHTML = `
@@ -3837,7 +3850,30 @@ function openTrace(code) {
       </table>
     </div>` : '<div class="empty" style="padding:20px">이력이 없습니다.</div>';
 
-  document.getElementById('trace-body').innerHTML = lotSection + timelineSection;
+  // ✅ 같은 코드를 공유하는 불량(NG) 품목의 이력은 완전히 별도 섹션으로,
+  //    "이건 다른 카테고리(불량)의 이력입니다"를 명확히 알리고 보여준다.
+  const ngSection = ngTxs.length ? `
+    <div style="margin-top:16px;background:#fef2f2;border-radius:8px;padding:12px;border:1px solid #fecaca">
+      <div style="font-size:12px;font-weight:700;color:#991b1b;margin-bottom:6px">
+        ⚠️ 같은 코드의 불량(NG) 품목 이력 (${ngTxs.length}건) — 이 완제품과는 별개의 재고입니다
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <tbody>
+          ${ngTxs.slice(0,10).map(t => {
+            const isIn = t.type==='ng-in';
+            return `<tr style="border-bottom:1px solid #fee2e2">
+              <td style="padding:4px 6px;color:#888;white-space:nowrap">${t.dt||''}</td>
+              <td style="padding:4px 6px;color:#991b1b">${typeLabel[t.type]||t.type}</td>
+              <td style="padding:4px 6px;text-align:right;font-weight:700;color:${isIn?'#166534':'#b91c1c'}">${isIn?'+':'-'}${n(t.qty)} ${t.unit||''}</td>
+              <td style="padding:4px 6px;color:#888">${t.note||'-'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      ${ngTxs.length>10?`<div style="font-size:11px;color:#888;margin-top:4px">...외 ${ngTxs.length-10}건 (불량(NG) 탭에서 전체 확인)</div>`:''}
+    </div>` : '';
+
+  document.getElementById('trace-body').innerHTML = lotSection + timelineSection + ngSection;
   document.getElementById('trace-ov').classList.add('show');
 }
 
@@ -4764,8 +4800,8 @@ function autoLot(dir) {
 }
 
 // 재고현황 품명 클릭 → 이력 추적
-function nameClick(code) {
-  openTrace(code);
+function nameClick(code, catHint) {
+  openTrace(code, catHint);
 }
 
 
@@ -5003,7 +5039,10 @@ else location.reload();
 <div class="ov-bg" id="item-edit-ov">
   <div class="ov-box" style="max-width:520px">
     <h3>✏️ 품목 수정</h3>
-    <p style="font-size:12px;color:#888;margin-bottom:12px">⚠️ 품목코드는 수정 불가 (이력 연동 유지)</p>
+    <p style="font-size:12px;color:#888;margin-bottom:6px">⚠️ 품목코드는 수정 불가 (이력 연동 유지)</p>
+    <p style="font-size:12px;color:#1d4ed8;background:#eff6ff;padding:8px 10px;border-radius:6px;margin-bottom:12px">
+      ℹ️ 같은 코드를 공유하는 다른 카테고리(완제품/반제품/불량 등)가 있어도, 이 수정은 <strong id="ie-cat-display-text">현재 카테고리</strong>에만 적용됩니다.
+    </p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="ov-fr" style="grid-column:1/-1">
         <label>품목코드 (읽기전용)</label>
@@ -5087,6 +5126,9 @@ else location.reload();
 <div class="ov-bg" id="ng-item-edit-ov">
   <div class="ov-box" style="max-width:480px">
     <h3>✏️ 불량 품목 수정</h3>
+    <p style="font-size:12px;color:#991b1b;background:#fef2f2;padding:8px 10px;border-radius:6px;margin-bottom:10px">
+      ⚠️ 이 수정은 <strong>불량(NG) 재고에만</strong> 적용됩니다. 완제품/원자재 재고는 변경되지 않습니다.
+    </p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="ov-fr" style="grid-column:1/-1">
         <label>품목코드 (읽기전용)</label>
