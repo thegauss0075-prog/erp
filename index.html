@@ -1278,6 +1278,7 @@ function destText(dest) {
 }
 
 let txLog=[],acIdx={in:-1,otp:-1,omt:-1},acResults={in:[],otp:[],omt:[]};
+let CP_LOT_ALLOC={}; // ✅ FIFO 다중 LOT 자동 분배 결과 캐시 (showCP → doSubmit 전달용)
 let curSubFilter='';
 
 /* KR sub 분류 정의 */
@@ -1593,18 +1594,9 @@ function fillForm(dir,item){
   document.getElementById(dir+'-qty').focus();
 }
 
-// dir: 'omt'(자재출고) 또는 'otp'(완제품출고)
-function fillLotDropdown(code, unit, dir, inType, outType) {
-  dir     = dir     || 'omt';
-  inType  = inType  || 'in';
-  outType = outType || 'omt';
-
-  const sel   = document.getElementById(dir+'-lot');
-  const info  = document.getElementById(dir+'-lot-info');
-  const count = document.getElementById(dir+'-lot-count');
-  if (!sel) return;
-
-  // 해당 품목의 입고 이력에서 LOT별 잔여량 계산
+// 해당 품목의 입고 이력에서 LOT별 잔여량 계산 (FIFO 순서로 정렬)
+// fillLotDropdown(화면 표시)과 allocateFIFO(다중 LOT 자동분배 계산)가 공통으로 사용
+function computeActiveLots(code, inType, outType) {
   const allTx = [...txLog, ...ngLog].filter(t => t.code === code);
   const lotMap = {};
 
@@ -1621,11 +1613,61 @@ function fillLotDropdown(code, unit, dir, inType, outType) {
     if (lotMap[lot]) lotMap[lot].outQty += +t.qty||0;
   });
 
-  // 잔여량 있는 LOT만 필터 (FIFO 순서)
+  // 잔여량 있는 LOT만 필터 (FIFO 순서: 입고일 오래된 것부터)
   const activeLots = Object.entries(lotMap)
     .map(([lot, d]) => ({lot, remain: d.inQty - d.outQty, inQty: d.inQty, outQty: d.outQty, dt: d.dt}))
     .filter(d => d.remain > 0)
     .sort((a,b) => a.dt.localeCompare(b.dt));
+
+  // LOT 없이 입고된 잔여 수량
+  const noLotIn     = allTx.filter(t=>t.type===inType  && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
+  const noLotOut    = allTx.filter(t=>t.type===outType  && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
+  const noLotRemain = noLotIn - noLotOut;
+
+  return {activeLots, noLotRemain};
+}
+
+// ✅ 한 LOT 잔여량으로 부족한 수량을 요청했을 때, 선택한 LOT부터 FIFO 순서로
+//    이후 LOT들을 자동으로 이어붙여 필요한 수량을 채우는 분배 계산
+//    startLot: select에서 선택된 값 ('' | '__nolot__' | 실제 LOT코드)
+function allocateFIFO(code, inType, outType, startLot, qty) {
+  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType);
+  let pool = [];
+
+  if (startLot === '__nolot__') {
+    if (noLotRemain > 0) pool.push({lot:'__nolot__', remain: noLotRemain});
+    pool = pool.concat(activeLots.map(d => ({lot:d.lot, remain:d.remain})));
+  } else if (startLot) {
+    const idx = activeLots.findIndex(d => d.lot === startLot);
+    // 선택한 LOT부터 이후(FIFO 순서) LOT만 사용. 목록에서 못 찾으면(이미 소진 등) 전체를 FIFO로 사용
+    pool = (idx === -1 ? activeLots : activeLots.slice(idx)).map(d => ({lot:d.lot, remain:d.remain}));
+  } else {
+    pool = activeLots.map(d => ({lot:d.lot, remain:d.remain}));
+  }
+
+  const allocations = [];
+  let need = qty;
+  for (const p of pool) {
+    if (need <= 0) break;
+    const take = Math.min(need, p.remain);
+    if (take > 0) { allocations.push({lot:p.lot, qty:take}); need -= take; }
+  }
+  const totalAvailable = pool.reduce((s,p)=>s+p.remain, 0);
+  return { ok: need <= 0, allocations, shortage: Math.max(0, need), totalAvailable };
+}
+
+// dir: 'omt'(자재출고) 또는 'otp'(완제품출고)
+function fillLotDropdown(code, unit, dir, inType, outType) {
+  dir     = dir     || 'omt';
+  inType  = inType  || 'in';
+  outType = outType || 'omt';
+
+  const sel   = document.getElementById(dir+'-lot');
+  const info  = document.getElementById(dir+'-lot-info');
+  const count = document.getElementById(dir+'-lot-count');
+  if (!sel) return;
+
+  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType);
 
   if (!activeLots.length) {
     sel.innerHTML = '<option value="">-- 입고된 LOT 없음 (LOT 없이 등록된 입고 있음) --</option>';
@@ -1633,11 +1675,6 @@ function fillLotDropdown(code, unit, dir, inType, outType) {
     if (info) info.style.display = 'none';
     return;
   }
-
-  // LOT 없이 입고된 잔여 수량
-  const noLotIn     = allTx.filter(t=>t.type===inType  && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
-  const noLotOut    = allTx.filter(t=>t.type===outType  && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
-  const noLotRemain = noLotIn - noLotOut;
 
   sel.innerHTML =
     (noLotRemain > 0 ? `<option value="__nolot__">⚠️ LOT 미지정 재고 (${noLotRemain} ${unit})</option>` : '') +
@@ -1722,28 +1759,21 @@ function showCP(dir){
     }
   }
 
-  // ── LOT 잔여량 초과 차단 (자재 출고 omt, SELECT 드롭다운 LOT 선택 시)
+  // ── LOT 잔여량 초과 시 FIFO로 여러 LOT에 자동 분배 (자재출고 omt / 완제품출고 otp)
   let lotWarn = '';
-  if(dir==='omt' && lot && lot!=='__nolot__') {
-    const allTx = [...txLog,...ngLog].filter(t=>t.code===code);
-    const inQ   = allTx.filter(t=>t.type==='in'&&t.lot===lot).reduce((s,t)=>s+(+t.qty||0),0);
-    const outQ  = allTx.filter(t=>t.type==='omt'&&t.lot===lot).reduce((s,t)=>s+(+t.qty||0),0);
-    const remain = inQ - outQ;
-    if(qty > remain){
-      alert(`⛔ LOT 잔여량 초과 / Vượt số lượng LOT\n\nLOT: ${lot}\nLOT 잔여량: ${remain.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}\n\n해당 LOT의 잔여량을 초과할 수 없습니다.`);
+  let lotAlloc = null; // 2개 이상 LOT에 걸쳐 분배된 경우에만 채워짐
+  if(dir==='omt' || dir==='otp') CP_LOT_ALLOC[dir] = null; // 이전 계산 결과 초기화
+  if((dir==='omt' || dir==='otp') && lot) {
+    const inT  = dir==='omt' ? 'in'  : 'tp-in';
+    const outT = dir==='omt' ? 'omt' : 'otp';
+    const alloc = allocateFIFO(code, inT, outT, lot, qty);
+    if(!alloc.ok){
+      alert(`⛔ 재고 부족 / Không đủ tồn kho\n\n선택한 LOT부터 이후 LOT를 모두 합쳐도 수량이 부족합니다.\n가용 수량: ${alloc.totalAvailable.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}\n부족: ${alloc.shortage.toLocaleString()} ${unit}`);
       return;
     }
-    if(remain <= 0) lotWarn = `⚠️ LOT 소진됨`;
-  }
-  // 완제품 출고 LOT 잔여량 초과 차단
-  if(dir==='otp' && lot && lot!=='__nolot__') {
-    const allTx = [...txLog].filter(t=>t.code===code);
-    const inQ   = allTx.filter(t=>t.type==='tp-in'&&t.lot===lot).reduce((s,t)=>s+(+t.qty||0),0);
-    const outQ  = allTx.filter(t=>t.type==='otp'&&t.lot===lot).reduce((s,t)=>s+(+t.qty||0),0);
-    const remain = inQ - outQ;
-    if(qty > remain && remain > 0){
-      alert(`⛔ LOT 잔여량 초과 / Vượt số lượng LOT\n\nLOT: ${lot}\nLOT 잔여량: ${remain.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}`);
-      return;
+    if(alloc.allocations.length > 1){
+      lotAlloc = alloc.allocations; // FIFO로 여러 LOT에 자동 분배됨
+      CP_LOT_ALLOC[dir] = lotAlloc;
     }
   }
 
@@ -1757,8 +1787,14 @@ function showCP(dir){
     ['단위',unit],
     ['수량',`<strong style="font-size:16px;color:${col}">${isIn?'+':'−'}${qty%1?qty.toFixed(2):qty.toLocaleString()} ${unit}</strong>`],
   ];
-  if(lot && lot!=='__nolot__') rows.push(['LOT No.',`<strong style="color:#1d4ed8;font-family:monospace">${lot}</strong>${lotWarn?` <span style="color:#b91c1c;font-size:12px"> ${lotWarn}</span>`:''}`]);
-  if(lot==='__nolot__') rows.push(['LOT No.','<span style="color:#92400e">⚠️ LOT 미지정 출고</span>']);
+  if(lotAlloc){
+    const lines = lotAlloc.map(a=>`<div>📦 <strong style="font-family:monospace">${a.lot==='__nolot__'?'LOT 미지정':a.lot}</strong> · ${a.qty%1?a.qty.toFixed(2):a.qty.toLocaleString()} ${unit}</div>`).join('');
+    rows.push(['LOT No. (자동분배)', `<div style="line-height:1.6">${lines}</div><div style="margin-top:4px;font-size:11px;color:#b45309">⚠️ ${lotAlloc.length}개 LOT에 걸쳐 FIFO(먼저 입고된 순서)로 자동 분배되어 등록됩니다.</div>`]);
+  } else if(lot && lot!=='__nolot__') {
+    rows.push(['LOT No.',`<strong style="color:#1d4ed8;font-family:monospace">${lot}</strong>${lotWarn?` <span style="color:#b91c1c;font-size:12px"> ${lotWarn}</span>`:''}`]);
+  } else if(lot==='__nolot__') {
+    rows.push(['LOT No.','<span style="color:#92400e">⚠️ LOT 미지정 출고</span>']);
+  }
   if(dest==='NG'){
     rows.push(['출고처',`<span class="badge b-ng">⚠️ NG 창고 (불량 이동)</span>`]);
     rows.push(['불량 원인',`<strong style="color:#991b1b">${ngReason}</strong>`]);
@@ -1823,13 +1859,17 @@ async function doSubmit(dir){
   const cat=catKey(catTxt);
   const isIn=!!IS_IN_TYPE[dir];
   const dt=vnDt();
-  const txEntry = {id:Date.now(),type:dir,code,name,cat,unit,qty,note,lot,dt,dest};
 
-  // NG 이동 시 동시에 생성할 불량입고 이력
+  // ✅ showCP에서 계산해둔 FIFO 다중 LOT 분배 결과가 있으면 LOT별로 이력을 나눠서 등록
+  const multiAlloc = (dir==='omt'||dir==='otp') ? CP_LOT_ALLOC[dir] : null;
+  const lotParts = (multiAlloc && multiAlloc.length>1) ? multiAlloc : [{lot, qty}];
+  const txEntries = lotParts.map((p,i) => ({id:Date.now()+i, type:dir, code, name, cat, unit, qty:p.qty, note, lot:p.lot, dt, dest}));
+
+  // NG 이동 시 동시에 생성할 불량입고 이력 (총 수량 기준, 1건)
   let ngLogEntry = null;
   if(isNGMove){
     ngLogEntry = {
-      id: Date.now()+1, type:'ng-in', code, name, cat:'TP', unit, qty,
+      id: Date.now()+lotParts.length, type:'ng-in', code, name, cat:'TP', unit, qty,
       note: `[완제품→NG 이동] ${ngReason}`, reason: ngReason, dt, user: CURRENT_USER||''
     };
   }
@@ -1853,19 +1893,24 @@ async function doSubmit(dir){
       }
     }
 
-    // 2) addTx 확정
-    let res = await api('addTx', {...txEntry, token: ADMIN_TOKEN, user: CURRENT_USER||''});
-    if (!res || !res.ok) {
-      console.warn('addTx 1차 실패, 재시도:', res && res.error);
-      res = await api('addTx', {...txEntry, token: ADMIN_TOKEN, user: CURRENT_USER||''});
-    }
-    if (res && res.error && (res.error.includes('토큰')||res.error.includes('세션')||res.error.includes('로그인'))) {
-      alert(`⚠️ ${res.error}\n관리자 로그아웃 후 재로그인이 필요합니다.\n등록이 저장되지 않았습니다.`);
-      return; // ✅ 로컬도 전혀 변경하지 않음
-    }
-    if (!res || !res.ok) {
-      alert(`⚠️ 서버 저장 실패: ${res && res.error ? res.error : '알 수 없는 오류'}\n등록이 저장되지 않았습니다.`);
-      return; // ✅ 서버 실패 시 로컬도 변경하지 않음
+    // 2) addTx 확정 (FIFO로 여러 LOT에 분배된 경우 LOT별로 순서대로 등록)
+    for (let i = 0; i < txEntries.length; i++) {
+      const entry = txEntries[i];
+      let res = await api('addTx', {...entry, token: ADMIN_TOKEN, user: CURRENT_USER||''});
+      if (!res || !res.ok) {
+        console.warn('addTx 1차 실패, 재시도:', res && res.error);
+        res = await api('addTx', {...entry, token: ADMIN_TOKEN, user: CURRENT_USER||''});
+      }
+      if (res && res.error && (res.error.includes('토큰')||res.error.includes('세션')||res.error.includes('로그인'))) {
+        alert(`⚠️ ${res.error}\n관리자 로그아웃 후 재로그인이 필요합니다.\n${i>0?`LOT ${entry.lot||'-'} (${entry.qty} ${unit}) 이후 이력은 저장되지 않았습니다. 앞서 등록된 ${i}건은 서버에 반영되었으니 동기화 후 확인해주세요.`:'등록이 저장되지 않았습니다.'}`);
+        if (i>0) await syncNow();
+        return;
+      }
+      if (!res || !res.ok) {
+        alert(`⚠️ 서버 저장 실패 (LOT ${entry.lot||'-'}): ${res && res.error ? res.error : '알 수 없는 오류'}\n${i>0?`앞서 등록된 ${i}건은 서버에 반영되었습니다. 동기화 후 재고를 확인해주세요.`:'등록이 저장되지 않았습니다.'}`);
+        if (i>0) await syncNow();
+        return;
+      }
     }
 
     // 3) NG 이동이면 addNG도 반드시 확정
@@ -1884,13 +1929,16 @@ async function doSubmit(dir){
   }
 
   // ✅ 서버 반영 성공(또는 서버 미연동 환경) 후에만 로컬 DB/이력 반영
-  txLog.push(txEntry);
   const arr={TP:DB.tp,BTP:DB.btp,KR:DB.kr,VN:DB.vn,VTTH:DB.vtth}[cat];
   const item=arr&&arr.find(r=>r.code===code);
-  if(item){
-    if(isIn){item.cur+=qty;item.total+=qty;}
-    else{item.cur=Math.max(0,item.cur-qty);item.total=Math.max(0,item.total-qty);}
-  }
+  txEntries.forEach(entry=>{
+    txLog.push(entry);
+    if(item){
+      if(isIn){item.cur+=entry.qty;item.total+=entry.qty;}
+      else{item.cur=Math.max(0,item.cur-entry.qty);item.total=Math.max(0,item.total-entry.qty);}
+    }
+  });
+  if(dir==='omt' || dir==='otp') CP_LOT_ALLOC[dir] = null; // 사용 완료, 초기화
 
   if(isNGMove && ngLogEntry){
     const model = item ? (item.model || getModel(item.code, item.name)) : getModel(code, name);
