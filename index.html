@@ -352,6 +352,10 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <div class="ms-card" onclick="go('inv');setIC('VTTH')"><div class="ms-name">소모품</div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-vtth-cnt">-</div><div class="ms-lbl">품목</div></div></div></div>
     <div class="ms-card" onclick="go('ng')"><div class="ms-name" style="color:#b91c1c">불량 (NG)</div><div class="ms-row"><div class="ms-stat"><div class="ms-val ngc" id="d-ng-cnt">-</div><div class="ms-lbl">품목</div></div></div></div>
   </div>
+  <div id="d-low-stock-wrap" style="display:none;background:#fff;border:1.5px solid #fca5a5;border-radius:12px;padding:1.1rem;margin-bottom:1.25rem">
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:#b91c1c">⚠️ 안전재고 미달 품목 <span id="d-low-stock-cnt" style="font-weight:400;color:#888;font-size:12px"></span></div>
+    <div id="d-low-stock"></div>
+  </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem">
     <div style="background:#fff;border:1px solid #e0e0e8;border-radius:12px;padding:1.1rem"><div style="font-size:14px;font-weight:700;margin-bottom:10px">완제품 현황</div><div id="tp-bars"></div></div>
     <div style="background:#fff;border:1px solid #e0e0e8;border-radius:12px;padding:1.1rem"><div style="font-size:14px;font-weight:700;margin-bottom:10px">불량(NG) 상위</div><div id="ng-bars"></div></div>
@@ -2663,6 +2667,39 @@ function initDashboard(){
 
   el('d-tp').textContent=DB.tp.reduce((s,r)=>s+r.total,0).toLocaleString();
   el('d-btp').textContent=DB.btp.reduce((s,r)=>s+r.total,0).toLocaleString();
+
+  // ✅ 안전재고 미달 품목 (min이 설정되어 있고, 현재고가 그 아래인 품목만)
+  const lowWrap = el('d-low-stock-wrap');
+  if (lowWrap) {
+    const allItems = [
+      ...DB.tp.map(r=>({...r,cat:'TP'})),
+      ...DB.btp.map(r=>({...r,cat:'BTP'})),
+      ...DB.kr.map(r=>({...r,cat:'KR'})),
+      ...DB.vn.map(r=>({...r,cat:'VN'})),
+      ...DB.vtth.map(r=>({...r,cat:'VTTH'}))
+    ];
+    const lowItems = allItems
+      .filter(r => r.active!==false && (+r.min||0) > 0 && (+r.cur||0) < (+r.min||0))
+      .sort((a,b) => ((+a.cur||0)-(+a.min||0)) - ((+b.cur||0)-(+b.min||0))); // 부족량 큰 순
+    if (lowItems.length) {
+      lowWrap.style.display = 'block';
+      el('d-low-stock-cnt').textContent = `${lowItems.length}건`;
+      el('d-low-stock').innerHTML = lowItems.map(r => {
+        const cur = +r.cur||0, min = +r.min||0;
+        const pct = min>0 ? Math.min(100, Math.round(cur/min*100)) : 0;
+        return `<div onclick="go('inv');document.getElementById('inv-q').value='${r.code}';renderInv()" style="cursor:pointer;padding:8px 0;border-bottom:1px solid #fee2e2">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <span style="font-size:13px;color:#333"><span class="badge ${CB[r.cat]}" style="margin-right:6px">${CL[r.cat]}</span>${r.name} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code}</span></span>
+            <span style="font-size:13px;font-weight:700;color:#b91c1c;flex-shrink:0;margin-left:8px">${n(cur)} / ${n(min)} ${r.unit||''}</span>
+          </div>
+          <div class="bar-wrap"><div class="bar-fill-red" style="width:${pct}%"></div></div>
+        </div>`;
+      }).join('');
+    } else {
+      lowWrap.style.display = 'none';
+    }
+  }
+
   const tpD=DB.tp.filter(r=>r.total>0).sort((a,b)=>b.total-a.total).slice(0,6);
   const tpMax=Math.max(...tpD.map(r=>r.total),1);
   document.getElementById('tp-bars').innerHTML=tpD.map(r=>`<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px;color:#555;overflow:hidden;text-overflow:ellipsis;max-width:160px">${r.name}</span><span style="font-size:13px;font-weight:700;color:#1a1a2e;margin-left:8px;flex-shrink:0">${r.total.toLocaleString()}</span></div><div class="bar-wrap"><div class="bar-fill-blue" style="width:${Math.round(r.total/tpMax*100)}%"></div></div></div>`).join('');
@@ -3262,6 +3299,7 @@ function openAddItem() {
   ['name','unit'].forEach(id=>{const el=document.getElementById('item-'+id);if(el)el.value='';});
   document.getElementById('item-cur').value='0';
   document.getElementById('item-prev').value='0';
+  document.getElementById('item-min').value='0';
   const errEl=document.getElementById('item-ov-err');
   if(errEl) errEl.style.display='none';
   updateItemSubOpts(); // 카테고리 기본값(kr)으로 코드 자동 생성
@@ -3276,6 +3314,7 @@ async function submitItem() {
     unit:  document.getElementById('item-unit').value.trim(),
     cur:   parseFloat(document.getElementById('item-cur').value)||0,
     prev:  parseFloat(document.getElementById('item-prev').value)||0,
+    min:   parseFloat(document.getElementById('item-min').value)||0,
     model: (document.getElementById('item-model')||{}).value||'',
     sub:   (document.getElementById('item-sub')||{}).value||'',
   };
@@ -3549,6 +3588,7 @@ function openItemEdit(code, catHint) {
   if (curTargetEl) curTargetEl.value = '';
   document.getElementById('ie-wip-delta').value = 0;
   document.getElementById('ie-prev').value  = item.prev || 0;
+  document.getElementById('ie-min').value   = item.min || 0;
   document.getElementById('ie-reason').value = '';
   document.getElementById('ie-preview-result').innerHTML = '';
   const errEl = document.getElementById('ie-err');
@@ -3622,6 +3662,7 @@ async function saveItemEdit() {
   const newCur   = +orig.cur + curDelta;
   const newWip   = +orig.wip + wipDelta;
   const newPrev  = +orig.prev || 0; // ✅ 전월재고는 화면에서 수정 불가, 원래값 유지
+  const newMin   = parseFloat(document.getElementById('ie-min').value) || 0;
   const reason   = document.getElementById('ie-reason').value.trim();
 
   console.log('[DEBUG] saveItemEdit 시작. orig:', JSON.stringify(orig), 'newCat:', newCat, 'curDelta:', curDelta, 'newCur:', newCur);
@@ -3659,7 +3700,7 @@ async function saveItemEdit() {
 
   // ✅ 변경사항 없으면 그냥 닫기 (불필요한 이력/서버호출 방지)
   if (!stockChanged && newName===orig.name && newUnit===(orig.unit||'') &&
-      newModel===(orig.model||'') && newSub===(orig.sub||'')) {
+      newModel===(orig.model||'') && newSub===(orig.sub||'') && newMin===(+orig.min||0)) {
     console.log('[DEBUG] 변경사항 없음으로 그냥 닫힘! stockChanged:', stockChanged, 'newName===orig.name:', newName===orig.name);
     closeOv('item-edit-ov');
     return;
@@ -3682,7 +3723,7 @@ async function saveItemEdit() {
     let res = await api('editItem', {
       code:orig.code, name:newName, unit:newUnit, model:newModel,
       sub:newSub, cat:newCat.toUpperCase(), cur:newCur, prev:newPrev, wip:newWip,
-      total:newCur + newWip,
+      total:newCur + newWip, min:newMin,
       token: ADMIN_TOKEN
     });
     console.log('[DEBUG] editItem 응답:', JSON.stringify(res));
@@ -3700,7 +3741,7 @@ async function saveItemEdit() {
         res = await api('addItem', {
           code:orig.code, name:newName, unit:newUnit, model:newModel,
           sub:newSub, cat:newCat.toUpperCase(), cur:newCur, prev:newPrev, wip:newWip,
-          total:newCur + newWip,
+          total:newCur + newWip, min:newMin,
           token: ADMIN_TOKEN
         });
       }
@@ -3725,7 +3766,7 @@ async function saveItemEdit() {
     if (idx >= 0) {
       targetArr[idx] = { ...targetArr[idx],
         name:newName, unit:newUnit, model:newModel, sub:newSub,
-        cur:newCur, prev:newPrev, wip:newWip, total:newCur + newWip
+        cur:newCur, prev:newPrev, wip:newWip, total:newCur + newWip, min:newMin
       };
       updatedRef = targetArr[idx];
     }
@@ -5148,6 +5189,7 @@ if (document.readyState === 'loading') {
         <select id="item-sub"><option value="">-- 선택 --</option></select>
       </div>
       <div class="ov-fr"><label>현재고</label><input id="item-cur" type="number" value="0"></div>
+      <div class="ov-fr"><label>안전재고 (미달시 대시보드 경고, 선택)</label><input id="item-min" type="number" value="0" placeholder="0"></div>
       <input type="hidden" id="item-prev" value="0">
     </div>
     <div id="item-ov-err" style="color:#b91c1c;font-size:12px;margin-top:8px;display:none"></div>
@@ -5210,6 +5252,7 @@ else location.reload();
       <div class="ov-fr"><label>단위</label><input id="ie-unit" placeholder="Ea / Kg"></div>
       <div class="ov-fr"><label>모델</label><input id="ie-model" placeholder="모델명"></div>
       <div class="ov-fr"><label>Sub 분류</label><input id="ie-sub" placeholder="CORE / WIRE..."></div>
+      <div class="ov-fr"><label>안전재고 (미달시 대시보드 경고)</label><input id="ie-min" type="number" placeholder="0" value="0"></div>
       <div class="ov-fr"><label>카테고리 (읽기전용)</label>
         <select id="ie-cat" disabled style="background:#f5f6f8;color:#888">
           <option value="tp">완제품 (TP)</option><option value="btp">반제품 (BTP)</option>
