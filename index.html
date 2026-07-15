@@ -3237,9 +3237,9 @@ let itemEditMode=false, itemEditCode='';
 function updateItemSubOpts() {
   const cat=document.getElementById('item-cat').value;
   const sub=document.getElementById('item-sub');
-  const mod=document.getElementById('item-model');
+  const modDL=document.getElementById('item-model-list');
   if(sub) sub.innerHTML='<option value="">-- 선택 --</option>'+(SUB_BY_CAT[cat]||[]).map(s=>`<option value="${s}">${s}</option>`).join('');
-  if(mod) mod.innerHTML='<option value="">-- 선택 --</option>'+MODEL_LIST.map(m=>`<option value="${m}">${m}</option>`).join('');
+  if(modDL) modDL.innerHTML=MODEL_LIST.map(m=>`<option value="${m}"></option>`).join('');
   // ✅ 카테고리 선택 시 다음 순번 자동 생성
   if(!itemEditMode) autoNextCode(cat);
 }
@@ -3297,7 +3297,7 @@ function openAddItem() {
   itemEditMode=false; itemEditCode='';
   document.getElementById('item-ov-title').textContent='➕ 신규 품목 추가';
   document.getElementById('item-ov-btn').textContent='➕ 추가';
-  ['name','unit'].forEach(id=>{const el=document.getElementById('item-'+id);if(el)el.value='';});
+  ['name','unit','model'].forEach(id=>{const el=document.getElementById('item-'+id);if(el)el.value='';});
   document.getElementById('item-cur').value='0';
   document.getElementById('item-prev').value='0';
   document.getElementById('item-min').value='0';
@@ -5264,7 +5264,8 @@ if (document.readyState === 'loading') {
       <div class="ov-fr" style="grid-column:1/-1"><label>품명 *</label><input id="item-name" placeholder="예: FLAT COPPER WIRE 1.2mm×6.0mm AIW"></div>
       <div class="ov-fr"><label>단위 *</label><input id="item-unit" placeholder="Ea / Kg / Roll"></div>
       <div class="ov-fr"><label>모델</label>
-        <select id="item-model"><option value="">-- 선택 --</option></select>
+        <input id="item-model" list="item-model-list" placeholder="목록에서 선택하거나 직접 입력">
+        <datalist id="item-model-list"></datalist>
       </div>
       <div class="ov-fr"><label>Sub 분류</label>
         <select id="item-sub"><option value="">-- 선택 --</option></select>
