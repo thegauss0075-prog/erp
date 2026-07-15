@@ -1574,7 +1574,8 @@ function exportInvExcel(){
 function rRow(r,q){
   const adminBtns = (typeof isAdmin !== 'undefined' && isAdmin)
     ? `<button class="edit-btn" onclick="openItemEdit('${r.code}','${r.cat}')" title="품목 수정" style="margin-left:3px;background:#fef3c7;border-color:#f59e0b">✏️</button>
-       <button class="edit-btn" onclick="openItemDel('${r.code}','${r.cat}')" title="품목 숨김" style="margin-left:2px;background:#fee2e2;border-color:#fca5a5">🗑️</button>`
+       <button class="edit-btn" onclick="openItemDel('${r.code}','${r.cat}')" title="품목 숨김" style="margin-left:2px;background:#fee2e2;border-color:#fca5a5">🗑️</button>
+       <button class="edit-btn" onclick="openItemPermDel('${r.code}','${r.cat}')" title="품목 완전삭제 (되돌릴 수 없음)" style="margin-left:2px;background:#450a0a;border-color:#7f1d1d;color:#fff">❌</button>`
     : '';
   return`<tr ${r.active===false?'style="opacity:0.4"':''}><td><span class="badge ${CB[r.cat]}">${CL[r.cat]}</span></td><td style="font-family:monospace;font-size:11px">${hl(r.code,q)}</td><td><span onclick="nameClick('${r.code}','${r.cat}')" style="cursor:pointer;color:inherit" title="클릭하면 이력 추적">${hl(r.name,q)}</span></td><td style="color:#666;text-align:center">${r.unit}</td><td style="text-align:right">${n(r.prev)}</td><td style="text-align:right" class="${r.cur>0?'hi':''}">${n(r.cur)}</td><td style="text-align:right">${n(r.wip)}</td><td style="text-align:right;font-weight:700">${n(r.total)}</td><td class="no-print"><button class="edit-btn" onclick="prefillIO('${r.cat}','${r.code}')">🔄</button>${adminBtns}</td></tr>`;
 }
@@ -2165,9 +2166,9 @@ function renderHist(){
   updatePeriodLabel('hist');
   const el=document.getElementById('hist-list');
   if(!logs.length){el.innerHTML=`<div class="empty">해당 기간에 이력이 없습니다</div>`;return;}
-  const iC={in:'h-in',otp:'h-out-tp',omt:'h-out-mat','tp-in':'h-in','ng-in':'h-out-mat','ng-out':'h-out-tp',adjust:'h-in',deactivate:'h-out-tp'};
-  const iI={in:'📥',otp:'🚚',omt:'📤','tp-in':'📦','ng-in':'⚠️','ng-out':'🗑️',adjust:'🔧',deactivate:'🔴'};
-  const tL={in:'자재 입고',otp:'완제품 출고',omt:'자재 출고','tp-in':'완제품 입고','ng-in':'불량 입고','ng-out':'불량 출고',adjust:'재고 조정',deactivate:'품목 비활성화'};
+  const iC={in:'h-in',otp:'h-out-tp',omt:'h-out-mat','tp-in':'h-in','ng-in':'h-out-mat','ng-out':'h-out-tp',adjust:'h-in',deactivate:'h-out-tp',delete:'h-out-tp'};
+  const iI={in:'📥',otp:'🚚',omt:'📤','tp-in':'📦','ng-in':'⚠️','ng-out':'🗑️',adjust:'🔧',deactivate:'🔴',delete:'❌'};
+  const tL={in:'자재 입고',otp:'완제품 출고',omt:'자재 출고','tp-in':'완제품 입고','ng-in':'불량 입고','ng-out':'불량 출고',adjust:'재고 조정',deactivate:'품목 비활성화',delete:'품목 완전삭제'};
   const isInType={in:true,'tp-in':true,'ng-in':true};
   el.innerHTML=logs.map(t=>{
     const typeName=tL[t.type]||t.type;
@@ -2710,8 +2711,8 @@ function initDashboard(){
   if(typeof renderApv === 'function') { try { renderApv(); } catch(e){} }
   const rh=document.getElementById('d-hist');
   if(!txLog.length&&!ngLog.length){rh.innerHTML=`<div style="font-size:14px;color:#aaa;padding:.5rem 0">입출고 탭에서 등록하면 여기에 표시됩니다.</div>`;return;}
-  const iC={in:'h-in',otp:'h-out-tp',omt:'h-out-mat','tp-in':'h-in','ng-in':'h-out-mat','ng-out':'h-out-tp',adjust:'h-in',deactivate:'h-out-tp'};
-  const iI={in:'📥',otp:'🚚',omt:'📤','tp-in':'📦','ng-in':'⚠️','ng-out':'🗑️',adjust:'🔧',deactivate:'🔴'};
+  const iC={in:'h-in',otp:'h-out-tp',omt:'h-out-mat','tp-in':'h-in','ng-in':'h-out-mat','ng-out':'h-out-tp',adjust:'h-in',deactivate:'h-out-tp',delete:'h-out-tp'};
+  const iI={in:'📥',otp:'🚚',omt:'📤','tp-in':'📦','ng-in':'⚠️','ng-out':'🗑️',adjust:'🔧',deactivate:'🔴',delete:'❌'};
   const isInMap={in:true,'tp-in':true,'ng-in':true};
   const allLogs=[...txLog,...ngLog].sort((a,b)=>b.id-a.id).slice(0,5);
   rh.innerHTML=allLogs.map(t=>{
@@ -3874,6 +3875,86 @@ async function confirmItemDel() {
   alert('✅ 품목이 비활성화됐습니다. 이력은 보존됩니다.');
 }
 
+// ── 품목 완전삭제 모달 (관리자, 되돌릴 수 없음)
+let itemPermDelTarget = null;
+let itemPermDelCatKey = 'kr';
+
+function openItemPermDel(code, catHint) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  const dbMapDel = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
+  const orderDel = ['tp','btp','kr','vn','vtth'];
+  const sortedOrderDel = catHint && dbMapDel[catHint.toLowerCase()]
+    ? [catHint.toLowerCase(), ...orderDel.filter(k=>k!==catHint.toLowerCase())]
+    : orderDel;
+  let item = null, foundKey = 'kr';
+  for (const key of sortedOrderDel) {
+    const arr = dbMapDel[key];
+    const found = arr && arr.find(r => r.code === code);
+    if (found) { item = found; foundKey = key; break; }
+  }
+  if (!item) return;
+  itemPermDelTarget = item;
+  itemPermDelCatKey = foundKey;
+
+  const histCount = txLog.filter(t => t.code === code).length;
+  const stockWarn = ((+item.cur||0) !== 0 || (+item.wip||0) !== 0)
+    ? `<div style="color:#b91c1c;font-weight:700;margin-top:6px">⚠️ 현재고/재공이 0이 아닙니다. 삭제해도 재고 수량 자체가 사라지는 건 아니니, 먼저 재고를 0으로 정리한 뒤 삭제하는 것을 권장합니다.</div>`
+    : '';
+  document.getElementById('item-perm-del-info').innerHTML =
+    `<strong>${item.name}</strong><br>
+     코드: <code>${item.code}</code> · ${CL[foundKey.toUpperCase()]||foundKey.toUpperCase()}<br>
+     현재고: <strong>${item.cur || 0} ${item.unit}</strong> · 재공: <strong>${item.wip || 0}</strong><br>
+     연관 이력: ${histCount}건 (이력 자체는 삭제되지 않고 유지됩니다)${stockWarn}`;
+  document.getElementById('item-perm-del-confirm').value = '';
+  document.getElementById('item-perm-del-code-label').textContent = item.code;
+  const errEl = document.getElementById('item-perm-del-err');
+  if (errEl) errEl.style.display = 'none';
+  document.getElementById('item-perm-del-ov').classList.add('show');
+}
+
+// ── 품목 완전삭제 확정 (ITEMS 시트 행 자체를 제거. 입출고 이력은 보존됨)
+async function confirmItemPermDel() {
+  if (!itemPermDelTarget) return;
+  const typed = (document.getElementById('item-perm-del-confirm').value || '').trim();
+  const errEl = document.getElementById('item-perm-del-err');
+  if (typed !== itemPermDelTarget.code) {
+    errEl.textContent = '품목 코드를 정확히 입력해야 삭제할 수 있습니다.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const dbMapPermDel = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
+  const targetArr = dbMapPermDel[itemPermDelCatKey];
+
+  if (API_URL || IS_GAS) {
+    const res = await api('deleteItem', { code: itemPermDelTarget.code, cat: itemPermDelCatKey.toUpperCase(), token: ADMIN_TOKEN });
+    if (!res || res.ok === false) {
+      errEl.textContent = '삭제 실패: ' + ((res && res.error) || '알 수 없는 오류');
+      errEl.style.display = 'block';
+      return;
+    }
+  }
+
+  if (targetArr) {
+    const idx = targetArr.findIndex(r => r.code === itemPermDelTarget.code);
+    if (idx >= 0) targetArr.splice(idx, 1);
+  }
+
+  const adjLog = {
+    id: Date.now(), type: 'delete', code: itemPermDelTarget.code, name: itemPermDelTarget.name,
+    cat: itemPermDelCatKey.toUpperCase(), unit: itemPermDelTarget.unit || '',
+    qty: 0, note: `[품목완전삭제] 오등록 품목 삭제`, lot: '',
+    dt: vnDt(),
+    dest: '', user: CURRENT_USER || '관리자', reason: '오등록 삭제'
+  };
+  txLog.unshift(adjLog);
+  if (API_URL || IS_GAS) { await api('addTx', {...adjLog, token: ADMIN_TOKEN}); }
+
+  closeOv('item-perm-del-ov');
+  renderInv(); initDashboard(); renderHist();
+  alert('✅ 품목이 완전히 삭제됐습니다.');
+}
+
 // ════════════════════════════════════════════════════════════
 //  자재 이력 추적 시스템
 // ════════════════════════════════════════════════════════════
@@ -4001,11 +4082,11 @@ function openTrace(code, catHint) {
   const typeLabel = {
     in:'📥 자재 입고', omt:'📤 자재 출고', 'tp-in':'📦 완제품 입고',
     otp:'🚚 완제품 출고', 'ng-in':'⚠️ 불량 입고', 'ng-out':'🗑️ 불량 출고',
-    adjust:'🔧 재고 조정', deactivate:'🔴 비활성화'
+    adjust:'🔧 재고 조정', deactivate:'🔴 비활성화', delete:'❌ 품목 완전삭제'
   };
   const typeColor = {
     in:'#166534', omt:'#b45309', 'tp-in':'#1d4ed8', otp:'#7c3aed',
-    'ng-in':'#b91c1c', 'ng-out':'#92400e', adjust:'#0f766e', deactivate:'#be123c'
+    'ng-in':'#b91c1c', 'ng-out':'#92400e', adjust:'#0f766e', deactivate:'#be123c', delete:'#7f1d1d'
   };
 
   const timelineSection = txs.length ? `
@@ -5017,7 +5098,7 @@ function nameClick(code, catHint) {
     'setSub','setNGCat','setIC','renderLotCal','openLotCal','closeLotCal',
     'lotCalMove','selectLotDay','confirmLotCal','updateLotPreview',
     'openTrace','openTraceSearch','nameClick',
-    'openItemEdit','saveItemEdit','openItemDel','confirmItemDel','submitItem',
+    'openItemEdit','saveItemEdit','openItemDel','confirmItemDel','openItemPermDel','confirmItemPermDel','submitItem',
     'openAddItem','updateItemSubOpts','prefillIO','fillForm','fillLotDropdown',
     'closeOv','closeLoginModal','loginViewer','loginVN','saveUserName',
     'applyRoleUI','applyAdminUI','startAutoSync','syncNow','setSyncBadge',
@@ -5321,6 +5402,27 @@ else location.reload();
     <div class="ov-actions">
       <button class="cp-back" onclick="closeOv('item-del-ov')">취소</button>
       <button class="ov-del-btn" onclick="confirmItemDel()">🗑️ 비활성화</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── 품목 완전삭제 확인 모달 (관리자, 되돌릴 수 없음) ── -->
+<div class="ov-bg" id="item-perm-del-ov">
+  <div class="ov-box" style="max-width:420px">
+    <h3 style="color:#7f1d1d">❌ 품목 완전삭제</h3>
+    <div id="item-perm-del-info" style="background:#fee2e2;border-radius:8px;padding:12px;margin:12px 0;font-size:13px;line-height:1.6"></div>
+    <p style="font-size:13px;color:#7f1d1d;font-weight:700;margin-bottom:8px">
+      ⚠️ 이 작업은 되돌릴 수 없습니다. 재고현황 목록에서 행 자체가 영구히 삭제됩니다.<br>
+      (입출고 이력은 별도로 보존되며 삭제되지 않습니다)
+    </p>
+    <div class="ov-fr">
+      <label>확인을 위해 품목 코드 <code id="item-perm-del-code-label"></code>를 입력하세요 *</label>
+      <input id="item-perm-del-confirm" placeholder="품목 코드 입력">
+    </div>
+    <div id="item-perm-del-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
+    <div class="ov-actions">
+      <button class="cp-back" onclick="closeOv('item-perm-del-ov')">취소</button>
+      <button class="ov-del-btn" style="background:#450a0a" onclick="confirmItemPermDel()">❌ 완전삭제</button>
     </div>
   </div>
 </div>
