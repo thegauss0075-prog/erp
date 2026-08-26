@@ -933,6 +933,27 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   </div>
 </div>
 
+<!-- ── 품목코드 변경 모달 -->
+<div class="ov-bg" id="rename-code-ov">
+  <div class="ov-box">
+    <h3>✏️ 품목코드 변경</h3>
+    <p style="font-size:12px;color:#888;margin-bottom:10px">오타 수정 등으로 품목코드 자체를 바꿉니다. 이 품목의 모든 입출고 이력도 새 코드로 함께 이동합니다.</p>
+    <div class="ov-fr" style="margin-bottom:8px">
+      <label>현재 코드</label>
+      <input id="rc-old-code" readonly style="background:#f5f6f8;color:#888">
+    </div>
+    <div class="ov-fr">
+      <label>새 코드 *</label>
+      <input id="rc-new-code" placeholder="예: NPL30/CH330125-02">
+    </div>
+    <div id="rc-err" style="color:#b91c1c;font-size:12px;margin-top:8px;display:none"></div>
+    <div class="ov-actions">
+      <button class="ov-cancel" onclick="closeOv('rename-code-ov')">취소</button>
+      <button class="ov-save" onclick="confirmRenameCode()">✏️ 변경</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── localStorage 안전 래퍼 (GAS 환경 호환)
 function safeLSGet(k, def) {
@@ -3807,6 +3828,60 @@ async function saveItemEdit() {
   alert(`✅ 품목 수정 완료${stockChanged ? '\n재고 조정 이력이 기록됐습니다.' : ''}`);
 }
 
+// ── 품목코드 변경 (오타 수정용) ──────────────────────────────
+function openRenameCode() {
+  if (!itemEditTarget) return;
+  document.getElementById('rc-old-code').value = itemEditTarget.code;
+  document.getElementById('rc-new-code').value = '';
+  const errEl = document.getElementById('rc-err');
+  if (errEl) errEl.style.display = 'none';
+  document.getElementById('rename-code-ov').classList.add('show');
+}
+
+async function confirmRenameCode() {
+  const errEl = document.getElementById('rc-err');
+  const oldCode = document.getElementById('rc-old-code').value;
+  const newCode = document.getElementById('rc-new-code').value.trim();
+  const cat = itemEditOrigCatKey;
+
+  if (!newCode) { errEl.textContent = '새 코드를 입력해주세요.'; errEl.style.display='block'; return; }
+  if (newCode === oldCode) { errEl.textContent = '기존 코드와 동일합니다.'; errEl.style.display='block'; return; }
+
+  // ✅ 로컬에서 먼저 중복 체크 (같은 카테고리 안에서)
+  const dbMapRc = { tp:DB.tp, btp:DB.btp, kr:DB.kr, vn:DB.vn, vtth:DB.vtth };
+  const arrRc = dbMapRc[cat];
+  if (arrRc && arrRc.find(r => r.code === newCode)) {
+    errEl.textContent = `이미 존재하는 코드입니다: ${newCode}`;
+    errEl.style.display = 'block';
+    return;
+  }
+
+  if (!confirm(`"${oldCode}" → "${newCode}"로 코드를 변경합니다.\n관련된 모든 입출고 이력도 함께 이동합니다.\n계속하시겠습니까?`)) return;
+
+  if (API_URL || IS_GAS) {
+    const res = await api('renameItemCode', { oldCode, newCode, cat: cat.toUpperCase(), token: ADMIN_TOKEN });
+    if (!res || !res.ok) {
+      errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류');
+      errEl.style.display = 'block';
+      return;
+    }
+  }
+
+  // ✅ 서버 반영 성공 후 로컬 DB/이력도 함께 갱신
+  if (arrRc) {
+    const idx = arrRc.findIndex(r => r.code === oldCode);
+    if (idx >= 0) arrRc[idx].code = newCode;
+  }
+  txLog.forEach(t => { if (t.code === oldCode) t.code = newCode; });
+  itemEditTarget.code = newCode;
+  document.getElementById('ie-code').value = newCode;
+
+  if (API_URL || IS_GAS) await syncNow();
+  closeOv('rename-code-ov');
+  renderInv(); initDashboard(); renderHist();
+  alert(`✅ 코드가 "${newCode}"로 변경됐습니다.`);
+}
+
 // ── 품목 비활성화 모달
 let itemDelCatKey = 'kr'; // ✅ 모달 열 때 실제 위치했던 배열 기억
 
@@ -5354,7 +5429,10 @@ else location.reload();
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="ov-fr" style="grid-column:1/-1">
         <label>품목코드 (읽기전용)</label>
-        <input id="ie-code" readonly style="background:#f5f6f8;color:#888">
+        <div style="display:flex;gap:6px">
+          <input id="ie-code" readonly style="background:#f5f6f8;color:#888;flex:1">
+          <button type="button" onclick="openRenameCode()" style="white-space:nowrap;padding:0 12px;border-radius:6px;border:1px solid #92400e;background:#fffbeb;color:#92400e;font-size:12px;cursor:pointer">✏️ 코드 변경</button>
+        </div>
       </div>
       <div class="ov-fr" style="grid-column:1/-1">
         <label>품명 *</label>
