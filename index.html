@@ -3859,9 +3859,13 @@ async function confirmRenameCode() {
   if (!confirm(`"${oldCode}" → "${newCode}"로 코드를 변경합니다.\n관련된 모든 입출고 이력도 함께 이동합니다.\n계속하시겠습니까?`)) return;
 
   if (API_URL || IS_GAS) {
-    const res = await api('renameItemCode', { oldCode, newCode, cat: cat.toUpperCase(), token: ADMIN_TOKEN });
+    let res = await api('renameItemCode', { oldCode, newCode, cat: cat.toUpperCase(), token: ADMIN_TOKEN });
     if (!res || !res.ok) {
-      errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류');
+      console.warn('renameItemCode 1차 실패, 재시도:', res && res.error);
+      res = await api('renameItemCode', { oldCode, newCode, cat: cat.toUpperCase(), token: ADMIN_TOKEN });
+    }
+    if (!res || !res.ok) {
+      errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류') + ' (다시 한 번 시도해보세요)';
       errEl.style.display = 'block';
       return;
     }
