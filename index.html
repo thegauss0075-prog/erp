@@ -1068,11 +1068,13 @@ const DB={
     {code:'NPL09/VTKR-03',name:'ADHESIVE / SE1714',unit:'Kg',prev:6,cur:6,wip:0,total:6,model:'공용 자재',sub:'ADHESIVE-1714'},
     {code:'NPL10/VTKR-04',name:'ADHESIVE / SW170HF',unit:'Kg',prev:20,cur:20,wip:0,total:20,model:'공용 자재',sub:'ADHESIVE-170'},
     {code:'NPL11/VTKR-05',name:'ADHESIVE / SW860HF(A)',unit:'Kg',prev:4,cur:4,wip:0,total:4,model:'공용 자재',sub:'ADHESIVE-860'},
-    // ── KR 누락 품목 추가
-    {code:'NPL30/CH330125-02',name:'CORE-H130127A',unit:'EA',prev:0,cur:0,wip:0,total:0,model:'CH330125',sub:'CORE'},
-    {code:'NPL30/CH330125-04',name:'CORE-H106075A (27.70mm × 14.10mm × 11.99mm)',unit:'EA',prev:0,cur:0,wip:0,total:0,model:'CH330125',sub:'CORE'},
-    {code:'NPL05/40kw PFC-01',name:'CORE-PFC-ANF603010EA-060BL',unit:'EA',prev:0,cur:0,wip:0,total:0,model:'40KW PFC',sub:'CORE'},
-    {code:'NPL12/40kw PFC-02',name:'CORE-PFC-AANF-060CL',unit:'EA',prev:0,cur:0,wip:0,total:0,model:'40KW PFC',sub:'CORE'},
+    // ── (제거됨: 아래 4개 품목은 실제 ITEMS 시트에 없는데 코드에 직접 박혀있던 가짜 데이터였음.
+    //    "입고해도 재고가 0으로 보이는" 문제의 근본 원인이었음. 실제 품목 등록은
+    //    "품목 추가" 화면에서 정식으로 진행할 것.
+    //    - NPL30/CH330125-02  CORE-H130127A
+    //    - NPL30/CH330125-04  CORE-H106075A
+    //    - NPL05/40kw PFC-01  CORE-PFC-ANF603010EA-060BL
+    //    - NPL12/40kw PFC-02  CORE-PFC-AANF-060CL
   ],
   vn:[
     /* ── Tray 류 ── */
