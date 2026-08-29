@@ -2714,11 +2714,26 @@ function woMatLotTypes(cat) {
   if (cat === 'BTP') return {inType:'tp-in', outType:'otp'};
   return {inType:'in', outType:'omt'}; // KR/VN/VTTH 등 일반 자재
 }
+// ✅ code+cat으로 품목의 실제 현재고(item.cur)를 찾는다. 품목 추가 시 초기수량으로
+//    바로 입력됐거나 재고조정만 된 품목은 입출고 이력(LOT 장부)이 아예 없을 수 있는데,
+//    그런 경우에도 실제 재고는 있으니 "LOT 이력 없음"으로 막아버리면 안 된다.
+function findItemCurByCodeCat(code, cat) {
+  const item = allRows().find(r => r.code === code && r.cat === cat);
+  return item ? (+item.cur || 0) : 0;
+}
 function fillWOMatLotSelect(selEl, code, cat, preferredLot) {
   const {inType, outType} = woMatLotTypes(cat);
   const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
   if (!activeLots.length && noLotRemain <= 0) {
-    selEl.innerHTML = '<option value="">-- 사용 가능한 재고 LOT 없음 --</option>';
+    // ✅ 입출고 이력에는 안 잡히지만 실제 현재고는 있는 경우 (초기 재고 직접입력, 재고조정 등) —
+    //    그 재고를 그대로 쓸 수 있게 "LOT 이력 없음" 폴백 옵션을 준다.
+    const cur = findItemCurByCodeCat(code, cat);
+    if (cur > 0) {
+      selEl.innerHTML = `<option value="__nolot__">⚠️ LOT 이력 없음 · 현재고 기준 사용 (${cur.toLocaleString()})</option>`;
+      selEl.value = '__nolot__';
+      return;
+    }
+    selEl.innerHTML = '<option value="">-- 사용 가능한 재고 없음 --</option>';
     return;
   }
   let html = '<option value="">-- LOT 선택 --</option>';
@@ -2731,7 +2746,10 @@ function fillWOMatLotSelect(selEl, code, cat, preferredLot) {
 function getWOMatLotRemain(code, cat, lot) {
   const {inType, outType} = woMatLotTypes(cat);
   const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
-  if (lot === '__nolot__') return noLotRemain;
+  if (lot === '__nolot__') {
+    // LOT 장부상 미지정 잔여가 있으면 그걸 쓰고, 장부 자체가 텅 비어있으면(폴백 케이스) 실제 현재고를 쓴다
+    return noLotRemain > 0 ? noLotRemain : findItemCurByCodeCat(code, cat);
+  }
   const found = activeLots.find(l => l.lot === lot);
   return found ? found.remain : 0;
 }
