@@ -3660,8 +3660,8 @@ function renderHist(){
     const isIn=!!isInType[t.type];
     const qty=t.qty%1?t.qty.toFixed(2):t.qty.toLocaleString();
     const catName=CL[t.cat]||t.cat||'';
-    return`<div class="hitem" data-code="${t.code}"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle"><span onclick="openTrace('${t.code}')" style="cursor:pointer;font-weight:600" title="이력 추적">${t.name}</span> <code style="font-size:11px;color:#888">${t.code}</code>${t.dest?destBadge(t.dest):t.lot?` <span style="font-size:11px;color:#1d4ed8;font-family:monospace">LOT:${t.lot}</span>`:''}</div><div class="hmeta">${typeName}${catName?' · '+catName:''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div>
-      <button onclick="openTrace('${t.code}')" title="이력 추적" style="padding:2px 7px;border-radius:4px;border:1px solid #7c3aed;background:#faf5ff;color:#7c3aed;cursor:pointer;font-size:11px;margin-left:4px;white-space:nowrap">🔍</button>
+    return`<div class="hitem" data-code="${t.code}"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle"><span onclick="openTrace('${t.code}','${t.cat||''}')" style="cursor:pointer;font-weight:600" title="이력 추적">${t.name}</span> <code style="font-size:11px;color:#888">${t.code}</code>${t.dest?destBadge(t.dest):t.lot?` <span style="font-size:11px;color:#1d4ed8;font-family:monospace">LOT:${t.lot}</span>`:''}</div><div class="hmeta">${typeName}${catName?' · '+catName:''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div>
+      <button onclick="openTrace('${t.code}','${t.cat||''}')" title="이력 추적" style="padding:2px 7px;border-radius:4px;border:1px solid #7c3aed;background:#faf5ff;color:#7c3aed;cursor:pointer;font-size:11px;margin-left:4px;white-space:nowrap">🔍</button>
     </div>`;
   }).join('');
 }
@@ -5511,7 +5511,7 @@ function openTraceSearch() {
   );
   if (!matched.length) { alert('해당 품목을 찾을 수 없습니다.'); return; }
   // 여러 개 매칭 시 첫 번째
-  openTrace(matched[0].code);
+  openTrace(matched[0].code, matched[0].cat);
 }
 
 // ── 재고현황 행 클릭으로 이력 추적
