@@ -5543,10 +5543,16 @@ function openTrace(code, catHint) {
   //    별도 섹션으로만 보여준다. 이전엔 둘을 그냥 합쳐서 보여줘서,
   //    "완제품을 봤는데 불량 조정 이력이 같이 나타나 혼란"을 일으켰다.
   // ✅ 핵심 수정: code만으로는 TP/BTP, KR/VN처럼 같은 코드를 공유하는 다른 카테고리의
-  //    이력까지 섞여서 집계된다 (예전엔 이 창만 cat 필터가 빠져있었음 — 다른 화면의
-  //    LOT 계산은 이미 cat까지 반영하도록 고쳐져 있었는데 여기만 누락돼 있었다).
-  //    이제 이 품목의 실제 카테고리(item.cat)와 일치하는 이력만 모은다.
-  const txs = txLog.filter(t => t.code === code && t.cat === item.cat).sort((a,b) => b.id - a.id);
+  //    이력까지 섞여서 집계될 수 있다. 하지만 무조건 카테고리까지 정확히 일치해야
+  //    이력을 보여주면, 예전 catKey 버그로 카테고리가 잘못 저장된 옛날 이력들이
+  //    전부 안 보이는 새 문제가 생긴다(대부분의 코드는 카테고리가 겹치지 않는데도).
+  //    그래서 "이 코드가 실제로 여러 카테고리에 걸쳐 등록되어 있을 때만" 엄격하게
+  //    카테고리까지 맞춰서 거르고, 그렇지 않은 평범한 코드는 예전처럼 코드만으로
+  //    전체 이력을 보여준다(오래된 카테고리 오기록도 놓치지 않도록).
+  const codeSharedAcrossCats = pool.filter(r => r.code === code).length > 1;
+  const txs = codeSharedAcrossCats
+    ? txLog.filter(t => t.code === code && t.cat === item.cat).sort((a,b) => b.id - a.id)
+    : txLog.filter(t => t.code === code).sort((a,b) => b.id - a.id);
   const ngTxs = ngLog.filter(t => t.code === code).sort((a,b) => b.id - a.id);
   const inTxs  = txs.filter(t => ['in','tp-in'].includes(t.type));
   const outTxs = txs.filter(t => ['omt','otp'].includes(t.type));
