@@ -786,7 +786,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
 <!-- 작업지시 추가 모달 -->
 <div class="ov-bg" id="wo-add-ov">
-  <div class="ov-box">
+  <div class="ov-box" style="max-height:85vh;overflow-y:auto">
     <h3>➕ 작업지시 추가</h3>
     <div class="ov-fr">
       <label>품목 검색 (완제품·반제품) *</label>
@@ -811,7 +811,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
 <!-- 실적 입력 모달 -->
 <div class="ov-bg" id="wo-prod-ov">
-  <div class="ov-box">
+  <div class="ov-box" style="max-height:85vh;overflow-y:auto">
     <h3>📈 실적 입력</h3>
     <div id="wo-prod-info" style="font-size:13px;color:#555;margin-bottom:.75rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
     <div class="ov-fr"><label>추가 생산수량 *</label><input id="wo-prod-qty" type="number" placeholder="0"></div>
@@ -866,7 +866,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
 <!-- 다운타임 시작 모달 -->
 <div class="ov-bg" id="dt-start-ov">
-  <div class="ov-box">
+  <div class="ov-box" style="max-height:85vh;overflow-y:auto">
     <h3>🔴 다운타임 시작</h3>
     <div class="ov-fr"><label>라인 *</label><input id="dt-start-line" placeholder="예: 1라인, A설비"></div>
     <div class="ov-fr">
@@ -890,7 +890,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
 <!-- 지난 기록(사후) 추가 모달 -->
 <div class="ov-bg" id="dt-manual-ov">
-  <div class="ov-box">
+  <div class="ov-box" style="max-height:85vh;overflow-y:auto">
     <h3>✍️ 지난 다운타임 기록 추가</h3>
     <div class="ov-fr"><label>라인 *</label><input id="dtm-line" placeholder="예: 1라인, A설비"></div>
     <div class="ov-fr">
@@ -955,7 +955,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
 <!-- 품질검사 추가/수정 모달 -->
 <div class="ov-bg" id="qc-add-ov">
-  <div class="ov-box">
+  <div class="ov-box" style="max-height:85vh;overflow-y:auto">
     <h3 id="qc-add-title">➕ 품질검사 기록 추가</h3>
     <div class="ov-fr">
       <label>검사유형 *</label>
@@ -1005,7 +1005,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
 <!-- 작업지시 전공정 추적 모달 — MES 4단계 -->
 <div class="ov-bg" id="wo-trace-ov" style="z-index:2050">
-  <div class="ov-box" style="max-width:580px">
+  <div class="ov-box" style="max-width:580px;max-height:85vh;overflow-y:auto">
     <h3>🔗 전공정 추적</h3>
     <div id="wo-trace-info" style="font-size:13px;color:#555;margin-bottom:1rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
 
@@ -1255,7 +1255,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
 <!-- 삭제 확인 모달 -->
 <div class="ov-bg" id="del-ov">
-  <div class="ov-box">
+  <div class="ov-box" style="max-height:85vh;overflow-y:auto">
     <h3>🗑️ 삭제 확인</h3>
     <div id="del-info" style="font-size:14px;color:#555;margin-bottom:.75rem;line-height:1.7;background:#fef2f2;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #ef4444"></div>
     <p style="font-size:13px;color:#b91c1c;font-weight:600">삭제하면 재고 수량이 원복됩니다. 계속하시겠습니까?</p>
@@ -1268,7 +1268,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
 <!-- ── 품목코드 변경 모달 -->
 <div class="ov-bg" id="rename-code-ov" style="z-index:2100">
-  <div class="ov-box">
+  <div class="ov-box" style="max-height:85vh;overflow-y:auto">
     <h3>✏️ 품목코드 변경</h3>
     <p style="font-size:12px;color:#888;margin-bottom:10px">오타 수정 등으로 품목코드 자체를 바꿉니다. 이 품목의 모든 입출고 이력도 새 코드로 함께 이동합니다.</p>
     <div class="ov-fr" style="margin-bottom:8px">
@@ -6760,7 +6760,7 @@ if (document.readyState === 'loading') {
 
 <!-- ── 로그인 모달 ── -->
 <div class="ov-bg" id="user-ov" style="display:none;z-index:99999">
-  <div class="ov-box" style="max-width:380px">
+  <div class="ov-box" style="max-width:380px;max-height:85vh;overflow-y:auto">
 
     <!-- 한국 열람 -->
     <div id="login-viewer" style="display:none;text-align:center">
@@ -6807,7 +6807,7 @@ if (document.readyState === 'loading') {
 
 <!-- ── 관리자 로그인 모달 ── -->
 <div class="ov-bg" id="admin-ov">
-  <div class="ov-box" style="max-width:340px">
+  <div class="ov-box" style="max-width:340px;max-height:85vh;overflow-y:auto">
     <h3>🔐 관리자 로그인</h3>
     <div class="ov-fr"><label>비밀번호 / Mật khẩu</label>
       <input id="admin-pw-input" type="password" placeholder="관리자 비밀번호 입력" onkeydown="if(event.key==='Enter')doAdminLogin()">
@@ -6822,7 +6822,7 @@ if (document.readyState === 'loading') {
 
 <!-- ── 월말 마감 모달 (관리자) ── -->
 <div class="ov-bg" id="month-close-ov">
-  <div class="ov-box" style="max-width:460px">
+  <div class="ov-box" style="max-width:460px;max-height:85vh;overflow-y:auto">
     <h3>📅 월말 마감</h3>
     <p style="font-size:13px;color:#555;margin-bottom:14px;line-height:1.6">
       모든 품목의 <strong>현재고</strong>를 <strong>전월재고</strong>로 복사합니다.<br>
@@ -6850,7 +6850,7 @@ if (document.readyState === 'loading') {
 
 <!-- ── 품목 추가/수정 모달 (관리자) ── -->
 <div class="ov-bg" id="item-ov">
-  <div class="ov-box" style="max-width:500px">
+  <div class="ov-box" style="max-width:500px;max-height:85vh;overflow-y:auto">
     <h3 id="item-ov-title">➕ 신규 품목 추가</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="ov-fr"><label>카테고리 *</label>
@@ -6884,7 +6884,7 @@ if (document.readyState === 'loading') {
 
 <!-- ── API 설정 모달 (관리자) ── -->
 <div class="ov-bg" id="api-ov">
-  <div class="ov-box" style="max-width:480px">
+  <div class="ov-box" style="max-width:480px;max-height:85vh;overflow-y:auto">
     <h3>⚙️ Google Apps Script API 설정</h3>
     <div class="ov-fr">
       <label>웹 앱 URL</label>
@@ -6990,7 +6990,7 @@ else location.reload();
 
 <!-- ── 품목 숨김/삭제 확인 모달 (관리자) ── -->
 <div class="ov-bg" id="item-del-ov">
-  <div class="ov-box" style="max-width:400px">
+  <div class="ov-box" style="max-width:400px;max-height:85vh;overflow-y:auto">
     <h3>🗑️ 품목 비활성화</h3>
     <div id="item-del-info" style="background:#fef3c7;border-radius:8px;padding:12px;margin:12px 0;font-size:13px"></div>
     <p style="font-size:13px;color:#555;margin-bottom:8px">
@@ -7012,7 +7012,7 @@ else location.reload();
 
 <!-- ── 품목 완전삭제 확인 모달 (관리자, 되돌릴 수 없음) ── -->
 <div class="ov-bg" id="item-perm-del-ov">
-  <div class="ov-box" style="max-width:420px">
+  <div class="ov-box" style="max-width:420px;max-height:85vh;overflow-y:auto">
     <h3 style="color:#7f1d1d">❌ 품목 완전삭제</h3>
     <div id="item-perm-del-info" style="background:#fee2e2;border-radius:8px;padding:12px;margin:12px 0;font-size:13px;line-height:1.6"></div>
     <p style="font-size:13px;color:#7f1d1d;font-weight:700;margin-bottom:8px">
@@ -7096,7 +7096,7 @@ else location.reload();
 
 <!-- ── 불량 품목 숨김 모달 (관리자) ── -->
 <div class="ov-bg" id="ng-item-del-ov">
-  <div class="ov-box" style="max-width:400px">
+  <div class="ov-box" style="max-width:400px;max-height:85vh;overflow-y:auto">
     <h3>🗑️ 불량 품목 비활성화</h3>
     <div id="ng-item-del-info" style="background:#fef3c7;border-radius:8px;padding:12px;margin:12px 0;font-size:13px"></div>
     <p style="font-size:13px;color:#555;margin-bottom:8px">
@@ -7115,7 +7115,7 @@ else location.reload();
   </div>
 </div>
 <div class="ov-bg" id="ng-item-ov">
-  <div class="ov-box" style="max-width:500px">
+  <div class="ov-box" style="max-width:500px;max-height:85vh;overflow-y:auto">
     <h3>⚠️ 불량 신규 품목 추가</h3>
     <p style="font-size:12px;color:#888;margin-bottom:14px">재고 품목을 검색해서 선택하거나, 직접 입력하세요.</p>
 
