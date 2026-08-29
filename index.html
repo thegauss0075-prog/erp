@@ -5542,7 +5542,11 @@ function openTrace(code, catHint) {
   //    ngLog(불량 입출고)는 같은 코드를 공유하는 NG 품목의 이력이므로 완전히 분리해서
   //    별도 섹션으로만 보여준다. 이전엔 둘을 그냥 합쳐서 보여줘서,
   //    "완제품을 봤는데 불량 조정 이력이 같이 나타나 혼란"을 일으켰다.
-  const txs = txLog.filter(t => t.code === code).sort((a,b) => b.id - a.id);
+  // ✅ 핵심 수정: code만으로는 TP/BTP, KR/VN처럼 같은 코드를 공유하는 다른 카테고리의
+  //    이력까지 섞여서 집계된다 (예전엔 이 창만 cat 필터가 빠져있었음 — 다른 화면의
+  //    LOT 계산은 이미 cat까지 반영하도록 고쳐져 있었는데 여기만 누락돼 있었다).
+  //    이제 이 품목의 실제 카테고리(item.cat)와 일치하는 이력만 모은다.
+  const txs = txLog.filter(t => t.code === code && t.cat === item.cat).sort((a,b) => b.id - a.id);
   const ngTxs = ngLog.filter(t => t.code === code).sort((a,b) => b.id - a.id);
   const inTxs  = txs.filter(t => ['in','tp-in'].includes(t.type));
   const outTxs = txs.filter(t => ['omt','otp'].includes(t.type));
@@ -5597,6 +5601,45 @@ function openTrace(code, catHint) {
     });
   }
 
+  // ══════════════════════════════════════════════════════════
+  //  🩺 재고 진단 — 이력으로 계산한 값과 저장된 현재고가 다른지 확인하고,
+  //  다르면 관리자가 바로 맞출 수 있게 한다.
+  //  - "코드+카테고리 기준": 이 화면의 LOT표/요약카드와 같은 계산 (올바른 카테고리로 정확히 집계)
+  //  - "코드만 기준(카테고리 무시)": 예전 catKey 버그 등으로 카테고리가 잘못 저장된
+  //    이력까지 다 잡아내기 위한 참고값. 코드가 다른 카테고리와 우연히 겹치는
+  //    경우엔 이 값이 오히려 부정확할 수 있어 "참고용"으로만 제공한다.
+  // ══════════════════════════════════════════════════════════
+  const codeAndCatTotal = inQty - outQty + adjTxs.reduce((s,t)=>s+(+t.qty||0),0);
+  const allSameCodeTxs = txLog.filter(t => t.code === code);
+  const codeOnlyIn  = allSameCodeTxs.filter(t=>['in','tp-in'].includes(t.type)).reduce((s,t)=>s+(+t.qty||0),0);
+  const codeOnlyOut = allSameCodeTxs.filter(t=>['omt','otp'].includes(t.type)).reduce((s,t)=>s+(+t.qty||0),0);
+  const codeOnlyAdj = allSameCodeTxs.filter(t=>t.type==='adjust').reduce((s,t)=>s+(+t.qty||0),0);
+  const codeOnlyTotal = codeOnlyIn - codeOnlyOut + codeOnlyAdj;
+  const storedCur = +item.cur || 0;
+  const mismatchCatOk = Math.abs(codeAndCatTotal - storedCur) > 0.001;
+  const mismatchCodeOnly = Math.abs(codeOnlyTotal - storedCur) > 0.001;
+  const anyMismatch = mismatchCatOk || mismatchCodeOnly;
+
+  const diagSection = isAdmin ? `
+    <div style="margin-bottom:16px;background:${anyMismatch?'#fffbeb':'#f0fdf4'};border-radius:8px;padding:12px;border:1px solid ${anyMismatch?'#fde68a':'#bbf7d0'}">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:${anyMismatch?'#92400e':'#166534'}">
+        🩺 재고 진단 ${anyMismatch ? '— 불일치 발견' : '— 정상 (이력과 현재고가 일치합니다)'}
+      </div>
+      <div style="font-size:12px;line-height:1.9">
+        <div>저장된 현재고: <strong>${n(storedCur)} ${item.unit}</strong></div>
+        <div>이력 계산값 (같은 코드+카테고리 기준): <strong style="color:${mismatchCatOk?'#b91c1c':'#166534'}">${n(codeAndCatTotal)} ${item.unit}</strong> ${mismatchCatOk?'⚠️':'✓'}</div>
+        <div>이력 계산값 (코드만 기준, 참고용): <strong style="color:${mismatchCodeOnly?'#b91c1c':'#166534'}">${n(codeOnlyTotal)} ${item.unit}</strong> ${mismatchCodeOnly?'⚠️':'✓'}</div>
+      </div>
+      ${anyMismatch ? `
+      <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #ddd">
+        <div style="font-size:11px;color:#888;margin-bottom:6px">맞다고 판단되는 값을 넣고 수정하세요 (기본값은 "코드+카테고리 기준" 계산값입니다).</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <input id="diag-fix-value" type="number" value="${codeAndCatTotal}" style="width:120px;font-size:12px;padding:5px 8px;border-radius:6px;border:1px solid #dde">
+          <button onclick="applyStockDiagnosisFix('${code}','${item.cat}')" style="padding:5px 12px;border-radius:6px;border:1px solid #b45309;background:#b45309;color:#fff;font-size:12px;cursor:pointer;font-weight:600">이 값으로 현재고 수정</button>
+        </div>
+      </div>` : ''}
+    </div>` : '';
+
   const lotSection = Object.keys(lotMap).length ? `
     <div style="margin-bottom:16px">
       <div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #e0e0e8">
@@ -5634,11 +5677,11 @@ function openTrace(code, catHint) {
   const typeLabel = {
     in:'📥 자재 입고', omt:'📤 자재 출고', 'tp-in':'📦 완제품 입고',
     otp:'🚚 완제품 출고', 'ng-in':'⚠️ 불량 입고', 'ng-out':'🗑️ 불량 출고',
-    adjust:'🔧 재고 조정', deactivate:'🔴 비활성화', delete:'❌ 품목 완전삭제'
+    adjust:'🔧 재고 조정', 'sync-fix':'🩺 재고 진단 복구', deactivate:'🔴 비활성화', delete:'❌ 품목 완전삭제'
   };
   const typeColor = {
     in:'#166534', omt:'#b45309', 'tp-in':'#1d4ed8', otp:'#7c3aed',
-    'ng-in':'#b91c1c', 'ng-out':'#92400e', adjust:'#0f766e', deactivate:'#be123c', delete:'#7f1d1d'
+    'ng-in':'#b91c1c', 'ng-out':'#92400e', adjust:'#0f766e', 'sync-fix':'#0369a1', deactivate:'#be123c', delete:'#7f1d1d'
   };
 
   // ✅ "전체 이력" 표는 기간 필터를 적용한다 (기본 최근 7일) — 요약 카드/LOT별 표는
@@ -5678,7 +5721,7 @@ function openTrace(code, catHint) {
             const isIn = ['in','tp-in','ng-in'].includes(t.type);
             // ✅ 'adjust'(재고조정)는 qty가 이미 +/- 부호를 포함한 델타값이므로
             //    별도의 '-' 부호를 앞에 덧붙이면 음수일 때 "--300"처럼 이중 부호가 된다.
-            const isAdjust = t.type === 'adjust';
+            const isAdjust = t.type === 'adjust' || t.type === 'sync-fix';
             const sign = isAdjust ? (t.qty > 0 ? '+' : '') : (isIn ? '+' : (t.qty ? '-' : ''));
             const absQty = isAdjust ? Math.abs(+t.qty||0) : t.qty;
             const color = typeColor[t.type] || '#555';
@@ -5718,8 +5761,50 @@ function openTrace(code, catHint) {
       ${ngTxs.length>10?`<div style="font-size:11px;color:#888;margin-top:4px">...외 ${ngTxs.length-10}건 (불량(NG) 탭에서 전체 확인)</div>`:''}
     </div>` : '';
 
-  document.getElementById('trace-body').innerHTML = lotSection + timelineSection + ngSection;
+  document.getElementById('trace-body').innerHTML = diagSection + lotSection + timelineSection + ngSection;
   document.getElementById('trace-ov').classList.add('show');
+}
+
+// ✅ 재고 진단에서 발견된 불일치를 관리자가 바로 고칠 수 있게 한다.
+//    실제 현재고를 서버에 반영하고, 왜 바뀌었는지 재고조정 이력에도 남긴다.
+async function applyStockDiagnosisFix(code, cat) {
+  const valEl = document.getElementById('diag-fix-value');
+  const val = parseFloat(valEl.value);
+  if (isNaN(val)) { alert('올바른 숫자를 입력해주세요.'); return; }
+
+  const arr = {TP:DB.tp, BTP:DB.btp, KR:DB.kr, VN:DB.vn, VTTH:DB.vtth}[cat];
+  const item = arr && arr.find(r => r.code === code);
+  if (!item) { alert('품목을 찾을 수 없습니다.'); return; }
+
+  const orig = +item.cur || 0;
+  if (Math.abs(val - orig) < 0.001) { alert('현재 저장된 값과 동일합니다.'); return; }
+  if (!confirm(`현재고를 ${orig.toLocaleString()} → ${val.toLocaleString()} ${item.unit}로 수정하시겠습니까?\n이 변경은 재고조정 이력으로 남습니다.`)) return;
+
+  let res = await api('updateStock', { code, cat, cur: val, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('updateStock', { code, cat, cur: val, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('서버 반영 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+
+  const delta = val - orig;
+  item.cur = val;
+  item.total = val + (+item.wip || 0);
+
+  // ✅ 'adjust'가 아니라 'sync-fix'로 남긴다. 이 진단 도구가 고치는 상황은 대부분
+  //    "실제 재고 변화"가 아니라 "이미 있는 이력이 반영이 안 된 것"이므로, 이걸 'adjust'로
+  //    남기면 다음 진단 때 그 보정분이 다시 이력 합계에 더해져서 불일치가 끝없이
+  //    부풀어 보이는 문제가 생긴다. 'sync-fix'는 이력에는 남기되(추적 가능), 재고
+  //    진단의 합계 계산(adjTxs/codeOnlyAdj)에는 포함시키지 않는다.
+  const adjLog = {
+    id: Date.now(), type: 'sync-fix', code, name: item.name, cat, unit: item.unit,
+    qty: delta, note: '[재고진단 복구] 이력 계산값 기준으로 자동 수정',
+    lot: '', dt: vnDt(), dest: '', user: CURRENT_USER || '관리자',
+    prevStock: orig, newStock: val, reason: '재고진단 복구'
+  };
+  txLog.unshift(adjLog);
+  let logRes = await api('addTx', { ...adjLog, token: ADMIN_TOKEN });
+  if (!logRes || !logRes.ok) await api('addTx', { ...adjLog, token: ADMIN_TOKEN });
+
+  alert('✅ 현재고가 수정되었습니다.');
+  openTrace(code, cat);
 }
 
 
