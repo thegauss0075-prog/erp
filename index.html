@@ -1807,7 +1807,15 @@ function n(v){if(v===0||v===undefined)return '<span class="dim">—</span>';retu
 function hl(t,q){if(!q)return String(t);return String(t).replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');}
 function chkXb(i,x){document.getElementById(x).style.display=document.getElementById(i).value?'block':'none';}
 function clr(i,x){document.getElementById(i).value='';if(x)document.getElementById(x).style.display='none';}
-function catKey(txt){const found=Object.entries(CL).find(([k,v])=>v===txt);return found?found[0]:'TP';}
+// ✅ 핵심 버그 수정: 입출고 폼의 "카테고리" 필드는 설명 문구("원자재 KR")가 아니라
+//    원시 코드("KR")를 그대로 담고 있는데, 예전 catKey는 그 반대(문구→코드) 변환만
+//    가능해서 항상 기본값 'TP'로 잘못 떨어졌다. 그 결과 자재출고 등 거래 기록의
+//    카테고리가 실제와 다르게 저장되고, LOT/재고 계산이 엉뚱한 카테고리를 참조하는
+//    문제가 있었다. 이미 올바른 원시 코드가 들어오면 그대로 통과시킨다.
+function catKey(txt){
+  if (CL.hasOwnProperty(txt)) return txt;
+  const found=Object.entries(CL).find(([k,v])=>v===txt);return found?found[0]:'TP';
+}
 
 function go(id){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
