@@ -313,6 +313,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <button class="tb" onclick="go('inv')">📦 재고 현황</button>
   <button class="tb" onclick="go('io')">🔄 입출고</button>
   <button class="tb" onclick="go('wo')">📋 작업지시</button>
+  <button class="tb" onclick="go('dt')">⏱️ 가동률</button>
   <button class="tb" onclick="go('hist')">📋 이력</button>
   <button class="tb" onclick="go('ng')">⚠️ 불량(NG)</button>
   <div style="flex:1"></div>
@@ -813,6 +814,96 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <div class="ov-actions">
       <button class="ov-cancel" onclick="closeOv('wo-prod-ov')">취소</button>
       <button class="ov-save" onclick="submitWOProd()">📈 반영</button>
+    </div>
+  </div>
+</div>
+
+<!-- DOWNTIME / 가동률 -->
+<div id="tab-dt" class="sec">
+  <div id="dt-active-wrap" style="display:none;background:#fff;border:1.5px solid #ef4444;border-radius:12px;padding:1.1rem;margin-bottom:1.25rem">
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:#b91c1c">🔴 진행 중인 다운타임</div>
+    <div id="dt-active-list"></div>
+  </div>
+
+  <div class="toolbar">
+    <button onclick="openStartDT()" style="padding:7px 16px;border-radius:7px;border:1px solid #ef4444;background:#ef4444;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔴 다운타임 시작</button>
+    <button onclick="openAddDTManual()" style="padding:7px 16px;border-radius:7px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">✍️ 지난 기록 추가</button>
+    <button onclick="renderDT()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 새로고침</button>
+    <div class="sw"><span class="si">🔍</span><input id="dt-q" placeholder="라인·사유·비고 검색..." oninput="renderDT()"></div>
+    <select id="dt-reason-f" onchange="renderDT()">
+      <option value="">전체 사유</option>
+      <option value="설비고장">설비고장</option>
+      <option value="자재대기">자재대기</option>
+      <option value="품질문제">품질문제</option>
+      <option value="계획정지">계획정지</option>
+      <option value="기타">기타</option>
+    </select>
+  </div>
+
+  <div style="display:flex;gap:6px;margin-bottom:12px">
+    <button class="period-btn on" id="dt-period-7"  onclick="setDTPeriod(7)">최근 1주일</button>
+    <button class="period-btn" id="dt-period-30" onclick="setDTPeriod(30)">최근 1개월</button>
+    <button class="period-btn" id="dt-period-0"  onclick="setDTPeriod(null)">전체</button>
+  </div>
+
+  <div id="dt-summary" style="background:#fff;border:1px solid #e0e0e8;border-radius:12px;padding:1.1rem;margin-bottom:1.25rem">
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px">📊 라인별 다운타임 요약 (선택 기간)</div>
+    <div id="dt-summary-body"></div>
+  </div>
+
+  <div class="tw"><table style="width:100%">
+    <thead><tr>
+      <th>라인</th><th>사유</th><th>시작</th><th>종료</th><th style="text-align:right">소요시간</th><th>상태</th><th>비고</th><th class="no-print">액션</th>
+    </tr></thead><tbody id="dt-body"></tbody></table></div>
+  <div class="pi" id="dt-pi"></div>
+</div>
+
+<!-- 다운타임 시작 모달 -->
+<div class="ov-bg" id="dt-start-ov">
+  <div class="ov-box">
+    <h3>🔴 다운타임 시작</h3>
+    <div class="ov-fr"><label>라인 *</label><input id="dt-start-line" placeholder="예: 1라인, A설비"></div>
+    <div class="ov-fr">
+      <label>사유 *</label>
+      <select id="dt-start-reason">
+        <option value="설비고장">설비고장</option>
+        <option value="자재대기">자재대기</option>
+        <option value="품질문제">품질문제</option>
+        <option value="계획정지">계획정지</option>
+        <option value="기타">기타</option>
+      </select>
+    </div>
+    <div class="ov-fr"><label>비고 (선택)</label><input id="dt-start-note" placeholder="선택사항"></div>
+    <div id="dt-start-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
+    <div class="ov-actions">
+      <button class="ov-cancel" onclick="closeOv('dt-start-ov')">취소</button>
+      <button class="ov-del-btn" onclick="submitStartDT()" style="background:#ef4444;border-color:#ef4444">🔴 시작</button>
+    </div>
+  </div>
+</div>
+
+<!-- 지난 기록(사후) 추가 모달 -->
+<div class="ov-bg" id="dt-manual-ov">
+  <div class="ov-box">
+    <h3>✍️ 지난 다운타임 기록 추가</h3>
+    <div class="ov-fr"><label>라인 *</label><input id="dtm-line" placeholder="예: 1라인, A설비"></div>
+    <div class="ov-fr">
+      <label>사유 *</label>
+      <select id="dtm-reason">
+        <option value="설비고장">설비고장</option>
+        <option value="자재대기">자재대기</option>
+        <option value="품질문제">품질문제</option>
+        <option value="계획정지">계획정지</option>
+        <option value="기타">기타</option>
+      </select>
+    </div>
+    <div class="ov-fr"><label>시작 시각 *</label><input id="dtm-start" type="datetime-local"></div>
+    <div class="ov-fr"><label>종료 시각 *</label><input id="dtm-end" type="datetime-local"></div>
+    <div class="ov-fr"><label>비고 (선택)</label><input id="dtm-note" placeholder="선택사항"></div>
+    <div id="dt-manual-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
+    <div class="ov-actions">
+      <button class="ov-cancel" onclick="closeOv('dt-manual-ov')">취소</button>
+      <button class="ov-save" onclick="submitManualDT()">✍️ 추가</button>
     </div>
   </div>
 </div>
@@ -1543,11 +1634,12 @@ function go(id){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.tb').forEach(b=>b.classList.remove('on'));
   document.getElementById('tab-'+id).classList.add('on');
-  const order={dashboard:0,inv:1,io:2,wo:3,hist:4,ng:5};
+  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,hist:5,ng:6};
   document.querySelectorAll('.tb')[order[id]].classList.add('on');
   if(id==='inv'){initMS();renderInv();}
   if(id==='io') renderIOTable();
   if(id==='wo') renderWO();
+  if(id==='dt') renderDT();
   if(id==='hist') renderHist();
   if(id==='ng'){renderNG();renderNGLog();initNGLogModel();}
 }
@@ -1910,6 +2002,221 @@ async function deleteWO(id) {
   if (!res || !res.ok) res = await api('deleteWorkOrder', { id, token: ADMIN_TOKEN });
   if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
   await renderWO();
+}
+
+// ══════════════════════════════════════════════════════════
+//  설비/라인별 가동률·다운타임 — MES 2단계
+// ══════════════════════════════════════════════════════════
+let DT = [];              // 다운타임 목록 (서버 DOWNTIME_LOG 시트 미러)
+let dtPeriodDays = 7;      // 기본 최근 1주일 (전체 이력 표/요약에 적용, null=전체)
+let dtEditTarget = null;   // 수정 대상
+
+async function loadDT() {
+  if (!(API_URL || IS_GAS)) return;
+  const res = await api('getDowntimeLog', {});
+  if (res && res.ok) DT = res.data || [];
+}
+
+function setDTPeriod(days) {
+  dtPeriodDays = days;
+  ['7','30','0'].forEach(k => {
+    const btn = document.getElementById('dt-period-'+k);
+    if (btn) btn.classList.toggle('on', (days===null && k==='0') || (days!==null && String(days)===k));
+  });
+  renderDT();
+}
+
+function dtDurationLabel(mins) {
+  mins = Math.max(0, Math.round(mins));
+  const h = Math.floor(mins/60), m = mins%60;
+  return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
+}
+
+async function renderDT() {
+  await loadDT();
+
+  // ── 진행 중인 다운타임 배너
+  const active = DT.filter(r => r.status === '진행중');
+  const activeWrap = document.getElementById('dt-active-wrap');
+  if (active.length) {
+    activeWrap.style.display = 'block';
+    document.getElementById('dt-active-list').innerHTML = active.map(r => {
+      const startMs = new Date(r.startTime).getTime();
+      const elapsedMin = isNaN(startMs) ? 0 : Math.floor((Date.now() - startMs) / 60000);
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #fee2e2">
+        <div>
+          <strong style="color:#b91c1c">${r.line}</strong> · ${r.reason} ${r.note?('· '+r.note):''}
+          <div style="font-size:11px;color:#888">시작: ${r.startTime} (경과 ${dtDurationLabel(elapsedMin)})</div>
+        </div>
+        <button onclick="stopDT(${r.id})" style="padding:6px 14px;border-radius:7px;border:1px solid #166534;background:#166534;color:#fff;font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap">▶ 재가동(종료)</button>
+      </div>`;
+    }).join('');
+  } else {
+    activeWrap.style.display = 'none';
+  }
+
+  // ── 목록 필터
+  const q = (document.getElementById('dt-q').value || '').toLowerCase().trim();
+  const reasonF = document.getElementById('dt-reason-f').value;
+  const cutoffTs = dtPeriodDays ? (Date.now() - dtPeriodDays*24*3600*1000) : null;
+  let rows = DT.slice();
+  if (reasonF) rows = rows.filter(r => r.reason === reasonF);
+  if (q) rows = rows.filter(r =>
+    (r.line||'').toLowerCase().includes(q) || (r.reason||'').toLowerCase().includes(q) || (r.note||'').toLowerCase().includes(q)
+  );
+  if (cutoffTs) rows = rows.filter(r => {
+    const t = new Date(r.startTime).getTime();
+    return isNaN(t) ? true : t >= cutoffTs;
+  });
+
+  // ── 라인별 요약
+  const summaryMap = {};
+  rows.forEach(r => {
+    const line = r.line || '(미지정)';
+    if (!summaryMap[line]) summaryMap[line] = {totalMin:0, count:0};
+    const dur = r.status === '진행중'
+      ? Math.floor((Date.now() - new Date(r.startTime).getTime()) / 60000)
+      : (+r.durationMin || 0);
+    summaryMap[line].totalMin += dur;
+    summaryMap[line].count += 1;
+  });
+  const summaryEntries = Object.entries(summaryMap).sort((a,b) => b[1].totalMin - a[1].totalMin);
+  const summaryBody = document.getElementById('dt-summary-body');
+  summaryBody.innerHTML = summaryEntries.length
+    ? summaryEntries.map(([line, s]) => `
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f5;font-size:13px">
+          <span>${line}</span>
+          <span style="color:#b91c1c;font-weight:600">${dtDurationLabel(s.totalMin)} <span style="color:#aaa;font-weight:400">(${s.count}건)</span></span>
+        </div>`).join('')
+    : `<div style="color:#aaa;font-size:13px">선택한 기간에 다운타임 기록이 없습니다.</div>`;
+
+  // ── 목록 표
+  const sorted = rows.slice().sort((a,b) => new Date(b.startTime) - new Date(a.startTime));
+  const body = document.getElementById('dt-body');
+  if (!sorted.length) {
+    body.innerHTML = `<tr><td colspan="8" style="padding:20px;text-align:center;color:#aaa">다운타임 기록이 없습니다.</td></tr>`;
+    return;
+  }
+  body.innerHTML = sorted.map(r => {
+    const isActive = r.status === '진행중';
+    const dur = isActive ? Math.floor((Date.now() - new Date(r.startTime).getTime())/60000) : (+r.durationMin||0);
+    return `<tr>
+      <td>${r.line||'-'}</td>
+      <td>${r.reason||'-'}</td>
+      <td style="font-size:12px;color:#666">${r.startTime||'-'}</td>
+      <td style="font-size:12px;color:#666">${r.endTime||(isActive?'진행중':'-')}</td>
+      <td style="text-align:right;font-weight:600;color:${isActive?'#b91c1c':'#333'}">${dtDurationLabel(dur)}</td>
+      <td><span style="color:${isActive?'#b91c1c':'#166534'};font-weight:600">${r.status||'종료'}</span></td>
+      <td style="font-size:12px;color:#888">${r.note||'-'}</td>
+      <td class="no-print" style="white-space:nowrap">
+        ${!isActive ? `<button class="edit-btn" onclick="openEditDT(${r.id})" title="수정">✏️</button>` : ''}
+        ${isAdmin ? `<button class="edit-btn" onclick="deleteDT(${r.id})" title="삭제">🗑️</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── 실시간 시작 ──────────────────────────────
+function openStartDT() {
+  document.getElementById('dt-start-line').value = '';
+  document.getElementById('dt-start-reason').value = '설비고장';
+  document.getElementById('dt-start-note').value = '';
+  document.getElementById('dt-start-err').style.display = 'none';
+  document.getElementById('dt-start-ov').classList.add('show');
+}
+
+async function submitStartDT() {
+  const errEl = document.getElementById('dt-start-err');
+  errEl.style.display = 'none';
+  const line = document.getElementById('dt-start-line').value.trim();
+  if (!line) { errEl.textContent = '라인을 입력해주세요.'; errEl.style.display='block'; return; }
+  const body = {
+    line, reason: document.getElementById('dt-start-reason').value,
+    note: document.getElementById('dt-start-note').value.trim(),
+    token: ADMIN_TOKEN, user: CURRENT_USER || ''
+  };
+  if (API_URL || IS_GAS) {
+    let res = await api('startDowntime', body);
+    if (!res || !res.ok) res = await api('startDowntime', body);
+    if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+  }
+  closeOv('dt-start-ov');
+  await renderDT();
+}
+
+async function stopDT(id) {
+  if (!confirm('이 다운타임을 종료(재가동) 처리할까요?')) return;
+  const body = { id, token: ADMIN_TOKEN };
+  let res = await api('stopDowntime', body);
+  if (!res || !res.ok) res = await api('stopDowntime', body);
+  if (!res || !res.ok) { alert('처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await renderDT();
+}
+
+// ── 지난 기록(사후) 추가 ──────────────────────────────
+function openAddDTManual() {
+  document.getElementById('dtm-line').value = '';
+  document.getElementById('dtm-reason').value = '설비고장';
+  document.getElementById('dtm-start').value = '';
+  document.getElementById('dtm-end').value = '';
+  document.getElementById('dtm-note').value = '';
+  document.getElementById('dt-manual-err').style.display = 'none';
+  dtEditTarget = null;
+  document.getElementById('dt-manual-ov').classList.add('show');
+}
+
+function openEditDT(id) {
+  const r = DT.find(x => x.id === id); if (!r) return;
+  dtEditTarget = r;
+  document.getElementById('dtm-line').value = r.line || '';
+  document.getElementById('dtm-reason').value = r.reason || '설비고장';
+  document.getElementById('dtm-start').value = (r.startTime||'').slice(0,16);
+  document.getElementById('dtm-end').value = (r.endTime||'').slice(0,16);
+  document.getElementById('dtm-note').value = r.note || '';
+  document.getElementById('dt-manual-err').style.display = 'none';
+  document.getElementById('dt-manual-ov').classList.add('show');
+}
+
+async function submitManualDT() {
+  const errEl = document.getElementById('dt-manual-err');
+  errEl.style.display = 'none';
+  const line = document.getElementById('dtm-line').value.trim();
+  const start = document.getElementById('dtm-start').value;
+  const end = document.getElementById('dtm-end').value;
+  if (!line) { errEl.textContent = '라인을 입력해주세요.'; errEl.style.display='block'; return; }
+  if (!start || !end) { errEl.textContent = '시작/종료 시각을 모두 입력해주세요.'; errEl.style.display='block'; return; }
+  if (new Date(end) <= new Date(start)) { errEl.textContent = '종료 시각이 시작 시각보다 뒤여야 합니다.'; errEl.style.display='block'; return; }
+
+  const body = {
+    line, reason: document.getElementById('dtm-reason').value,
+    startTime: start, endTime: end,
+    note: document.getElementById('dtm-note').value.trim(),
+    token: ADMIN_TOKEN, user: CURRENT_USER || ''
+  };
+
+  let res;
+  if (dtEditTarget) {
+    body.id = dtEditTarget.id;
+    res = await api('updateDowntime', body);
+    if (!res || !res.ok) res = await api('updateDowntime', body);
+  } else {
+    res = await api('addDowntimeManual', body);
+    if (!res || !res.ok) res = await api('addDowntimeManual', body);
+  }
+  if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+
+  dtEditTarget = null;
+  closeOv('dt-manual-ov');
+  await renderDT();
+}
+
+async function deleteDT(id) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (!confirm('이 다운타임 기록을 삭제하시겠습니까?')) return;
+  let res = await api('deleteDowntime', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('deleteDowntime', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await renderDT();
 }
 
 // 해당 품목의 입고 이력에서 LOT별 잔여량 계산 (FIFO 순서로 정렬)
