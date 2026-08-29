@@ -974,7 +974,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     </div>
     <div class="ov-fr"><label>품목코드</label><input id="qc-code" readonly style="background:#f5f6f8;color:#888"></div>
     <div class="ov-fr"><label>품명</label><input id="qc-name" readonly style="background:#f5f6f8;color:#888"></div>
-    <div class="ov-fr"><label>LOT (선택)</label><input id="qc-lot" placeholder="예: TGG6QPY-0001"></div>
+    <div class="ov-fr"><label>LOT (선택) <button type="button" onclick="openLotCal('qc')" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #3730a3;background:#eef2ff;color:#3730a3;font-size:11px;cursor:pointer">📅 날짜선택 생성</button></label><input id="qc-lot" placeholder="예: TGG6QPY-0001"></div>
     <div class="ov-fr">
       <label>연결할 작업지시 (선택)</label>
       <select id="qc-wo"><option value="">연결 안 함</option></select>
@@ -5743,17 +5743,19 @@ function buildLot(date, dir, serial, maker) {
   const D = lotEncDay(date.getDate());
   const seq = String(serial||1).padStart(4,'0');
 
-  if (dir==='in' || dir==='omt') {
-    // 자재: LOT-YYYYMMDD-NN
+  // ✅ LOT_TP_DIRS 기준으로 판정 (예전엔 dir==='in'||dir==='omt'만 검사해서,
+  //    'qc'처럼 새로 추가된 자재 계열 dir이 완제품용 형식으로 잘못 생성되는 문제가 있었다)
+  if (!LOT_TP_DIRS.includes(dir)) {
+    // 자재: LOT-YYYYMMDD-NN (CORE 원자재처럼 제조사가 필요하면 LOT-YYYYMMDD-제조사-NN)
     const yyyy = date.getFullYear();
     const mm   = String(date.getMonth()+1).padStart(2,'0');
     const dd   = String(date.getDate()).padStart(2,'0');
     const s    = String(serial||1).padStart(2,'0');
-    return `LOT-${yyyy}${mm}${dd}-${s}`;
+    return maker ? `LOT-${yyyy}${mm}${dd}-${maker}-${s}` : `LOT-${yyyy}${mm}${dd}-${s}`;
   } else {
     // 완제품: TG[Y][M][D][maker]V-NNNN
-    // 예: TGGF6CV-0001 (2026년6월15일, CSC 제조사)
-    const m = maker || 'C'; // 기본값 C(CSC)
+    // 예: TGGF6CV-0001 (2026년6월15일, CHANGSUNG 제조사)
+    const m = maker || 'C'; // 기본값 C(CHANGSUNG)
     return `TG${Y}${M}${D}${m}V-${seq}`;
   }
 }
@@ -5779,6 +5781,29 @@ function setLotMaker(code, name) {
 //    입출고 화면뿐 아니라 작업지시 실적입력·전공정추적의 산출 LOT 입력란도 같은 규칙을 쓴다.
 const LOT_TP_DIRS = ['tp-in', 'otp', 'wo-prod', 'wo-trace-output'];
 
+// ✅ 지금 LOT을 생성하려는 품목이 CORE 종류인지 판별한다. 완제품/반제품(LOT_TP_DIRS)이
+//    아니어도, CORE 원자재는 제조사(E/P/C/A)에 따라 품질이 갈리므로 LOT에 제조사를
+//    반영해야 한다. dir에 맞는 화면에서 현재 선택된 품목 정보를 가져와 판단한다.
+function isCoreLotContext(dir) {
+  let name = '', sub = '';
+  if (dir === 'qc' && typeof qcSelectedItem !== 'undefined' && qcSelectedItem) {
+    name = qcSelectedItem.name || '';
+    sub = qcSelectedItem.sub || '';
+  } else if (dir === 'wo-prod' && typeof woProdTarget !== 'undefined' && woProdTarget) {
+    name = woProdTarget.name || '';
+  } else if (dir === 'wo-trace-output' && typeof woTraceTarget !== 'undefined' && woTraceTarget) {
+    name = woTraceTarget.name || '';
+  } else {
+    const nameEl = document.getElementById(dir + '-name');
+    const codeEl = document.getElementById(dir + '-code');
+    name = nameEl ? nameEl.value : '';
+    const code = codeEl ? codeEl.value : '';
+    const item = code ? allRows().find(r => r.code === code) : null;
+    sub = item ? (item.sub || '') : '';
+  }
+  return sub.toUpperCase() === 'CORE' || name.toUpperCase().includes('CORE');
+}
+
 // 달력 열기
 function openLotCal(dir) {
   lotCalDir      = dir;
@@ -5786,13 +5811,14 @@ function openLotCal(dir) {
   lotCalSelected = null;
   lotMakerCode   = 'C'; // 초기화
 
-  // 완제품 입고/출고일 때만 제조사 선택 표시
+  // 완제품/반제품이거나, 원자재라도 CORE 종류면 제조사 선택 표시
   const makerWrap = document.getElementById('lot-maker-wrap');
   const isTP = LOT_TP_DIRS.includes(dir);
-  if (makerWrap) makerWrap.style.display = isTP ? 'block' : 'none';
+  const needsMaker = isTP || isCoreLotContext(dir);
+  if (makerWrap) makerWrap.style.display = needsMaker ? 'block' : 'none';
 
   // 제조사 버튼 초기화 (C 선택)
-  if (isTP) setLotMaker('C', 'CHANGSUNG');
+  if (needsMaker) setLotMaker('C', 'CHANGSUNG');
 
   renderLotCal();
   updateLotPreview(null);
@@ -5858,12 +5884,13 @@ function updateLotPreview(date) {
   const dd = String(date.getDate()).padStart(2,'0');
   const prefix = mm+'/'+dd;
   const isTP = LOT_TP_DIRS.includes(lotCalDir);
+  const needsMaker = isTP || isCoreLotContext(lotCalDir);
   const seq = txLog.filter(t=>t.dt&&t.dt.startsWith(prefix)&&
     (isTP ? (t.type==='tp-in'||t.type==='otp') : (t.type==='in'||t.type==='omt'))
   ).length + 1;
 
-  // ✅ 완제품 입고 시 제조사 코드 포함
-  preview.textContent = buildLot(date, lotCalDir, seq, isTP ? lotMakerCode : null);
+  // ✅ 완제품이거나 CORE 원자재면 제조사 코드 포함
+  preview.textContent = buildLot(date, lotCalDir, seq, needsMaker ? lotMakerCode : null);
 }
 
 // LOT 확정 적용
@@ -5874,9 +5901,10 @@ function confirmLotCal() {
   const dd = String(lotCalSelected.getDate()).padStart(2,'0');
   const prefix = mm+'/'+dd;
   const isTP = LOT_TP_DIRS.includes(lotCalDir);
+  const needsMaker = isTP || isCoreLotContext(lotCalDir);
 
-  // 완제품 입고이면 제조사 선택 확인
-  if (isTP && !lotMakerCode) {
+  // 제조사가 필요한 경우(완제품/반제품 또는 CORE 원자재) 선택 확인
+  if (needsMaker && !lotMakerCode) {
     alert('제조사를 선택해주세요. / Vui lòng chọn nhà sản xuất.');
     return;
   }
@@ -5885,8 +5913,8 @@ function confirmLotCal() {
     (isTP ? (t.type==='tp-in'||t.type==='otp') : (t.type==='in'||t.type==='omt'))
   ).length + 1;
 
-  // ✅ 제조사 코드 포함하여 LOT 생성
-  const lot = buildLot(lotCalSelected, lotCalDir, seq, isTP ? lotMakerCode : null);
+  // ✅ 제조사 코드 포함하여 LOT 생성 (완제품이거나 CORE 원자재인 경우)
+  const lot = buildLot(lotCalSelected, lotCalDir, seq, needsMaker ? lotMakerCode : null);
   const el  = document.getElementById(lotCalDir+'-lot');
   if (el) {
     el.value = lot;
