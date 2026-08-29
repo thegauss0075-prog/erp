@@ -997,7 +997,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
 <!-- 작업지시 전공정 추적 모달 — MES 4단계 -->
 <div class="ov-bg" id="wo-trace-ov" style="z-index:2050">
-  <div class="ov-box" style="max-width:540px">
+  <div class="ov-box" style="max-width:580px">
     <h3>🔗 전공정 추적</h3>
     <div id="wo-trace-info" style="font-size:13px;color:#555;margin-bottom:1rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
 
@@ -1023,7 +1023,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
       <div style="font-size:12px;color:#888;margin-bottom:6px">➕ 새 자재 검색해서 추가</div>
       <div class="ac-wrap" style="margin-bottom:6px">
-        <input id="wo-trace-mat-q" placeholder="원자재/반제품 코드 또는 품명 검색..." autocomplete="off" oninput="acSearchWOMat()" onkeydown="acKeyWOMat(event)">
+        <input id="wo-trace-mat-q" placeholder="원자재/반제품 코드 또는 품명 검색..." autocomplete="off" oninput="acSearchWOMat()" onkeydown="acKeyWOMat(event)" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px 10px;border-radius:8px;border:1px solid #dde">
         <div id="wo-trace-mat-drop" class="ac-drop"></div>
       </div>
       <div style="display:flex;gap:6px">
@@ -1987,8 +1987,8 @@ function fillForm(dir,item){
   if(stockEl) stockEl.value=(item.cur>0?item.cur.toLocaleString():'0')+' '+item.unit;
 
   // 출고 시: 입고된 LOT 목록 드롭다운 채우기
-  if(dir==='omt') fillLotDropdown(item.code, item.unit, 'omt', 'in',    'omt');
-  if(dir==='otp') fillLotDropdown(item.code, item.unit, 'otp', 'tp-in', 'otp');
+  if(dir==='omt') fillLotDropdown(item.code, item.unit, 'omt', 'in',    'omt', item.cat);
+  if(dir==='otp') fillLotDropdown(item.code, item.unit, 'otp', 'tp-in', 'otp', item.cat);
 
   // CORE 자재일 때 제조사 필드 표시
   const makerRow = document.getElementById(dir+'-maker-row');
@@ -2716,7 +2716,7 @@ function woMatLotTypes(cat) {
 }
 function fillWOMatLotSelect(selEl, code, cat, preferredLot) {
   const {inType, outType} = woMatLotTypes(cat);
-  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType);
+  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
   if (!activeLots.length && noLotRemain <= 0) {
     selEl.innerHTML = '<option value="">-- 사용 가능한 재고 LOT 없음 --</option>';
     return;
@@ -2730,7 +2730,7 @@ function fillWOMatLotSelect(selEl, code, cat, preferredLot) {
 }
 function getWOMatLotRemain(code, cat, lot) {
   const {inType, outType} = woMatLotTypes(cat);
-  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType);
+  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
   if (lot === '__nolot__') return noLotRemain;
   const found = activeLots.find(l => l.lot === lot);
   return found ? found.remain : 0;
@@ -3090,8 +3090,11 @@ async function deleteProcessLogUI(id) {
 
 // 해당 품목의 입고 이력에서 LOT별 잔여량 계산 (FIFO 순서로 정렬)
 // fillLotDropdown(화면 표시)과 allocateFIFO(다중 LOT 자동분배 계산)가 공통으로 사용
-function computeActiveLots(code, inType, outType) {
-  const allTx = [...txLog, ...ngLog].filter(t => t.code === code);
+// ✅ cat(카테고리)을 추가로 받아서 필터링한다. TP/BTP가 같은 code를 공유하는 품목이 있는데,
+//    cat 없이 code만으로 거래를 모으면 완제품 이력과 반제품 이력이 뒤섞여 잔여량이 틀어진다.
+//    cat을 안 넘기면(하위호환) 예전처럼 code만으로 동작한다.
+function computeActiveLots(code, inType, outType, cat) {
+  const allTx = [...txLog, ...ngLog].filter(t => t.code === code && (!cat || t.cat === cat));
   const lotMap = {};
 
   // 입고 집계
@@ -3124,8 +3127,8 @@ function computeActiveLots(code, inType, outType) {
 // ✅ 한 LOT 잔여량으로 부족한 수량을 요청했을 때, 선택한 LOT부터 FIFO 순서로
 //    이후 LOT들을 자동으로 이어붙여 필요한 수량을 채우는 분배 계산
 //    startLot: select에서 선택된 값 ('' | '__nolot__' | 실제 LOT코드)
-function allocateFIFO(code, inType, outType, startLot, qty) {
-  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType);
+function allocateFIFO(code, inType, outType, startLot, qty, cat) {
+  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
   let pool = [];
 
   if (startLot === '__nolot__') {
@@ -3151,7 +3154,7 @@ function allocateFIFO(code, inType, outType, startLot, qty) {
 }
 
 // dir: 'omt'(자재출고) 또는 'otp'(완제품출고)
-function fillLotDropdown(code, unit, dir, inType, outType) {
+function fillLotDropdown(code, unit, dir, inType, outType, cat) {
   dir     = dir     || 'omt';
   inType  = inType  || 'in';
   outType = outType || 'omt';
@@ -3161,7 +3164,7 @@ function fillLotDropdown(code, unit, dir, inType, outType) {
   const count = document.getElementById(dir+'-lot-count');
   if (!sel) return;
 
-  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType);
+  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
 
   if (!activeLots.length) {
     sel.innerHTML = '<option value="">-- 입고된 LOT 없음 (LOT 없이 등록된 입고 있음) --</option>';
@@ -3260,7 +3263,7 @@ function showCP(dir){
   if((dir==='omt' || dir==='otp') && lot) {
     const inT  = dir==='omt' ? 'in'  : 'tp-in';
     const outT = dir==='omt' ? 'omt' : 'otp';
-    const alloc = allocateFIFO(code, inT, outT, lot, qty);
+    const alloc = allocateFIFO(code, inT, outT, lot, qty, catKey(catTxt));
     if(!alloc.ok){
       alert(`⛔ 재고 부족 / Không đủ tồn kho\n\n선택한 LOT부터 이후 LOT를 모두 합쳐도 수량이 부족합니다.\n가용 수량: ${alloc.totalAvailable.toLocaleString()} ${unit}\n요청 수량: ${qty.toLocaleString()} ${unit}\n부족: ${alloc.shortage.toLocaleString()} ${unit}`);
       return;
