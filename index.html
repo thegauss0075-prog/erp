@@ -1015,24 +1015,12 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#92400e">📥 투입 자재 (이 작업지시에 사용된 원자재/반제품 LOT)</div>
       <div id="wo-trace-material-list" style="margin-bottom:8px"></div>
 
-      <div id="wo-trace-mat-preset-wrap" style="display:none;background:#fffbeb;border-radius:8px;padding:10px;margin-bottom:10px">
-        <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⚡ 빠른 입력 — 이 제품에 지난번 사용했던 자재 (숫자만 입력하면 됩니다)</div>
-        <div id="wo-trace-mat-preset"></div>
-        <button onclick="submitWOMatPreset()" style="margin-top:8px;padding:6px 14px;border-radius:6px;border:1px solid #92400e;background:#92400e;color:#fff;font-size:12px;cursor:pointer;font-weight:600">📥 입력한 수량 일괄 반영</button>
+      <div style="background:#fffbeb;border-radius:8px;padding:10px">
+        <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⚡ 재고 있는 자재에서 선택 (선입선출 — 가장 오래된 LOT이 자동으로 사용됩니다)</div>
+        <input id="wo-trace-mat-filter" placeholder="자재명·코드로 검색..." autocomplete="off" oninput="renderWOMatBrowse()" style="width:100%;box-sizing:border-box;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid #dde;margin-bottom:8px">
+        <div id="wo-trace-mat-browse" style="max-height:220px;overflow-y:auto"></div>
+        <button onclick="submitWOMatBrowse()" style="margin-top:8px;padding:6px 14px;border-radius:6px;border:1px solid #92400e;background:#92400e;color:#fff;font-size:12px;cursor:pointer;font-weight:600">📥 입력한 수량 일괄 반영</button>
       </div>
-
-      <div style="font-size:12px;color:#888;margin-bottom:6px">➕ 새 자재 검색해서 추가</div>
-      <div class="ac-wrap" style="margin-bottom:6px">
-        <input id="wo-trace-mat-q" placeholder="원자재/반제품 코드 또는 품명 검색..." autocomplete="off" oninput="acSearchWOMat()" onkeydown="acKeyWOMat(event)" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px 10px;border-radius:8px;border:1px solid #dde">
-        <div id="wo-trace-mat-drop" class="ac-drop"></div>
-      </div>
-      <div style="display:flex;gap:6px">
-        <select id="wo-trace-mat-lot" style="flex:1.2" onchange="onWOMatLotChange()"><option value="">-- 품목을 먼저 선택하세요 --</option></select>
-        <input id="wo-trace-mat-qty" type="number" placeholder="투입수량" style="width:80px">
-        <select id="wo-trace-mat-unit" style="width:70px"></select>
-        <button onclick="addWOMaterialUI()" style="padding:0 14px;border-radius:6px;border:1px solid #92400e;background:#92400e;color:#fff;font-size:12px;cursor:pointer;white-space:nowrap">+ 추가</button>
-      </div>
-      <div id="wo-trace-mat-remain" style="font-size:11px;color:#888;margin-top:4px"></div>
     </div>
 
     <div id="wo-trace-err" style="color:#b91c1c;font-size:12px;margin-top:8px;display:none"></div>
@@ -2671,21 +2659,17 @@ async function loadWOOutputLots() {
 async function openWOTrace(id) {
   const wo = WO.find(r => r.id === id); if (!wo) return;
   woTraceTarget = wo;
-  woMatSelectedItem = null;
   document.getElementById('wo-trace-info').innerHTML =
     `<strong>${wo.orderNo}</strong> · ${wo.name} (${wo.code})<br>계획 ${(+wo.planQty||0).toLocaleString()} ${wo.unit} · 실적 ${(+wo.producedQty||0).toLocaleString()} ${wo.unit}`;
   document.getElementById('wo-trace-output-lot').value = '';
   document.getElementById('wo-trace-output-qty').value = '';
-  document.getElementById('wo-trace-mat-q').value = '';
-  document.getElementById('wo-trace-mat-lot').value = '';
-  document.getElementById('wo-trace-mat-qty').value = '';
-  document.getElementById('wo-trace-mat-unit').innerHTML = woMatUnitSelectHTML(null, 'EA');
+  document.getElementById('wo-trace-mat-filter').value = '';
   document.getElementById('wo-trace-err').style.display = 'none';
 
   await loadWOMaterials();
   await loadWOOutputLots();
   renderWOTraceLists();
-  renderWOMatPreset();
+  renderWOMatBrowse();
   document.getElementById('wo-trace-ov').classList.add('show');
 }
 
@@ -2707,131 +2691,6 @@ function renderWOTraceLists() {
       <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · <span style="font-family:monospace;color:#92400e">${r.lot||'LOT 미지정'}</span></span>
       <span>${(+r.qty||0).toLocaleString()} ${r.unit||''} <button onclick="deleteWOMaterialUI(${r.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button></span>
     </div>`).join('') : `<div style="color:#aaa;font-size:12px">아직 투입 자재 기록이 없습니다.</div>`;
-}
-
-// ✅ LOT 선택을 카테고리에 맞는 실제 재고 LOT 목록에서만 고를 수 있게 한다 (검증용, 재고는 안 줄임)
-function woMatLotTypes(cat) {
-  if (cat === 'BTP') return {inType:'tp-in', outType:'otp'};
-  return {inType:'in', outType:'omt'}; // KR/VN/VTTH 등 일반 자재
-}
-// ✅ code+cat으로 품목의 실제 현재고(item.cur)를 찾는다. 품목 추가 시 초기수량으로
-//    바로 입력됐거나 재고조정만 된 품목은 입출고 이력(LOT 장부)이 아예 없을 수 있는데,
-//    그런 경우에도 실제 재고는 있으니 "LOT 이력 없음"으로 막아버리면 안 된다.
-function findItemCurByCodeCat(code, cat) {
-  const item = allRows().find(r => r.code === code && r.cat === cat);
-  return item ? (+item.cur || 0) : 0;
-}
-function fillWOMatLotSelect(selEl, code, cat, preferredLot) {
-  const {inType, outType} = woMatLotTypes(cat);
-  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
-  if (!activeLots.length && noLotRemain <= 0) {
-    // ✅ 입출고 이력에는 안 잡히지만 실제 현재고는 있는 경우 (초기 재고 직접입력, 재고조정 등) —
-    //    그 재고를 그대로 쓸 수 있게 "LOT 이력 없음" 폴백 옵션을 준다.
-    const cur = findItemCurByCodeCat(code, cat);
-    if (cur > 0) {
-      selEl.innerHTML = `<option value="__nolot__">⚠️ LOT 이력 없음 · 현재고 기준 사용 (${cur.toLocaleString()})</option>`;
-      selEl.value = '__nolot__';
-      return;
-    }
-    selEl.innerHTML = '<option value="">-- 사용 가능한 재고 없음 --</option>';
-    return;
-  }
-  let html = '<option value="">-- LOT 선택 --</option>';
-  if (noLotRemain > 0) html += `<option value="__nolot__">⚠️ LOT 미지정 재고 (잔여 ${noLotRemain.toLocaleString()})</option>`;
-  html += activeLots.map(l => `<option value="${l.lot}">${l.lot} · 잔여 ${l.remain.toLocaleString()}</option>`).join('');
-  selEl.innerHTML = html;
-  const validPreferred = preferredLot && (preferredLot==='__nolot__' ? noLotRemain>0 : activeLots.some(l=>l.lot===preferredLot));
-  selEl.value = validPreferred ? preferredLot : (activeLots[0] ? activeLots[0].lot : (noLotRemain>0 ? '__nolot__' : ''));
-}
-function getWOMatLotRemain(code, cat, lot) {
-  const {inType, outType} = woMatLotTypes(cat);
-  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
-  if (lot === '__nolot__') {
-    // LOT 장부상 미지정 잔여가 있으면 그걸 쓰고, 장부 자체가 텅 비어있으면(폴백 케이스) 실제 현재고를 쓴다
-    return noLotRemain > 0 ? noLotRemain : findItemCurByCodeCat(code, cat);
-  }
-  const found = activeLots.find(l => l.lot === lot);
-  return found ? found.remain : 0;
-}
-function onWOMatLotChange() {
-  const remainEl = document.getElementById('wo-trace-mat-remain');
-  if (!woMatSelectedItem) { remainEl.textContent = ''; return; }
-  const lot = document.getElementById('wo-trace-mat-lot').value;
-  if (!lot) { remainEl.textContent = ''; return; }
-  const remain = getWOMatLotRemain(woMatSelectedItem.code, woMatSelectedItem.cat, lot);
-  remainEl.textContent = `선택한 LOT 실제 잔여수량: ${remain.toLocaleString()} ${woMatSelectedItem.unit||''} (기록용이며 창고 재고는 차감되지 않습니다)`;
-}
-
-// ✅ "빠른 입력" — 같은 제품(productCode 일치)에서 과거에 사용했던 자재들을 모아
-//    숫자만 입력하면 되는 표로 보여준다. 처음 등록하는 제품이면 이 표는 안 뜨고
-//    아래 "새 자재 검색해서 추가"로 하나씩 등록하면, 다음 작업지시부터는 여기 나타난다.
-function renderWOMatPreset() {
-  const wrap = document.getElementById('wo-trace-mat-preset-wrap');
-  if (!woTraceTarget) { wrap.style.display = 'none'; return; }
-
-  const seen = {};
-  WO_MAT.filter(r => r.productCode === woTraceTarget.code).forEach(r => {
-    if (!seen[r.code]) seen[r.code] = { code:r.code, name:r.name, cat:r.cat, unit:r.unit, lot:r.lot };
-  });
-  const presets = Object.values(seen);
-
-  if (!presets.length) { wrap.style.display = 'none'; return; }
-
-  wrap.style.display = 'block';
-  document.getElementById('wo-trace-mat-preset').innerHTML = presets.map((p, i) => `
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px" data-preset-idx="${i}">
-      <span style="flex:1;font-size:12px">${p.name} <span style="color:#aaa;font-family:monospace;font-size:11px">${p.code}</span></span>
-      <select class="wmp-lot" data-i="${i}" style="width:150px;font-size:11px"></select>
-      <input class="wmp-qty" data-i="${i}" type="number" placeholder="수량" style="width:64px;font-size:12px">
-      <select class="wmp-unit" data-i="${i}" style="width:60px;font-size:12px">${woMatUnitSelectHTML(null, p.unit||'EA')}</select>
-    </div>`).join('');
-  // 렌더링에 쓴 원본 품목 정보를 보관해서 일괄 저장 시 재사용
-  document.getElementById('wo-trace-mat-preset').dataset.presets = JSON.stringify(presets);
-
-  // 각 행의 LOT select를 실제 재고 기준(카테고리별 in/out 타입)으로 채운다.
-  // 지난번에 쓴 LOT이 아직 재고가 남아있으면 그대로 선택, 소진됐으면 최신 활성 LOT을 대신 선택.
-  presets.forEach((p, i) => {
-    const sel = document.querySelector(`.wmp-lot[data-i="${i}"]`);
-    if (sel) fillWOMatLotSelect(sel, p.code, p.cat, p.lot);
-  });
-}
-
-async function submitWOMatPreset() {
-  const errEl = document.getElementById('wo-trace-err');
-  errEl.style.display = 'none';
-  if (!woTraceTarget) return;
-  const container = document.getElementById('wo-trace-mat-preset');
-  const presets = JSON.parse(container.dataset.presets || '[]');
-  const rows = presets.map((p, i) => ({
-    p,
-    lot: (container.querySelector(`.wmp-lot[data-i="${i}"]`)||{}).value || '',
-    qty: parseFloat((container.querySelector(`.wmp-qty[data-i="${i}"]`)||{}).value),
-    unit: (container.querySelector(`.wmp-unit[data-i="${i}"]`)||{}).value || p.unit
-  })).filter(r => r.qty && r.qty > 0);
-
-  if (!rows.length) { errEl.textContent = '수량을 입력한 자재가 없습니다.'; errEl.style.display='block'; return; }
-
-  // ✅ 저장 전에 전부 실제 재고 LOT 선택 + 잔여수량 검증부터 한다 (일부만 반영되는 걸 방지)
-  for (const r of rows) {
-    if (!r.lot) { errEl.textContent = `"${r.p.name}"의 LOT을 선택해주세요.`; errEl.style.display='block'; return; }
-    const remain = getWOMatLotRemain(r.p.code, r.p.cat, r.lot);
-    if (r.qty > remain) { errEl.textContent = `"${r.p.name}" 선택한 LOT의 실제 재고(${remain.toLocaleString()})보다 많은 수량입니다.`; errEl.style.display='block'; return; }
-  }
-
-  for (const r of rows) {
-    const body = {
-      workOrderId: woTraceTarget.id, orderNo: woTraceTarget.orderNo, productCode: woTraceTarget.code,
-      code: r.p.code, name: r.p.name, cat: r.p.cat, unit: r.unit,
-      lot: r.lot, qty: r.qty, token: ADMIN_TOKEN, user: CURRENT_USER || ''
-    };
-    let res = await api('addWOMaterial', body);
-    if (!res || !res.ok) res = await api('addWOMaterial', body);
-    if (!res || !res.ok) { errEl.textContent = `"${r.p.name}" 저장 실패: ` + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
-  }
-
-  await loadWOMaterials();
-  renderWOTraceLists();
-  renderWOMatPreset();
 }
 
 async function addWOOutputLotUI() {
@@ -2864,66 +2723,88 @@ async function deleteWOOutputLotUI(id) {
   renderWOTraceLists();
 }
 
-// ── 투입 자재 품목 자동완성 (원자재/반제품 대상 — 완제품 자체는 투입 대상이 아니므로 제외)
-function acSearchWOMat() {
-  const q = (document.getElementById('wo-trace-mat-q').value || '').toLowerCase().trim();
-  const drop = document.getElementById('wo-trace-mat-drop');
-  if (!q) { drop.style.display = 'none'; woMatAcResults = []; return; }
-  const pool = allRows().filter(r => r.cat !== 'TP');
-  const res = pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)).slice(0, 12);
-  woMatAcResults = res; woMatAcIdx = -1;
-  if (!res.length) { drop.style.display = 'none'; return; }
-  drop.innerHTML = res.map((r,i) => `<div class="ac-item" data-i="${i}" onmousedown="acPickWOMat(${i})"><div>${hl(r.code,q)} <span class="badge ${CB[r.cat]}" style="font-size:11px;padding:2px 7px">${CL[r.cat]}</span></div><div class="ac-sub">${hl(r.name,q)} · ${r.unit}</div></div>`).join('');
-  drop.style.display = 'block';
+// ✅ LOT 배정은 항상 선입선출(FIFO) — 가장 오래된 LOT을 자동으로 쓴다. 사용자가 직접
+//    LOT을 고르게 하지 않고, 검증/기록용으로만 어떤 LOT이 쓰였는지 자동 계산해서 보여준다.
+function woMatLotTypes(cat) {
+  if (cat === 'BTP') return {inType:'tp-in', outType:'otp'};
+  return {inType:'in', outType:'omt'}; // KR/VN/VTTH 등 일반 자재
 }
-function acKeyWOMat(e) {
-  const items = document.querySelectorAll('#wo-trace-mat-drop .ac-item');
-  if (e.key === 'ArrowDown') { e.preventDefault(); woMatAcIdx = Math.min(woMatAcIdx+1, items.length-1); items.forEach((el,i)=>el.classList.toggle('sel', i===woMatAcIdx)); }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); woMatAcIdx = Math.max(woMatAcIdx-1, 0); items.forEach((el,i)=>el.classList.toggle('sel', i===woMatAcIdx)); }
-  else if (e.key === 'Enter' && woMatAcIdx >= 0) acPickWOMat(woMatAcIdx);
-  else if (e.key === 'Escape') document.getElementById('wo-trace-mat-drop').style.display = 'none';
+// ✅ code+cat으로 품목의 실제 현재고(item.cur)를 찾는다. 품목 추가 시 초기수량으로
+//    바로 입력됐거나 재고조정만 된 품목은 입출고 이력(LOT 장부)이 아예 없을 수 있는데,
+//    그런 경우에도 실제 재고는 있으니 "LOT 이력 없음"으로 막아버리면 안 된다.
+function findItemCurByCodeCat(code, cat) {
+  const item = allRows().find(r => r.code === code && r.cat === cat);
+  return item ? (+item.cur || 0) : 0;
 }
-function acPickWOMat(i) {
-  const item = woMatAcResults[i]; if (!item) return;
-  woMatSelectedItem = item;
-  document.getElementById('wo-trace-mat-q').value = item.code + ' — ' + item.name;
-  document.getElementById('wo-trace-mat-drop').style.display = 'none';
-  document.getElementById('wo-trace-mat-unit').innerHTML = woMatUnitSelectHTML(null, item.unit || 'EA');
-  fillWOMatLotSelect(document.getElementById('wo-trace-mat-lot'), item.code, item.cat, null);
-  onWOMatLotChange();
-  document.getElementById('wo-trace-mat-qty').focus();
+// ✅ 해당 품목의 가장 오래된(FIFO) LOT과 그 잔여수량을 계산한다.
+//    LOT 이력이 없어도 실제 현재고가 있으면 "LOT 미지정" 기준으로 그 재고를 그대로 쓴다.
+function resolveFIFOLot(code, cat) {
+  const {inType, outType} = woMatLotTypes(cat);
+  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
+  if (activeLots.length) return {lot: activeLots[0].lot, remain: activeLots[0].remain};
+  if (noLotRemain > 0) return {lot: '__nolot__', remain: noLotRemain};
+  const cur = findItemCurByCodeCat(code, cat);
+  return cur > 0 ? {lot: '__nolot__', remain: cur} : {lot: '', remain: 0};
 }
 
-async function addWOMaterialUI() {
+// ✅ 재고가 있는 자재 전체를 검색으로 좁혀서, 체크 없이 수량만 입력하면 되는 목록.
+//    많을 땐 검색어로 줄이도록 최대 200건까지만 표시한다.
+function renderWOMatBrowse() {
+  const q = (document.getElementById('wo-trace-mat-filter').value || '').toLowerCase().trim();
+  const pool = allRows().filter(r => r.cat !== 'TP' && (+r.cur || 0) > 0);
+  const filtered = q ? pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) : pool;
+  const list = filtered.slice(0, 200);
+  const container = document.getElementById('wo-trace-mat-browse');
+  if (!list.length) {
+    container.innerHTML = `<div style="color:#aaa;font-size:12px;padding:8px 2px">${q ? '검색 결과가 없습니다.' : '재고가 있는 자재가 없습니다.'}</div>`;
+    return;
+  }
+  container.innerHTML = list.map(r => {
+    const {lot, remain} = resolveFIFOLot(r.code, r.cat);
+    const lotLabel = lot === '__nolot__' ? 'LOT 미지정' : (lot || '-');
+    return `<div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #f5e6c8;font-size:12px">
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.name} (${r.code})">${r.name} <span style="color:#aaa;font-family:monospace;font-size:10px">${r.code}</span></span>
+      <span style="color:#888;font-family:monospace;font-size:10px;white-space:nowrap" title="선입선출로 자동 배정되는 LOT">${lotLabel}</span>
+      <span style="color:#166534;font-weight:600;white-space:nowrap;font-size:11px">재고 ${remain.toLocaleString()}</span>
+      <input class="wmb-qty" data-code="${r.code}" data-cat="${r.cat}" data-lot="${lot}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" data-remain="${remain}" type="number" placeholder="수량" style="width:56px;font-size:11px">
+    </div>`;
+  }).join('');
+}
+
+async function submitWOMatBrowse() {
   const errEl = document.getElementById('wo-trace-err');
   errEl.style.display = 'none';
   if (!woTraceTarget) return;
-  if (!woMatSelectedItem) { errEl.textContent = '투입할 품목을 검색해서 선택해주세요.'; errEl.style.display='block'; return; }
-  const lot = document.getElementById('wo-trace-mat-lot').value;
-  const qty = parseFloat(document.getElementById('wo-trace-mat-qty').value);
-  const unit = document.getElementById('wo-trace-mat-unit').value;
-  if (!lot) { errEl.textContent = 'LOT을 선택해주세요 (실제 재고에 있는 LOT만 선택 가능합니다).'; errEl.style.display='block'; return; }
-  if (!qty || qty <= 0) { errEl.textContent = '투입수량을 입력해주세요.'; errEl.style.display='block'; return; }
-  const remain = getWOMatLotRemain(woMatSelectedItem.code, woMatSelectedItem.cat, lot);
-  if (qty > remain) { errEl.textContent = `선택한 LOT의 실제 재고(${remain.toLocaleString()})보다 많은 수량입니다.`; errEl.style.display='block'; return; }
 
-  const body = {
-    workOrderId: woTraceTarget.id, orderNo: woTraceTarget.orderNo, productCode: woTraceTarget.code,
-    code: woMatSelectedItem.code, name: woMatSelectedItem.name, cat: woMatSelectedItem.cat, unit,
-    lot, qty, token: ADMIN_TOKEN, user: CURRENT_USER || ''
-  };
-  let res = await api('addWOMaterial', body);
-  if (!res || !res.ok) res = await api('addWOMaterial', body);
-  if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+  const rows = Array.from(document.querySelectorAll('#wo-trace-mat-browse .wmb-qty'))
+    .map(inp => ({
+      code: inp.dataset.code, cat: inp.dataset.cat, lot: inp.dataset.lot,
+      name: inp.dataset.name, unit: inp.dataset.unit, remain: +inp.dataset.remain,
+      qty: parseFloat(inp.value)
+    }))
+    .filter(r => r.qty && r.qty > 0);
 
-  woMatSelectedItem = null;
-  document.getElementById('wo-trace-mat-q').value = '';
-  document.getElementById('wo-trace-mat-lot').innerHTML = '<option value="">-- 품목을 먼저 선택하세요 --</option>';
-  document.getElementById('wo-trace-mat-qty').value = '';
-  document.getElementById('wo-trace-mat-remain').textContent = '';
+  if (!rows.length) { errEl.textContent = '수량을 입력한 자재가 없습니다.'; errEl.style.display='block'; return; }
+
+  // ✅ 저장 전에 전부 재고 검증부터 한다 (일부만 반영되는 걸 방지)
+  for (const r of rows) {
+    if (r.qty > r.remain) { errEl.textContent = `"${r.name}" 실제 재고(${r.remain.toLocaleString()})보다 많은 수량입니다.`; errEl.style.display='block'; return; }
+  }
+
+  for (const r of rows) {
+    const body = {
+      workOrderId: woTraceTarget.id, orderNo: woTraceTarget.orderNo, productCode: woTraceTarget.code,
+      code: r.code, name: r.name, cat: r.cat, unit: r.unit,
+      lot: r.lot, qty: r.qty, token: ADMIN_TOKEN, user: CURRENT_USER || ''
+    };
+    let res = await api('addWOMaterial', body);
+    if (!res || !res.ok) res = await api('addWOMaterial', body);
+    if (!res || !res.ok) { errEl.textContent = `"${r.name}" 저장 실패: ` + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+  }
+
   await loadWOMaterials();
   renderWOTraceLists();
-  renderWOMatPreset();
+  renderWOMatBrowse(); // 반영된 만큼 잔여수량 갱신 + 입력값 초기화
 }
 
 async function deleteWOMaterialUI(id) {
@@ -2934,7 +2815,7 @@ async function deleteWOMaterialUI(id) {
   if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
   await loadWOMaterials();
   renderWOTraceLists();
-  renderWOMatPreset();
+  renderWOMatBrowse();
 }
 
 // ══════════════════════════════════════════════════════════
