@@ -177,6 +177,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 .ms-val{font-size:18px;font-weight:700;color:#1a1a2e}
 .ms-lbl{font-size:11px;color:#888;margin-top:2px}
 .bar-wrap{background:#f0f0f5;border-radius:999px;height:5px;margin-top:3px}
+.bar-fill{height:5px;border-radius:999px}
 .bar-fill-blue{background:#185FA5;height:5px;border-radius:999px}
 .bar-fill-red{background:#ef4444;height:5px;border-radius:999px}
 
@@ -311,6 +312,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <button class="tb on" onclick="go('dashboard')">📊 대시보드</button>
   <button class="tb" onclick="go('inv')">📦 재고 현황</button>
   <button class="tb" onclick="go('io')">🔄 입출고</button>
+  <button class="tb" onclick="go('wo')">📋 작업지시</button>
   <button class="tb" onclick="go('hist')">📋 이력</button>
   <button class="tb" onclick="go('ng')">⚠️ 불량(NG)</button>
   <div style="flex:1"></div>
@@ -753,6 +755,67 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 </div>
 
   </div><!-- /io-content -->
+
+<!-- WORK ORDERS (작업지시) -->
+<div id="tab-wo" class="sec">
+  <div class="toolbar">
+    <button onclick="openAddWO()" style="padding:7px 16px;border-radius:7px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 작업지시 추가</button>
+    <button onclick="syncNow()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 새로고침</button>
+    <div class="sw"><span class="si">🔍</span><input id="wo-q" placeholder="지시번호·코드·품명 검색..." oninput="renderWO()"></div>
+    <select id="wo-status" onchange="renderWO()">
+      <option value="">전체 상태</option>
+      <option value="대기">대기</option>
+      <option value="진행중">진행중</option>
+      <option value="완료">완료</option>
+      <option value="보류">보류</option>
+    </select>
+  </div>
+  <div class="tw"><table style="width:100%">
+    <thead><tr>
+      <th>지시번호</th><th>품목</th><th style="text-align:right">계획수량</th><th style="text-align:right">실적수량</th>
+      <th style="width:120px">진행률</th><th>라인</th><th>상태</th><th>마감일</th><th>비고</th><th class="no-print">액션</th>
+    </tr></thead><tbody id="wo-body"></tbody></table></div>
+  <div class="pi" id="wo-pi"></div>
+</div>
+
+<!-- 작업지시 추가 모달 -->
+<div class="ov-bg" id="wo-add-ov">
+  <div class="ov-box">
+    <h3>➕ 작업지시 추가</h3>
+    <div class="ov-fr">
+      <label>품목 검색 (완제품·반제품) *</label>
+      <div class="ac-wrap">
+        <input id="wo-item-q" placeholder="코드 또는 품명 입력..." autocomplete="off" oninput="acSearchWO()" onkeydown="acKeyWO(event)">
+        <div id="wo-item-drop" class="ac-drop"></div>
+      </div>
+    </div>
+    <div class="ov-fr"><label>품목코드</label><input id="wo-code" readonly style="background:#f5f6f8;color:#888"></div>
+    <div class="ov-fr"><label>품명</label><input id="wo-name" readonly style="background:#f5f6f8;color:#888"></div>
+    <div class="ov-fr"><label>계획수량 *</label><input id="wo-plan-qty" type="number" placeholder="0"></div>
+    <div class="ov-fr"><label>생산 라인 (선택)</label><input id="wo-line" placeholder="예: 1라인, A설비"></div>
+    <div class="ov-fr"><label>마감일 (선택)</label><input id="wo-due" type="date"></div>
+    <div class="ov-fr"><label>비고 (선택)</label><input id="wo-note" placeholder="선택사항"></div>
+    <div id="wo-add-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
+    <div class="ov-actions">
+      <button class="ov-cancel" onclick="closeOv('wo-add-ov')">취소</button>
+      <button class="ov-save" onclick="submitWO()">➕ 추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- 실적 입력 모달 -->
+<div class="ov-bg" id="wo-prod-ov">
+  <div class="ov-box">
+    <h3>📈 실적 입력</h3>
+    <div id="wo-prod-info" style="font-size:13px;color:#555;margin-bottom:.75rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
+    <div class="ov-fr"><label>추가 생산수량 *</label><input id="wo-prod-qty" type="number" placeholder="0"></div>
+    <div id="wo-prod-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
+    <div class="ov-actions">
+      <button class="ov-cancel" onclick="closeOv('wo-prod-ov')">취소</button>
+      <button class="ov-save" onclick="submitWOProd()">📈 반영</button>
+    </div>
+  </div>
+</div>
 
 <!-- HISTORY -->
 <div id="tab-hist" class="sec">
@@ -1480,10 +1543,11 @@ function go(id){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.tb').forEach(b=>b.classList.remove('on'));
   document.getElementById('tab-'+id).classList.add('on');
-  const order={dashboard:0,inv:1,io:2,hist:3,ng:4};
+  const order={dashboard:0,inv:1,io:2,wo:3,hist:4,ng:5};
   document.querySelectorAll('.tb')[order[id]].classList.add('on');
   if(id==='inv'){initMS();renderInv();}
   if(id==='io') renderIOTable();
+  if(id==='wo') renderWO();
   if(id==='hist') renderHist();
   if(id==='ng'){renderNG();renderNGLog();initNGLogModel();}
 }
@@ -1661,6 +1725,191 @@ function fillForm(dir,item){
   }
 
   document.getElementById(dir+'-qty').focus();
+}
+
+// ══════════════════════════════════════════════════════════
+//  작업지시(Work Order) 관리 — MES 1단계
+// ══════════════════════════════════════════════════════════
+let WO = [];               // 작업지시 목록 (서버 WORK_ORDERS 시트 미러)
+let woAcResults = [];       // 품목 검색 자동완성 결과
+let woAcIdx = -1;
+let woSelectedItem = null;  // 작업지시 추가 모달에서 선택된 품목
+let woProdTarget = null;    // 실적 입력 대상 작업지시
+
+async function loadWO() {
+  if (!(API_URL || IS_GAS)) return;
+  const res = await api('getWorkOrders', {});
+  if (res && res.ok) WO = res.data || [];
+}
+
+async function renderWO() {
+  await loadWO();
+  const q = (document.getElementById('wo-q').value || '').toLowerCase().trim();
+  const statusF = document.getElementById('wo-status').value;
+  let rows = WO.slice();
+  if (statusF) rows = rows.filter(r => r.status === statusF);
+  if (q) rows = rows.filter(r =>
+    (r.orderNo||'').toLowerCase().includes(q) ||
+    (r.code||'').toLowerCase().includes(q) ||
+    (r.name||'').toLowerCase().includes(q)
+  );
+
+  const body = document.getElementById('wo-body');
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#aaa">작업지시가 없습니다.</td></tr>`;
+    return;
+  }
+
+  const statusColor = {'대기':'#888','진행중':'#185FA5','완료':'#166534','보류':'#b91c1c'};
+  body.innerHTML = rows.map(r => {
+    const plan = +r.planQty || 0;
+    const produced = +r.producedQty || 0;
+    const pct = plan > 0 ? Math.min(100, Math.round(produced/plan*100)) : 0;
+    const barColor = pct >= 100 ? '#166534' : '#185FA5';
+    return `<tr>
+      <td style="font-family:monospace;font-size:11px">${r.orderNo||''}</td>
+      <td>${r.name||''} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
+      <td style="text-align:right">${plan.toLocaleString()} ${r.unit||''}</td>
+      <td style="text-align:right;font-weight:700;color:${barColor}">${produced.toLocaleString()} ${r.unit||''}</td>
+      <td><div class="bar-wrap"><div class="bar-fill" style="width:${pct}%;background:${barColor}"></div></div><div style="font-size:11px;color:#888;text-align:center">${pct}%</div></td>
+      <td>${r.line||'-'}</td>
+      <td><span style="color:${statusColor[r.status]||'#555'};font-weight:600">${r.status||'대기'}</span></td>
+      <td style="font-size:12px;color:#666">${r.dueDate||'-'}</td>
+      <td style="font-size:12px;color:#888">${r.note||'-'}</td>
+      <td class="no-print" style="white-space:nowrap">
+        <button class="edit-btn" onclick="openWOProd(${r.id})" title="실적 입력">📈</button>
+        <button class="edit-btn" onclick="cycleWOStatus(${r.id},'${r.status||'대기'}')" title="상태 변경">🔁</button>
+        ${isAdmin ? `<button class="edit-btn" onclick="deleteWO(${r.id})" title="삭제">🗑️</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── 작업지시 추가 모달 ──────────────────────────────
+function openAddWO() {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  document.getElementById('wo-item-q').value = '';
+  document.getElementById('wo-code').value = '';
+  document.getElementById('wo-name').value = '';
+  document.getElementById('wo-plan-qty').value = '';
+  document.getElementById('wo-line').value = '';
+  document.getElementById('wo-due').value = '';
+  document.getElementById('wo-note').value = '';
+  document.getElementById('wo-add-err').style.display = 'none';
+  woSelectedItem = null;
+  document.getElementById('wo-add-ov').classList.add('show');
+}
+
+function acSearchWO() {
+  const q = (document.getElementById('wo-item-q').value || '').toLowerCase().trim();
+  const drop = document.getElementById('wo-item-drop');
+  if (!q) { drop.style.display = 'none'; woAcResults = []; return; }
+  const pool = allRows().filter(r => r.cat === 'TP' || r.cat === 'BTP');
+  const res = pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)).slice(0, 12);
+  woAcResults = res; woAcIdx = -1;
+  if (!res.length) { drop.style.display = 'none'; return; }
+  drop.innerHTML = res.map((r,i) => `<div class="ac-item" data-i="${i}" onmousedown="acPickWO(${i})"><div>${hl(r.code,q)} <span class="badge ${CB[r.cat]}" style="font-size:11px;padding:2px 7px">${CL[r.cat]}</span></div><div class="ac-sub">${hl(r.name,q)} · ${r.unit}</div></div>`).join('');
+  drop.style.display = 'block';
+}
+function acKeyWO(e) {
+  const items = document.querySelectorAll('#wo-item-drop .ac-item');
+  if (e.key === 'ArrowDown') { e.preventDefault(); woAcIdx = Math.min(woAcIdx+1, items.length-1); items.forEach((el,i)=>el.classList.toggle('sel', i===woAcIdx)); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); woAcIdx = Math.max(woAcIdx-1, 0); items.forEach((el,i)=>el.classList.toggle('sel', i===woAcIdx)); }
+  else if (e.key === 'Enter' && woAcIdx >= 0) acPickWO(woAcIdx);
+  else if (e.key === 'Escape') document.getElementById('wo-item-drop').style.display = 'none';
+}
+function acPickWO(i) {
+  const item = woAcResults[i]; if (!item) return;
+  woSelectedItem = item;
+  document.getElementById('wo-item-q').value = item.code + ' — ' + item.name;
+  document.getElementById('wo-item-drop').style.display = 'none';
+  document.getElementById('wo-code').value = item.code;
+  document.getElementById('wo-name').value = item.name;
+  document.getElementById('wo-plan-qty').focus();
+}
+
+async function submitWO() {
+  const errEl = document.getElementById('wo-add-err');
+  errEl.style.display = 'none';
+  if (!woSelectedItem) { errEl.textContent = '품목을 검색해서 선택해주세요.'; errEl.style.display='block'; return; }
+  const planQty = parseFloat(document.getElementById('wo-plan-qty').value);
+  if (!planQty || planQty <= 0) { errEl.textContent = '계획수량을 입력해주세요.'; errEl.style.display='block'; return; }
+
+  const body = {
+    code: woSelectedItem.code, name: woSelectedItem.name, cat: woSelectedItem.cat, unit: woSelectedItem.unit,
+    planQty, line: document.getElementById('wo-line').value.trim(),
+    dueDate: document.getElementById('wo-due').value, note: document.getElementById('wo-note').value.trim(),
+    status: '대기', token: ADMIN_TOKEN, user: CURRENT_USER || ''
+  };
+
+  if (API_URL || IS_GAS) {
+    let res = await api('addWorkOrder', body);
+    if (!res || !res.ok) { console.warn('addWorkOrder 1차 실패, 재시도'); res = await api('addWorkOrder', body); }
+    if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+  }
+
+  closeOv('wo-add-ov');
+  await renderWO();
+  alert('✅ 작업지시가 등록됐습니다.');
+}
+
+// ── 실적 입력 ──────────────────────────────
+function openWOProd(id) {
+  const wo = WO.find(r => r.id === id); if (!wo) return;
+  woProdTarget = wo;
+  const plan = +wo.planQty || 0, produced = +wo.producedQty || 0;
+  document.getElementById('wo-prod-info').innerHTML =
+    `<strong>${wo.orderNo}</strong> · ${wo.name} (${wo.code})<br>계획 ${plan.toLocaleString()} ${wo.unit} · 현재 실적 ${produced.toLocaleString()} ${wo.unit} · 잔여 ${Math.max(0,plan-produced).toLocaleString()} ${wo.unit}`;
+  document.getElementById('wo-prod-qty').value = '';
+  document.getElementById('wo-prod-err').style.display = 'none';
+  document.getElementById('wo-prod-ov').classList.add('show');
+}
+
+async function submitWOProd() {
+  const errEl = document.getElementById('wo-prod-err');
+  errEl.style.display = 'none';
+  if (!woProdTarget) return;
+  const qty = parseFloat(document.getElementById('wo-prod-qty').value);
+  if (!qty || qty <= 0) { errEl.textContent = '수량을 입력해주세요.'; errEl.style.display='block'; return; }
+
+  const body = { id: woProdTarget.id, addProducedQty: qty, token: ADMIN_TOKEN };
+  if (API_URL || IS_GAS) {
+    let res = await api('updateWorkOrder', body);
+    if (!res || !res.ok) { console.warn('updateWorkOrder 1차 실패, 재시도'); res = await api('updateWorkOrder', body); }
+    if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+  }
+
+  // 계획수량 도달 시 상태를 완료로 자동 제안
+  const newProduced = (+woProdTarget.producedQty||0) + qty;
+  if (newProduced >= (+woProdTarget.planQty||0) && woProdTarget.status !== '완료') {
+    if (confirm('계획수량을 달성했습니다. 상태를 "완료"로 변경할까요?')) {
+      await api('updateWorkOrder', { id: woProdTarget.id, status: '완료', token: ADMIN_TOKEN });
+    }
+  }
+
+  closeOv('wo-prod-ov');
+  await renderWO();
+}
+
+// ── 상태 순환 변경 (대기 → 진행중 → 완료 → 보류 → 대기) ──
+async function cycleWOStatus(id, current) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  const cycle = {'대기':'진행중', '진행중':'완료', '완료':'보류', '보류':'대기'};
+  const next = cycle[current] || '대기';
+  if (!confirm(`상태를 "${current}" → "${next}"로 변경할까요?`)) return;
+  let res = await api('updateWorkOrder', { id, status: next, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('updateWorkOrder', { id, status: next, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('상태 변경 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await renderWO();
+}
+
+async function deleteWO(id) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (!confirm('이 작업지시를 삭제하시겠습니까?')) return;
+  let res = await api('deleteWorkOrder', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('deleteWorkOrder', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await renderWO();
 }
 
 // 해당 품목의 입고 이력에서 LOT별 잔여량 계산 (FIFO 순서로 정렬)
