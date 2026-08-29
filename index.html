@@ -3223,6 +3223,27 @@ function showCP(dir){
     }
   }
 
+  // ✅ 자재출고(원자재 KR/VN, 반제품 BTP)는 발행된 작업지시(대기/진행중)가 있어야만 가능하다.
+  //    소모품(VTTH)과 완제품 출고(otp)는 이 규칙 대상이 아니다. 관리자는 경고 후 강행 가능.
+  if (dir === 'omt') {
+    const catForGate = catKey(catTxt);
+    if (['KR','VN','BTP'].includes(catForGate)) {
+      const hasOpenWO = WO.some(w => w.code === code && (w.status === '대기' || w.status === '진행중'));
+      if (!hasOpenWO) {
+        if (!isAdmin) {
+          alert(`⛔ 출고 불가 / Không thể xuất kho\n\n【${name}】\n이 품목으로 발행된 작업지시(대기/진행중)가 없습니다.\n먼저 작업지시를 등록한 후 출고해주세요.`);
+          return;
+        }
+        const proceed = confirm(`⚠️ 이 품목(${name})으로 발행된 작업지시(대기/진행중)가 없습니다.\n\n관리자 권한으로 작업지시 없이 강제 출고하시겠습니까?`);
+        if (!proceed) return;
+        const noteEl = document.getElementById(dir+'-note');
+        if (noteEl && !noteEl.value.includes('[작업지시 없이 강제출고]')) {
+          noteEl.value = '[작업지시 없이 강제출고] ' + noteEl.value;
+        }
+      }
+    }
+  }
+
   // ✅ NG 창고 이동 시 불량 원인 필수
   let ngReason = '';
   if(dir==='otp' && dest==='NG'){
