@@ -980,7 +980,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <select id="qc-wo"><option value="">연결 안 함</option></select>
     </div>
     <div class="ov-fr" id="qc-total-wrap" style="display:none;background:#eff6ff;border-radius:8px;padding:8px 10px;border-left:3px solid #1d4ed8">
-      <label>총 입고수량 * (수입검사 합격 시 이 수량만큼 자동으로 자재입고 처리되어 재고가 늘어납니다)</label>
+      <label id="qc-total-label">총 입고수량 * (합격 시 이 수량만큼 자동으로 입고 처리되어 재고가 늘어납니다)</label>
       <input id="qc-total-qty" type="number" placeholder="0">
     </div>
     <div class="ov-fr"><label>샘플수량 * (검사용 — 재고에는 반영되지 않습니다)</label><input id="qc-sample" type="number" placeholder="0"></div>
@@ -994,6 +994,11 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       </select>
     </div>
     <div class="ov-fr"><label>검사자 (선택)</label><input id="qc-inspector" placeholder="선택사항"></div>
+    <div class="ov-fr">
+      <label>첨부파일 (선택) — 특성 데이터, 검사성적서 등</label>
+      <input id="qc-attachment" type="file">
+      <div id="qc-attachment-current" style="font-size:11px;color:#1d4ed8;margin-top:4px"></div>
+    </div>
     <div class="ov-fr"><label>비고 (선택)</label><input id="qc-note" placeholder="선택사항"></div>
     <div id="qc-add-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div class="ov-actions">
@@ -2517,18 +2522,18 @@ async function renderQC() {
     <td>${r.name||''} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
     <td style="font-family:monospace;font-size:11px;color:#1d4ed8">${r.lot||'-'}</td>
     <td style="font-family:monospace;font-size:11px">${r.workOrderNo||'-'}</td>
-    <td style="text-align:right;font-weight:600;color:#1d4ed8">${r.inspType==='수입검사' ? (+r.totalQty||0).toLocaleString() : '-'}</td>
+    <td style="text-align:right;font-weight:600;color:#1d4ed8">${(r.inspType==='수입검사'||r.inspType==='출하검사') ? (+r.totalQty||0).toLocaleString() : '-'}</td>
     <td style="text-align:right">${(+r.sampleQty||0).toLocaleString()}</td>
     <td style="text-align:right;color:${(+r.defectQty||0)>0?'#b91c1c':'#333'}">${(+r.defectQty||0).toLocaleString()}</td>
     <td><span style="color:${resultColor[r.result]||'#555'};font-weight:600">${r.result||'-'}</span></td>
     <td style="font-size:12px;color:#666">${r.inspector||'-'}</td>
     <td style="font-size:12px;color:#666">${r.inspDate||'-'}</td>
-    <td style="font-size:12px;color:#888">${r.note||'-'}</td>
+    <td style="font-size:12px;color:#888">${r.note||'-'}${r.attachmentUrl?` <a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'}" style="text-decoration:none">📎</a>`:''}</td>
     <td class="no-print" style="white-space:nowrap">
       <button class="edit-btn" onclick="openEditQC(${r.id})" title="수정">✏️</button>
       ${isAdmin ? `<button class="edit-btn" onclick="deleteQC(${r.id})" title="삭제">🗑️</button>` : ''}
     </td>
-  </tr>`).join('');
+    </tr>`).join('');
 }
 
 // ── 작업지시 드롭다운을 선택된 품목코드에 맞게 채운다
@@ -2585,15 +2590,27 @@ async function openAddQC() {
   document.getElementById('qc-defect').value = '';
   document.getElementById('qc-result').value = '합격';
   document.getElementById('qc-inspector').value = '';
+  document.getElementById('qc-attachment').value = '';
+  document.getElementById('qc-attachment-current').textContent = '';
   document.getElementById('qc-note').value = '';
   document.getElementById('qc-add-err').style.display = 'none';
   onQCTypeChange();
   document.getElementById('qc-add-ov').classList.add('show');
 }
 
+// ✅ 수입검사뿐 아니라 출하검사도 합격하면 재고에 실제로 반영되므로 (완제품이 창고로
+//    들어오는 것) 두 유형 모두 "총 입고수량" 입력란을 보여준다. 공정검사는 재고를
+//    직접 움직이지 않으므로 그대로 숨긴다.
 function onQCTypeChange() {
   const type = document.getElementById('qc-type').value;
-  document.getElementById('qc-total-wrap').style.display = type === '수입검사' ? 'block' : 'none';
+  const needsTotal = (type === '수입검사' || type === '출하검사');
+  document.getElementById('qc-total-wrap').style.display = needsTotal ? 'block' : 'none';
+  const label = document.getElementById('qc-total-label');
+  if (type === '출하검사') {
+    label.textContent = '총 입고수량 * (출하검사 합격 시 이 수량만큼 자동으로 완제품 입고 처리되어 재고가 늘어납니다)';
+  } else {
+    label.textContent = '총 입고수량 * (수입검사 합격 시 이 수량만큼 자동으로 자재입고 처리되어 재고가 늘어납니다)';
+  }
 }
 
 async function openEditQC(id) {
@@ -2614,10 +2631,51 @@ async function openEditQC(id) {
   document.getElementById('qc-defect').value = r.defectQty || '';
   document.getElementById('qc-result').value = r.result || '합격';
   document.getElementById('qc-inspector').value = r.inspector || '';
+  document.getElementById('qc-attachment').value = '';
+  document.getElementById('qc-attachment-current').innerHTML = r.attachmentUrl
+    ? `📎 현재 첨부: <a href="${r.attachmentUrl}" target="_blank" style="color:#1d4ed8">${r.attachmentName||'파일 보기'}</a> (새 파일을 선택하면 교체됩니다)`
+    : '';
   document.getElementById('qc-note').value = r.note || '';
   document.getElementById('qc-add-err').style.display = 'none';
   onQCTypeChange();
   document.getElementById('qc-add-ov').classList.add('show');
+}
+
+// ✅ 파일을 base64 문자열로 읽어서 서버(Apps Script)로 보낸다. 서버가 Google Drive에
+//    저장하고 공유 링크를 돌려준다. 5MB 넘으면 JSONP/Sheets 한계에 걸릴 수 있어 제한한다.
+// ✅ 첨부파일은 JSONP(주소창에 데이터를 실어 보내는 방식)로는 몇 KB만 넘어도 실패할 수 있어서,
+//    실제 POST 요청으로 보낸다. Apps Script 서버(doPost)는 이미 이 방식을 지원하고 있었다.
+//    text/plain으로 보내면 브라우저가 사전 확인(preflight) 요청을 안 보내서 CORS 문제도 없다.
+async function apiPost(action, body = {}) {
+  if (!API_URL) return { ok: false, error: 'API URL 없음' };
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // ✅ 프리플라이트 회피용
+      body: JSON.stringify({ action, ...body, token: ADMIN_TOKEN, user: CURRENT_USER || '' })
+    });
+    const text = await res.text();
+    return JSON.parse(text);
+  } catch (e) {
+    return { ok: false, error: e.message || 'POST 요청 실패' };
+  }
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) { resolve(null); return; }
+    // ✅ POST 방식으로 바뀌면서 5MB → 15MB로 상향. Apps Script 실행 제한(6분)과
+    //    base64 인코딩 시 약 1.37배로 커지는 걸 감안한 안전한 상한선.
+    if (file.size > 15 * 1024 * 1024) { reject(new Error('첨부파일은 15MB 이하만 가능합니다.')); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result; // "data:mime;base64,XXXX"
+      const base64 = result.split(',')[1];
+      resolve({ base64, mimeType: file.type || 'application/octet-stream', name: file.name });
+    };
+    reader.onerror = () => reject(new Error('파일을 읽는 중 오류가 발생했습니다.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 async function submitQC() {
@@ -2632,9 +2690,20 @@ async function submitQC() {
   if (defect > sample) { errEl.textContent = '불량수량이 샘플수량보다 클 수 없습니다.'; errEl.style.display='block'; return; }
 
   let totalQty = 0;
-  if (inspType === '수입검사') {
+  if (inspType === '수입검사' || inspType === '출하검사') {
     totalQty = parseFloat(document.getElementById('qc-total-qty').value);
-    if (!totalQty || totalQty <= 0) { errEl.textContent = '총 입고수량을 입력해주세요 (수입검사는 필수입니다).'; errEl.style.display='block'; return; }
+    if (!totalQty || totalQty <= 0) { errEl.textContent = '총 입고수량을 입력해주세요.'; errEl.style.display='block'; return; }
+  }
+
+  // ✅ 첨부파일 읽기 (선택사항)
+  let attachment = null;
+  const fileEl = document.getElementById('qc-attachment');
+  if (fileEl.files && fileEl.files[0]) {
+    try {
+      attachment = await readFileAsBase64(fileEl.files[0]);
+    } catch (e) {
+      errEl.textContent = e.message; errEl.style.display='block'; return;
+    }
   }
 
   const woSel = document.getElementById('qc-wo');
@@ -2653,22 +2722,30 @@ async function submitQC() {
     note: document.getElementById('qc-note').value.trim(),
     token: ADMIN_TOKEN, user: CURRENT_USER || ''
   };
+  if (attachment) {
+    body.attachmentBase64 = attachment.base64;
+    body.attachmentMime = attachment.mimeType;
+    body.attachmentFileName = attachment.name;
+  }
 
   const isNew = !qcEditTarget;
+  // ✅ 첨부파일이 있을 땐 데이터가 커서 JSONP(주소창 방식)로는 실패할 수 있으니
+  //    실제 POST 요청(apiPost)으로 보낸다. 첨부파일이 없으면 기존 방식 그대로 유지.
+  const submitFn = attachment ? apiPost : api;
   let res;
   if (qcEditTarget) {
     body.id = qcEditTarget.id;
-    res = await api('updateQC', body);
-    if (!res || !res.ok) res = await api('updateQC', body);
+    res = await submitFn('updateQC', body);
+    if (!res || !res.ok) res = await submitFn('updateQC', body);
   } else {
-    res = await api('addQC', body);
-    if (!res || !res.ok) res = await api('addQC', body);
+    res = await submitFn('addQC', body);
+    if (!res || !res.ok) res = await submitFn('addQC', body);
   }
   if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
 
-  // ✅ 수입검사 + 합격 + 신규 등록일 때만 자동 입고 (수정 시엔 중복 반영 방지를 위해 하지 않음)
+  // ✅ 수입검사/출하검사 + 합격 + 신규 등록일 때만 자동 입고 (수정 시엔 중복 반영 방지를 위해 하지 않음)
   let inboundOk = null;
-  if (isNew && inspType === '수입검사' && result === '합격') {
+  if (isNew && (inspType === '수입검사' || inspType === '출하검사') && result === '합격') {
     inboundOk = await autoInboundFromQC(body, totalQty, qcSelectedItem.unit);
   }
 
@@ -2676,23 +2753,27 @@ async function submitQC() {
   closeOv('qc-add-ov');
   await renderQC();
   if (inboundOk === true) {
-    alert(`✅ 품질검사 등록 완료 + 자재입고 ${totalQty.toLocaleString()} ${qcSelectedItem.unit||''} 자동 반영되었습니다.`);
+    const label = inspType === '출하검사' ? '완제품입고' : '자재입고';
+    alert(`✅ 품질검사 등록 완료 + ${label} ${totalQty.toLocaleString()} ${qcSelectedItem.unit||''} 자동 반영되었습니다.`);
   }
 }
 
-// ✅ 수입검사 합격 시, 실제 자재입고(재고 증가) 거래를 자동으로 생성한다.
-//    입출고 탭의 doSubmit('in')과 동일한 방식(addTx + 로컬 DB 갱신)으로 처리한다.
+// ✅ 수입검사/출하검사 합격 시, 실제 입고(재고 증가) 거래를 자동으로 생성한다.
+//    카테고리에 따라 완제품/반제품은 'tp-in', 원자재 등은 'in' 타입으로 정확히 구분해서
+//    기록해야 이후 LOT 잔여 계산·이력 추적이 다른 화면과 일관되게 맞는다.
 async function autoInboundFromQC(qcBody, totalQty, unit) {
   const dt = vnDt();
+  const txType = ['TP','BTP'].includes(qcBody.cat) ? 'tp-in' : 'in';
   const txEntry = {
-    id: Date.now(), type: 'in', code: qcBody.code, name: qcBody.name, cat: qcBody.cat,
-    unit: unit || '', qty: totalQty, note: '[수입검사 합격] QC 자동입고',
+    id: Date.now(), type: txType, code: qcBody.code, name: qcBody.name, cat: qcBody.cat,
+    unit: unit || '', qty: totalQty,
+    note: qcBody.inspType === '출하검사' ? '[출하검사 합격] QC 자동입고' : '[수입검사 합격] QC 자동입고',
     lot: qcBody.lot || '', dt, dest: ''
   };
   let res = await api('addTx', { ...txEntry, token: ADMIN_TOKEN, user: CURRENT_USER || '' });
   if (!res || !res.ok) res = await api('addTx', { ...txEntry, token: ADMIN_TOKEN, user: CURRENT_USER || '' });
   if (!res || !res.ok) {
-    alert(`⚠️ 품질검사는 저장됐지만, 자동 입고 반영에는 실패했습니다: ${res && res.error ? res.error : '알 수 없는 오류'}\n입출고 화면에서 수동으로 자재 입고를 등록해주세요.`);
+    alert(`⚠️ 품질검사는 저장됐지만, 자동 입고 반영에는 실패했습니다: ${res && res.error ? res.error : '알 수 없는 오류'}\n입출고 화면에서 수동으로 입고를 등록해주세요.`);
     return false;
   }
   txLog.push(txEntry);
