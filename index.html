@@ -314,6 +314,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <button class="tb" onclick="go('io')">🔄 입출고</button>
   <button class="tb" onclick="go('wo')">📋 작업지시</button>
   <button class="tb" onclick="go('dt')">⏱️ 가동률</button>
+  <button class="tb" onclick="go('qc')">🔬 품질검사</button>
   <button class="tb" onclick="go('hist')">📋 이력</button>
   <button class="tb" onclick="go('ng')">⚠️ 불량(NG)</button>
   <div style="flex:1"></div>
@@ -904,6 +905,91 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <div class="ov-actions">
       <button class="ov-cancel" onclick="closeOv('dt-manual-ov')">취소</button>
       <button class="ov-save" onclick="submitManualDT()">✍️ 추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- QC / 품질검사 -->
+<div id="tab-qc" class="sec">
+  <div class="toolbar">
+    <button onclick="openAddQC()" style="padding:7px 16px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 검사 기록 추가</button>
+    <button onclick="renderQC()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 새로고침</button>
+    <div class="sw"><span class="si">🔍</span><input id="qc-q" placeholder="코드·품명·LOT 검색..." oninput="renderQC()"></div>
+    <select id="qc-type-f" onchange="renderQC()">
+      <option value="">전체 유형</option>
+      <option value="수입검사">수입검사</option>
+      <option value="공정검사">공정검사</option>
+      <option value="출하검사">출하검사</option>
+    </select>
+    <select id="qc-result-f" onchange="renderQC()">
+      <option value="">전체 판정</option>
+      <option value="합격">합격</option>
+      <option value="조건부합격">조건부합격</option>
+      <option value="불합격">불합격</option>
+    </select>
+  </div>
+
+  <div style="display:flex;gap:6px;margin-bottom:12px">
+    <button class="period-btn on" id="qc-period-7"  onclick="setQCPeriod(7)">최근 1주일</button>
+    <button class="period-btn" id="qc-period-30" onclick="setQCPeriod(30)">최근 1개월</button>
+    <button class="period-btn" id="qc-period-0"  onclick="setQCPeriod(null)">전체</button>
+  </div>
+
+  <div id="qc-summary" style="background:#fff;border:1px solid #e0e0e8;border-radius:12px;padding:1.1rem;margin-bottom:1.25rem">
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px">📊 검사 유형별 합격률 (선택 기간)</div>
+    <div id="qc-summary-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px"></div>
+  </div>
+
+  <div class="tw"><table style="width:100%">
+    <thead><tr>
+      <th>유형</th><th>품목</th><th>LOT</th><th>작업지시</th><th style="text-align:right">샘플</th>
+      <th style="text-align:right">불량</th><th>판정</th><th>검사자</th><th>일시</th><th>비고</th><th class="no-print">액션</th>
+    </tr></thead><tbody id="qc-body"></tbody></table></div>
+  <div class="pi" id="qc-pi"></div>
+</div>
+
+<!-- 품질검사 추가/수정 모달 -->
+<div class="ov-bg" id="qc-add-ov">
+  <div class="ov-box">
+    <h3 id="qc-add-title">➕ 품질검사 기록 추가</h3>
+    <div class="ov-fr">
+      <label>검사유형 *</label>
+      <select id="qc-type">
+        <option value="수입검사">수입검사 (원자재 입고 시)</option>
+        <option value="공정검사">공정검사 (생산 중)</option>
+        <option value="출하검사">출하검사 (출고 전)</option>
+      </select>
+    </div>
+    <div class="ov-fr">
+      <label>품목 검색 *</label>
+      <div class="ac-wrap">
+        <input id="qc-item-q" placeholder="코드 또는 품명 입력..." autocomplete="off" oninput="acSearchQC()" onkeydown="acKeyQC(event)">
+        <div id="qc-item-drop" class="ac-drop"></div>
+      </div>
+    </div>
+    <div class="ov-fr"><label>품목코드</label><input id="qc-code" readonly style="background:#f5f6f8;color:#888"></div>
+    <div class="ov-fr"><label>품명</label><input id="qc-name" readonly style="background:#f5f6f8;color:#888"></div>
+    <div class="ov-fr"><label>LOT (선택)</label><input id="qc-lot" placeholder="예: TGG6QPY-0001"></div>
+    <div class="ov-fr">
+      <label>연결할 작업지시 (선택)</label>
+      <select id="qc-wo"><option value="">연결 안 함</option></select>
+    </div>
+    <div class="ov-fr"><label>샘플수량 *</label><input id="qc-sample" type="number" placeholder="0"></div>
+    <div class="ov-fr"><label>불량수량 *</label><input id="qc-defect" type="number" placeholder="0" oninput="suggestQCResult()"></div>
+    <div class="ov-fr">
+      <label>판정 *</label>
+      <select id="qc-result">
+        <option value="합격">합격</option>
+        <option value="조건부합격">조건부합격</option>
+        <option value="불합격">불합격</option>
+      </select>
+    </div>
+    <div class="ov-fr"><label>검사자 (선택)</label><input id="qc-inspector" placeholder="선택사항"></div>
+    <div class="ov-fr"><label>비고 (선택)</label><input id="qc-note" placeholder="선택사항"></div>
+    <div id="qc-add-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
+    <div class="ov-actions">
+      <button class="ov-cancel" onclick="closeOv('qc-add-ov')">취소</button>
+      <button class="ov-save" onclick="submitQC()">✔ 저장</button>
     </div>
   </div>
 </div>
@@ -1634,12 +1720,13 @@ function go(id){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.tb').forEach(b=>b.classList.remove('on'));
   document.getElementById('tab-'+id).classList.add('on');
-  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,hist:5,ng:6};
+  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,qc:5,hist:6,ng:7};
   document.querySelectorAll('.tb')[order[id]].classList.add('on');
   if(id==='inv'){initMS();renderInv();}
   if(id==='io') renderIOTable();
   if(id==='wo') renderWO();
   if(id==='dt') renderDT();
+  if(id==='qc') renderQC();
   if(id==='hist') renderHist();
   if(id==='ng'){renderNG();renderNGLog();initNGLogModel();}
 }
@@ -2217,6 +2304,232 @@ async function deleteDT(id) {
   if (!res || !res.ok) res = await api('deleteDowntime', { id, token: ADMIN_TOKEN });
   if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
   await renderDT();
+}
+
+// ══════════════════════════════════════════════════════════
+//  품질검사 기록 — MES 3단계 (수입/공정/출하검사)
+// ══════════════════════════════════════════════════════════
+let QC = [];
+let qcPeriodDays = 7;
+let qcAcResults = [];
+let qcAcIdx = -1;
+let qcSelectedItem = null;
+let qcEditTarget = null;
+
+async function loadQC() {
+  if (!(API_URL || IS_GAS)) return;
+  const res = await api('getQCLog', {});
+  if (res && res.ok) QC = res.data || [];
+}
+
+function setQCPeriod(days) {
+  qcPeriodDays = days;
+  ['7','30','0'].forEach(k => {
+    const btn = document.getElementById('qc-period-'+k);
+    if (btn) btn.classList.toggle('on', (days===null && k==='0') || (days!==null && String(days)===k));
+  });
+  renderQC();
+}
+
+function suggestQCResult() {
+  const defect = parseFloat(document.getElementById('qc-defect').value) || 0;
+  const sel = document.getElementById('qc-result');
+  if (defect > 0 && sel.value === '합격') sel.value = '불합격';
+  if (defect === 0 && sel.value === '불합격') sel.value = '합격';
+}
+
+async function renderQC() {
+  await loadQC();
+  await loadWO(); // 작업지시 연결 드롭다운에서 최신 목록을 쓰기 위해 함께 갱신
+
+  const q = (document.getElementById('qc-q').value || '').toLowerCase().trim();
+  const typeF = document.getElementById('qc-type-f').value;
+  const resultF = document.getElementById('qc-result-f').value;
+  const cutoffTs = qcPeriodDays ? (Date.now() - qcPeriodDays*24*3600*1000) : null;
+
+  let rows = QC.slice();
+  if (typeF) rows = rows.filter(r => r.inspType === typeF);
+  if (resultF) rows = rows.filter(r => r.result === resultF);
+  if (q) rows = rows.filter(r =>
+    (r.code||'').toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q) || (r.lot||'').toLowerCase().includes(q)
+  );
+  if (cutoffTs) rows = rows.filter(r => (+r.id || 0) >= cutoffTs); // id가 ms 타임스탬프라 안전하게 기간 비교 가능
+
+  // ── 유형별 합격률 요약
+  const typeMap = {};
+  rows.forEach(r => {
+    const t = r.inspType || '기타';
+    if (!typeMap[t]) typeMap[t] = {total:0, pass:0};
+    typeMap[t].total += 1;
+    if (r.result === '합격') typeMap[t].pass += 1;
+  });
+  const summaryBody = document.getElementById('qc-summary-body');
+  const types = ['수입검사','공정검사','출하검사'];
+  summaryBody.innerHTML = types.map(t => {
+    const s = typeMap[t] || {total:0, pass:0};
+    const pct = s.total > 0 ? Math.round(s.pass/s.total*100) : null;
+    const color = pct === null ? '#aaa' : (pct >= 95 ? '#166534' : pct >= 80 ? '#b45309' : '#b91c1c');
+    return `<div style="background:#f8faff;border-radius:8px;padding:10px 12px">
+      <div style="font-size:12px;color:#888;margin-bottom:4px">${t}</div>
+      <div style="font-size:20px;font-weight:800;color:${color}">${pct===null?'—':pct+'%'}</div>
+      <div style="font-size:11px;color:#aaa">${s.total}건 중 ${s.pass}건 합격</div>
+    </div>`;
+  }).join('');
+
+  const body = document.getElementById('qc-body');
+  const sorted = rows.slice().sort((a,b) => (+b.id||0) - (+a.id||0));
+  if (!sorted.length) {
+    body.innerHTML = `<tr><td colspan="11" style="padding:20px;text-align:center;color:#aaa">품질검사 기록이 없습니다.</td></tr>`;
+    return;
+  }
+  const resultColor = {'합격':'#166534','조건부합격':'#b45309','불합격':'#b91c1c'};
+  body.innerHTML = sorted.map(r => `<tr>
+    <td>${r.inspType||'-'}</td>
+    <td>${r.name||''} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
+    <td style="font-family:monospace;font-size:11px;color:#1d4ed8">${r.lot||'-'}</td>
+    <td style="font-family:monospace;font-size:11px">${r.workOrderNo||'-'}</td>
+    <td style="text-align:right">${(+r.sampleQty||0).toLocaleString()}</td>
+    <td style="text-align:right;color:${(+r.defectQty||0)>0?'#b91c1c':'#333'}">${(+r.defectQty||0).toLocaleString()}</td>
+    <td><span style="color:${resultColor[r.result]||'#555'};font-weight:600">${r.result||'-'}</span></td>
+    <td style="font-size:12px;color:#666">${r.inspector||'-'}</td>
+    <td style="font-size:12px;color:#666">${r.inspDate||'-'}</td>
+    <td style="font-size:12px;color:#888">${r.note||'-'}</td>
+    <td class="no-print" style="white-space:nowrap">
+      <button class="edit-btn" onclick="openEditQC(${r.id})" title="수정">✏️</button>
+      ${isAdmin ? `<button class="edit-btn" onclick="deleteQC(${r.id})" title="삭제">🗑️</button>` : ''}
+    </td>
+  </tr>`).join('');
+}
+
+// ── 작업지시 드롭다운을 선택된 품목코드에 맞게 채운다
+function fillQCWoOptions(code) {
+  const sel = document.getElementById('qc-wo');
+  const matches = WO.filter(w => w.code === code);
+  sel.innerHTML = '<option value="">연결 안 함</option>' +
+    matches.map(w => `<option value="${w.id}">${w.orderNo} (${w.status})</option>`).join('');
+}
+
+// ── 품목 자동완성 (전체 카테고리 — 수입검사는 원자재도 대상)
+function acSearchQC() {
+  const q = (document.getElementById('qc-item-q').value || '').toLowerCase().trim();
+  const drop = document.getElementById('qc-item-drop');
+  if (!q) { drop.style.display = 'none'; qcAcResults = []; return; }
+  const res = allRows().filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)).slice(0, 12);
+  qcAcResults = res; qcAcIdx = -1;
+  if (!res.length) { drop.style.display = 'none'; return; }
+  drop.innerHTML = res.map((r,i) => `<div class="ac-item" data-i="${i}" onmousedown="acPickQC(${i})"><div>${hl(r.code,q)} <span class="badge ${CB[r.cat]}" style="font-size:11px;padding:2px 7px">${CL[r.cat]}</span></div><div class="ac-sub">${hl(r.name,q)} · ${r.unit}</div></div>`).join('');
+  drop.style.display = 'block';
+}
+function acKeyQC(e) {
+  const items = document.querySelectorAll('#qc-item-drop .ac-item');
+  if (e.key === 'ArrowDown') { e.preventDefault(); qcAcIdx = Math.min(qcAcIdx+1, items.length-1); items.forEach((el,i)=>el.classList.toggle('sel', i===qcAcIdx)); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); qcAcIdx = Math.max(qcAcIdx-1, 0); items.forEach((el,i)=>el.classList.toggle('sel', i===qcAcIdx)); }
+  else if (e.key === 'Enter' && qcAcIdx >= 0) acPickQC(qcAcIdx);
+  else if (e.key === 'Escape') document.getElementById('qc-item-drop').style.display = 'none';
+}
+function acPickQC(i) {
+  const item = qcAcResults[i]; if (!item) return;
+  qcSelectedItem = item;
+  document.getElementById('qc-item-q').value = item.code + ' — ' + item.name;
+  document.getElementById('qc-item-drop').style.display = 'none';
+  document.getElementById('qc-code').value = item.code;
+  document.getElementById('qc-name').value = item.name;
+  fillQCWoOptions(item.code);
+  document.getElementById('qc-sample').focus();
+}
+
+// ── 추가/수정 모달 ──────────────────────────────
+async function openAddQC() {
+  await loadWO();
+  qcEditTarget = null;
+  qcSelectedItem = null;
+  document.getElementById('qc-add-title').textContent = '➕ 품질검사 기록 추가';
+  document.getElementById('qc-type').value = '수입검사';
+  document.getElementById('qc-item-q').value = '';
+  document.getElementById('qc-code').value = '';
+  document.getElementById('qc-name').value = '';
+  document.getElementById('qc-lot').value = '';
+  document.getElementById('qc-wo').innerHTML = '<option value="">연결 안 함</option>';
+  document.getElementById('qc-sample').value = '';
+  document.getElementById('qc-defect').value = '';
+  document.getElementById('qc-result').value = '합격';
+  document.getElementById('qc-inspector').value = '';
+  document.getElementById('qc-note').value = '';
+  document.getElementById('qc-add-err').style.display = 'none';
+  document.getElementById('qc-add-ov').classList.add('show');
+}
+
+async function openEditQC(id) {
+  const r = QC.find(x => x.id === id); if (!r) return;
+  await loadWO();
+  qcEditTarget = r;
+  qcSelectedItem = {code:r.code, name:r.name, cat:r.cat};
+  document.getElementById('qc-add-title').textContent = '✏️ 품질검사 기록 수정';
+  document.getElementById('qc-type').value = r.inspType || '수입검사';
+  document.getElementById('qc-item-q').value = (r.code||'') + ' — ' + (r.name||'');
+  document.getElementById('qc-code').value = r.code || '';
+  document.getElementById('qc-name').value = r.name || '';
+  document.getElementById('qc-lot').value = r.lot || '';
+  fillQCWoOptions(r.code);
+  document.getElementById('qc-wo').value = r.workOrderId || '';
+  document.getElementById('qc-sample').value = r.sampleQty || '';
+  document.getElementById('qc-defect').value = r.defectQty || '';
+  document.getElementById('qc-result').value = r.result || '합격';
+  document.getElementById('qc-inspector').value = r.inspector || '';
+  document.getElementById('qc-note').value = r.note || '';
+  document.getElementById('qc-add-err').style.display = 'none';
+  document.getElementById('qc-add-ov').classList.add('show');
+}
+
+async function submitQC() {
+  const errEl = document.getElementById('qc-add-err');
+  errEl.style.display = 'none';
+  if (!qcSelectedItem) { errEl.textContent = '품목을 검색해서 선택해주세요.'; errEl.style.display='block'; return; }
+  const sample = parseFloat(document.getElementById('qc-sample').value);
+  const defect = parseFloat(document.getElementById('qc-defect').value);
+  if (!sample || sample <= 0) { errEl.textContent = '샘플수량을 입력해주세요.'; errEl.style.display='block'; return; }
+  if (defect < 0 || isNaN(defect)) { errEl.textContent = '불량수량을 입력해주세요 (0 이상).'; errEl.style.display='block'; return; }
+  if (defect > sample) { errEl.textContent = '불량수량이 샘플수량보다 클 수 없습니다.'; errEl.style.display='block'; return; }
+
+  const woSel = document.getElementById('qc-wo');
+  const woId = woSel.value ? +woSel.value : '';
+  const woNo = woSel.value ? (WO.find(w=>w.id===+woSel.value)||{}).orderNo || '' : '';
+
+  const body = {
+    inspType: document.getElementById('qc-type').value,
+    code: qcSelectedItem.code, name: qcSelectedItem.name, cat: qcSelectedItem.cat,
+    lot: document.getElementById('qc-lot').value.trim(),
+    workOrderId: woId, workOrderNo: woNo,
+    sampleQty: sample, defectQty: defect,
+    result: document.getElementById('qc-result').value,
+    inspector: document.getElementById('qc-inspector').value.trim(),
+    note: document.getElementById('qc-note').value.trim(),
+    token: ADMIN_TOKEN, user: CURRENT_USER || ''
+  };
+
+  let res;
+  if (qcEditTarget) {
+    body.id = qcEditTarget.id;
+    res = await api('updateQC', body);
+    if (!res || !res.ok) res = await api('updateQC', body);
+  } else {
+    res = await api('addQC', body);
+    if (!res || !res.ok) res = await api('addQC', body);
+  }
+  if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+
+  qcEditTarget = null;
+  closeOv('qc-add-ov');
+  await renderQC();
+}
+
+async function deleteQC(id) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (!confirm('이 품질검사 기록을 삭제하시겠습니까?')) return;
+  let res = await api('deleteQC', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('deleteQC', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await renderQC();
 }
 
 // 해당 품목의 입고 이력에서 LOT별 잔여량 계산 (FIFO 순서로 정렬)
