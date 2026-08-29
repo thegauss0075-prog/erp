@@ -811,6 +811,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <h3>📈 실적 입력</h3>
     <div id="wo-prod-info" style="font-size:13px;color:#555;margin-bottom:.75rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
     <div class="ov-fr"><label>추가 생산수량 *</label><input id="wo-prod-qty" type="number" placeholder="0"></div>
+    <div class="ov-fr"><label>생산 LOT (선택 — 입력하면 전공정 추적에 산출 LOT으로 기록됩니다)</label><input id="wo-prod-lot" placeholder="예: TGG6QPY-0005"></div>
     <div id="wo-prod-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div class="ov-actions">
       <button class="ov-cancel" onclick="closeOv('wo-prod-ov')">취소</button>
@@ -990,6 +991,43 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <div class="ov-actions">
       <button class="ov-cancel" onclick="closeOv('qc-add-ov')">취소</button>
       <button class="ov-save" onclick="submitQC()">✔ 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 작업지시 전공정 추적 모달 — MES 4단계 -->
+<div class="ov-bg" id="wo-trace-ov" style="z-index:2050">
+  <div class="ov-box" style="max-width:540px">
+    <h3>🔗 전공정 추적</h3>
+    <div id="wo-trace-info" style="font-size:13px;color:#555;margin-bottom:1rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
+
+    <div style="margin-bottom:16px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#166534">📤 산출 LOT (이 작업지시로 만들어진 완제품/반제품 LOT)</div>
+      <div id="wo-trace-output-list" style="margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px">
+        <input id="wo-trace-output-lot" placeholder="LOT No." style="flex:1">
+        <input id="wo-trace-output-qty" type="number" placeholder="수량" style="width:90px">
+        <button onclick="addWOOutputLotUI()" style="padding:0 14px;border-radius:6px;border:1px solid #166534;background:#166534;color:#fff;font-size:12px;cursor:pointer;white-space:nowrap">+ 추가</button>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#92400e">📥 투입 자재 (이 작업지시에 사용된 원자재/반제품 LOT)</div>
+      <div id="wo-trace-material-list" style="margin-bottom:8px"></div>
+      <div class="ac-wrap" style="margin-bottom:6px">
+        <input id="wo-trace-mat-q" placeholder="원자재/반제품 코드 또는 품명 검색..." autocomplete="off" oninput="acSearchWOMat()" onkeydown="acKeyWOMat(event)">
+        <div id="wo-trace-mat-drop" class="ac-drop"></div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <input id="wo-trace-mat-lot" placeholder="LOT No." style="flex:1">
+        <input id="wo-trace-mat-qty" type="number" placeholder="투입수량" style="width:90px">
+        <button onclick="addWOMaterialUI()" style="padding:0 14px;border-radius:6px;border:1px solid #92400e;background:#92400e;color:#fff;font-size:12px;cursor:pointer;white-space:nowrap">+ 추가</button>
+      </div>
+    </div>
+
+    <div id="wo-trace-err" style="color:#b91c1c;font-size:12px;margin-top:8px;display:none"></div>
+    <div class="ov-actions">
+      <button class="ov-cancel" onclick="closeOv('wo-trace-ov')">닫기</button>
     </div>
   </div>
 </div>
@@ -1957,6 +1995,7 @@ async function renderWO() {
       <td style="font-size:12px;color:#888">${r.note||'-'}</td>
       <td class="no-print" style="white-space:nowrap">
         <button class="edit-btn" onclick="openWOProd(${r.id})" title="실적 입력">📈</button>
+        <button class="edit-btn" onclick="openWOTrace(${r.id})" title="전공정 추적">🔗</button>
         <button class="edit-btn" onclick="cycleWOStatus(${r.id},'${r.status||'대기'}')" title="상태 변경">🔁</button>
         ${isAdmin ? `<button class="edit-btn" onclick="deleteWO(${r.id})" title="삭제">🗑️</button>` : ''}
       </td>
@@ -2040,6 +2079,7 @@ function openWOProd(id) {
   document.getElementById('wo-prod-info').innerHTML =
     `<strong>${wo.orderNo}</strong> · ${wo.name} (${wo.code})<br>계획 ${plan.toLocaleString()} ${wo.unit} · 현재 실적 ${produced.toLocaleString()} ${wo.unit} · 잔여 ${Math.max(0,plan-produced).toLocaleString()} ${wo.unit}`;
   document.getElementById('wo-prod-qty').value = '';
+  document.getElementById('wo-prod-lot').value = '';
   document.getElementById('wo-prod-err').style.display = 'none';
   document.getElementById('wo-prod-ov').classList.add('show');
 }
@@ -2050,12 +2090,20 @@ async function submitWOProd() {
   if (!woProdTarget) return;
   const qty = parseFloat(document.getElementById('wo-prod-qty').value);
   if (!qty || qty <= 0) { errEl.textContent = '수량을 입력해주세요.'; errEl.style.display='block'; return; }
+  const outLot = document.getElementById('wo-prod-lot').value.trim();
 
   const body = { id: woProdTarget.id, addProducedQty: qty, token: ADMIN_TOKEN };
   if (API_URL || IS_GAS) {
     let res = await api('updateWorkOrder', body);
     if (!res || !res.ok) { console.warn('updateWorkOrder 1차 실패, 재시도'); res = await api('updateWorkOrder', body); }
     if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+
+    // ✅ 생산 LOT을 입력했으면 전공정 추적용 산출 LOT 이력에도 기록 (MES 4단계)
+    if (outLot) {
+      const lotBody = { workOrderId: woProdTarget.id, orderNo: woProdTarget.orderNo, lot: outLot, qty, unit: woProdTarget.unit, token: ADMIN_TOKEN, user: CURRENT_USER || '' };
+      let lotRes = await api('addWOOutputLot', lotBody);
+      if (!lotRes || !lotRes.ok) await api('addWOOutputLot', lotBody);
+    }
   }
 
   // 계획수량 도달 시 상태를 완료로 자동 제안
@@ -2530,6 +2578,159 @@ async function deleteQC(id) {
   if (!res || !res.ok) res = await api('deleteQC', { id, token: ADMIN_TOKEN });
   if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
   await renderQC();
+}
+
+// ══════════════════════════════════════════════════════════
+//  작업지시 전공정 추적 — MES 4단계 (투입 자재 LOT ↔ 산출 LOT)
+// ══════════════════════════════════════════════════════════
+let WO_MAT = [];         // 투입 자재 목록 (서버 WO_MATERIALS 시트 미러)
+let WO_OUT = [];         // 산출 LOT 목록 (서버 WO_OUTPUT_LOTS 시트 미러)
+let woTraceTarget = null;
+let woMatAcResults = [];
+let woMatAcIdx = -1;
+let woMatSelectedItem = null;
+
+async function loadWOMaterials() {
+  if (!(API_URL || IS_GAS)) return;
+  const res = await api('getWOMaterials', {});
+  if (res && res.ok) WO_MAT = res.data || [];
+}
+async function loadWOOutputLots() {
+  if (!(API_URL || IS_GAS)) return;
+  const res = await api('getWOOutputLots', {});
+  if (res && res.ok) WO_OUT = res.data || [];
+}
+
+async function openWOTrace(id) {
+  const wo = WO.find(r => r.id === id); if (!wo) return;
+  woTraceTarget = wo;
+  woMatSelectedItem = null;
+  document.getElementById('wo-trace-info').innerHTML =
+    `<strong>${wo.orderNo}</strong> · ${wo.name} (${wo.code})<br>계획 ${(+wo.planQty||0).toLocaleString()} ${wo.unit} · 실적 ${(+wo.producedQty||0).toLocaleString()} ${wo.unit}`;
+  document.getElementById('wo-trace-output-lot').value = '';
+  document.getElementById('wo-trace-output-qty').value = '';
+  document.getElementById('wo-trace-mat-q').value = '';
+  document.getElementById('wo-trace-mat-lot').value = '';
+  document.getElementById('wo-trace-mat-qty').value = '';
+  document.getElementById('wo-trace-err').style.display = 'none';
+
+  await loadWOMaterials();
+  await loadWOOutputLots();
+  renderWOTraceLists();
+  document.getElementById('wo-trace-ov').classList.add('show');
+}
+
+function renderWOTraceLists() {
+  if (!woTraceTarget) return;
+  const outputs = WO_OUT.filter(r => r.workOrderId === woTraceTarget.id);
+  const materials = WO_MAT.filter(r => r.workOrderId === woTraceTarget.id);
+
+  const outList = document.getElementById('wo-trace-output-list');
+  outList.innerHTML = outputs.length ? outputs.map(r => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#f0fdf4;border-radius:6px;margin-bottom:4px;font-size:12px">
+      <span style="font-family:monospace;color:#166534">${r.lot}</span>
+      <span>${(+r.qty||0).toLocaleString()} ${r.unit||''} <button onclick="deleteWOOutputLotUI(${r.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button></span>
+    </div>`).join('') : `<div style="color:#aaa;font-size:12px">아직 산출 LOT 기록이 없습니다.</div>`;
+
+  const matList = document.getElementById('wo-trace-material-list');
+  matList.innerHTML = materials.length ? materials.map(r => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#fffbeb;border-radius:6px;margin-bottom:4px;font-size:12px">
+      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · <span style="font-family:monospace;color:#92400e">${r.lot||'LOT 미지정'}</span></span>
+      <span>${(+r.qty||0).toLocaleString()} ${r.unit||''} <button onclick="deleteWOMaterialUI(${r.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button></span>
+    </div>`).join('') : `<div style="color:#aaa;font-size:12px">아직 투입 자재 기록이 없습니다.</div>`;
+}
+
+async function addWOOutputLotUI() {
+  const errEl = document.getElementById('wo-trace-err');
+  errEl.style.display = 'none';
+  if (!woTraceTarget) return;
+  const lot = document.getElementById('wo-trace-output-lot').value.trim();
+  const qty = parseFloat(document.getElementById('wo-trace-output-qty').value);
+  if (!lot) { errEl.textContent = 'LOT No.를 입력해주세요.'; errEl.style.display='block'; return; }
+  if (!qty || qty <= 0) { errEl.textContent = '수량을 입력해주세요.'; errEl.style.display='block'; return; }
+
+  const body = { workOrderId: woTraceTarget.id, orderNo: woTraceTarget.orderNo, lot, qty, unit: woTraceTarget.unit, token: ADMIN_TOKEN, user: CURRENT_USER || '' };
+  let res = await api('addWOOutputLot', body);
+  if (!res || !res.ok) res = await api('addWOOutputLot', body);
+  if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+
+  document.getElementById('wo-trace-output-lot').value = '';
+  document.getElementById('wo-trace-output-qty').value = '';
+  await loadWOOutputLots();
+  renderWOTraceLists();
+}
+
+async function deleteWOOutputLotUI(id) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (!confirm('이 산출 LOT 기록을 삭제하시겠습니까?')) return;
+  let res = await api('deleteWOOutputLot', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('deleteWOOutputLot', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await loadWOOutputLots();
+  renderWOTraceLists();
+}
+
+// ── 투입 자재 품목 자동완성 (원자재/반제품 대상 — 완제품 자체는 투입 대상이 아니므로 제외)
+function acSearchWOMat() {
+  const q = (document.getElementById('wo-trace-mat-q').value || '').toLowerCase().trim();
+  const drop = document.getElementById('wo-trace-mat-drop');
+  if (!q) { drop.style.display = 'none'; woMatAcResults = []; return; }
+  const pool = allRows().filter(r => r.cat !== 'TP');
+  const res = pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)).slice(0, 12);
+  woMatAcResults = res; woMatAcIdx = -1;
+  if (!res.length) { drop.style.display = 'none'; return; }
+  drop.innerHTML = res.map((r,i) => `<div class="ac-item" data-i="${i}" onmousedown="acPickWOMat(${i})"><div>${hl(r.code,q)} <span class="badge ${CB[r.cat]}" style="font-size:11px;padding:2px 7px">${CL[r.cat]}</span></div><div class="ac-sub">${hl(r.name,q)} · ${r.unit}</div></div>`).join('');
+  drop.style.display = 'block';
+}
+function acKeyWOMat(e) {
+  const items = document.querySelectorAll('#wo-trace-mat-drop .ac-item');
+  if (e.key === 'ArrowDown') { e.preventDefault(); woMatAcIdx = Math.min(woMatAcIdx+1, items.length-1); items.forEach((el,i)=>el.classList.toggle('sel', i===woMatAcIdx)); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); woMatAcIdx = Math.max(woMatAcIdx-1, 0); items.forEach((el,i)=>el.classList.toggle('sel', i===woMatAcIdx)); }
+  else if (e.key === 'Enter' && woMatAcIdx >= 0) acPickWOMat(woMatAcIdx);
+  else if (e.key === 'Escape') document.getElementById('wo-trace-mat-drop').style.display = 'none';
+}
+function acPickWOMat(i) {
+  const item = woMatAcResults[i]; if (!item) return;
+  woMatSelectedItem = item;
+  document.getElementById('wo-trace-mat-q').value = item.code + ' — ' + item.name;
+  document.getElementById('wo-trace-mat-drop').style.display = 'none';
+  document.getElementById('wo-trace-mat-lot').focus();
+}
+
+async function addWOMaterialUI() {
+  const errEl = document.getElementById('wo-trace-err');
+  errEl.style.display = 'none';
+  if (!woTraceTarget) return;
+  if (!woMatSelectedItem) { errEl.textContent = '투입할 품목을 검색해서 선택해주세요.'; errEl.style.display='block'; return; }
+  const lot = document.getElementById('wo-trace-mat-lot').value.trim();
+  const qty = parseFloat(document.getElementById('wo-trace-mat-qty').value);
+  if (!qty || qty <= 0) { errEl.textContent = '투입수량을 입력해주세요.'; errEl.style.display='block'; return; }
+
+  const body = {
+    workOrderId: woTraceTarget.id, orderNo: woTraceTarget.orderNo,
+    code: woMatSelectedItem.code, name: woMatSelectedItem.name, cat: woMatSelectedItem.cat, unit: woMatSelectedItem.unit,
+    lot, qty, token: ADMIN_TOKEN, user: CURRENT_USER || ''
+  };
+  let res = await api('addWOMaterial', body);
+  if (!res || !res.ok) res = await api('addWOMaterial', body);
+  if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+
+  woMatSelectedItem = null;
+  document.getElementById('wo-trace-mat-q').value = '';
+  document.getElementById('wo-trace-mat-lot').value = '';
+  document.getElementById('wo-trace-mat-qty').value = '';
+  await loadWOMaterials();
+  renderWOTraceLists();
+}
+
+async function deleteWOMaterialUI(id) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (!confirm('이 투입 자재 기록을 삭제하시겠습니까?')) return;
+  let res = await api('deleteWOMaterial', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('deleteWOMaterial', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await loadWOMaterials();
+  renderWOTraceLists();
 }
 
 // 해당 품목의 입고 이력에서 LOT별 잔여량 계산 (FIFO 순서로 정렬)
