@@ -1042,6 +1042,55 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   </div>
 </div>
 
+<!-- 작업지시 공정별 작업일지 모달 — MES 5단계 -->
+<div class="ov-bg" id="wo-process-ov" style="z-index:2070">
+  <div class="ov-box" style="max-width:600px;max-height:85vh;overflow-y:auto">
+    <h3>🏭 공정별 작업일지</h3>
+    <div id="wo-process-info" style="font-size:13px;color:#555;margin-bottom:1rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
+
+    <div style="background:#f8faff;border-radius:8px;padding:10px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px">➕ 공정 기록 추가</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <select id="wp-process-name" onchange="onProcessNameChange()">
+          <option value="권선">권선</option>
+          <option value="디핑">디핑</option>
+          <option value="조립1">조립1</option>
+          <option value="조립2">조립2</option>
+          <option value="조립3">조립3</option>
+          <option value="경화">경화</option>
+          <option value="EOL검사">EOL검사</option>
+          <option value="DCB">DCB</option>
+          <option value="본딩">본딩</option>
+          <option value="기타">기타 (직접 입력)</option>
+        </select>
+        <input id="wp-process-name-custom" placeholder="공정명 직접 입력" style="display:none">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <input id="wp-date" type="date">
+        <input id="wp-worker" placeholder="작업자">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <input id="wp-start" type="time">
+        <input id="wp-end" type="time">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <input id="wp-ok" type="number" placeholder="적합(OK) 수량">
+        <input id="wp-ng" type="number" placeholder="부적합(NG) 수량">
+      </div>
+      <input id="wp-note" placeholder="비고 (선택)" style="width:100%;margin-bottom:8px;box-sizing:border-box">
+      <button onclick="addProcessLogUI()" style="padding:6px 14px;border-radius:6px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;font-size:12px;cursor:pointer;font-weight:600">➕ 공정 기록 추가</button>
+    </div>
+
+    <div style="font-weight:700;font-size:13px;margin-bottom:8px">📋 공정 기록 목록 (각 기록 옆 "🔬 파라미터"로 중점관리항목 추가)</div>
+    <div id="wo-process-list"></div>
+
+    <div id="wo-process-err" style="color:#b91c1c;font-size:12px;margin-top:8px;display:none"></div>
+    <div class="ov-actions">
+      <button class="ov-cancel" onclick="closeOv('wo-process-ov')">닫기</button>
+    </div>
+  </div>
+</div>
+
 <!-- HISTORY -->
 <div id="tab-hist" class="sec">
   <div class="toolbar">
@@ -2006,6 +2055,7 @@ async function renderWO() {
       <td class="no-print" style="white-space:nowrap">
         <button class="edit-btn" onclick="openWOProd(${r.id})" title="실적 입력">📈</button>
         <button class="edit-btn" onclick="openWOTrace(${r.id})" title="전공정 추적">🔗</button>
+        <button class="edit-btn" onclick="openWOProcess(${r.id})" title="공정별 작업일지">🏭</button>
         <button class="edit-btn" onclick="cycleWOStatus(${r.id},'${r.status||'대기'}')" title="상태 변경">🔁</button>
         ${isAdmin ? `<button class="edit-btn" onclick="deleteWO(${r.id})" title="삭제">🗑️</button>` : ''}
       </td>
@@ -2867,6 +2917,175 @@ async function deleteWOMaterialUI(id) {
   await loadWOMaterials();
   renderWOTraceLists();
   renderWOMatPreset();
+}
+
+// ══════════════════════════════════════════════════════════
+//  작업지시 공정별 작업일지 — MES 5단계 (공정 실행기록 + 중점관리항목)
+// ══════════════════════════════════════════════════════════
+let PROCESS_LOG = [];        // 공정 실행 기록 (서버 PROCESS_LOG 시트 미러)
+let PROCESS_PARAMS = [];     // 공정별 중점관리항목 파라미터 (서버 PROCESS_PARAMS 시트 미러)
+let woProcessTarget = null;
+let expandedProcessLogId = null;
+
+async function loadProcessLog() {
+  if (!(API_URL || IS_GAS)) return;
+  const res = await api('getProcessLog', {});
+  if (res && res.ok) PROCESS_LOG = res.data || [];
+}
+async function loadProcessParams() {
+  if (!(API_URL || IS_GAS)) return;
+  const res = await api('getProcessParams', {});
+  if (res && res.ok) PROCESS_PARAMS = res.data || [];
+}
+
+async function openWOProcess(id) {
+  const wo = WO.find(r => r.id === id); if (!wo) return;
+  woProcessTarget = wo;
+  expandedProcessLogId = null;
+  document.getElementById('wo-process-info').innerHTML = `<strong>${wo.orderNo}</strong> · ${wo.name} (${wo.code})`;
+
+  document.getElementById('wp-process-name').value = '권선';
+  document.getElementById('wp-process-name-custom').value = '';
+  document.getElementById('wp-process-name-custom').style.display = 'none';
+  document.getElementById('wp-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('wp-worker').value = '';
+  document.getElementById('wp-start').value = '';
+  document.getElementById('wp-end').value = '';
+  document.getElementById('wp-ok').value = '';
+  document.getElementById('wp-ng').value = '';
+  document.getElementById('wp-note').value = '';
+  document.getElementById('wo-process-err').style.display = 'none';
+
+  await loadProcessLog();
+  await loadProcessParams();
+  renderProcessLogList();
+  document.getElementById('wo-process-ov').classList.add('show');
+}
+
+function onProcessNameChange() {
+  const sel = document.getElementById('wp-process-name').value;
+  document.getElementById('wp-process-name-custom').style.display = sel === '기타' ? 'block' : 'none';
+}
+
+async function addProcessLogUI() {
+  const errEl = document.getElementById('wo-process-err');
+  errEl.style.display = 'none';
+  if (!woProcessTarget) return;
+  const selVal = document.getElementById('wp-process-name').value;
+  const processName = selVal === '기타' ? document.getElementById('wp-process-name-custom').value.trim() : selVal;
+  if (!processName) { errEl.textContent = '공정명을 입력해주세요.'; errEl.style.display='block'; return; }
+  const workDate = document.getElementById('wp-date').value;
+  const worker = document.getElementById('wp-worker').value.trim();
+  const startTime = document.getElementById('wp-start').value;
+  const endTime = document.getElementById('wp-end').value;
+  const ok = parseFloat(document.getElementById('wp-ok').value) || 0;
+  const ng = parseFloat(document.getElementById('wp-ng').value) || 0;
+  const note = document.getElementById('wp-note').value.trim();
+  if (!ok && !ng) { errEl.textContent = '적합 또는 부적합 수량 중 하나는 입력해주세요.'; errEl.style.display='block'; return; }
+
+  const body = {
+    workOrderId: woProcessTarget.id, orderNo: woProcessTarget.orderNo,
+    processName, workDate, startTime, endTime, worker,
+    okQty: ok, ngQty: ng, totalQty: ok + ng, note,
+    token: ADMIN_TOKEN, user: CURRENT_USER || ''
+  };
+  let res = await api('addProcessLog', body);
+  if (!res || !res.ok) res = await api('addProcessLog', body);
+  if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+
+  document.getElementById('wp-worker').value = '';
+  document.getElementById('wp-start').value = '';
+  document.getElementById('wp-end').value = '';
+  document.getElementById('wp-ok').value = '';
+  document.getElementById('wp-ng').value = '';
+  document.getElementById('wp-note').value = '';
+  await loadProcessLog();
+  renderProcessLogList();
+}
+
+function renderProcessLogList() {
+  if (!woProcessTarget) return;
+  const logs = PROCESS_LOG.filter(r => r.workOrderId === woProcessTarget.id).sort((a,b) => (+b.id||0) - (+a.id||0));
+  const listEl = document.getElementById('wo-process-list');
+  if (!logs.length) { listEl.innerHTML = '<div style="color:#aaa;font-size:12px">아직 공정 기록이 없습니다.</div>'; return; }
+
+  listEl.innerHTML = logs.map(r => {
+    const params = PROCESS_PARAMS.filter(p => p.processLogId === r.id);
+    const isExpanded = expandedProcessLogId === r.id;
+    return `<div style="background:#f8faff;border-radius:8px;padding:8px 10px;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div style="font-size:12px">
+          <strong>${r.processName}</strong> · ${r.workDate||''} ${r.startTime||''}${r.endTime?('~'+r.endTime):''} · ${r.worker||'-'}
+          <div style="color:#666;margin-top:2px">적합 <span style="color:#166534;font-weight:600">${(+r.okQty||0).toLocaleString()}</span> / 부적합 <span style="color:#b91c1c;font-weight:600">${(+r.ngQty||0).toLocaleString()}</span>${r.note?(' · '+r.note):''}</div>
+        </div>
+        <div style="white-space:nowrap">
+          <button onclick="toggleProcessParams(${r.id})" style="border:1px solid #7c3aed;background:${isExpanded?'#7c3aed':'#fff'};color:${isExpanded?'#fff':'#7c3aed'};border-radius:5px;font-size:11px;padding:3px 8px;cursor:pointer">🔬 파라미터(${params.length})</button>
+          ${isAdmin ? `<button onclick="deleteProcessLogUI(${r.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:4px;font-size:13px">✕</button>` : ''}
+        </div>
+      </div>
+      ${isExpanded ? `
+        <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #ddd">
+          <div style="font-size:11px;color:#92400e;font-weight:700;margin-bottom:4px">🔬 중점관리항목 (예: TURNS, 실측온도, EPOXY 토출량 등)</div>
+          <div>${renderProcessParamsList(params)}</div>
+          <div style="display:flex;gap:4px;margin-top:6px">
+            <input id="wpp-name-${r.id}" placeholder="항목명 (예: TURNS)" style="flex:1;font-size:11px">
+            <input id="wpp-value-${r.id}" placeholder="측정값" style="width:80px;font-size:11px">
+            <input id="wpp-spec-${r.id}" placeholder="기준(선택)" style="width:80px;font-size:11px">
+            <button onclick="addProcessParamUI(${r.id})" style="padding:0 10px;border-radius:5px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;font-size:11px;cursor:pointer">+</button>
+          </div>
+        </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderProcessParamsList(params) {
+  if (!params.length) return '<div style="color:#aaa;font-size:11px">등록된 항목이 없습니다.</div>';
+  return params.map(p => `<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid #eee">
+    <span>${p.paramName}: <strong>${p.paramValue}</strong>${p.paramSpec ? ` <span style="color:#aaa">(기준 ${p.paramSpec})</span>` : ''}</span>
+    <button onclick="deleteProcessParamUI(${p.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>
+  </div>`).join('');
+}
+
+function toggleProcessParams(logId) {
+  expandedProcessLogId = expandedProcessLogId === logId ? null : logId;
+  renderProcessLogList();
+}
+
+async function addProcessParamUI(logId) {
+  const nameEl = document.getElementById(`wpp-name-${logId}`);
+  const valueEl = document.getElementById(`wpp-value-${logId}`);
+  const specEl = document.getElementById(`wpp-spec-${logId}`);
+  const name = nameEl.value.trim();
+  const value = valueEl.value.trim();
+  const spec = specEl.value.trim();
+  if (!name || !value) { alert('항목명과 측정값을 입력해주세요.'); return; }
+
+  const body = { processLogId: logId, paramName: name, paramValue: value, paramSpec: spec, token: ADMIN_TOKEN, user: CURRENT_USER || '' };
+  let res = await api('addProcessParam', body);
+  if (!res || !res.ok) res = await api('addProcessParam', body);
+  if (!res || !res.ok) { alert('저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await loadProcessParams();
+  renderProcessLogList();
+}
+
+async function deleteProcessParamUI(paramId) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  let res = await api('deleteProcessParam', { id: paramId, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('deleteProcessParam', { id: paramId, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await loadProcessParams();
+  renderProcessLogList();
+}
+
+async function deleteProcessLogUI(id) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (!confirm('이 공정 기록을 삭제하시겠습니까? (연결된 중점관리항목도 함께 삭제됩니다)')) return;
+  let res = await api('deleteProcessLog', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('deleteProcessLog', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await loadProcessLog();
+  await loadProcessParams();
+  renderProcessLogList();
 }
 
 // 해당 품목의 입고 이력에서 LOT별 잔여량 계산 (FIFO 순서로 정렬)
