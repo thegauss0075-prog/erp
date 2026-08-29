@@ -811,7 +811,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <h3>📈 실적 입력</h3>
     <div id="wo-prod-info" style="font-size:13px;color:#555;margin-bottom:.75rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
     <div class="ov-fr"><label>추가 생산수량 *</label><input id="wo-prod-qty" type="number" placeholder="0"></div>
-    <div class="ov-fr"><label>생산 LOT (선택 — 입력하면 전공정 추적에 산출 LOT으로 기록됩니다)</label><input id="wo-prod-lot" placeholder="예: TGG6QPY-0005"></div>
+    <div class="ov-fr"><label>생산 LOT (선택 — 입력하면 전공정 추적에 산출 LOT으로 기록됩니다) <button type="button" onclick="openLotCal('wo-prod')" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #3730a3;background:#eef2ff;color:#3730a3;font-size:11px;cursor:pointer">📅 날짜선택 생성</button></label><input id="wo-prod-lot" placeholder="예: TGG6QPY-0005"></div>
     <div id="wo-prod-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div class="ov-actions">
       <button class="ov-cancel" onclick="closeOv('wo-prod-ov')">취소</button>
@@ -1002,7 +1002,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <div id="wo-trace-info" style="font-size:13px;color:#555;margin-bottom:1rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
 
     <div style="margin-bottom:16px">
-      <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#166534">📤 산출 LOT (이 작업지시로 만들어진 완제품/반제품 LOT)</div>
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#166534">📤 산출 LOT (이 작업지시로 만들어진 완제품/반제품 LOT) <button type="button" onclick="openLotCal('wo-trace-output')" style="margin-left:4px;padding:1px 8px;border-radius:4px;border:1px solid #3730a3;background:#eef2ff;color:#3730a3;font-size:11px;cursor:pointer;font-weight:400">📅 날짜선택 생성</button></div>
       <div id="wo-trace-output-list" style="margin-bottom:8px"></div>
       <div style="display:flex;gap:6px">
         <input id="wo-trace-output-lot" placeholder="LOT No." style="flex:1">
@@ -5740,6 +5740,10 @@ function setLotMaker(code, name) {
   if (lotCalSelected) updateLotPreview(lotCalSelected);
 }
 
+// ✅ 완제품/반제품(제조사 선택 필요) 취급으로 분류할 LOT 생성 대상들.
+//    입출고 화면뿐 아니라 작업지시 실적입력·전공정추적의 산출 LOT 입력란도 같은 규칙을 쓴다.
+const LOT_TP_DIRS = ['tp-in', 'otp', 'wo-prod', 'wo-trace-output'];
+
 // 달력 열기
 function openLotCal(dir) {
   lotCalDir      = dir;
@@ -5749,11 +5753,11 @@ function openLotCal(dir) {
 
   // 완제품 입고/출고일 때만 제조사 선택 표시
   const makerWrap = document.getElementById('lot-maker-wrap');
-  const isTP = (dir==='tp-in' || dir==='otp');
+  const isTP = LOT_TP_DIRS.includes(dir);
   if (makerWrap) makerWrap.style.display = isTP ? 'block' : 'none';
 
   // 제조사 버튼 초기화 (C 선택)
-  if (isTP) setLotMaker('C', 'CSC');
+  if (isTP) setLotMaker('C', 'CHANGSUNG');
 
   renderLotCal();
   updateLotPreview(null);
@@ -5818,7 +5822,7 @@ function updateLotPreview(date) {
   const mm = String(date.getMonth()+1).padStart(2,'0');
   const dd = String(date.getDate()).padStart(2,'0');
   const prefix = mm+'/'+dd;
-  const isTP = (lotCalDir==='tp-in'||lotCalDir==='otp');
+  const isTP = LOT_TP_DIRS.includes(lotCalDir);
   const seq = txLog.filter(t=>t.dt&&t.dt.startsWith(prefix)&&
     (isTP ? (t.type==='tp-in'||t.type==='otp') : (t.type==='in'||t.type==='omt'))
   ).length + 1;
@@ -5834,7 +5838,7 @@ function confirmLotCal() {
   const mm = String(lotCalSelected.getMonth()+1).padStart(2,'0');
   const dd = String(lotCalSelected.getDate()).padStart(2,'0');
   const prefix = mm+'/'+dd;
-  const isTP = (lotCalDir==='tp-in'||lotCalDir==='otp');
+  const isTP = LOT_TP_DIRS.includes(lotCalDir);
 
   // 완제품 입고이면 제조사 선택 확인
   if (isTP && !lotMakerCode) {
@@ -7117,7 +7121,7 @@ else location.reload();
     <div id="lot-maker-wrap" style="display:none;margin-bottom:14px">
       <div style="font-size:12px;font-weight:700;color:#1a1a2e;margin-bottom:7px">🏭 CORE 제조사 선택 / Chọn nhà sản xuất</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="ng-cat-btn on" id="maker-btn-C" onclick="setLotMaker('C','CSC')">C — CSC</button>
+        <button class="ng-cat-btn on" id="maker-btn-C" onclick="setLotMaker('C','CHANGSUNG')">C — CHANGSUNG</button>
         <button class="ng-cat-btn" id="maker-btn-P" onclick="setLotMaker('P','POCO')">P — POCO</button>
         <button class="ng-cat-btn" id="maker-btn-E" onclick="setLotMaker('E','ELECTRO M')">E — ELECTRO M</button>
         <button class="ng-cat-btn" id="maker-btn-A" onclick="setLotMaker('A','ACHROMAT')">A — ACHROMAT</button>
