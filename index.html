@@ -818,6 +818,26 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   </div>
 </div>
 
+<!-- 작업지시 수정 모달 (관리자 전용) -->
+<div class="ov-bg" id="wo-edit-ov">
+  <div class="ov-box" style="max-height:85vh;overflow-y:auto">
+    <h3>✏️ 작업지시 수정</h3>
+    <div style="font-size:12px;color:#888;margin-bottom:10px">품목·LOT은 변경할 수 없습니다 (이미 투입자재·실적과 연결되어 있어서요). 필요하면 새 작업지시를 만들어주세요.</div>
+    <div class="ov-fr"><label>지시번호</label><input id="wo-edit-orderno" readonly style="background:#f5f6f8;color:#888"></div>
+    <div class="ov-fr"><label>품목</label><input id="wo-edit-item" readonly style="background:#f5f6f8;color:#888"></div>
+    <div class="ov-fr"><label>LOT</label><input id="wo-edit-lot" readonly style="background:#f5f6f8;color:#1d4ed8;font-weight:700;font-family:monospace"></div>
+    <div class="ov-fr"><label>계획수량 *</label><input id="wo-edit-plan-qty" type="number" placeholder="0"></div>
+    <div class="ov-fr"><label>생산 라인 (선택)</label><input id="wo-edit-line" placeholder="예: 1라인, A설비"></div>
+    <div class="ov-fr"><label>마감일 (선택)</label><input id="wo-edit-due" type="date"></div>
+    <div class="ov-fr"><label>비고 (선택)</label><input id="wo-edit-note" placeholder="선택사항"></div>
+    <div id="wo-edit-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
+    <div class="ov-actions">
+      <button class="ov-cancel" onclick="closeOv('wo-edit-ov')">취소</button>
+      <button class="ov-save" onclick="submitEditWO()">✔ 저장</button>
+    </div>
+  </div>
+</div>
+
 <!-- 실적 입력 모달 -->
 <div class="ov-bg" id="wo-prod-ov">
   <div class="ov-box" style="max-height:85vh;overflow-y:auto">
@@ -2054,6 +2074,7 @@ let WO = [];               // 작업지시 목록 (서버 WORK_ORDERS 시트 미
 let woAcResults = [];       // 품목 검색 자동완성 결과
 let woAcIdx = -1;
 let woSelectedItem = null;  // 작업지시 추가 모달에서 선택된 품목
+let woEditTarget = null;    // 작업지시 수정 모달에서 편집 중인 작업지시
 let woProdTarget = null;    // 실적 입력 대상 작업지시
 
 async function loadWO() {
@@ -2098,6 +2119,7 @@ async function renderWO() {
       <td style="font-size:12px;color:#666">${r.dueDate||'-'}</td>
       <td style="font-size:12px;color:#888">${r.note||'-'}</td>
       <td class="no-print" style="white-space:nowrap">
+        ${isAdmin ? `<button class="edit-btn" onclick="openEditWO(${r.id})" title="수정">✏️</button>` : ''}
         <button class="edit-btn" onclick="openWOProd(${r.id})" title="실적 입력">📈</button>
         <button class="edit-btn" onclick="openWOTrace(${r.id})" title="전공정 추적">🔗</button>
         <button class="edit-btn" onclick="openWOProcess(${r.id})" title="공정별 작업일지">🏭</button>
@@ -2223,6 +2245,48 @@ async function submitWO() {
   closeOv('wo-add-ov');
   await renderWO();
   alert(`✅ 작업지시가 등록됐습니다. (LOT: ${body.lot})`);
+}
+
+// ── 작업지시 수정 (관리자 전용) ──────────────────────────────
+function openEditWO(id) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  const wo = WO.find(w => w.id === id); if (!wo) return;
+  woEditTarget = wo;
+  document.getElementById('wo-edit-orderno').value = wo.orderNo || '';
+  document.getElementById('wo-edit-item').value = `${wo.name || ''} (${wo.code || ''})`;
+  document.getElementById('wo-edit-lot').value = wo.lot || '없음';
+  document.getElementById('wo-edit-plan-qty').value = wo.planQty || '';
+  document.getElementById('wo-edit-line').value = wo.line || '';
+  document.getElementById('wo-edit-due').value = wo.dueDate ? wo.dueDate.slice(0,10) : '';
+  document.getElementById('wo-edit-note').value = wo.note || '';
+  document.getElementById('wo-edit-err').style.display = 'none';
+  document.getElementById('wo-edit-ov').classList.add('show');
+}
+
+async function submitEditWO() {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  const errEl = document.getElementById('wo-edit-err');
+  errEl.style.display = 'none';
+  if (!woEditTarget) return;
+  const planQty = parseFloat(document.getElementById('wo-edit-plan-qty').value);
+  if (!planQty || planQty <= 0) { errEl.textContent = '계획수량을 입력해주세요.'; errEl.style.display='block'; return; }
+
+  const body = {
+    id: woEditTarget.id,
+    planQty,
+    line: document.getElementById('wo-edit-line').value.trim(),
+    dueDate: document.getElementById('wo-edit-due').value,
+    note: document.getElementById('wo-edit-note').value.trim(),
+    token: ADMIN_TOKEN
+  };
+  let res = await api('updateWorkOrder', body);
+  if (!res || !res.ok) res = await api('updateWorkOrder', body);
+  if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+
+  woEditTarget = null;
+  closeOv('wo-edit-ov');
+  await renderWO();
+  alert('✅ 작업지시가 수정됐습니다.');
 }
 
 // ── 실적 입력 ──────────────────────────────
@@ -2622,7 +2686,7 @@ async function renderQC() {
     <td style="font-size:12px;color:#666">${r.inspDate||'-'}</td>
     <td style="font-size:12px;color:#888">${r.note||'-'}${r.attachmentUrl?` <a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'}" style="text-decoration:none">📎</a>`:''}</td>
     <td class="no-print" style="white-space:nowrap">
-      <button class="edit-btn" onclick="openEditQC(${r.id})" title="수정">✏️</button>
+      ${isAdmin ? `<button class="edit-btn" onclick="openEditQC(${r.id})" title="수정">✏️</button>` : ''}
       ${isAdmin ? `<button class="edit-btn" onclick="deleteQC(${r.id})" title="삭제">🗑️</button>` : ''}
     </td>
     </tr>`).join('');
@@ -2774,6 +2838,7 @@ function onQCTypeChange() {
 }
 
 async function openEditQC(id) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
   const r = QC.find(x => x.id === id); if (!r) return;
   await loadWO();
   qcEditTarget = r;
