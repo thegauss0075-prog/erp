@@ -823,7 +823,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <div class="ov-box" style="max-height:85vh;overflow-y:auto">
     <h3>📈 실적 입력</h3>
     <div id="wo-prod-info" style="font-size:13px;color:#555;margin-bottom:.75rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
-    <div class="ov-fr"><label>추가 생산수량 *</label><input id="wo-prod-qty" type="number" placeholder="0"></div>
+    <div class="ov-fr"><label>생산 실적 수량 * (지금까지 만든 총 누적 수량)</label><input id="wo-prod-qty" type="number" placeholder="0"></div>
     <div id="wo-prod-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div class="ov-actions">
       <button class="ov-cancel" onclick="closeOv('wo-prod-ov')">취소</button>
@@ -2233,7 +2233,9 @@ function openWOProd(id) {
   document.getElementById('wo-prod-info').innerHTML =
     `<strong>${wo.orderNo}</strong> · ${wo.name} (${wo.code})<br>계획 ${plan.toLocaleString()} ${wo.unit} · 현재 실적 ${produced.toLocaleString()} ${wo.unit} · 잔여 ${Math.max(0,plan-produced).toLocaleString()} ${wo.unit}` +
     (wo.lot ? `<br>LOT: <span style="color:#1d4ed8;font-weight:700;font-family:monospace">${wo.lot}</span>` : `<br><span style="color:#b91c1c">⚠️ 이 작업지시엔 LOT이 없습니다 (예전 방식으로 등록됨)</span>`);
-  document.getElementById('wo-prod-qty').value = '';
+  // ✅ 지금까지의 누적 실적을 기본값으로 채워둔다 — "추가로 더할 값"이 아니라
+  //    "지금 총 몇 개 만들었는지"를 그대로 확인/수정하면 되도록.
+  document.getElementById('wo-prod-qty').value = produced || '';
   document.getElementById('wo-prod-err').style.display = 'none';
   document.getElementById('wo-prod-ov').classList.add('show');
 }
@@ -2242,37 +2244,40 @@ async function submitWOProd() {
   const errEl = document.getElementById('wo-prod-err');
   errEl.style.display = 'none';
   if (!woProdTarget) return;
-  const qty = parseFloat(document.getElementById('wo-prod-qty').value);
-  if (!qty || qty <= 0) { errEl.textContent = '수량을 입력해주세요.'; errEl.style.display='block'; return; }
+  const newTotal = parseFloat(document.getElementById('wo-prod-qty').value);
+  if (isNaN(newTotal) || newTotal < 0) { errEl.textContent = '수량을 입력해주세요.'; errEl.style.display='block'; return; }
 
-  // ✅ 계획수량을 넘는 실적이 조용히 들어가던 문제 — 넘으면 확인을 한 번 받는다
   const planQty = +woProdTarget.planQty || 0;
   const currentProduced = +woProdTarget.producedQty || 0;
-  const newTotal = currentProduced + qty;
+  const delta = newTotal - currentProduced; // 서버는 여전히 델타(증감분)로 반영하므로 여기서 계산
+
+  if (delta === 0) { errEl.textContent = '기존 실적과 같습니다. 값을 바꿔서 입력해주세요.'; errEl.style.display='block'; return; }
+
+  // ✅ 계획수량을 넘는 실적이 조용히 들어가던 문제 — 넘으면 확인을 한 번 받는다
   if (planQty > 0 && newTotal > planQty) {
     const over = newTotal - planQty;
-    if (!confirm(`⚠️ 계획수량(${planQty.toLocaleString()})을 ${over.toLocaleString()}만큼 초과합니다.\n(현재 실적 ${currentProduced.toLocaleString()} + 입력 ${qty.toLocaleString()} = ${newTotal.toLocaleString()})\n\n그래도 반영하시겠습니까?`)) return;
+    if (!confirm(`⚠️ 계획수량(${planQty.toLocaleString()})을 ${over.toLocaleString()}만큼 초과합니다.\n(입력한 총 실적: ${newTotal.toLocaleString()})\n\n그래도 반영하시겠습니까?`)) return;
   }
 
   const outLot = woProdTarget.lot || ''; // ✅ 작업지시 생성 시 자동 배정된 LOT을 그대로 사용
 
-  const body = { id: woProdTarget.id, addProducedQty: qty, token: ADMIN_TOKEN };
+  const body = { id: woProdTarget.id, addProducedQty: delta, token: ADMIN_TOKEN };
   if (API_URL || IS_GAS) {
     let res = await api('updateWorkOrder', body);
     if (!res || !res.ok) { console.warn('updateWorkOrder 1차 실패, 재시도'); res = await api('updateWorkOrder', body); }
     if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
 
-    // ✅ 이 작업지시의 LOT으로 전공정 추적용 산출 LOT 이력에도 기록 (MES 4단계)
-    if (outLot) {
-      const lotBody = { workOrderId: woProdTarget.id, orderNo: woProdTarget.orderNo, lot: outLot, qty, unit: woProdTarget.unit, token: ADMIN_TOKEN, user: CURRENT_USER || '' };
+    // ✅ 실적이 늘어난 경우에만(delta>0) 이 작업지시의 LOT으로 산출 LOT 이력을 남긴다.
+    //    실적을 줄여서 정정하는 경우(delta<0)는 산출 LOT에 음수 항목을 만들지 않는다.
+    if (outLot && delta > 0) {
+      const lotBody = { workOrderId: woProdTarget.id, orderNo: woProdTarget.orderNo, lot: outLot, qty: delta, unit: woProdTarget.unit, token: ADMIN_TOKEN, user: CURRENT_USER || '' };
       let lotRes = await api('addWOOutputLot', lotBody);
       if (!lotRes || !lotRes.ok) await api('addWOOutputLot', lotBody);
     }
   }
 
   // 계획수량 도달 시 상태를 완료로 자동 제안
-  const newProduced = (+woProdTarget.producedQty||0) + qty;
-  if (newProduced >= (+woProdTarget.planQty||0) && woProdTarget.status !== '완료') {
+  if (newTotal >= planQty && planQty > 0 && woProdTarget.status !== '완료') {
     if (confirm('계획수량을 달성했습니다. 상태를 "완료"로 변경할까요?')) {
       await api('updateWorkOrder', { id: woProdTarget.id, status: '완료', token: ADMIN_TOKEN });
     }
