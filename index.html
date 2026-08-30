@@ -774,7 +774,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   </div>
   <div class="tw"><table style="width:100%">
     <thead><tr>
-      <th>지시번호</th><th>품목</th><th style="text-align:right">계획수량</th><th style="text-align:right">실적수량</th>
+      <th>지시번호</th><th>품목</th><th>LOT</th><th style="text-align:right">계획수량</th><th style="text-align:right">실적수량</th>
       <th style="width:120px">진행률</th><th>라인</th><th>상태</th><th>마감일</th><th>비고</th><th class="no-print">액션</th>
     </tr></thead><tbody id="wo-body"></tbody></table></div>
   <div class="pi" id="wo-pi"></div>
@@ -793,6 +793,19 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     </div>
     <div class="ov-fr"><label>품목코드</label><input id="wo-code" readonly style="background:#f5f6f8;color:#888"></div>
     <div class="ov-fr"><label>품명</label><input id="wo-name" readonly style="background:#f5f6f8;color:#888"></div>
+    <div class="ov-fr" id="wo-maker-row" style="display:none">
+      <label>CORE 제조사</label>
+      <select id="wo-maker" onchange="updateWOLotPreview()">
+        <option value="C">CHANGSUNG</option>
+        <option value="P">POCO</option>
+        <option value="E">ELECTRO M</option>
+        <option value="A">ACHROMAT</option>
+      </select>
+    </div>
+    <div class="ov-fr">
+      <label>LOT (지시서 생성일 기준으로 자동 배정됩니다)</label>
+      <input id="wo-lot" readonly style="background:#f5f6f8;color:#1d4ed8;font-weight:700;font-family:monospace">
+    </div>
     <div class="ov-fr"><label>계획수량 *</label><input id="wo-plan-qty" type="number" placeholder="0"></div>
     <div class="ov-fr"><label>생산 라인 (선택)</label><input id="wo-line" placeholder="예: 1라인, A설비"></div>
     <div class="ov-fr"><label>마감일 (선택)</label><input id="wo-due" type="date"></div>
@@ -811,7 +824,6 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <h3>📈 실적 입력</h3>
     <div id="wo-prod-info" style="font-size:13px;color:#555;margin-bottom:.75rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
     <div class="ov-fr"><label>추가 생산수량 *</label><input id="wo-prod-qty" type="number" placeholder="0"></div>
-    <div class="ov-fr"><label>생산 LOT (선택 — 입력하면 전공정 추적에 산출 LOT으로 기록됩니다) <button type="button" onclick="openLotCal('wo-prod')" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #3730a3;background:#eef2ff;color:#3730a3;font-size:11px;cursor:pointer">📅 날짜선택 생성</button></label><input id="wo-prod-lot" placeholder="예: TGG6QPY-0005"></div>
     <div id="wo-prod-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div class="ov-actions">
       <button class="ov-cancel" onclick="closeOv('wo-prod-ov')">취소</button>
@@ -961,17 +973,27 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
         <option value="출하검사">출하검사 (출고 전)</option>
       </select>
     </div>
-    <div class="ov-fr">
+    <div class="ov-fr" id="qc-item-search-wrap">
       <label>품목 검색 *</label>
       <div class="ac-wrap">
         <input id="qc-item-q" placeholder="코드 또는 품명 입력..." autocomplete="off" oninput="acSearchQC()" onkeydown="acKeyQC(event)">
         <div id="qc-item-drop" class="ac-drop"></div>
       </div>
     </div>
+    <div class="ov-fr" id="qc-wo-search-wrap" style="display:none;background:#f0fdf4;border-radius:8px;padding:8px 10px;border-left:3px solid #166534">
+      <label>완료된 작업지시 검색 * — 고르면 품목·LOT·수량이 자동으로 채워집니다</label>
+      <div class="ac-wrap">
+        <input id="qc-wo-search-q" placeholder="지시번호·코드·품명 입력..." autocomplete="off" oninput="acSearchQCWO()" onkeydown="acKeyQCWO(event)">
+        <div id="qc-wo-search-drop" class="ac-drop"></div>
+      </div>
+    </div>
     <div class="ov-fr"><label>품목코드</label><input id="qc-code" readonly style="background:#f5f6f8;color:#888"></div>
     <div class="ov-fr"><label>품명</label><input id="qc-name" readonly style="background:#f5f6f8;color:#888"></div>
-    <div class="ov-fr"><label>LOT (선택) <button type="button" onclick="openLotCal('qc')" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #3730a3;background:#eef2ff;color:#3730a3;font-size:11px;cursor:pointer">📅 날짜선택 생성</button></label><input id="qc-lot" placeholder="예: TGG6QPY-0001"></div>
-    <div class="ov-fr">
+    <div class="ov-fr" id="qc-lot-wrap">
+      <label id="qc-lot-label">LOT (선택) <button type="button" id="qc-lot-gen-btn" onclick="openLotCal('qc')" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #3730a3;background:#eef2ff;color:#3730a3;font-size:11px;cursor:pointer">📅 날짜선택 생성</button></label>
+      <input id="qc-lot" placeholder="예: TGG6QPY-0001">
+    </div>
+    <div class="ov-fr" id="qc-wo-link-wrap">
       <label>연결할 작업지시 (선택)</label>
       <select id="qc-wo"><option value="">연결 안 함</option></select>
     </div>
@@ -1011,11 +1033,10 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <div id="wo-trace-info" style="font-size:13px;color:#555;margin-bottom:1rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
 
     <div style="margin-bottom:16px">
-      <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#166534">📤 산출 LOT (이 작업지시로 만들어진 완제품/반제품 LOT) <button type="button" onclick="openLotCal('wo-trace-output')" style="margin-left:4px;padding:1px 8px;border-radius:4px;border:1px solid #3730a3;background:#eef2ff;color:#3730a3;font-size:11px;cursor:pointer;font-weight:400">📅 날짜선택 생성</button></div>
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#166534">📤 산출 LOT (이 작업지시로 만들어진 완제품/반제품 — 작업지시에 배정된 LOT을 사용합니다)</div>
       <div id="wo-trace-output-list" style="margin-bottom:8px"></div>
       <div style="display:flex;gap:6px">
-        <input id="wo-trace-output-lot" placeholder="LOT No." style="flex:1">
-        <input id="wo-trace-output-qty" type="number" placeholder="수량" style="width:90px">
+        <input id="wo-trace-output-qty" type="number" placeholder="수량" style="flex:1">
         <button onclick="addWOOutputLotUI()" style="padding:0 14px;border-radius:6px;border:1px solid #166534;background:#166534;color:#fff;font-size:12px;cursor:pointer;white-space:nowrap">+ 추가</button>
       </div>
     </div>
@@ -2055,7 +2076,7 @@ async function renderWO() {
 
   const body = document.getElementById('wo-body');
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="10" style="padding:20px;text-align:center;color:#aaa">작업지시가 없습니다.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="11" style="padding:20px;text-align:center;color:#aaa">작업지시가 없습니다.</td></tr>`;
     return;
   }
 
@@ -2068,6 +2089,7 @@ async function renderWO() {
     return `<tr>
       <td style="font-family:monospace;font-size:11px">${r.orderNo||''}</td>
       <td>${r.name||''} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
+      <td style="font-family:monospace;font-size:11px;color:#1d4ed8">${r.lot||'-'}${isAdmin ? ` <button onclick="regenerateWOLotUI(${r.id})" title="LOT 재생성" style="border:none;background:none;color:#3730a3;cursor:pointer;font-size:11px">🔄</button>` : ''}</td>
       <td style="text-align:right">${plan.toLocaleString()} ${r.unit||''}</td>
       <td style="text-align:right;font-weight:700;color:${barColor}">${produced.toLocaleString()} ${r.unit||''}</td>
       <td><div class="bar-wrap"><div class="bar-fill" style="width:${pct}%;background:${barColor}"></div></div><div style="font-size:11px;color:#888;text-align:center">${pct}%</div></td>
@@ -2086,12 +2108,42 @@ async function renderWO() {
   }).join('');
 }
 
+// ✅ 관리자용 안전장치: LOT을 다시 만들어야 할 때(제조사가 바뀌었거나 잘못 배정된 경우)
+//    오늘 날짜 기준으로 다시 계산해서 덮어쓴다.
+async function regenerateWOLotUI(id) {
+  const wo = WO.find(w => w.id === id); if (!wo) return;
+  const isCore = (wo.name||'').toUpperCase().includes('CORE');
+  let maker = null;
+  if (isCore) {
+    const input = (prompt('CORE 제조사 코드를 입력하세요\nC=CHANGSUNG, P=POCO, E=ELECTRO M, A=ACHROMAT', 'C') || '').toUpperCase().trim();
+    if (!input) return;
+    if (!['C','P','E','A'].includes(input)) { alert('C/P/E/A 중 하나를 입력해주세요.'); return; }
+    maker = input;
+  }
+  const today = new Date();
+  const mm = String(today.getMonth()+1).padStart(2,'0');
+  const dd = String(today.getDate()).padStart(2,'0');
+  const prefix = mm+'/'+dd;
+  const seq = txLog.filter(t => t.dt && t.dt.startsWith(prefix) && (t.type==='tp-in' || t.type==='otp')).length + 1;
+  const newLot = buildLot(today, 'tp-in', seq, maker);
+
+  if (!confirm(`LOT을 "${newLot}"로 재생성하시겠습니까?\n(기존: ${wo.lot || '없음'})\n\n⚠️ 이미 이 LOT으로 기록된 산출/실적 이력은 자동으로 바뀌지 않습니다.`)) return;
+
+  let res = await api('updateWorkOrder', { id, lot: newLot, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('updateWorkOrder', { id, lot: newLot, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('재생성 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await renderWO();
+}
+
 // ── 작업지시 추가 모달 ──────────────────────────────
 function openAddWO() {
   if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
   document.getElementById('wo-item-q').value = '';
   document.getElementById('wo-code').value = '';
   document.getElementById('wo-name').value = '';
+  document.getElementById('wo-lot').value = '';
+  document.getElementById('wo-maker-row').style.display = 'none';
+  document.getElementById('wo-maker').value = 'C';
   document.getElementById('wo-plan-qty').value = '';
   document.getElementById('wo-line').value = '';
   document.getElementById('wo-due').value = '';
@@ -2126,7 +2178,27 @@ function acPickWO(i) {
   document.getElementById('wo-item-drop').style.display = 'none';
   document.getElementById('wo-code').value = item.code;
   document.getElementById('wo-name').value = item.name;
+  updateWOLotPreview();
   document.getElementById('wo-plan-qty').focus();
+}
+
+// ✅ 작업지시 생성일 기준으로 LOT을 자동 계산해서 미리 보여준다.
+//    기존 LOT 생성기(buildLot/isCoreLotContext)와 완전히 같은 규칙을 그대로 쓴다 —
+//    CORE 품목이면 제조사 선택란을 보여주고, LOT에 제조사 코드를 포함시킨다.
+function updateWOLotPreview() {
+  const lotEl = document.getElementById('wo-lot');
+  if (!woSelectedItem) { lotEl.value = ''; return; }
+  const isCore = (woSelectedItem.sub||'').toUpperCase() === 'CORE' ||
+                 (woSelectedItem.name||'').toUpperCase().includes('CORE');
+  document.getElementById('wo-maker-row').style.display = isCore ? 'block' : 'none';
+  const maker = isCore ? document.getElementById('wo-maker').value : null;
+
+  const today = new Date();
+  const mm = String(today.getMonth()+1).padStart(2,'0');
+  const dd = String(today.getDate()).padStart(2,'0');
+  const prefix = mm+'/'+dd;
+  const seq = txLog.filter(t => t.dt && t.dt.startsWith(prefix) && (t.type==='tp-in' || t.type==='otp')).length + 1;
+  lotEl.value = buildLot(today, 'tp-in', seq, maker);
 }
 
 async function submitWO() {
@@ -2138,6 +2210,7 @@ async function submitWO() {
 
   const body = {
     code: woSelectedItem.code, name: woSelectedItem.name, cat: woSelectedItem.cat, unit: woSelectedItem.unit,
+    lot: document.getElementById('wo-lot').value,
     planQty, line: document.getElementById('wo-line').value.trim(),
     dueDate: document.getElementById('wo-due').value, note: document.getElementById('wo-note').value.trim(),
     status: '대기', token: ADMIN_TOKEN, user: CURRENT_USER || ''
@@ -2151,7 +2224,7 @@ async function submitWO() {
 
   closeOv('wo-add-ov');
   await renderWO();
-  alert('✅ 작업지시가 등록됐습니다.');
+  alert(`✅ 작업지시가 등록됐습니다. (LOT: ${body.lot})`);
 }
 
 // ── 실적 입력 ──────────────────────────────
@@ -2160,9 +2233,9 @@ function openWOProd(id) {
   woProdTarget = wo;
   const plan = +wo.planQty || 0, produced = +wo.producedQty || 0;
   document.getElementById('wo-prod-info').innerHTML =
-    `<strong>${wo.orderNo}</strong> · ${wo.name} (${wo.code})<br>계획 ${plan.toLocaleString()} ${wo.unit} · 현재 실적 ${produced.toLocaleString()} ${wo.unit} · 잔여 ${Math.max(0,plan-produced).toLocaleString()} ${wo.unit}`;
+    `<strong>${wo.orderNo}</strong> · ${wo.name} (${wo.code})<br>계획 ${plan.toLocaleString()} ${wo.unit} · 현재 실적 ${produced.toLocaleString()} ${wo.unit} · 잔여 ${Math.max(0,plan-produced).toLocaleString()} ${wo.unit}` +
+    (wo.lot ? `<br>LOT: <span style="color:#1d4ed8;font-weight:700;font-family:monospace">${wo.lot}</span>` : `<br><span style="color:#b91c1c">⚠️ 이 작업지시엔 LOT이 없습니다 (예전 방식으로 등록됨)</span>`);
   document.getElementById('wo-prod-qty').value = '';
-  document.getElementById('wo-prod-lot').value = '';
   document.getElementById('wo-prod-err').style.display = 'none';
   document.getElementById('wo-prod-ov').classList.add('show');
 }
@@ -2173,7 +2246,7 @@ async function submitWOProd() {
   if (!woProdTarget) return;
   const qty = parseFloat(document.getElementById('wo-prod-qty').value);
   if (!qty || qty <= 0) { errEl.textContent = '수량을 입력해주세요.'; errEl.style.display='block'; return; }
-  const outLot = document.getElementById('wo-prod-lot').value.trim();
+  const outLot = woProdTarget.lot || ''; // ✅ 작업지시 생성 시 자동 배정된 LOT을 그대로 사용
 
   const body = { id: woProdTarget.id, addProducedQty: qty, token: ADMIN_TOKEN };
   if (API_URL || IS_GAS) {
@@ -2181,7 +2254,7 @@ async function submitWOProd() {
     if (!res || !res.ok) { console.warn('updateWorkOrder 1차 실패, 재시도'); res = await api('updateWorkOrder', body); }
     if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
 
-    // ✅ 생산 LOT을 입력했으면 전공정 추적용 산출 LOT 이력에도 기록 (MES 4단계)
+    // ✅ 이 작업지시의 LOT으로 전공정 추적용 산출 LOT 이력에도 기록 (MES 4단계)
     if (outLot) {
       const lotBody = { workOrderId: woProdTarget.id, orderNo: woProdTarget.orderNo, lot: outLot, qty, unit: woProdTarget.unit, token: ADMIN_TOKEN, user: CURRENT_USER || '' };
       let lotRes = await api('addWOOutputLot', lotBody);
@@ -2452,6 +2525,9 @@ let qcAcResults = [];
 let qcAcIdx = -1;
 let qcSelectedItem = null;
 let qcEditTarget = null;
+let qcSelectedWorkOrder = null; // 출하검사에서 고른 완료된 작업지시
+let qcWoAcResults = [];
+let qcWoAcIdx = -1;
 
 async function loadQC() {
   if (!(API_URL || IS_GAS)) return;
@@ -2576,17 +2652,65 @@ function acPickQC(i) {
   document.getElementById('qc-sample').focus();
 }
 
+// ── 출하검사용: 완료된 작업지시 자동완성 (골라 선택하면 품목·LOT·수량 자동 채움) ──
+async function acSearchQCWO() {
+  const q = (document.getElementById('qc-wo-search-q').value || '').toLowerCase().trim();
+  const drop = document.getElementById('qc-wo-search-drop');
+  if (!q) { drop.style.display = 'none'; qcWoAcResults = []; return; }
+  await loadWO();
+  const pool = WO.filter(w => w.status === '완료');
+  const res = pool.filter(w =>
+    (w.orderNo||'').toLowerCase().includes(q) ||
+    (w.code||'').toLowerCase().includes(q) ||
+    (w.name||'').toLowerCase().includes(q)
+  ).slice(0, 12);
+  qcWoAcResults = res; qcWoAcIdx = -1;
+  if (!res.length) { drop.innerHTML = `<div style="padding:8px;color:#aaa;font-size:12px">완료된 작업지시가 없습니다.</div>`; drop.style.display = 'block'; return; }
+  drop.innerHTML = res.map((w,i) => `<div class="ac-item" data-i="${i}" onmousedown="acPickQCWO(${i})">
+    <div>${hl(w.orderNo,q)} <span style="color:#888;font-size:11px">${w.lot||'LOT 없음'}</span></div>
+    <div class="ac-sub">${hl(w.name,q)} (${hl(w.code,q)}) · 실적 ${(+w.producedQty||0).toLocaleString()} ${w.unit||''}</div>
+  </div>`).join('');
+  drop.style.display = 'block';
+}
+function acKeyQCWO(e) {
+  const items = document.querySelectorAll('#qc-wo-search-drop .ac-item');
+  if (e.key === 'ArrowDown') { e.preventDefault(); qcWoAcIdx = Math.min(qcWoAcIdx+1, items.length-1); items.forEach((el,i)=>el.classList.toggle('sel', i===qcWoAcIdx)); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); qcWoAcIdx = Math.max(qcWoAcIdx-1, 0); items.forEach((el,i)=>el.classList.toggle('sel', i===qcWoAcIdx)); }
+  else if (e.key === 'Enter' && qcWoAcIdx >= 0) acPickQCWO(qcWoAcIdx);
+  else if (e.key === 'Escape') document.getElementById('qc-wo-search-drop').style.display = 'none';
+}
+function acPickQCWO(i) {
+  const wo = qcWoAcResults[i]; if (!wo) return;
+  qcSelectedWorkOrder = wo;
+  qcSelectedItem = { code: wo.code, name: wo.name, cat: (allRows().find(r=>r.code===wo.code && (r.cat==='TP'||r.cat==='BTP'))||{}).cat || 'TP', unit: wo.unit };
+  document.getElementById('qc-wo-search-q').value = wo.orderNo + ' — ' + wo.name;
+  document.getElementById('qc-wo-search-drop').style.display = 'none';
+  document.getElementById('qc-code').value = wo.code;
+  document.getElementById('qc-name').value = wo.name;
+  document.getElementById('qc-lot').value = wo.lot || '';
+  if (!wo.lot) {
+    document.getElementById('qc-lot').readOnly = false;
+    document.getElementById('qc-lot').placeholder = '⚠️ 이 작업지시엔 LOT이 없습니다 (직접 입력하거나 작업지시 목록에서 재생성)';
+  }
+  document.getElementById('qc-total-qty').value = wo.producedQty || '';
+  document.getElementById('qc-sample').focus();
+}
+
 // ── 추가/수정 모달 ──────────────────────────────
 async function openAddQC() {
   await loadWO();
   qcEditTarget = null;
   qcSelectedItem = null;
+  qcSelectedWorkOrder = null;
   document.getElementById('qc-add-title').textContent = '➕ 품질검사 기록 추가';
   document.getElementById('qc-type').value = '수입검사';
   document.getElementById('qc-item-q').value = '';
+  document.getElementById('qc-wo-search-q').value = '';
   document.getElementById('qc-code').value = '';
   document.getElementById('qc-name').value = '';
   document.getElementById('qc-lot').value = '';
+  document.getElementById('qc-lot').readOnly = false;
+  document.getElementById('qc-lot').placeholder = '예: TGG6QPY-0001';
   document.getElementById('qc-wo').innerHTML = '<option value="">연결 안 함</option>';
   document.getElementById('qc-total-qty').value = '';
   document.getElementById('qc-sample').value = '';
@@ -2604,6 +2728,9 @@ async function openAddQC() {
 // ✅ 수입검사뿐 아니라 출하검사도 합격하면 재고에 실제로 반영되므로 (완제품이 창고로
 //    들어오는 것) 두 유형 모두 "총 입고수량" 입력란을 보여준다. 공정검사는 재고를
 //    직접 움직이지 않으므로 그대로 숨긴다.
+//    ✅ 출하검사는 이미 LOT이 정해진 완료 작업지시를 검사하는 것이므로, 품목을 직접
+//    검색하는 대신 "완료된 작업지시"를 검색해서 고르면 품목·LOT·수량이 자동으로
+//    채워지도록 화면 구성 자체를 바꾼다. (LOT을 새로 만들 필요가 없어 생성 버튼도 숨김)
 function onQCTypeChange() {
   const type = document.getElementById('qc-type').value;
   const needsTotal = (type === '수입검사' || type === '출하검사');
@@ -2614,6 +2741,15 @@ function onQCTypeChange() {
   } else {
     label.textContent = '총 입고수량 * (수입검사 합격 시 이 수량만큼 자동으로 자재입고 처리되어 재고가 늘어납니다)';
   }
+
+  const isShip = type === '출하검사';
+  document.getElementById('qc-item-search-wrap').style.display = isShip ? 'none' : 'block';
+  document.getElementById('qc-wo-search-wrap').style.display = isShip ? 'block' : 'none';
+  document.getElementById('qc-wo-link-wrap').style.display = isShip ? 'none' : 'block';
+  document.getElementById('qc-lot-gen-btn').style.display = isShip ? 'none' : 'inline-block';
+  document.getElementById('qc-lot').readOnly = isShip;
+  document.getElementById('qc-lot').style.background = isShip ? '#f5f6f8' : '#fff';
+  document.getElementById('qc-lot-label').firstChild.textContent = isShip ? '작업지시의 LOT (자동 채워짐) ' : 'LOT (선택) ';
 }
 
 async function openEditQC(id) {
@@ -2621,9 +2757,11 @@ async function openEditQC(id) {
   await loadWO();
   qcEditTarget = r;
   qcSelectedItem = {code:r.code, name:r.name, cat:r.cat};
+  qcSelectedWorkOrder = null;
   document.getElementById('qc-add-title').textContent = '✏️ 품질검사 기록 수정';
   document.getElementById('qc-type').value = r.inspType || '수입검사';
   document.getElementById('qc-item-q').value = (r.code||'') + ' — ' + (r.name||'');
+  document.getElementById('qc-wo-search-q').value = r.workOrderNo || '';
   document.getElementById('qc-code').value = r.code || '';
   document.getElementById('qc-name').value = r.name || '';
   document.getElementById('qc-lot').value = r.lot || '';
@@ -2684,8 +2822,9 @@ function readFileAsBase64(file) {
 async function submitQC() {
   const errEl = document.getElementById('qc-add-err');
   errEl.style.display = 'none';
-  if (!qcSelectedItem) { errEl.textContent = '품목을 검색해서 선택해주세요.'; errEl.style.display='block'; return; }
   const inspType = document.getElementById('qc-type').value;
+  if (inspType === '출하검사' && !qcSelectedItem) { errEl.textContent = '완료된 작업지시를 검색해서 선택해주세요.'; errEl.style.display='block'; return; }
+  if (inspType !== '출하검사' && !qcSelectedItem) { errEl.textContent = '품목을 검색해서 선택해주세요.'; errEl.style.display='block'; return; }
   const sample = parseFloat(document.getElementById('qc-sample').value);
   const defect = parseFloat(document.getElementById('qc-defect').value);
   if (!sample || sample <= 0) { errEl.textContent = '샘플수량을 입력해주세요.'; errEl.style.display='block'; return; }
@@ -2709,9 +2848,16 @@ async function submitQC() {
     }
   }
 
-  const woSel = document.getElementById('qc-wo');
-  const woId = woSel.value ? +woSel.value : '';
-  const woNo = woSel.value ? (WO.find(w=>w.id===+woSel.value)||{}).orderNo || '' : '';
+  // ✅ 출하검사는 위에서 고른 완료 작업지시가 곧 연결 대상이고, 그 외 유형은
+  //    기존처럼 "연결할 작업지시" 선택란 값을 쓴다.
+  let woId, woNo;
+  if (inspType === '출하검사' && qcSelectedWorkOrder) {
+    woId = qcSelectedWorkOrder.id; woNo = qcSelectedWorkOrder.orderNo;
+  } else {
+    const woSel = document.getElementById('qc-wo');
+    woId = woSel.value ? +woSel.value : '';
+    woNo = woSel.value ? (WO.find(w=>w.id===+woSel.value)||{}).orderNo || '' : '';
+  }
   const result = document.getElementById('qc-result').value;
 
   const body = {
@@ -2830,8 +2976,8 @@ async function openWOTrace(id) {
   const wo = WO.find(r => r.id === id); if (!wo) return;
   woTraceTarget = wo;
   document.getElementById('wo-trace-info').innerHTML =
-    `<strong>${wo.orderNo}</strong> · ${wo.name} (${wo.code})<br>계획 ${(+wo.planQty||0).toLocaleString()} ${wo.unit} · 실적 ${(+wo.producedQty||0).toLocaleString()} ${wo.unit}`;
-  document.getElementById('wo-trace-output-lot').value = '';
+    `<strong>${wo.orderNo}</strong> · ${wo.name} (${wo.code})<br>계획 ${(+wo.planQty||0).toLocaleString()} ${wo.unit} · 실적 ${(+wo.producedQty||0).toLocaleString()} ${wo.unit}` +
+    (wo.lot ? `<br>LOT: <span style="color:#1d4ed8;font-weight:700;font-family:monospace">${wo.lot}</span>` : `<br><span style="color:#b91c1c">⚠️ LOT 없음 (목록에서 재생성 가능)</span>`);
   document.getElementById('wo-trace-output-qty').value = '';
   document.getElementById('wo-trace-mat-filter').value = '';
   document.getElementById('wo-trace-err').style.display = 'none';
@@ -3005,9 +3151,9 @@ async function addWOOutputLotUI() {
   const errEl = document.getElementById('wo-trace-err');
   errEl.style.display = 'none';
   if (!woTraceTarget) return;
-  const lot = document.getElementById('wo-trace-output-lot').value.trim();
+  const lot = woTraceTarget.lot || ''; // ✅ 작업지시 생성 시 자동 배정된 LOT을 그대로 사용
   const qty = parseFloat(document.getElementById('wo-trace-output-qty').value);
-  if (!lot) { errEl.textContent = 'LOT No.를 입력해주세요.'; errEl.style.display='block'; return; }
+  if (!lot) { errEl.textContent = '이 작업지시엔 LOT이 없습니다 (예전 방식으로 등록됨). 목록에서 LOT을 재생성해주세요.'; errEl.style.display='block'; return; }
   if (!qty || qty <= 0) { errEl.textContent = '수량을 입력해주세요.'; errEl.style.display='block'; return; }
 
   const body = { workOrderId: woTraceTarget.id, orderNo: woTraceTarget.orderNo, lot, qty, unit: woTraceTarget.unit, token: ADMIN_TOKEN, user: CURRENT_USER || '' };
@@ -3015,7 +3161,6 @@ async function addWOOutputLotUI() {
   if (!res || !res.ok) res = await api('addWOOutputLot', body);
   if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
 
-  document.getElementById('wo-trace-output-lot').value = '';
   document.getElementById('wo-trace-output-qty').value = '';
   await loadWOOutputLots();
   renderWOTraceLists();
