@@ -3270,48 +3270,55 @@ async function submitWOMatBrowse() {
 
   if (!confirm(`선택한 자재 ${rows.length}건을 출고 처리하시겠습니까?\n창고 재고가 실제로 줄어듭니다.`)) return;
 
-  for (const r of rows) {
-    // ── 1) 실제 자재출고 거래 생성 (입출고 탭에서 출고하는 것과 동일한 방식) ──
-    const txType = woMatLotTypes(r.cat).outType; // KR/VN/VTTH → 'omt', BTP → 'otp'
-    const txEntry = {
-      id: Date.now() + Math.floor(Math.random()*1000), type: txType, code: r.code, name: r.name, cat: r.cat,
-      unit: r.unit, qty: r.qty, note: `[작업지시 ${woTraceTarget.orderNo} 자재투입]`,
-      lot: r.lot, dt: vnDt(), dest: ''
-    };
-    let txRes = await api('addTx', { ...txEntry, token: ADMIN_TOKEN, user: CURRENT_USER || '' });
-    if (!txRes || !txRes.ok) txRes = await api('addTx', { ...txEntry, token: ADMIN_TOKEN, user: CURRENT_USER || '' });
-    if (!txRes || !txRes.ok) {
-      errEl.textContent = `"${r.name}" 재고 차감 실패: ` + (txRes && txRes.error ? txRes.error : '알 수 없는 오류') + ' — 이후 자재는 처리되지 않았습니다.';
-      errEl.style.display='block';
-      await loadWOMaterials(); renderWOTraceLists(); renderWOMatBrowse();
-      return;
-    }
-    txLog.push(txEntry);
+  // ✅ 자재마다 서버에 따로따로 요청(건당 최대 2번, 왕복마다 1~수 초)을 보내던 게
+  //    자재 개수만큼 느려지던 원인이었다. 이제 전부 한 번의 요청으로 모아서 보낸다
+  //    (서버가 한 번의 실행 안에서 전부 처리) — POST 방식(apiPost)을 써서 자재가
+  //    많아도 URL 길이 제한 없이 안전하게 보낸다.
+  const submitBtn = document.querySelector('button[onclick="submitWOMatBrowse()"]');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ 처리 중...'; }
+
+  const body = {
+    workOrderId: woTraceTarget.id, orderNo: woTraceTarget.orderNo, productCode: woTraceTarget.code,
+    rows: rows.map(r => ({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: r.lot, qty: r.qty }))
+  };
+  let res = await apiPost('addWOMaterialsBatch', body);
+  if (!res || !res.ok) res = await apiPost('addWOMaterialsBatch', body);
+
+  if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📤 선택한 자재 일괄 출고'; }
+
+  if (!res || !res.ok) {
+    errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류');
+    errEl.style.display='block';
+    return;
+  }
+
+  // ✅ 로컬 상태(재고/이력)도 성공한 만큼 바로 반영해서 화면이 즉시 맞게 보이도록 한다
+  const failedSet = new Set(res.failures || []);
+  rows.forEach(r => {
+    if (failedSet.has(r.code + '/' + r.cat)) return;
+    const txType = woMatLotTypes(r.cat).outType;
+    txLog.push({
+      id: Date.now() + Math.floor(Math.random()*100000), type: txType, code: r.code, name: r.name, cat: r.cat,
+      unit: r.unit, qty: r.qty, note: `[작업지시 ${woTraceTarget.orderNo} 자재투입]`, lot: r.lot, dt: vnDt(), dest: ''
+    });
     const arr = {TP:DB.tp, BTP:DB.btp, KR:DB.kr, VN:DB.vn, VTTH:DB.vtth}[r.cat];
     const item = arr && arr.find(x => x.code === r.code);
     if (item) {
       item.cur = Math.max(0, (+item.cur||0) - r.qty);
       item.total = Math.max(0, (+item.total||0) - r.qty);
     }
-
-    // ── 2) 작업지시 "투입 자재" 기록 (전공정 추적용) ──
-    const body = {
-      workOrderId: woTraceTarget.id, orderNo: woTraceTarget.orderNo, productCode: woTraceTarget.code,
-      code: r.code, name: r.name, cat: r.cat, unit: r.unit,
-      lot: r.lot, qty: r.qty, token: ADMIN_TOKEN, user: CURRENT_USER || ''
-    };
-    let res = await api('addWOMaterial', body);
-    if (!res || !res.ok) res = await api('addWOMaterial', body);
-    if (!res || !res.ok) {
-      errEl.textContent = `"${r.name}"은(는) 출고됐지만 작업지시 기록 저장에 실패했습니다: ` + (res && res.error ? res.error : '알 수 없는 오류');
-      errEl.style.display='block';
-    }
-  }
+  });
 
   await loadWOMaterials();
   renderWOTraceLists();
   renderWOMatBrowse(); // 반영된 만큼 잔여수량 갱신 + 입력값 초기화
-  if (errEl.style.display !== 'block') alert(`✅ 자재 ${rows.length}건이 출고 처리되었습니다.`);
+
+  if (res.failures && res.failures.length) {
+    errEl.textContent = `⚠️ 일부 자재(${res.failures.join(', ')})는 품목을 찾지 못해 처리되지 않았습니다. 나머지 ${res.processedCount||0}건은 정상 처리되었습니다.`;
+    errEl.style.display = 'block';
+  } else {
+    alert(`✅ 자재 ${res.processedCount||rows.length}건이 출고 처리되었습니다.`);
+  }
 }
 
 async function deleteWOMaterialUI(id) {
