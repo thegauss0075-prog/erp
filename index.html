@@ -1031,14 +1031,10 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
         </div>
         <div id="bom-panel" style="display:none;margin-top:8px">
           <div id="bom-list" style="margin-bottom:8px"></div>
-          <div class="ac-wrap" style="margin-bottom:6px">
-            <input id="bom-item-q" placeholder="자재 코드 또는 품명 검색..." autocomplete="off" oninput="acSearchBOM()" onkeydown="acKeyBOM(event)" style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid #dde">
-            <div id="bom-item-drop" class="ac-drop"></div>
-          </div>
-          <div style="display:flex;gap:6px">
-            <input id="bom-qty-per-unit" type="number" placeholder="1개당 소요량" style="flex:1;font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid #dde">
-            <button onclick="addBOMItemUI()" style="padding:0 12px;border-radius:6px;border:1px solid #3730a3;background:#3730a3;color:#fff;font-size:12px;cursor:pointer">+ 추가</button>
-          </div>
+          <div style="font-size:11px;color:#888;margin-bottom:4px">검색해서 여러 자재의 1개당 소요량을 한 번에 입력하고 일괄 추가하세요.</div>
+          <input id="bom-browse-filter" placeholder="자재명·코드로 검색..." autocomplete="off" oninput="renderBOMBrowse()" style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid #dde;margin-bottom:6px">
+          <div id="bom-browse-list" style="max-height:180px;overflow-y:auto;margin-bottom:8px"></div>
+          <button onclick="submitBOMBrowse()" style="padding:6px 14px;border-radius:6px;border:1px solid #3730a3;background:#3730a3;color:#fff;font-size:12px;cursor:pointer;font-weight:600">🧮 입력한 소요량 일괄 추가</button>
         </div>
         <div id="bom-suggest-wrap" style="display:none;margin-top:8px;padding-top:8px;border-top:1px dashed #c7d2fe">
           <button onclick="applyBOMSuggestion()" style="padding:6px 14px;border-radius:6px;border:1px solid #3730a3;background:#3730a3;color:#fff;font-size:12px;cursor:pointer;font-weight:600">📐 계획수량 기준 소요량 자동 입력</button>
@@ -2219,11 +2215,17 @@ async function cycleWOStatus(id, current) {
 
 async function deleteWO(id) {
   if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
-  if (!confirm('이 작업지시를 삭제하시겠습니까?')) return;
+  if (!confirm('이 작업지시를 삭제하시겠습니까?\n\n이 작업지시로 출고 처리된 자재는 재고로 복구되고, 관련된 투입자재·산출LOT·공정일지 기록도 함께 삭제됩니다.')) return;
   let res = await api('deleteWorkOrder', { id, token: ADMIN_TOKEN });
   if (!res || !res.ok) res = await api('deleteWorkOrder', { id, token: ADMIN_TOKEN });
   if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await syncNow(); // ✅ 서버에서 재고/이력을 복구했으므로 화면도 최신 상태로 다시 불러온다
   await renderWO();
+  if (res.warning) {
+    alert(`⚠️ ${res.warning}`);
+  } else if (res.restoredCount) {
+    alert(`✅ 삭제 완료. 자재 ${res.restoredCount}건의 재고가 복구되었습니다.`);
+  }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -2833,9 +2835,7 @@ async function openWOTrace(id) {
   document.getElementById('wo-trace-output-qty').value = '';
   document.getElementById('wo-trace-mat-filter').value = '';
   document.getElementById('wo-trace-err').style.display = 'none';
-  document.getElementById('bom-item-q').value = '';
-  document.getElementById('bom-qty-per-unit').value = '';
-  bomSelectedItem = null;
+  document.getElementById('bom-browse-filter').value = '';
 
   await loadWOMaterials();
   await loadWOOutputLots();
@@ -2851,9 +2851,6 @@ async function openWOTrace(id) {
 //  작업지시 계획수량에 맞춰 투입 자재 수량을 자동으로 계산/입력한다.
 // ══════════════════════════════════════════════════════════
 let BOM = [];
-let bomAcResults = [];
-let bomAcIdx = -1;
-let bomSelectedItem = null;
 
 async function loadBOM() {
   if (!(API_URL || IS_GAS)) return;
@@ -2879,7 +2876,7 @@ function renderBOMList() {
       <span>1개당 <strong>${(+b.qtyPerUnit||0).toLocaleString()}</strong> ${b.materialUnit||''}
         ${isAdmin ? `<button onclick="deleteBOMItemUI(${b.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button>` : ''}
       </span>
-    </div>`).join('') : `<div style="color:#aaa;font-size:11px">아직 설정된 소요량이 없습니다. 아래에서 자재를 검색해 추가하세요.</div>`;
+    </div>`).join('') : `<div style="color:#aaa;font-size:11px">아직 설정된 소요량이 없습니다. 아래에서 검색해서 추가하세요.</div>`;
 
   const suggestWrap = document.getElementById('bom-suggest-wrap');
   const note = document.getElementById('bom-suggest-note');
@@ -2889,57 +2886,60 @@ function renderBOMList() {
   } else {
     suggestWrap.style.display = 'none';
   }
+
+  renderBOMBrowse(); // 목록이 바뀌었으니(추가/삭제) 아래 검색 목록도 "이미 설정된 자재" 제외 기준을 다시 맞춘다
 }
 
-function acSearchBOM() {
-  const q = (document.getElementById('bom-item-q').value || '').toLowerCase().trim();
-  const drop = document.getElementById('bom-item-drop');
-  if (!q) { drop.style.display = 'none'; bomAcResults = []; return; }
-  const pool = allRows().filter(r => r.cat !== 'TP');
-  const res = pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)).slice(0, 10);
-  bomAcResults = res; bomAcIdx = -1;
-  if (!res.length) { drop.style.display = 'none'; return; }
-  drop.innerHTML = res.map((r,i) => `<div class="ac-item" data-i="${i}" onmousedown="acPickBOM(${i})"><div>${hl(r.code,q)} <span class="badge ${CB[r.cat]}" style="font-size:11px;padding:2px 7px">${CL[r.cat]}</span></div><div class="ac-sub">${hl(r.name,q)} · ${r.unit}</div></div>`).join('');
-  drop.style.display = 'block';
-}
-function acKeyBOM(e) {
-  const items = document.querySelectorAll('#bom-item-drop .ac-item');
-  if (e.key === 'ArrowDown') { e.preventDefault(); bomAcIdx = Math.min(bomAcIdx+1, items.length-1); items.forEach((el,i)=>el.classList.toggle('sel', i===bomAcIdx)); }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); bomAcIdx = Math.max(bomAcIdx-1, 0); items.forEach((el,i)=>el.classList.toggle('sel', i===bomAcIdx)); }
-  else if (e.key === 'Enter' && bomAcIdx >= 0) acPickBOM(bomAcIdx);
-  else if (e.key === 'Escape') document.getElementById('bom-item-drop').style.display = 'none';
-}
-function acPickBOM(i) {
-  const item = bomAcResults[i]; if (!item) return;
-  bomSelectedItem = item;
-  document.getElementById('bom-item-q').value = item.code + ' — ' + item.name;
-  document.getElementById('bom-item-drop').style.display = 'none';
-  document.getElementById('bom-qty-per-unit').focus();
+// ✅ 자재를 하나씩 검색→선택→추가하지 않고, 검색으로 좁혀서 여러 자재의
+//    "1개당 소요량"을 한 번에 입력한 뒤 일괄 추가할 수 있게 한다.
+//    이미 소요량이 설정된 자재는 위 목록에 나오니 여기서는 제외한다.
+function renderBOMBrowse() {
+  if (!woTraceTarget) return;
+  const q = (document.getElementById('bom-browse-filter').value || '').toLowerCase().trim();
+  const already = new Set(BOM.filter(b => b.productCode === woTraceTarget.code).map(b => b.materialCode + '|' + b.materialCat));
+  const pool = allRows().filter(r => r.cat !== 'TP' && !already.has(r.code + '|' + r.cat));
+  const filtered = q ? pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) : pool;
+  const list = filtered.slice(0, 200);
+  const container = document.getElementById('bom-browse-list');
+  if (!list.length) {
+    container.innerHTML = `<div style="color:#aaa;font-size:11px;padding:6px 2px">${q ? '검색 결과가 없습니다.' : '추가할 수 있는 자재가 없습니다 (전부 이미 설정됨).'}</div>`;
+    return;
+  }
+  container.innerHTML = list.map(r => `
+    <div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #e0e7ff;font-size:12px">
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.name} (${r.code})">${r.name} <span style="color:#aaa;font-family:monospace;font-size:10px">${r.code}</span></span>
+      <input class="bomb-qty" data-code="${r.code}" data-cat="${r.cat}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" type="number" placeholder="1개당 소요량" style="width:90px;font-size:11px">
+    </div>`).join('');
 }
 
-async function addBOMItemUI() {
+async function submitBOMBrowse() {
   const errEl = document.getElementById('wo-trace-err');
   errEl.style.display = 'none';
   if (!woTraceTarget) return;
-  if (!bomSelectedItem) { errEl.textContent = '자재를 검색해서 선택해주세요.'; errEl.style.display='block'; return; }
-  const qtyPerUnit = parseFloat(document.getElementById('bom-qty-per-unit').value);
-  if (!qtyPerUnit || qtyPerUnit <= 0) { errEl.textContent = '1개당 소요량을 입력해주세요.'; errEl.style.display='block'; return; }
 
-  const body = {
-    productCode: woTraceTarget.code, productName: woTraceTarget.name,
-    materialCode: bomSelectedItem.code, materialName: bomSelectedItem.name,
-    materialCat: bomSelectedItem.cat, materialUnit: bomSelectedItem.unit,
-    qtyPerUnit, token: ADMIN_TOKEN, user: CURRENT_USER || ''
-  };
-  let res = await api('addBOMItem', body);
-  if (!res || !res.ok) res = await api('addBOMItem', body);
-  if (!res || !res.ok) { errEl.textContent = 'BOM 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+  const rows = Array.from(document.querySelectorAll('#bom-browse-list .bomb-qty'))
+    .map(inp => ({
+      code: inp.dataset.code, cat: inp.dataset.cat, name: inp.dataset.name, unit: inp.dataset.unit,
+      qtyPerUnit: parseFloat(inp.value)
+    }))
+    .filter(r => r.qtyPerUnit && r.qtyPerUnit > 0);
 
-  bomSelectedItem = null;
-  document.getElementById('bom-item-q').value = '';
-  document.getElementById('bom-qty-per-unit').value = '';
+  if (!rows.length) { errEl.textContent = '소요량을 입력한 자재가 없습니다.'; errEl.style.display='block'; return; }
+
+  for (const r of rows) {
+    const body = {
+      productCode: woTraceTarget.code, productName: woTraceTarget.name,
+      materialCode: r.code, materialName: r.name, materialCat: r.cat, materialUnit: r.unit,
+      qtyPerUnit: r.qtyPerUnit, token: ADMIN_TOKEN, user: CURRENT_USER || ''
+    };
+    let res = await api('addBOMItem', body);
+    if (!res || !res.ok) res = await api('addBOMItem', body);
+    if (!res || !res.ok) { errEl.textContent = `"${r.name}" 저장 실패: ` + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+  }
+
+  document.getElementById('bom-browse-filter').value = '';
   await loadBOM();
-  renderBOMList();
+  renderBOMList(); // 내부에서 renderBOMBrowse()도 다시 그려서 입력값 초기화 + 방금 추가한 자재 제외됨
 }
 
 async function deleteBOMItemUI(id) {
