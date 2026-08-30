@@ -2304,6 +2304,13 @@ function openWOProd(id) {
   document.getElementById('wo-prod-ov').classList.add('show');
 }
 
+// ✅ 이 작업지시로 자재를 한 번이라도 투입(전공정추적에서 출고)했는지 확인한다.
+//    실적입력·완료전환 시 "자재 없이 진행되는" 걸 막기 위한 검증용 헬퍼.
+async function hasMaterialInput(workOrderId) {
+  await loadWOMaterials();
+  return WO_MAT.some(m => String(m.workOrderId) === String(workOrderId));
+}
+
 async function submitWOProd() {
   const errEl = document.getElementById('wo-prod-err');
   errEl.style.display = 'none';
@@ -2316,6 +2323,14 @@ async function submitWOProd() {
   const delta = newTotal - currentProduced; // 서버는 여전히 델타(증감분)로 반영하므로 여기서 계산
 
   if (delta === 0) { errEl.textContent = '기존 실적과 같습니다. 값을 바꿔서 입력해주세요.'; errEl.style.display='block'; return; }
+
+  // ✅ 검증 1: 자재투입 기록이 하나도 없는데 실적(생산량)을 입력하려는 경우 경고
+  if (delta > 0) {
+    const hasMat = await hasMaterialInput(woProdTarget.id);
+    if (!hasMat) {
+      if (!confirm(`⚠️ 이 작업지시엔 아직 투입 자재 기록이 없습니다.\n(전공정 추적에서 자재를 출고 처리하지 않았습니다)\n\n그래도 실적을 입력하시겠습니까?`)) return;
+    }
+  }
 
   // ✅ 계획수량을 넘는 실적이 조용히 들어가던 문제 — 넘으면 확인을 한 번 받는다
   if (planQty > 0 && newTotal > planQty) {
@@ -2356,6 +2371,15 @@ async function cycleWOStatus(id, current) {
   if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
   const cycle = {'대기':'진행중', '진행중':'완료', '완료':'보류', '보류':'대기'};
   const next = cycle[current] || '대기';
+
+  // ✅ 검증 2: 자재투입 기록 없이 "완료"로 넘어가려는 경우 경고
+  if (next === '완료') {
+    const hasMat = await hasMaterialInput(id);
+    if (!hasMat) {
+      if (!confirm(`⚠️ 이 작업지시엔 아직 투입 자재 기록이 없습니다.\n(전공정 추적에서 자재를 출고 처리하지 않았습니다)\n\n그래도 "완료"로 변경하시겠습니까?`)) return;
+    }
+  }
+
   if (!confirm(`상태를 "${current}" → "${next}"로 변경할까요?`)) return;
   let res = await api('updateWorkOrder', { id, status: next, token: ADMIN_TOKEN });
   if (!res || !res.ok) res = await api('updateWorkOrder', { id, status: next, token: ADMIN_TOKEN });
