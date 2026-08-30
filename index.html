@@ -2112,14 +2112,11 @@ async function renderWO() {
 //    오늘 날짜 기준으로 다시 계산해서 덮어쓴다.
 async function regenerateWOLotUI(id) {
   const wo = WO.find(w => w.id === id); if (!wo) return;
-  const isCore = (wo.name||'').toUpperCase().includes('CORE');
-  let maker = null;
-  if (isCore) {
-    const input = (prompt('CORE 제조사 코드를 입력하세요\nC=CHANGSUNG, P=POCO, E=ELECTRO M, A=ACHROMAT', 'C') || '').toUpperCase().trim();
-    if (!input) return;
-    if (!['C','P','E','A'].includes(input)) { alert('C/P/E/A 중 하나를 입력해주세요.'); return; }
-    maker = input;
-  }
+  // ✅ 작업지시는 항상 완제품/반제품이라 항상 제조사를 물어본다 (updateWOLotPreview와 동일한 이유)
+  const input = (prompt('CORE 제조사 코드를 입력하세요\nC=CHANGSUNG, P=POCO, E=ELECTRO M, A=ACHROMAT', 'C') || '').toUpperCase().trim();
+  if (!input) return;
+  if (!['C','P','E','A'].includes(input)) { alert('C/P/E/A 중 하나를 입력해주세요.'); return; }
+  const maker = input;
   const today = new Date();
   const mm = String(today.getMonth()+1).padStart(2,'0');
   const dd = String(today.getDate()).padStart(2,'0');
@@ -2183,15 +2180,16 @@ function acPickWO(i) {
 }
 
 // ✅ 작업지시 생성일 기준으로 LOT을 자동 계산해서 미리 보여준다.
-//    기존 LOT 생성기(buildLot/isCoreLotContext)와 완전히 같은 규칙을 그대로 쓴다 —
-//    CORE 품목이면 제조사 선택란을 보여주고, LOT에 제조사 코드를 포함시킨다.
+//    기존 LOT 생성기(buildLot)와 완전히 같은 규칙을 그대로 쓴다.
+//    ✅ 수정: 작업지시는 항상 완제품/반제품(TP/BTP)이고, 라벨 표준상 이런 제품은
+//    이름에 "CORE"가 없어도(예: "50KW PFC INDUCTOR") 내부에 CORE 부품이 들어가서
+//    LOT에 제조사 코드가 항상 포함되어야 한다. 그래서 CORE 이름 체크 없이
+//    작업지시 LOT은 항상 제조사 선택란을 보여준다 (기존 완제품 LOT 생성기와 동일).
 function updateWOLotPreview() {
   const lotEl = document.getElementById('wo-lot');
   if (!woSelectedItem) { lotEl.value = ''; return; }
-  const isCore = (woSelectedItem.sub||'').toUpperCase() === 'CORE' ||
-                 (woSelectedItem.name||'').toUpperCase().includes('CORE');
-  document.getElementById('wo-maker-row').style.display = isCore ? 'block' : 'none';
-  const maker = isCore ? document.getElementById('wo-maker').value : null;
+  document.getElementById('wo-maker-row').style.display = 'block';
+  const maker = document.getElementById('wo-maker').value;
 
   const today = new Date();
   const mm = String(today.getMonth()+1).padStart(2,'0');
@@ -2246,6 +2244,16 @@ async function submitWOProd() {
   if (!woProdTarget) return;
   const qty = parseFloat(document.getElementById('wo-prod-qty').value);
   if (!qty || qty <= 0) { errEl.textContent = '수량을 입력해주세요.'; errEl.style.display='block'; return; }
+
+  // ✅ 계획수량을 넘는 실적이 조용히 들어가던 문제 — 넘으면 확인을 한 번 받는다
+  const planQty = +woProdTarget.planQty || 0;
+  const currentProduced = +woProdTarget.producedQty || 0;
+  const newTotal = currentProduced + qty;
+  if (planQty > 0 && newTotal > planQty) {
+    const over = newTotal - planQty;
+    if (!confirm(`⚠️ 계획수량(${planQty.toLocaleString()})을 ${over.toLocaleString()}만큼 초과합니다.\n(현재 실적 ${currentProduced.toLocaleString()} + 입력 ${qty.toLocaleString()} = ${newTotal.toLocaleString()})\n\n그래도 반영하시겠습니까?`)) return;
+  }
+
   const outLot = woProdTarget.lot || ''; // ✅ 작업지시 생성 시 자동 배정된 LOT을 그대로 사용
 
   const body = { id: woProdTarget.id, addProducedQty: qty, token: ADMIN_TOKEN };
@@ -2658,14 +2666,22 @@ async function acSearchQCWO() {
   const drop = document.getElementById('qc-wo-search-drop');
   if (!q) { drop.style.display = 'none'; qcWoAcResults = []; return; }
   await loadWO();
-  const pool = WO.filter(w => w.status === '완료');
+  await loadQC();
+  // ✅ 이미 출하검사를 한 번 등록한 작업지시는 목록에서 빼서, 같은 지시서로
+  //    또 검사→합격 처리해서 재고가 중복으로 늘어나는 걸 막는다.
+  //    (수정이 필요하면 품질검사 목록에서 그 기록을 직접 수정하면 된다.)
+  const alreadyInspected = new Set(
+    QC.filter(r => r.inspType === '출하검사' && (!qcEditTarget || r.id !== qcEditTarget.id))
+      .map(r => String(r.workOrderId))
+  );
+  const pool = WO.filter(w => w.status === '완료' && !alreadyInspected.has(String(w.id)));
   const res = pool.filter(w =>
     (w.orderNo||'').toLowerCase().includes(q) ||
     (w.code||'').toLowerCase().includes(q) ||
     (w.name||'').toLowerCase().includes(q)
   ).slice(0, 12);
   qcWoAcResults = res; qcWoAcIdx = -1;
-  if (!res.length) { drop.innerHTML = `<div style="padding:8px;color:#aaa;font-size:12px">완료된 작업지시가 없습니다.</div>`; drop.style.display = 'block'; return; }
+  if (!res.length) { drop.innerHTML = `<div style="padding:8px;color:#aaa;font-size:12px">검사 대상 작업지시가 없습니다 (완료됐지만 검사 안 한 지시서만 표시됩니다).</div>`; drop.style.display = 'block'; return; }
   drop.innerHTML = res.map((w,i) => `<div class="ac-item" data-i="${i}" onmousedown="acPickQCWO(${i})">
     <div>${hl(w.orderNo,q)} <span style="color:#888;font-size:11px">${w.lot||'LOT 없음'}</span></div>
     <div class="ac-sub">${hl(w.name,q)} (${hl(w.code,q)}) · 실적 ${(+w.producedQty||0).toLocaleString()} ${w.unit||''}</div>
