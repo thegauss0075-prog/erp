@@ -793,9 +793,10 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     </div>
     <div class="ov-fr"><label>품목코드</label><input id="wo-code" readonly style="background:#f5f6f8;color:#888"></div>
     <div class="ov-fr"><label>품명</label><input id="wo-name" readonly style="background:#f5f6f8;color:#888"></div>
-    <div class="ov-fr" id="wo-maker-row" style="display:none">
-      <label>CORE 제조사</label>
+    <div class="ov-fr" id="wo-maker-row" style="display:none;background:#fffbeb;border-radius:8px;padding:8px 10px;border-left:3px solid #b45309">
+      <label style="font-weight:700;color:#92400e">⚠️ CORE 제조사 * (기본값 없음 — 반드시 직접 선택해야 합니다)</label>
       <select id="wo-maker" onchange="updateWOLotPreview()">
+        <option value="">-- 제조사를 선택하세요 --</option>
         <option value="C">CHANGSUNG</option>
         <option value="P">POCO</option>
         <option value="E">ELECTRO M</option>
@@ -845,9 +846,12 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     <div id="wo-prod-info" style="font-size:13px;color:#555;margin-bottom:.75rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
     <div class="ov-fr"><label>생산 실적 수량 * (지금까지 만든 총 누적 수량)</label><input id="wo-prod-qty" type="number" placeholder="0"></div>
     <div id="wo-prod-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
+    <div id="wo-prod-mat-warning" style="display:none;background:#fee2e2;border:2px solid #b91c1c;border-radius:8px 8px 0 0;padding:10px 12px;margin-top:14px;margin-bottom:-1px;color:#b91c1c;font-weight:700;font-size:13px;position:relative;z-index:2">
+      ⚠️ 이 작업지시엔 아직 투입 자재 기록이 없습니다.<br><span style="font-weight:400;font-size:12px">전공정 추적에서 자재를 출고 처리하지 않았습니다. 그래도 진행하시려면 아래 <strong>"⚠️ 그래도 반영"</strong>을 한 번 더 눌러주세요.</span>
+    </div>
     <div class="ov-actions">
       <button class="ov-cancel" onclick="closeOv('wo-prod-ov')">취소</button>
-      <button class="ov-save" onclick="submitWOProd()">📈 반영</button>
+      <button class="ov-save" id="wo-prod-submit-btn" onclick="submitWOProd()" style="position:relative;z-index:1">📈 반영</button>
     </div>
   </div>
 </div>
@@ -1085,7 +1089,12 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
       <div style="background:#fffbeb;border-radius:8px;padding:10px">
         <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⚡ 재고 있는 자재에서 선택해서 출고 (선입선출 — 가장 오래된 LOT이 자동으로 사용됩니다)</div>
-        <input id="wo-trace-mat-filter" placeholder="자재명·코드로 검색..." autocomplete="off" oninput="renderWOMatBrowse()" style="width:100%;box-sizing:border-box;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid #dde;margin-bottom:8px">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <input id="wo-trace-mat-filter" placeholder="자재명·코드로 검색..." autocomplete="off" oninput="renderWOMatBrowse()" style="flex:1;box-sizing:border-box;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid #dde">
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#92400e;white-space:nowrap;cursor:pointer">
+            <input type="checkbox" id="wo-trace-mat-filled-only" onchange="renderWOMatBrowse()"> 입력된 것만
+          </label>
+        </div>
         <div id="wo-trace-mat-browse" style="max-height:220px;overflow-y:auto"></div>
         <button onclick="submitWOMatBrowse()" style="margin-top:8px;padding:6px 14px;border-radius:6px;border:1px solid #92400e;background:#92400e;color:#fff;font-size:12px;cursor:pointer;font-weight:600">📤 선택한 자재 일괄 출고</button>
       </div>
@@ -2076,6 +2085,7 @@ let woAcIdx = -1;
 let woSelectedItem = null;  // 작업지시 추가 모달에서 선택된 품목
 let woEditTarget = null;    // 작업지시 수정 모달에서 편집 중인 작업지시
 let woProdTarget = null;    // 실적 입력 대상 작업지시
+let woProdMatWarningShown = false; // 자재투입 없음 경고를 이미 보여줬는지 (한 번 더 누르면 진행)
 
 async function loadWO() {
   if (!(API_URL || IS_GAS)) return;
@@ -2162,7 +2172,7 @@ function openAddWO() {
   document.getElementById('wo-name').value = '';
   document.getElementById('wo-lot').value = '';
   document.getElementById('wo-maker-row').style.display = 'none';
-  document.getElementById('wo-maker').value = 'C';
+  document.getElementById('wo-maker').value = ''; // ✅ 기본값 없이 항상 직접 고르게 한다 (제조사 선택 누락 실수 방지)
   document.getElementById('wo-plan-qty').value = '';
   document.getElementById('wo-line').value = '';
   document.getElementById('wo-due').value = '';
@@ -2198,7 +2208,7 @@ function acPickWO(i) {
   document.getElementById('wo-code').value = item.code;
   document.getElementById('wo-name').value = item.name;
   updateWOLotPreview();
-  document.getElementById('wo-plan-qty').focus();
+  document.getElementById('wo-maker').focus(); // ✅ 커서가 계획수량이 아니라 제조사 선택으로 먼저 가게 해서 놓치지 않도록
 }
 
 // ✅ 작업지시 생성일 기준으로 LOT을 자동 계산해서 미리 보여준다.
@@ -2207,11 +2217,19 @@ function acPickWO(i) {
 //    이름에 "CORE"가 없어도(예: "50KW PFC INDUCTOR") 내부에 CORE 부품이 들어가서
 //    LOT에 제조사 코드가 항상 포함되어야 한다. 그래서 CORE 이름 체크 없이
 //    작업지시 LOT은 항상 제조사 선택란을 보여준다 (기존 완제품 LOT 생성기와 동일).
+//    ✅ 제조사를 안 고르면 LOT 자체를 안 만들고 경고만 보여준다 (선택 누락 방지).
 function updateWOLotPreview() {
   const lotEl = document.getElementById('wo-lot');
   if (!woSelectedItem) { lotEl.value = ''; return; }
   document.getElementById('wo-maker-row').style.display = 'block';
   const maker = document.getElementById('wo-maker').value;
+
+  if (!maker) {
+    lotEl.value = '⚠️ 제조사를 먼저 선택하세요';
+    lotEl.style.color = '#b91c1c';
+    return;
+  }
+  lotEl.style.color = '#1d4ed8';
 
   const today = new Date();
   const mm = String(today.getMonth()+1).padStart(2,'0');
@@ -2225,6 +2243,12 @@ async function submitWO() {
   const errEl = document.getElementById('wo-add-err');
   errEl.style.display = 'none';
   if (!woSelectedItem) { errEl.textContent = '품목을 검색해서 선택해주세요.'; errEl.style.display='block'; return; }
+  // ✅ 제조사 선택란이 보이는데(=TP/BTP 전부 해당) 아직 안 골랐으면 여기서 막는다
+  if (document.getElementById('wo-maker-row').style.display !== 'none' && !document.getElementById('wo-maker').value) {
+    errEl.textContent = '⚠️ CORE 제조사를 선택해주세요.'; errEl.style.display='block';
+    document.getElementById('wo-maker').focus();
+    return;
+  }
   const planQty = parseFloat(document.getElementById('wo-plan-qty').value);
   if (!planQty || planQty <= 0) { errEl.textContent = '계획수량을 입력해주세요.'; errEl.style.display='block'; return; }
 
@@ -2301,6 +2325,9 @@ function openWOProd(id) {
   //    "지금 총 몇 개 만들었는지"를 그대로 확인/수정하면 되도록.
   document.getElementById('wo-prod-qty').value = produced || '';
   document.getElementById('wo-prod-err').style.display = 'none';
+  document.getElementById('wo-prod-mat-warning').style.display = 'none';
+  document.getElementById('wo-prod-submit-btn').textContent = '📈 반영';
+  woProdMatWarningShown = false; // ✅ 창을 새로 열 때마다 경고 확인 상태 초기화
   document.getElementById('wo-prod-ov').classList.add('show');
 }
 
@@ -2324,11 +2351,16 @@ async function submitWOProd() {
 
   if (delta === 0) { errEl.textContent = '기존 실적과 같습니다. 값을 바꿔서 입력해주세요.'; errEl.style.display='block'; return; }
 
-  // ✅ 검증 1: 자재투입 기록이 하나도 없는데 실적(생산량)을 입력하려는 경우 경고
-  if (delta > 0) {
+  // ✅ 검증 1: 자재투입 기록이 하나도 없는데 실적(생산량)을 입력하려는 경우 경고.
+  //    브라우저 기본 confirm()은 색/위치를 바꿀 수 없어서, 반영 버튼 바로 위에
+  //    빨간 경고 박스를 직접 보여주고, 한 번 더 눌러야("⚠️ 그래도 반영") 진행되게 한다.
+  if (delta > 0 && !woProdMatWarningShown) {
     const hasMat = await hasMaterialInput(woProdTarget.id);
     if (!hasMat) {
-      if (!confirm(`⚠️ 이 작업지시엔 아직 투입 자재 기록이 없습니다.\n(전공정 추적에서 자재를 출고 처리하지 않았습니다)\n\n그래도 실적을 입력하시겠습니까?`)) return;
+      document.getElementById('wo-prod-mat-warning').style.display = 'block';
+      document.getElementById('wo-prod-submit-btn').textContent = '⚠️ 그래도 반영';
+      woProdMatWarningShown = true;
+      return;
     }
   }
 
@@ -3235,6 +3267,11 @@ async function applyBOMSuggestion() {
   noteEl.textContent = warnings.length
     ? `⚠️ 일부 재고 부족: ${warnings.join(', ')}`
     : `계획수량 ${planQty.toLocaleString()} ${woTraceTarget.unit} 기준으로 전부 채웠습니다.`;
+
+  // ✅ 자동으로 채운 자재만 바로 보이도록, 목록을 "입력된 것만" 필터로 다시 그린다
+  //    (수백 개 목록을 스크롤해서 찾을 필요 없게).
+  document.getElementById('wo-trace-mat-filled-only').checked = true;
+  renderWOMatBrowse();
 }
 
 function renderWOTraceLists() {
@@ -3312,24 +3349,39 @@ function resolveFIFOLot(code, cat) {
 
 // ✅ 재고가 있는 자재 전체를 검색으로 좁혀서, 체크 없이 수량만 입력하면 되는 목록.
 //    많을 땐 검색어로 줄이도록 최대 200건까지만 표시한다.
+//    ✅ "입력된 것만" 체크박스: BOM 자동입력 등으로 값이 채워진 자재만 걸러서 보여줘서,
+//    수백 개 목록을 일일이 스크롤하며 찾을 필요가 없게 한다. 다시 그릴 때도 이미
+//    입력해둔 값은 사라지지 않고 그대로 유지된다.
 function renderWOMatBrowse() {
+  // 다시 그리기 전에 지금 입력되어 있는 값들을 먼저 저장해둔다 (사라지지 않게)
+  const prevValues = {};
+  document.querySelectorAll('#wo-trace-mat-browse .wmb-qty').forEach(inp => {
+    if (inp.value) prevValues[inp.dataset.code + '|' + inp.dataset.cat] = inp.value;
+  });
+
   const q = (document.getElementById('wo-trace-mat-filter').value || '').toLowerCase().trim();
+  const filledOnly = document.getElementById('wo-trace-mat-filled-only').checked;
   const pool = allRows().filter(r => r.cat !== 'TP' && (+r.cur || 0) > 0);
-  const filtered = q ? pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) : pool;
+  let filtered = q ? pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) : pool;
+  if (filledOnly) {
+    filtered = filtered.filter(r => !!prevValues[r.code + '|' + r.cat]);
+  }
   const list = filtered.slice(0, 200);
   const container = document.getElementById('wo-trace-mat-browse');
   if (!list.length) {
-    container.innerHTML = `<div style="color:#aaa;font-size:12px;padding:8px 2px">${q ? '검색 결과가 없습니다.' : '재고가 있는 자재가 없습니다.'}</div>`;
+    const emptyMsg = filledOnly ? '아직 수량을 입력한 자재가 없습니다. 체크를 해제하면 전체 목록이 보입니다.' : (q ? '검색 결과가 없습니다.' : '재고가 있는 자재가 없습니다.');
+    container.innerHTML = `<div style="color:#aaa;font-size:12px;padding:8px 2px">${emptyMsg}</div>`;
     return;
   }
   container.innerHTML = list.map(r => {
     const {lot, remain} = resolveFIFOLot(r.code, r.cat);
     const lotLabel = lot === '__nolot__' ? 'LOT 미지정' : (lot || '-');
+    const savedVal = prevValues[r.code + '|' + r.cat] || '';
     return `<div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #f5e6c8;font-size:12px">
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.name} (${r.code})">${r.name} <span style="color:#aaa;font-family:monospace;font-size:10px">${r.code}</span></span>
       <span style="color:#888;font-family:monospace;font-size:10px;white-space:nowrap" title="선입선출로 자동 배정되는 LOT">${lotLabel}</span>
       <span style="color:#166534;font-weight:600;white-space:nowrap;font-size:11px">재고 ${remain.toLocaleString()}</span>
-      <input class="wmb-qty" data-code="${r.code}" data-cat="${r.cat}" data-lot="${lot}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" data-remain="${remain}" type="number" placeholder="수량" style="width:56px;font-size:11px">
+      <input class="wmb-qty" data-code="${r.code}" data-cat="${r.cat}" data-lot="${lot}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" data-remain="${remain}" type="number" placeholder="수량" value="${savedVal}" style="width:56px;font-size:11px">
     </div>`;
   }).join('');
 }
