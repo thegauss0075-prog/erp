@@ -1024,6 +1024,28 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#92400e">📥 투입 자재 (이 작업지시에 사용된 원자재/반제품 LOT — 실제 재고에서 출고 처리됩니다)</div>
       <div id="wo-trace-material-list" style="margin-bottom:8px"></div>
 
+      <div style="background:#eef2ff;border-radius:8px;padding:10px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleBOMPanel()">
+          <div style="font-size:12px;font-weight:700;color:#3730a3">🧮 자재 소요량 설정 (BOM) — 이 제품 1개당 필요한 자재</div>
+          <span id="bom-toggle-icon" style="font-size:11px;color:#3730a3">펼치기 ▾</span>
+        </div>
+        <div id="bom-panel" style="display:none;margin-top:8px">
+          <div id="bom-list" style="margin-bottom:8px"></div>
+          <div class="ac-wrap" style="margin-bottom:6px">
+            <input id="bom-item-q" placeholder="자재 코드 또는 품명 검색..." autocomplete="off" oninput="acSearchBOM()" onkeydown="acKeyBOM(event)" style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid #dde">
+            <div id="bom-item-drop" class="ac-drop"></div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <input id="bom-qty-per-unit" type="number" placeholder="1개당 소요량" style="flex:1;font-size:12px;padding:6px 8px;border-radius:6px;border:1px solid #dde">
+            <button onclick="addBOMItemUI()" style="padding:0 12px;border-radius:6px;border:1px solid #3730a3;background:#3730a3;color:#fff;font-size:12px;cursor:pointer">+ 추가</button>
+          </div>
+        </div>
+        <div id="bom-suggest-wrap" style="display:none;margin-top:8px;padding-top:8px;border-top:1px dashed #c7d2fe">
+          <button onclick="applyBOMSuggestion()" style="padding:6px 14px;border-radius:6px;border:1px solid #3730a3;background:#3730a3;color:#fff;font-size:12px;cursor:pointer;font-weight:600">📐 계획수량 기준 소요량 자동 입력</button>
+          <span id="bom-suggest-note" style="font-size:11px;color:#888;margin-left:6px"></span>
+        </div>
+      </div>
+
       <div style="background:#fffbeb;border-radius:8px;padding:10px">
         <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⚡ 재고 있는 자재에서 선택해서 출고 (선입선출 — 가장 오래된 LOT이 자동으로 사용됩니다)</div>
         <input id="wo-trace-mat-filter" placeholder="자재명·코드로 검색..." autocomplete="off" oninput="renderWOMatBrowse()" style="width:100%;box-sizing:border-box;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid #dde;margin-bottom:8px">
@@ -2811,12 +2833,152 @@ async function openWOTrace(id) {
   document.getElementById('wo-trace-output-qty').value = '';
   document.getElementById('wo-trace-mat-filter').value = '';
   document.getElementById('wo-trace-err').style.display = 'none';
+  document.getElementById('bom-item-q').value = '';
+  document.getElementById('bom-qty-per-unit').value = '';
+  bomSelectedItem = null;
 
   await loadWOMaterials();
   await loadWOOutputLots();
+  await loadBOM();
   renderWOTraceLists();
   renderWOMatBrowse();
+  renderBOMList();
   document.getElementById('wo-trace-ov').classList.add('show');
+}
+
+// ══════════════════════════════════════════════════════════
+//  자재 소요량(BOM) 설정 — 제품 1개당 필요한 자재 수량을 미리 정의해두고,
+//  작업지시 계획수량에 맞춰 투입 자재 수량을 자동으로 계산/입력한다.
+// ══════════════════════════════════════════════════════════
+let BOM = [];
+let bomAcResults = [];
+let bomAcIdx = -1;
+let bomSelectedItem = null;
+
+async function loadBOM() {
+  if (!(API_URL || IS_GAS)) return;
+  const res = await api('getBOM', {});
+  if (res && res.ok) BOM = res.data || [];
+}
+
+function toggleBOMPanel() {
+  const panel = document.getElementById('bom-panel');
+  const icon = document.getElementById('bom-toggle-icon');
+  const willShow = panel.style.display === 'none';
+  panel.style.display = willShow ? 'block' : 'none';
+  icon.textContent = willShow ? '접기 ▴' : '펼치기 ▾';
+}
+
+function renderBOMList() {
+  if (!woTraceTarget) return;
+  const items = BOM.filter(b => b.productCode === woTraceTarget.code);
+  const listEl = document.getElementById('bom-list');
+  listEl.innerHTML = items.length ? items.map(b => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #e0e7ff;font-size:12px">
+      <span>${b.materialName} <span style="color:#aaa;font-family:monospace;font-size:10px">${b.materialCode}</span></span>
+      <span>1개당 <strong>${(+b.qtyPerUnit||0).toLocaleString()}</strong> ${b.materialUnit||''}
+        ${isAdmin ? `<button onclick="deleteBOMItemUI(${b.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button>` : ''}
+      </span>
+    </div>`).join('') : `<div style="color:#aaa;font-size:11px">아직 설정된 소요량이 없습니다. 아래에서 자재를 검색해 추가하세요.</div>`;
+
+  const suggestWrap = document.getElementById('bom-suggest-wrap');
+  const note = document.getElementById('bom-suggest-note');
+  if (items.length) {
+    suggestWrap.style.display = 'block';
+    note.textContent = `계획수량 ${(+woTraceTarget.planQty||0).toLocaleString()} ${woTraceTarget.unit} 기준으로 계산됩니다.`;
+  } else {
+    suggestWrap.style.display = 'none';
+  }
+}
+
+function acSearchBOM() {
+  const q = (document.getElementById('bom-item-q').value || '').toLowerCase().trim();
+  const drop = document.getElementById('bom-item-drop');
+  if (!q) { drop.style.display = 'none'; bomAcResults = []; return; }
+  const pool = allRows().filter(r => r.cat !== 'TP');
+  const res = pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)).slice(0, 10);
+  bomAcResults = res; bomAcIdx = -1;
+  if (!res.length) { drop.style.display = 'none'; return; }
+  drop.innerHTML = res.map((r,i) => `<div class="ac-item" data-i="${i}" onmousedown="acPickBOM(${i})"><div>${hl(r.code,q)} <span class="badge ${CB[r.cat]}" style="font-size:11px;padding:2px 7px">${CL[r.cat]}</span></div><div class="ac-sub">${hl(r.name,q)} · ${r.unit}</div></div>`).join('');
+  drop.style.display = 'block';
+}
+function acKeyBOM(e) {
+  const items = document.querySelectorAll('#bom-item-drop .ac-item');
+  if (e.key === 'ArrowDown') { e.preventDefault(); bomAcIdx = Math.min(bomAcIdx+1, items.length-1); items.forEach((el,i)=>el.classList.toggle('sel', i===bomAcIdx)); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); bomAcIdx = Math.max(bomAcIdx-1, 0); items.forEach((el,i)=>el.classList.toggle('sel', i===bomAcIdx)); }
+  else if (e.key === 'Enter' && bomAcIdx >= 0) acPickBOM(bomAcIdx);
+  else if (e.key === 'Escape') document.getElementById('bom-item-drop').style.display = 'none';
+}
+function acPickBOM(i) {
+  const item = bomAcResults[i]; if (!item) return;
+  bomSelectedItem = item;
+  document.getElementById('bom-item-q').value = item.code + ' — ' + item.name;
+  document.getElementById('bom-item-drop').style.display = 'none';
+  document.getElementById('bom-qty-per-unit').focus();
+}
+
+async function addBOMItemUI() {
+  const errEl = document.getElementById('wo-trace-err');
+  errEl.style.display = 'none';
+  if (!woTraceTarget) return;
+  if (!bomSelectedItem) { errEl.textContent = '자재를 검색해서 선택해주세요.'; errEl.style.display='block'; return; }
+  const qtyPerUnit = parseFloat(document.getElementById('bom-qty-per-unit').value);
+  if (!qtyPerUnit || qtyPerUnit <= 0) { errEl.textContent = '1개당 소요량을 입력해주세요.'; errEl.style.display='block'; return; }
+
+  const body = {
+    productCode: woTraceTarget.code, productName: woTraceTarget.name,
+    materialCode: bomSelectedItem.code, materialName: bomSelectedItem.name,
+    materialCat: bomSelectedItem.cat, materialUnit: bomSelectedItem.unit,
+    qtyPerUnit, token: ADMIN_TOKEN, user: CURRENT_USER || ''
+  };
+  let res = await api('addBOMItem', body);
+  if (!res || !res.ok) res = await api('addBOMItem', body);
+  if (!res || !res.ok) { errEl.textContent = 'BOM 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
+
+  bomSelectedItem = null;
+  document.getElementById('bom-item-q').value = '';
+  document.getElementById('bom-qty-per-unit').value = '';
+  await loadBOM();
+  renderBOMList();
+}
+
+async function deleteBOMItemUI(id) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (!confirm('이 소요량 설정을 삭제하시겠습니까?')) return;
+  let res = await api('deleteBOMItem', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('deleteBOMItem', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await loadBOM();
+  renderBOMList();
+}
+
+// ✅ 계획수량 × 1개당 소요량 = 필요 수량을 계산해서, 재고 목록의 해당 자재 수량칸에
+//    자동으로 채워넣는다. 검색어가 걸려있으면 해당 자재가 목록에 없을 수 있어
+//    먼저 검색창을 비우고 전체 목록을 다시 그린 다음 채운다.
+async function applyBOMSuggestion() {
+  if (!woTraceTarget) return;
+  const items = BOM.filter(b => b.productCode === woTraceTarget.code);
+  if (!items.length) return;
+
+  document.getElementById('wo-trace-mat-filter').value = '';
+  renderWOMatBrowse();
+
+  const planQty = +woTraceTarget.planQty || 0;
+  const warnings = [];
+  items.forEach(b => {
+    const needQty = (+b.qtyPerUnit || 0) * planQty;
+    const input = document.querySelector(`#wo-trace-mat-browse .wmb-qty[data-code="${b.materialCode}"][data-cat="${b.materialCat}"]`);
+    if (!input) { warnings.push(`${b.materialName} (재고 없음, 목록에 없음)`); return; }
+    const remain = +input.dataset.remain || 0;
+    const applyQty = Math.min(needQty, remain);
+    input.value = applyQty > 0 ? applyQty : '';
+    if (needQty > remain) warnings.push(`${b.materialName} (필요 ${needQty.toLocaleString()} · 재고 ${remain.toLocaleString()}만 채움)`);
+  });
+
+  const noteEl = document.getElementById('bom-suggest-note');
+  noteEl.textContent = warnings.length
+    ? `⚠️ 일부 재고 부족: ${warnings.join(', ')}`
+    : `계획수량 ${planQty.toLocaleString()} ${woTraceTarget.unit} 기준으로 전부 채웠습니다.`;
 }
 
 function renderWOTraceLists() {
