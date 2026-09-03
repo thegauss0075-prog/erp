@@ -1197,21 +1197,18 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 
 <!-- 완제품 출고 현황 (품목별 일자·수량·누계) -->
 <div class="ov-bg" id="ship-hist-ov">
-  <div class="ov-box" style="max-width:640px;max-height:85vh;overflow-y:auto">
-    <h3>📊 완제품 출고 현황</h3>
+  <div class="ov-box" style="max-width:780px;max-height:85vh;overflow-y:auto">
+    <h3>📊 완제품 출고 현황 <span style="font-size:12px;font-weight:400;color:#888">— 전 품목 자동 표시 (품목별로 접었다 펼 수 있음)</span></h3>
     <div class="ov-fr">
-      <label>품목 검색 (완제품)</label>
-      <div class="ac-wrap">
-        <input id="ship-hist-item-q" placeholder="코드 또는 품명 입력..." autocomplete="off" oninput="acSearchShipHist()" onkeydown="acKeyShipHist(event)" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px 10px;border-radius:8px;border:1px solid #dde">
-        <div id="ship-hist-item-drop" class="ac-drop"></div>
-      </div>
+      <label>품목 필터 (선택 — 비워두면 출고 이력 있는 전 품목이 나옵니다)</label>
+      <input id="ship-hist-item-q" placeholder="코드 또는 품명으로 좁히기..." autocomplete="off" oninput="renderShipHistTable()" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px 10px;border-radius:8px;border:1px solid #dde">
     </div>
     <div style="display:flex;gap:6px;margin-bottom:12px">
       <button class="period-btn on" id="ship-hist-period-1y" onclick="setShipHistPeriod(365)">최근 1년</button>
       <button class="period-btn" id="ship-hist-period-6m" onclick="setShipHistPeriod(180)">최근 6개월</button>
       <button class="period-btn" id="ship-hist-period-all" onclick="setShipHistPeriod(null)">전체</button>
     </div>
-    <div id="ship-hist-summary" style="background:#f5f3ff;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:13px;display:none"></div>
+    <div id="ship-hist-summary" style="background:#f5f3ff;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:13px"></div>
     <div id="ship-hist-body"></div>
     <div class="ov-actions">
       <button onclick="exportShipHistExcel()" style="padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:600">📊 엑셀 다운로드</button>
@@ -2000,49 +1997,20 @@ function renderInv(){
   const tot=allRows().filter(r=>(!cat||r.cat===cat)&&(!model||r.model===model)).length;
   document.getElementById('inv-pi').textContent=rows.length<tot?`전체 ${tot}개 중 ${rows.length}개 표시`:`총 ${rows.length}개 품목`;
 }
-// ✅ 재고현황 목록을 현재 필터(검색어/카테고리/모델) 그대로 엑셀(.xlsx)로 다운로드
 // ══════════════════════════════════════════════════════════
-//  완제품 출고 현황 — 품목별 출고 일자·수량·누계
+//  완제품 출고 현황 — 검색 없이 열면 출고 이력 있는 전 품목이 자동으로 나온다.
+//  품목별로 접었다 펼 수 있고, 필터로 좁힐 수도 있다.
 // ══════════════════════════════════════════════════════════
-let shipHistSelectedItem = null;
-let shipHistAcResults = [];
-let shipHistAcIdx = -1;
 let shipHistPeriodDays = 365;
+let shipHistExpanded = new Set(); // 펼쳐진 품목 코드 목록
 
 function openShipHist() {
-  shipHistSelectedItem = null;
   shipHistPeriodDays = 365;
+  shipHistExpanded = new Set();
   document.getElementById('ship-hist-item-q').value = '';
-  document.getElementById('ship-hist-summary').style.display = 'none';
-  document.getElementById('ship-hist-body').innerHTML = '<div style="color:#aaa;font-size:13px;padding:12px 2px">완제품을 검색해서 선택하면 출고 이력이 표시됩니다.</div>';
   ['1y','6m','all'].forEach(k => document.getElementById('ship-hist-period-'+k).classList.toggle('on', k==='1y'));
-  document.getElementById('ship-hist-ov').classList.add('show');
-}
-
-function acSearchShipHist() {
-  const q = (document.getElementById('ship-hist-item-q').value || '').toLowerCase().trim();
-  const drop = document.getElementById('ship-hist-item-drop');
-  if (!q) { drop.style.display = 'none'; shipHistAcResults = []; return; }
-  const pool = allRows().filter(r => r.cat === 'TP');
-  const res = pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)).slice(0, 12);
-  shipHistAcResults = res; shipHistAcIdx = -1;
-  if (!res.length) { drop.style.display = 'none'; return; }
-  drop.innerHTML = res.map((r,i) => `<div class="ac-item" data-i="${i}" onmousedown="acPickShipHist(${i})"><div>${hl(r.code,q)}</div><div class="ac-sub">${hl(r.name,q)} · ${r.unit}</div></div>`).join('');
-  drop.style.display = 'block';
-}
-function acKeyShipHist(e) {
-  const items = document.querySelectorAll('#ship-hist-item-drop .ac-item');
-  if (e.key === 'ArrowDown') { e.preventDefault(); shipHistAcIdx = Math.min(shipHistAcIdx+1, items.length-1); items.forEach((el,i)=>el.classList.toggle('sel', i===shipHistAcIdx)); }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); shipHistAcIdx = Math.max(shipHistAcIdx-1, 0); items.forEach((el,i)=>el.classList.toggle('sel', i===shipHistAcIdx)); }
-  else if (e.key === 'Enter' && shipHistAcIdx >= 0) acPickShipHist(shipHistAcIdx);
-  else if (e.key === 'Escape') document.getElementById('ship-hist-item-drop').style.display = 'none';
-}
-function acPickShipHist(i) {
-  const item = shipHistAcResults[i]; if (!item) return;
-  shipHistSelectedItem = item;
-  document.getElementById('ship-hist-item-q').value = item.code + ' — ' + item.name;
-  document.getElementById('ship-hist-item-drop').style.display = 'none';
   renderShipHistTable();
+  document.getElementById('ship-hist-ov').classList.add('show');
 }
 
 function setShipHistPeriod(days) {
@@ -2051,6 +2019,12 @@ function setShipHistPeriod(days) {
     const isOn = (days===365 && k==='1y') || (days===180 && k==='6m') || (days===null && k==='all');
     document.getElementById('ship-hist-period-'+k).classList.toggle('on', isOn);
   });
+  renderShipHistTable();
+}
+
+function toggleShipHistProduct(code) {
+  if (shipHistExpanded.has(code)) shipHistExpanded.delete(code);
+  else shipHistExpanded.add(code);
   renderShipHistTable();
 }
 
@@ -2067,94 +2041,130 @@ function computeShipHistRows(item) {
   });
 }
 
+// ✅ 출고 이력이 있는 완제품 전체를 모아서, (선택) 필터로 좁힌 목록을 돌려준다
+function getShipHistProductList() {
+  const q = (document.getElementById('ship-hist-item-q').value || '').toLowerCase().trim();
+  const shippedCodes = new Set(txLog.filter(t => t.type === 'otp' && t.cat === 'TP').map(t => t.code));
+  let pool = allRows().filter(r => r.cat === 'TP' && shippedCodes.has(r.code));
+  if (q) pool = pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+  return pool.sort((a,b) => a.name.localeCompare(b.name));
+}
+
 function renderShipHistTable() {
   const container = document.getElementById('ship-hist-body');
   const summaryEl = document.getElementById('ship-hist-summary');
-  if (!shipHistSelectedItem) {
-    container.innerHTML = '<div style="color:#aaa;font-size:13px;padding:12px 2px">완제품을 검색해서 선택하면 출고 이력이 표시됩니다.</div>';
-    summaryEl.style.display = 'none';
-    return;
-  }
-
-  const allRowsData = computeShipHistRows(shipHistSelectedItem);
+  const products = getShipHistProductList();
   const cutoffTs = shipHistPeriodDays ? (Date.now() - shipHistPeriodDays*24*3600*1000) : null;
-  const displayRows = cutoffTs ? allRowsData.filter(r => new Date(r.dt).getTime() >= cutoffTs) : allRowsData;
 
-  const totalAllTime = allRowsData.length ? allRowsData[allRowsData.length-1].cumulative : 0;
-  const totalInPeriod = displayRows.reduce((s,r) => s + r.qty, 0);
-  summaryEl.style.display = 'block';
-  summaryEl.innerHTML = `<strong>${shipHistSelectedItem.name}</strong> (${shipHistSelectedItem.code})<br>
-    선택 기간 출고: <strong style="color:#7c3aed">${totalInPeriod.toLocaleString()}</strong> ${shipHistSelectedItem.unit} (${displayRows.length}건) ·
-    전체 누계: <strong style="color:#166534">${totalAllTime.toLocaleString()}</strong> ${shipHistSelectedItem.unit}`;
-
-  if (!displayRows.length) {
-    container.innerHTML = '<div style="color:#aaa;font-size:13px;padding:12px 2px">선택한 기간에 출고 이력이 없습니다.</div>';
+  if (!products.length) {
+    container.innerHTML = '<div style="color:#aaa;font-size:13px;padding:12px 2px">출고 이력이 있는 완제품이 없습니다.</div>';
+    summaryEl.innerHTML = '';
     return;
   }
 
-  // 월별로 묶어서 소계 행을 같이 보여준다
-  const grouped = {};
-  displayRows.forEach(r => {
-    const ym = (r.dt || '').slice(0, 7) || '기타'; // "2026-08"
-    (grouped[ym] = grouped[ym] || []).push(r);
+  let grandTotalPeriod = 0, grandTotalAll = 0, grandCount = 0;
+  const sections = products.map(item => {
+    const allRowsData = computeShipHistRows(item);
+    const displayRows = cutoffTs ? allRowsData.filter(r => new Date(r.dt).getTime() >= cutoffTs) : allRowsData;
+    const totalAllTime = allRowsData.length ? allRowsData[allRowsData.length-1].cumulative : 0;
+    const totalInPeriod = displayRows.reduce((s,r) => s + r.qty, 0);
+    grandTotalPeriod += totalInPeriod;
+    grandTotalAll += totalAllTime;
+    grandCount += displayRows.length;
+
+    const isOpen = shipHistExpanded.has(item.code);
+    let bodyHtml = '';
+    if (isOpen && displayRows.length) {
+      const grouped = {};
+      displayRows.forEach(r => {
+        const ym = (r.dt || '').slice(0, 7) || '기타';
+        (grouped[ym] = grouped[ym] || []).push(r);
+      });
+      bodyHtml = `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
+        <thead><tr style="border-bottom:2px solid #dde">
+          <th style="text-align:left;padding:6px 4px">출고일자</th>
+          <th style="text-align:left;padding:6px 4px">LOT</th>
+          <th style="text-align:right;padding:6px 4px">수량</th>
+          <th style="text-align:left;padding:6px 4px">출고처</th>
+          <th style="text-align:right;padding:6px 4px">누계</th>
+        </tr></thead><tbody>`;
+      Object.keys(grouped).sort().forEach(ym => {
+        const rows = grouped[ym];
+        const monthSum = rows.reduce((s,r) => s + r.qty, 0);
+        bodyHtml += `<tr style="background:#f8faff"><td colspan="5" style="padding:6px 4px;font-weight:700;color:#3730a3">📅 ${ym}월 · 소계 ${monthSum.toLocaleString()} ${item.unit}</td></tr>`;
+        rows.forEach(r => {
+          bodyHtml += `<tr style="border-bottom:1px solid #f0f0f5">
+            <td style="padding:5px 4px;color:#666">${r.dt || '-'}</td>
+            <td style="padding:5px 4px;font-family:monospace;color:#1d4ed8">${r.lot}</td>
+            <td style="padding:5px 4px;text-align:right">${r.qty.toLocaleString()}</td>
+            <td style="padding:5px 4px;color:#7c3aed">${r.dest}</td>
+            <td style="padding:5px 4px;text-align:right;font-weight:600;color:#166534">${r.cumulative.toLocaleString()}</td>
+          </tr>`;
+        });
+      });
+      bodyHtml += '</tbody></table>';
+    } else if (isOpen) {
+      bodyHtml = '<div style="color:#aaa;font-size:12px;padding:8px 2px">선택한 기간에 출고 이력이 없습니다.</div>';
+    }
+
+    return `<div style="border:1px solid #e0e0e8;border-radius:8px;margin-bottom:8px;overflow:hidden">
+      <div onclick="toggleShipHistProduct('${item.code}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;cursor:pointer;background:${isOpen?'#f5f3ff':'#fff'}">
+        <div>
+          <span style="font-weight:700">${item.name}</span>
+          <span style="color:#aaa;font-size:11px;font-family:monospace;margin-left:4px">${item.code}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:12px">
+          <span style="color:#7c3aed">선택기간 <strong>${totalInPeriod.toLocaleString()}</strong> ${item.unit}</span>
+          <span style="color:#166534">누계 <strong>${totalAllTime.toLocaleString()}</strong> ${item.unit}</span>
+          <span style="color:#888">${isOpen ? '▲' : '▼'}</span>
+        </div>
+      </div>
+      <div style="padding:${isOpen?'0 12px 10px':'0'}">${bodyHtml}</div>
+    </div>`;
   });
 
-  let html = `<table style="width:100%;border-collapse:collapse;font-size:12px">
-    <thead><tr style="border-bottom:2px solid #dde">
-      <th style="text-align:left;padding:6px 4px">출고일자</th>
-      <th style="text-align:left;padding:6px 4px">LOT</th>
-      <th style="text-align:right;padding:6px 4px">수량</th>
-      <th style="text-align:left;padding:6px 4px">출고처</th>
-      <th style="text-align:right;padding:6px 4px">누계</th>
-    </tr></thead><tbody>`;
-
-  Object.keys(grouped).sort().forEach(ym => {
-    const rows = grouped[ym];
-    const monthSum = rows.reduce((s,r) => s + r.qty, 0);
-    html += `<tr style="background:#f8faff"><td colspan="5" style="padding:6px 4px;font-weight:700;color:#3730a3">📅 ${ym}월 · 소계 ${monthSum.toLocaleString()} ${shipHistSelectedItem.unit}</td></tr>`;
-    rows.forEach(r => {
-      html += `<tr style="border-bottom:1px solid #f0f0f5">
-        <td style="padding:5px 4px;color:#666">${r.dt || '-'}</td>
-        <td style="padding:5px 4px;font-family:monospace;color:#1d4ed8">${r.lot}</td>
-        <td style="padding:5px 4px;text-align:right">${r.qty.toLocaleString()}</td>
-        <td style="padding:5px 4px;color:#7c3aed">${r.dest}</td>
-        <td style="padding:5px 4px;text-align:right;font-weight:600;color:#166534">${r.cumulative.toLocaleString()}</td>
-      </tr>`;
-    });
-  });
-
-  html += '</tbody></table>';
-  container.innerHTML = html;
+  summaryEl.innerHTML = `📦 완제품 <strong>${products.length}개</strong> · 선택 기간 총 출고 <strong style="color:#7c3aed">${grandTotalPeriod.toLocaleString()}</strong> (${grandCount}건) · 전 품목 누계 <strong style="color:#166534">${grandTotalAll.toLocaleString()}</strong>`;
+  container.innerHTML = sections.join('');
 }
 
+// ✅ 지금 화면에 (필터 걸린 채) 보이는 전 품목의 출고 이력을 한 시트에 모아서 내보낸다.
+//    "품목" 컬럼으로 어느 제품 것인지 구분한다.
 function exportShipHistExcel() {
-  if (!shipHistSelectedItem) { alert('먼저 품목을 검색해서 선택해주세요.'); return; }
   if (typeof XLSX === 'undefined') {
     alert('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침 후 다시 시도해주세요.');
     return;
   }
-  const allRowsData = computeShipHistRows(shipHistSelectedItem);
+  const products = getShipHistProductList();
+  if (!products.length) { alert('내보낼 출고 이력이 없습니다.'); return; }
   const cutoffTs = shipHistPeriodDays ? (Date.now() - shipHistPeriodDays*24*3600*1000) : null;
-  const displayRows = cutoffTs ? allRowsData.filter(r => new Date(r.dt).getTime() >= cutoffTs) : allRowsData;
 
-  if (!displayRows.length) { alert('내보낼 출고 이력이 없습니다.'); return; }
+  let data = [];
+  products.forEach(item => {
+    const allRowsData = computeShipHistRows(item);
+    const displayRows = cutoffTs ? allRowsData.filter(r => new Date(r.dt).getTime() >= cutoffTs) : allRowsData;
+    displayRows.forEach(r => {
+      data.push({
+        '품목코드': item.code,
+        '품명': item.name,
+        '출고일자': r.dt,
+        'LOT': r.lot,
+        '수량': r.qty,
+        '출고처': r.dest,
+        '누계': r.cumulative,
+        '비고': r.note
+      });
+    });
+  });
 
-  const data = displayRows.map(r => ({
-    '출고일자': r.dt,
-    'LOT': r.lot,
-    '수량': r.qty,
-    '출고처': r.dest,
-    '누계': r.cumulative,
-    '비고': r.note
-  }));
+  if (!data.length) { alert('선택한 기간에 출고 이력이 없습니다.'); return; }
 
   const ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = [{wch:14},{wch:16},{wch:10},{wch:12},{wch:12},{wch:24}];
+  ws['!cols'] = [{wch:16},{wch:24},{wch:14},{wch:16},{wch:10},{wch:12},{wch:12},{wch:24}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '완제품출고현황');
   const d = new Date();
   const pad = v => String(v).padStart(2,'0');
-  const fname = `완제품출고현황_${shipHistSelectedItem.code}_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.xlsx`;
+  const fname = `완제품출고현황_전품목_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.xlsx`;
   XLSX.writeFile(wb, fname);
 }
 
