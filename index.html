@@ -1342,12 +1342,14 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 <div id="tab-po" class="sec">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:8px">
     <h2 style="margin:0">📧 발주(PO) 관리</h2>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="document.getElementById('po-excel-input').click()" style="padding:8px 16px;border-radius:8px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:700">📊 엑셀 업로드로 등록</button>
+      <input type="file" id="po-excel-input" accept=".xlsx,.xls" style="display:none" onchange="handlePOExcelUpload(event)">
       <button onclick="openPOPasteModal()" style="padding:8px 16px;border-radius:8px;border:1px solid #c026d3;background:#c026d3;color:#fff;font-size:13px;cursor:pointer;font-weight:700">📋 이메일 붙여넣기로 등록</button>
       <button onclick="checkPOEmailsUI()" id="po-check-btn" style="padding:8px 16px;border-radius:8px;border:1px solid #c026d3;background:#fff;color:#c026d3;font-size:13px;cursor:pointer;font-weight:700" title="회사 메일이 Gmail로 연동되어 있는 경우에만 작동합니다">📧 Gmail에서 자동 확인</button>
     </div>
   </div>
-  <div style="font-size:12px;color:#888;margin-bottom:1rem">SOLUM 발주 메일 내용을 복사해서 붙여넣으면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다).</div>
+  <div style="font-size:12px;color:#888;margin-bottom:1rem">SOLUM 발주 현황 엑셀을 업로드하거나, 발주 메일 내용을 붙여넣으면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다). 완제품이 창고에 입고되면 오래된 발주부터 자동으로 잔량이 차감됩니다.</div>
 
   <div id="po-review-wrap" style="display:none;background:#fdf4ff;border:1.5px solid #e9a3f0;border-radius:12px;padding:1rem;margin-bottom:1.5rem">
     <div style="font-weight:700;color:#a21caf;margin-bottom:8px">📥 읽어낸 발주 항목 (검토 후 등록하세요)</div>
@@ -1358,12 +1360,21 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     </div>
   </div>
 
+  <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:1rem;margin-bottom:1.5rem">
+    <div style="font-weight:700;color:#166534;margin-bottom:8px">📊 품목별 발주 현황 (전체 합계)</div>
+    <div class="tw"><table style="width:100%">
+      <thead><tr>
+        <th>품목코드</th><th>품명</th><th style="text-align:right">총 발주수량</th><th style="text-align:right">총 잔량</th>
+      </tr></thead><tbody id="po-summary-body"></tbody></table></div>
+    <div id="po-summary-empty" style="display:none;color:#aaa;font-size:12px;padding:10px;text-align:center">발주 데이터가 없습니다.</div>
+  </div>
+
   <div class="tw"><table style="width:100%">
     <thead><tr>
       <th>PO번호</th><th>항목</th><th>품목코드</th><th>품명</th><th style="text-align:right">발주수량</th>
-      <th style="text-align:right">출하완료</th><th style="text-align:right">잔량</th><th>납기일</th><th>상태</th><th class="no-print">액션</th>
+      <th style="text-align:right">잔량</th><th>납기일</th><th>상태</th><th class="no-print">액션</th>
     </tr></thead><tbody id="po-body"></tbody></table></div>
-  <div id="po-empty" style="display:none;color:#aaa;font-size:13px;padding:20px;text-align:center">등록된 발주가 없습니다. "📋 이메일 붙여넣기로 등록"으로 시작해보세요.</div>
+  <div id="po-empty" style="display:none;color:#aaa;font-size:13px;padding:20px;text-align:center">등록된 발주가 없습니다. "📊 엑셀 업로드로 등록"으로 시작해보세요.</div>
 </div>
 
 <!-- 발주 이메일 붙여넣기 모달 -->
@@ -2285,32 +2296,130 @@ async function renderPO() {
   if (!PO.length) {
     body.innerHTML = '';
     emptyEl.style.display = 'block';
+    renderPOSummary();
     return;
   }
   emptyEl.style.display = 'none';
 
   const statusColor = {'대기':'#888','출하중':'#185FA5','완료':'#166534'};
   body.innerHTML = PO.map(r => {
-    // ✅ 잔량 = 발주수량 - (이 PO 등록 이후 실제로 출고된 같은 품목코드의 수량)
-    //    같은 품목에 PO가 여러 건 겹치면 정확히 나눠 계산되진 않으니 참고용으로 봐주세요.
-    const createdTs = new Date(r.createdAt).getTime();
-    const shipped = txLog.filter(t => t.type === 'otp' && t.code === r.itemCode && new Date(t.dt).getTime() >= createdTs)
-      .reduce((s,t) => s + (+t.qty||0), 0);
-    const remain = Math.max(0, (+r.poQty||0) - shipped);
-    const status = remain <= 0 ? '완료' : (shipped > 0 ? '출하중' : '대기');
+    // ✅ 잔량 = 발주수량 - deductedQty (완제품이 창고에 입고될 때마다 오래된 발주부터
+    //    자동으로 쌓이는 누적 차감값). 같은 품목의 여러 PO에 걸쳐 정확히 순서대로 배분된다.
+    const poQty = +r.poQty || 0;
+    const deducted = +r.deductedQty || 0;
+    const remain = Math.max(0, poQty - deducted);
+    const status = r.closedYN === 'Y' || remain <= 0 ? '완료' : (deducted > 0 ? '진행중' : '대기');
     return `<tr>
       <td style="font-family:monospace;font-size:11px">${r.poNumber||''}-${r.poItemNumber||''}</td>
       <td style="font-size:11px;color:#888">${r.poItemNumber||'-'}</td>
       <td style="font-family:monospace;font-size:11px">${r.itemCode||''}</td>
       <td>${r.itemName||''}</td>
-      <td style="text-align:right">${(+r.poQty||0).toLocaleString()}</td>
-      <td style="text-align:right;color:#1d4ed8">${shipped.toLocaleString()}</td>
+      <td style="text-align:right">${poQty.toLocaleString()}</td>
       <td style="text-align:right;font-weight:700;color:${remain>0?'#b45309':'#166534'}">${remain.toLocaleString()}</td>
       <td style="font-size:12px;color:#666">${r.deliveryDate||'-'}</td>
       <td><span style="color:${statusColor[status]};font-weight:600">${status}</span></td>
       <td class="no-print">${isAdmin ? `<button class="edit-btn" onclick="deletePOItemUI(${r.id})" title="삭제">🗑️</button>` : ''}</td>
     </tr>`;
   }).join('');
+
+  renderPOSummary();
+}
+
+// ✅ 품목코드별로 발주들을 묶어서 "총 발주수량"과 "총 잔량"을 보여준다.
+function renderPOSummary() {
+  const body = document.getElementById('po-summary-body');
+  const emptyEl = document.getElementById('po-summary-empty');
+  if (!PO.length) { body.innerHTML = ''; emptyEl.style.display = 'block'; return; }
+  emptyEl.style.display = 'none';
+
+  const grouped = {};
+  PO.forEach(r => {
+    const key = r.itemCode;
+    if (!grouped[key]) grouped[key] = { itemCode: r.itemCode, itemName: r.itemName, totalQty: 0, totalRemain: 0 };
+    const poQty = +r.poQty || 0;
+    const remain = Math.max(0, poQty - (+r.deductedQty || 0));
+    grouped[key].totalQty += poQty;
+    grouped[key].totalRemain += remain;
+  });
+
+  const rows = Object.values(grouped).sort((a,b) => b.totalRemain - a.totalRemain);
+  body.innerHTML = rows.map(g => `<tr>
+    <td style="font-family:monospace;font-size:11px">${g.itemCode}</td>
+    <td>${g.itemName}</td>
+    <td style="text-align:right">${g.totalQty.toLocaleString()}</td>
+    <td style="text-align:right;font-weight:700;color:${g.totalRemain>0?'#b45309':'#166534'}">${g.totalRemain.toLocaleString()}</td>
+  </tr>`).join('');
+}
+
+// ✅ SOLUM 발주 현황 엑셀(No, 운영조직, ... SAP 발주 번호, 항번, ... 품목 코드, 품목 명, ...
+//    발주 수량, ... 입고 수량, ... 발주 잔량, ... 발주 종결 여부, ... 발주 작성 일자,
+//    요청 납품 일자 ... 형식)을 업로드하면 바로 분석해서 검토 화면에 보여준다.
+//    헤더가 2행에 걸쳐 있어서(품목 정보가 품목코드/품목명/품목규격으로 나뉨), 이름이
+//    아니라 정해진 열 위치로 읽는다 (3행부터가 실제 데이터).
+async function handlePOExcelUpload(event) {
+  const file = event.target.files[0];
+  event.target.value = ''; // 같은 파일 다시 선택 가능하도록 초기화
+  if (!file) return;
+  if (typeof XLSX === 'undefined') {
+    alert('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침 후 다시 시도해주세요.');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+      // ✅ 열 위치(0부터 시작): 3=SAP발주번호, 4=항번, 7=품목코드, 8=품명, 12=UOM,
+      //    15=발주수량, 17=입고수량, 19=발주잔량, 22=발주종결여부, 24=발주작성일자, 25=요청납품일자
+      const fmtDate = (v) => {
+        if (!v) return '';
+        if (v instanceof Date) return `${v.getFullYear()}-${String(v.getMonth()+1).padStart(2,'0')}-${String(v.getDate()).padStart(2,'0')}`;
+        return String(v);
+      };
+
+      const items = [];
+      for (let i = 2; i < rows.length; i++) { // 3번째 줄(인덱스2)부터가 실제 데이터
+        const row = rows[i];
+        if (!row || !row.length) continue;
+        const itemCode = row[7];
+        if (!itemCode) continue;
+        items.push({
+          poNumber: String(row[3] || ''),
+          poItemNumber: String(row[4] || ''),
+          itemCode: String(itemCode),
+          itemName: String(row[8] || ''),
+          unit: String(row[12] || ''),
+          poQty: +row[15] || 0,
+          receivedQtySolum: +row[17] || 0,
+          deliveryDate: fmtDate(row[25]),
+          poDate: fmtDate(row[24]),
+          closedYN: row[22] === 'Y' ? 'Y' : 'N'
+        });
+      }
+
+      if (!items.length) {
+        alert('⚠️ 발주 데이터를 찾지 못했습니다.\n\n가장 흔한 원인: SOLUM에서 받은 엑셀 파일 자체의 형식 때문에 브라우저에서 못 읽는 경우가 있습니다.\n해결 방법: 이 파일을 Excel이나 Google Sheets에서 열어서 "다른 이름으로 저장"(또는 다운로드) 한 다음, 그 새 파일을 다시 업로드해보세요.\n\n(그래도 안 되면, 3행부터 데이터가 있고 8번째 열이 품목코드인 SOLUM 발주 현황 형식이 맞는지 확인해주세요.)');
+        return;
+      }
+
+      await loadPO();
+      const existingKeys = new Set(PO.map(r => r.poNumber + '|' + r.poItemNumber));
+      poReviewData = items.map(it => ({
+        ...it,
+        emailDate: '',
+        messageId: '',
+        alreadyRegistered: existingKeys.has(it.poNumber + '|' + it.poItemNumber)
+      }));
+
+      renderPOReview();
+    } catch (err) {
+      alert('엑셀 파일을 읽는 중 오류가 발생했습니다: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 // ✅ Gmail 연동이 안 되는 경우를 위한 대안: 이메일 내용을 직접 붙여넣으면 브라우저에서
