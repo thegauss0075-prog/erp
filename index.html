@@ -317,6 +317,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <button class="tb" onclick="go('qc')">🔬 품질검사</button>
   <button class="tb" onclick="go('hist')">📋 이력</button>
   <button class="tb" onclick="go('ng')">⚠️ 불량(NG)</button>
+  <button class="tb" onclick="go('po')">📧 발주관리</button>
   <div style="flex:1"></div>
   <span id="user-badge" style="font-size:12px;padding:5px 12px;border-radius:7px;background:#f0f4ff;color:#1d4ed8;border:1px solid #c7d7fe">👤 <span id="user-label">-</span></span>
   <button onclick="logoutUser()" style="padding:6px 12px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555" title="로그아웃">🚪 로그아웃</button>
@@ -1337,6 +1338,51 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <div class="pi" id="ng-log-pi"></div>
 </div>
 
+<!-- 발주(PO) 관리 -->
+<div id="tab-po" class="sec">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:8px">
+    <h2 style="margin:0">📧 발주(PO) 관리</h2>
+    <div style="display:flex;gap:8px">
+      <button onclick="openPOPasteModal()" style="padding:8px 16px;border-radius:8px;border:1px solid #c026d3;background:#c026d3;color:#fff;font-size:13px;cursor:pointer;font-weight:700">📋 이메일 붙여넣기로 등록</button>
+      <button onclick="checkPOEmailsUI()" id="po-check-btn" style="padding:8px 16px;border-radius:8px;border:1px solid #c026d3;background:#fff;color:#c026d3;font-size:13px;cursor:pointer;font-weight:700" title="회사 메일이 Gmail로 연동되어 있는 경우에만 작동합니다">📧 Gmail에서 자동 확인</button>
+    </div>
+  </div>
+  <div style="font-size:12px;color:#888;margin-bottom:1rem">SOLUM 발주 메일 내용을 복사해서 붙여넣으면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다).</div>
+
+  <div id="po-review-wrap" style="display:none;background:#fdf4ff;border:1.5px solid #e9a3f0;border-radius:12px;padding:1rem;margin-bottom:1.5rem">
+    <div style="font-weight:700;color:#a21caf;margin-bottom:8px">📥 읽어낸 발주 항목 (검토 후 등록하세요)</div>
+    <div id="po-review-body"></div>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button onclick="submitPOReview()" style="padding:8px 16px;border-radius:8px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:700">✔ 선택한 항목 등록</button>
+      <button onclick="document.getElementById('po-review-wrap').style.display='none'" style="padding:8px 16px;border-radius:8px;border:1px solid #ddd;background:#fff;color:#555;font-size:13px;cursor:pointer">닫기</button>
+    </div>
+  </div>
+
+  <div class="tw"><table style="width:100%">
+    <thead><tr>
+      <th>PO번호</th><th>항목</th><th>품목코드</th><th>품명</th><th style="text-align:right">발주수량</th>
+      <th style="text-align:right">출하완료</th><th style="text-align:right">잔량</th><th>납기일</th><th>상태</th><th class="no-print">액션</th>
+    </tr></thead><tbody id="po-body"></tbody></table></div>
+  <div id="po-empty" style="display:none;color:#aaa;font-size:13px;padding:20px;text-align:center">등록된 발주가 없습니다. "📋 이메일 붙여넣기로 등록"으로 시작해보세요.</div>
+</div>
+
+<!-- 발주 이메일 붙여넣기 모달 -->
+<div class="ov-bg" id="po-paste-ov">
+  <div class="ov-box" style="max-width:600px;max-height:85vh;overflow-y:auto">
+    <h3>📋 발주 이메일 붙여넣기</h3>
+    <div style="font-size:12px;color:#888;margin-bottom:10px">
+      SOLUM 발주 이메일을 열어서 <strong>전체 내용을 선택(Ctrl+A) → 복사(Ctrl+C)</strong>한 다음, 아래에 <strong>붙여넣기(Ctrl+V)</strong> 해주세요.
+      (표 형태 그대로 붙여넣으면 자동으로 인식합니다)
+    </div>
+    <textarea id="po-paste-text" placeholder="여기에 이메일 내용을 붙여넣으세요..." style="width:100%;box-sizing:border-box;min-height:220px;font-size:12px;padding:10px;border-radius:8px;border:1px solid #dde;font-family:monospace"></textarea>
+    <div id="po-paste-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
+    <div class="ov-actions">
+      <button class="ov-cancel" onclick="closeOv('po-paste-ov')">취소</button>
+      <button class="ov-save" onclick="parsePOPasteText()">🔍 분석하기</button>
+    </div>
+  </div>
+</div>
+
 <!-- 수정 모달 -->
 <div class="ov-bg" id="edit-ov">
   <div class="ov-box" style="max-height:88vh;overflow-y:auto">
@@ -1933,7 +1979,7 @@ function go(id){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.tb').forEach(b=>b.classList.remove('on'));
   document.getElementById('tab-'+id).classList.add('on');
-  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,qc:5,hist:6,ng:7};
+  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,qc:5,hist:6,ng:7,po:8};
   document.querySelectorAll('.tb')[order[id]].classList.add('on');
   if(id==='inv'){initMS();renderInv();}
   if(id==='io') renderIOTable();
@@ -1942,6 +1988,7 @@ function go(id){
   if(id==='qc') renderQC();
   if(id==='hist') renderHist();
   if(id==='ng'){renderNG();renderNGLog();initNGLogModel();}
+  if(id==='po') renderPO();
 }
 function setIC(c){document.getElementById('inv-cat').value=c;initMS();renderInv();}
 
@@ -2216,6 +2263,246 @@ function exportShipHistExcel() {
   const pad = v => String(v).padStart(2,'0');
   const fname = `완제품출고현황_전품목_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.xlsx`;
   XLSX.writeFile(wb, fname);
+}
+
+// ══════════════════════════════════════════════════════════
+//  발주(PO) 관리 — SOLUM 발주 이메일을 읽어서 검토 후 등록
+// ══════════════════════════════════════════════════════════
+let PO = [];
+let poReviewData = []; // 이메일에서 방금 읽어온, 아직 등록 안 한 항목들
+
+async function loadPO() {
+  if (!(API_URL || IS_GAS)) return;
+  const res = await api('getPOLog', {});
+  if (res && res.ok) PO = res.data || [];
+}
+
+async function renderPO() {
+  if (!isAdmin) { document.getElementById('po-check-btn').style.display = 'none'; }
+  await loadPO();
+  const body = document.getElementById('po-body');
+  const emptyEl = document.getElementById('po-empty');
+  if (!PO.length) {
+    body.innerHTML = '';
+    emptyEl.style.display = 'block';
+    return;
+  }
+  emptyEl.style.display = 'none';
+
+  const statusColor = {'대기':'#888','출하중':'#185FA5','완료':'#166534'};
+  body.innerHTML = PO.map(r => {
+    // ✅ 잔량 = 발주수량 - (이 PO 등록 이후 실제로 출고된 같은 품목코드의 수량)
+    //    같은 품목에 PO가 여러 건 겹치면 정확히 나눠 계산되진 않으니 참고용으로 봐주세요.
+    const createdTs = new Date(r.createdAt).getTime();
+    const shipped = txLog.filter(t => t.type === 'otp' && t.code === r.itemCode && new Date(t.dt).getTime() >= createdTs)
+      .reduce((s,t) => s + (+t.qty||0), 0);
+    const remain = Math.max(0, (+r.poQty||0) - shipped);
+    const status = remain <= 0 ? '완료' : (shipped > 0 ? '출하중' : '대기');
+    return `<tr>
+      <td style="font-family:monospace;font-size:11px">${r.poNumber||''}-${r.poItemNumber||''}</td>
+      <td style="font-size:11px;color:#888">${r.poItemNumber||'-'}</td>
+      <td style="font-family:monospace;font-size:11px">${r.itemCode||''}</td>
+      <td>${r.itemName||''}</td>
+      <td style="text-align:right">${(+r.poQty||0).toLocaleString()}</td>
+      <td style="text-align:right;color:#1d4ed8">${shipped.toLocaleString()}</td>
+      <td style="text-align:right;font-weight:700;color:${remain>0?'#b45309':'#166534'}">${remain.toLocaleString()}</td>
+      <td style="font-size:12px;color:#666">${r.deliveryDate||'-'}</td>
+      <td><span style="color:${statusColor[status]};font-weight:600">${status}</span></td>
+      <td class="no-print">${isAdmin ? `<button class="edit-btn" onclick="deletePOItemUI(${r.id})" title="삭제">🗑️</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ✅ Gmail 연동이 안 되는 경우를 위한 대안: 이메일 내용을 직접 붙여넣으면 브라우저에서
+//    바로 분석한다 (서버 왕복 필요 없음). HTML로 붙여넣든, 일반 텍스트로 붙여넣든
+//    둘 다 인식하도록 만들었다.
+function openPOPasteModal() {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  document.getElementById('po-paste-text').value = '';
+  document.getElementById('po-paste-err').style.display = 'none';
+  document.getElementById('po-paste-ov').classList.add('show');
+}
+
+// HTML로 붙여넣어진 경우: <tr>/<td> 태그를 기준으로 표를 읽는다 (서버 파싱과 동일한 방식)
+function extractTableRowsFromHtmlClient(html) {
+  const rows = [];
+  const trMatches = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
+  trMatches.forEach(trHtml => {
+    const tdMatches = trHtml.match(/<td[^>]*>[\s\S]*?<\/td>/gi) || [];
+    if (!tdMatches.length) return;
+    const cells = tdMatches.map(td => td
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&plusmn;/g, '±')
+      .replace(/&times;/g, '×')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/\s+/g, ' ')
+      .trim());
+    rows.push(cells);
+  });
+  return rows;
+}
+
+// 일반 텍스트로 붙여넣어진 경우: 표를 복사하면 보통 각 줄이 한 행, 셀 사이는
+// 탭(\t)으로 구분된다. 탭이 없으면 2칸 이상 연속된 공백을 구분자로 대신 시도한다.
+function extractTableRowsFromPlainText(text) {
+  return text.split('\n').map(line => {
+    line = line.replace(/\r/g, '');
+    if (!line.trim()) return [];
+    if (line.indexOf('\t') !== -1) return line.split('\t').map(c => c.trim()).filter(c => c !== '');
+    return line.split(/ {2,}/).map(c => c.trim()).filter(c => c !== '');
+  }).filter(cells => cells.length > 0);
+}
+
+// ✅ 서버 파싱(parsePOFromEmail)과 완전히 같은 규칙으로, 붙여넣은 내용에서
+//    발주 라인 항목들을 찾아낸다. HTML 표 구조와 일반 텍스트 둘 다 지원한다.
+function parsePORowsFromText(text) {
+  const isHtml = /<table|<tr[\s>]/i.test(text);
+  const rows = isHtml ? extractTableRowsFromHtmlClient(text) : extractTableRowsFromPlainText(text);
+
+  let sapPoNumber = '', sapVendorNumber = '';
+  let headerIdx = -1, headerCols = [];
+
+  rows.forEach((cells, i) => {
+    const joined = cells.join(' | ');
+    if (joined.indexOf('SAP Purchase Order Number') !== -1 && cells.length >= 2) {
+      sapPoNumber = cells[cells.length - 1];
+    }
+    if (joined.indexOf('SAP Vendor Number') !== -1 && cells.length >= 2) {
+      sapVendorNumber = cells[cells.length - 1];
+    }
+    if (cells.indexOf('Item Code') !== -1 && cells.indexOf('Item Name') !== -1) {
+      headerIdx = i;
+      headerCols = cells;
+    }
+  });
+
+  const items = [];
+  if (headerIdx >= 0) {
+    const colIdx = {};
+    headerCols.forEach((h, i) => { colIdx[h] = i; });
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+      const cells = rows[i];
+      if (cells.length !== headerCols.length) continue;
+      const itemCode = colIdx['Item Code'] != null ? cells[colIdx['Item Code']] : '';
+      if (!itemCode) continue;
+      items.push({
+        poNumber: (colIdx['Purchase Order Number'] != null ? cells[colIdx['Purchase Order Number']] : '') || sapPoNumber,
+        poItemNumber: colIdx['Purchase Order Item Number'] != null ? cells[colIdx['Purchase Order Item Number']] : '',
+        itemCode: itemCode,
+        itemName: colIdx['Item Name'] != null ? cells[colIdx['Item Name']] : '',
+        poQty: colIdx['Purchase Order Quantity'] != null ? (+String(cells[colIdx['Purchase Order Quantity']]).replace(/,/g,'') || 0) : 0,
+        deliveryDate: colIdx['Delivery Date'] != null ? cells[colIdx['Delivery Date']] : '',
+        sapVendorNumber
+      });
+    }
+  }
+  return { sapPoNumber, sapVendorNumber, items };
+}
+
+async function parsePOPasteText() {
+  const errEl = document.getElementById('po-paste-err');
+  errEl.style.display = 'none';
+  const text = document.getElementById('po-paste-text').value;
+  if (!text.trim()) { errEl.textContent = '내용을 붙여넣어주세요.'; errEl.style.display='block'; return; }
+
+  const parsed = parsePORowsFromText(text);
+  if (!parsed.items.length) {
+    errEl.textContent = '⚠️ 표 형식을 인식하지 못했습니다. "Item Code"와 "Item Name" 항목이 포함된 표 전체를 복사했는지 확인해주세요.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  // 이미 등록된 것인지 확인 (poNumber+poItemNumber 기준)
+  await loadPO();
+  const existingKeys = new Set(PO.map(r => r.poNumber + '|' + r.poItemNumber));
+  poReviewData = parsed.items.map(it => ({
+    ...it,
+    emailDate: vnDt(),
+    messageId: '',
+    alreadyRegistered: existingKeys.has(it.poNumber + '|' + it.poItemNumber)
+  }));
+
+  closeOv('po-paste-ov');
+  renderPOReview();
+}
+
+async function checkPOEmailsUI() {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  const btn = document.getElementById('po-check-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 확인 중...';
+  let res = await api('checkPOEmails', { token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('checkPOEmails', { token: ADMIN_TOKEN });
+  btn.disabled = false;
+  btn.textContent = '📧 새 발주 확인';
+
+  if (!res || !res.ok) { alert('이메일 확인 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  if (!res.emails || !res.emails.length) { alert('새로운 발주 이메일을 찾지 못했습니다.'); return; }
+
+  // 이메일별로 묶인 항목들을 하나의 평평한 목록으로 펼친다
+  poReviewData = [];
+  res.emails.forEach(email => {
+    email.items.forEach(it => {
+      poReviewData.push({ ...it, emailDate: email.emailDate, messageId: email.messageId, subject: email.subject });
+    });
+  });
+
+  renderPOReview();
+}
+
+function renderPOReview() {
+  const wrap = document.getElementById('po-review-wrap');
+  const body = document.getElementById('po-review-body');
+  if (!poReviewData.length) { wrap.style.display = 'none'; return; }
+
+  body.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr style="border-bottom:2px solid #e9a3f0">
+      <th style="padding:4px"></th>
+      <th style="text-align:left;padding:4px">PO번호-항목</th>
+      <th style="text-align:left;padding:4px">품목코드</th>
+      <th style="text-align:left;padding:4px">품명</th>
+      <th style="text-align:right;padding:4px">수량</th>
+      <th style="text-align:left;padding:4px">납기일</th>
+      <th style="text-align:left;padding:4px">상태</th>
+    </tr></thead><tbody>` +
+    poReviewData.map((it, i) => `<tr style="border-bottom:1px solid #f3e0f8;${it.alreadyRegistered?'opacity:.5':''}">
+      <td style="padding:4px"><input type="checkbox" class="po-review-check" data-i="${i}" ${it.alreadyRegistered?'disabled':'checked'}></td>
+      <td style="padding:4px;font-family:monospace">${it.poNumber}-${it.poItemNumber}</td>
+      <td style="padding:4px;font-family:monospace">${it.itemCode}</td>
+      <td style="padding:4px">${it.itemName}</td>
+      <td style="padding:4px;text-align:right">${(+it.poQty||0).toLocaleString()}</td>
+      <td style="padding:4px">${it.deliveryDate}</td>
+      <td style="padding:4px">${it.alreadyRegistered ? '<span style="color:#888">이미 등록됨</span>' : '<span style="color:#166534;font-weight:600">신규</span>'}</td>
+    </tr>`).join('') + '</tbody></table>';
+
+  wrap.style.display = 'block';
+}
+
+async function submitPOReview() {
+  const checked = Array.from(document.querySelectorAll('.po-review-check:checked')).map(el => poReviewData[+el.dataset.i]);
+  if (!checked.length) { alert('등록할 항목을 선택해주세요.'); return; }
+
+  const body = { items: checked, token: ADMIN_TOKEN, user: CURRENT_USER || '' };
+  let res = await api('addPOItems', body);
+  if (!res || !res.ok) res = await api('addPOItems', body);
+  if (!res || !res.ok) { alert('등록 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+
+  document.getElementById('po-review-wrap').style.display = 'none';
+  poReviewData = [];
+  await renderPO();
+  alert(`✅ 발주 ${res.added}건 등록완료${res.skipped ? ` (이미 등록된 ${res.skipped}건 제외)` : ''}`);
+}
+
+async function deletePOItemUI(id) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (!confirm('이 발주 항목을 삭제하시겠습니까?')) return;
+  let res = await api('deletePOItem', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('deletePOItem', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await renderPO();
 }
 
 function exportInvExcel(){
