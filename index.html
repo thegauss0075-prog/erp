@@ -2290,7 +2290,8 @@ async function loadPO() {
 }
 
 async function renderPO() {
-  if (!isAdmin) { document.getElementById('po-check-btn').style.display = 'none'; }
+  document.getElementById('po-check-btn').style.display = isAdmin ? 'inline-block' : 'none';
+  document.getElementById('po-clear-btn').style.display = isAdmin ? 'inline-block' : 'none';
   await loadPO();
   const body = document.getElementById('po-body');
   const emptyEl = document.getElementById('po-empty');
