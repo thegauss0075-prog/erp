@@ -1346,11 +1346,10 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <button onclick="document.getElementById('po-excel-input').click()" style="padding:8px 16px;border-radius:8px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:700">📊 엑셀 업로드로 등록</button>
       <input type="file" id="po-excel-input" accept=".xlsx,.xls" style="display:none" onchange="handlePOExcelUpload(event)">
       <button onclick="openPOPasteModal()" style="padding:8px 16px;border-radius:8px;border:1px solid #c026d3;background:#c026d3;color:#fff;font-size:13px;cursor:pointer;font-weight:700">📋 이메일 붙여넣기로 등록</button>
-      <button onclick="checkPOEmailsUI()" id="po-check-btn" style="padding:8px 16px;border-radius:8px;border:1px solid #c026d3;background:#fff;color:#c026d3;font-size:13px;cursor:pointer;font-weight:700" title="회사 메일이 Gmail로 연동되어 있는 경우에만 작동합니다">📧 Gmail에서 자동 확인</button>
       <button onclick="clearAllPOItemsUI()" id="po-clear-btn" style="padding:8px 16px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-size:13px;cursor:pointer;font-weight:700">🗑️ 전체 삭제</button>
     </div>
   </div>
-  <div style="font-size:12px;color:#888;margin-bottom:1rem">SOLUM 발주 현황 엑셀을 업로드하거나, 발주 메일 내용을 붙여넣으면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다). 완제품이 창고에 입고되면 오래된 발주부터 자동으로 잔량이 차감됩니다.</div>
+  <div style="font-size:12px;color:#888;margin-bottom:1rem">SOLUM 발주 현황 엑셀을 업로드하거나, 발주 메일 내용을 붙여넣으면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다). 완제품이 실제로 출고되면 오래된 발주부터 자동으로 잔량이 차감됩니다.</div>
 
   <div id="po-review-wrap" style="display:none;background:#fdf4ff;border:1.5px solid #e9a3f0;border-radius:12px;padding:1rem;margin-bottom:1.5rem">
     <div style="font-weight:700;color:#a21caf;margin-bottom:8px">📥 읽어낸 발주 항목 (검토 후 등록하세요)</div>
@@ -2290,7 +2289,6 @@ async function loadPO() {
 }
 
 async function renderPO() {
-  document.getElementById('po-check-btn').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('po-clear-btn').style.display = isAdmin ? 'inline-block' : 'none';
   await loadPO();
   const body = document.getElementById('po-body');
@@ -2305,7 +2303,7 @@ async function renderPO() {
 
   const statusColor = {'대기':'#888','출하중':'#185FA5','완료':'#166534'};
   body.innerHTML = PO.map(r => {
-    // ✅ 잔량 = 발주수량 - deductedQty (완제품이 창고에 입고될 때마다 오래된 발주부터
+    // ✅ 잔량 = 발주수량 - deductedQty (완제품이 실제로 출고될 때마다 오래된 발주부터
     //    자동으로 쌓이는 누적 차감값). 같은 품목의 여러 PO에 걸쳐 정확히 순서대로 배분된다.
     const poQty = +r.poQty || 0;
     const deducted = +r.deductedQty || 0;
@@ -2424,9 +2422,8 @@ async function handlePOExcelUpload(event) {
   reader.readAsArrayBuffer(file);
 }
 
-// ✅ Gmail 연동이 안 되는 경우를 위한 대안: 이메일 내용을 직접 붙여넣으면 브라우저에서
-//    바로 분석한다 (서버 왕복 필요 없음). HTML로 붙여넣든, 일반 텍스트로 붙여넣든
-//    둘 다 인식하도록 만들었다.
+// ✅ 이메일 내용을 직접 붙여넣으면 브라우저에서 바로 분석한다 (서버 왕복 필요 없음).
+//    HTML로 붙여넣든, 일반 텍스트로 붙여넣든 둘 다 인식하도록 만들었다.
 function openPOPasteModal() {
   if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
   document.getElementById('po-paste-text').value = '';
@@ -2581,30 +2578,6 @@ async function parsePOPasteText() {
   }));
 
   closeOv('po-paste-ov');
-  renderPOReview();
-}
-
-async function checkPOEmailsUI() {
-  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
-  const btn = document.getElementById('po-check-btn');
-  btn.disabled = true;
-  btn.textContent = '⏳ 확인 중...';
-  let res = await api('checkPOEmails', { token: ADMIN_TOKEN });
-  if (!res || !res.ok) res = await api('checkPOEmails', { token: ADMIN_TOKEN });
-  btn.disabled = false;
-  btn.textContent = '📧 새 발주 확인';
-
-  if (!res || !res.ok) { alert('이메일 확인 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
-  if (!res.emails || !res.emails.length) { alert('새로운 발주 이메일을 찾지 못했습니다.'); return; }
-
-  // 이메일별로 묶인 항목들을 하나의 평평한 목록으로 펼친다
-  poReviewData = [];
-  res.emails.forEach(email => {
-    email.items.forEach(it => {
-      poReviewData.push({ ...it, emailDate: email.emailDate, messageId: email.messageId, subject: email.subject });
-    });
-  });
-
   renderPOReview();
 }
 
