@@ -1347,6 +1347,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <input type="file" id="po-excel-input" accept=".xlsx,.xls" style="display:none" onchange="handlePOExcelUpload(event)">
       <button onclick="openPOPasteModal()" style="padding:8px 16px;border-radius:8px;border:1px solid #c026d3;background:#c026d3;color:#fff;font-size:13px;cursor:pointer;font-weight:700">📋 이메일 붙여넣기로 등록</button>
       <button onclick="checkPOEmailsUI()" id="po-check-btn" style="padding:8px 16px;border-radius:8px;border:1px solid #c026d3;background:#fff;color:#c026d3;font-size:13px;cursor:pointer;font-weight:700" title="회사 메일이 Gmail로 연동되어 있는 경우에만 작동합니다">📧 Gmail에서 자동 확인</button>
+      <button onclick="clearAllPOItemsUI()" id="po-clear-btn" style="padding:8px 16px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-size:13px;cursor:pointer;font-weight:700">🗑️ 전체 삭제</button>
     </div>
   </div>
   <div style="font-size:12px;color:#888;margin-bottom:1rem">SOLUM 발주 현황 엑셀을 업로드하거나, 발주 메일 내용을 붙여넣으면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다). 완제품이 창고에 입고되면 오래된 발주부터 자동으로 잔량이 차감됩니다.</div>
@@ -2656,6 +2657,20 @@ async function deletePOItemUI(id) {
   if (!res || !res.ok) res = await api('deletePOItem', { id, token: ADMIN_TOKEN });
   if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
   await renderPO();
+}
+
+// ✅ 컬럼 밀림 버그 등으로 잘못 등록된 예전 데이터를 한 번에 정리할 때 사용.
+//    되돌릴 수 없는 작업이라 확인을 두 번 받는다.
+async function clearAllPOItemsUI() {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (!PO.length) { alert('삭제할 발주 데이터가 없습니다.'); return; }
+  if (!confirm(`⚠️ 등록된 발주 ${PO.length}건을 전부 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+  if (!confirm('정말로 전체 삭제하시겠습니까? 다시 한번 확인해주세요.')) return;
+  let res = await api('clearAllPOItems', { token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('clearAllPOItems', { token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await renderPO();
+  alert('✅ 발주 데이터가 전부 삭제되었습니다. 다시 등록해주세요.');
 }
 
 function exportInvExcel(){
