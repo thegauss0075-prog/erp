@@ -462,7 +462,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
         <div class="fr"><label>단위 / Đơn vị</label><input id="in-unit" readonly placeholder="자동입력"></div>
         <div class="fr"><label>수량 * / Số lượng *</label><input id="in-qty" type="number" min="1" placeholder="0"></div>
         <div class="fr">
-          <label>LOT No. / Số LOT <button type="button" onclick="openLotCal('in')" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #166534;background:#f0fdf4;color:#166534;font-size:11px;cursor:pointer">📅 날짜선택 생성</button></label>
+          <label>LOT No. / Số LOT <button type="button" id="in-lot-gen-btn" onclick="openLotCal('in')" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #166534;background:#f0fdf4;color:#166534;font-size:11px;cursor:pointer">📅 날짜선택 생성</button></label>
           <input id="in-lot" placeholder="LOT 자동생성 또는 직접입력">
         </div>
         <div class="fr" id="in-maker-row" style="display:none">
@@ -1018,6 +1018,16 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     </div>
     <div class="ov-fr"><label>품목코드</label><input id="qc-code" readonly style="background:#f5f6f8;color:#888"></div>
     <div class="ov-fr"><label>품명</label><input id="qc-name" readonly style="background:#f5f6f8;color:#888"></div>
+    <div class="ov-fr" id="qc-core-maker-wrap" style="display:none;background:#fffbeb;border-radius:8px;padding:8px 10px;border-left:3px solid #b45309">
+      <label style="font-weight:700;color:#92400e">CORE 제조사 * — 분류용 (LOT은 이 제조사가 보낸 실제 LOT을 직접 입력하세요)</label>
+      <select id="qc-core-maker">
+        <option value="">-- 제조사를 선택하세요 --</option>
+        <option value="C">CHANGSUNG</option>
+        <option value="P">POCO</option>
+        <option value="E">ELECTRO M</option>
+        <option value="A">ACHROMAT</option>
+      </select>
+    </div>
     <div class="ov-fr" id="qc-lot-wrap">
       <label id="qc-lot-label">LOT (선택) <button type="button" id="qc-lot-gen-btn" onclick="openLotCal('qc')" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #3730a3;background:#eef2ff;color:#3730a3;font-size:11px;cursor:pointer">📅 날짜선택 생성</button></label>
       <input id="qc-lot" placeholder="예: TGG6QPY-0001">
@@ -2344,7 +2354,10 @@ function fillForm(dir,item){
   if(dir==='omt') fillLotDropdown(item.code, item.unit, 'omt', 'in',    'omt', item.cat);
   if(dir==='otp') fillLotDropdown(item.code, item.unit, 'otp', 'tp-in', 'otp', item.cat);
 
-  // CORE 자재일 때 제조사 필드 표시
+  // ✅ CORE 자재는 우리가 LOT을 만드는 게 아니라 제조사가 실제로 붙여 보낸 LOT을
+  //    그대로 받아 적어야 한다. 그래서 CORE면: 제조사 선택란은 보여주고(분류용),
+  //    LOT 자동생성 버튼은 숨겨서 직접 타이핑하게 만든다. 일반 자재는 그대로
+  //    입고일 기준 자동생성 버튼을 쓸 수 있다.
   const makerRow = document.getElementById(dir+'-maker-row');
   if (makerRow) {
     const isCore = (item.sub||'').toUpperCase() === 'CORE' ||
@@ -2352,6 +2365,8 @@ function fillForm(dir,item){
     makerRow.style.display = isCore ? 'block' : 'none';
     const makerSel = document.getElementById(dir+'-maker');
     if (makerSel) makerSel.value = '';
+    const genBtn = document.getElementById(dir+'-lot-gen-btn');
+    if (genBtn) genBtn.style.display = isCore ? 'none' : 'inline-block';
   }
 
   document.getElementById(dir+'-qty').focus();
@@ -3063,7 +3078,28 @@ function acPickQC(i) {
   document.getElementById('qc-code').value = item.code;
   document.getElementById('qc-name').value = item.name;
   fillQCWoOptions(item.code);
+  updateQCCoreMakerVisibility();
   document.getElementById('qc-sample').focus();
+}
+
+// ✅ CORE 원자재는 우리가 LOT을 만드는 게 아니라, 그 제조사가 실제로 붙여서 보낸
+//    LOT을 그대로 받아 적어야 한다. 그래서 CORE 자재를 고르면:
+//    - "제조사" 선택란(분류용, 별도)을 보여주고
+//    - LOT 자동생성 버튼은 숨겨서 직접 타이핑하게 만든다.
+//    일반 자재는 그대로 입고일 기준 자동생성을 쓸 수 있다.
+function updateQCCoreMakerVisibility() {
+  const makerWrap = document.getElementById('qc-core-maker-wrap');
+  const genBtn = document.getElementById('qc-lot-gen-btn');
+  const inspType = document.getElementById('qc-type').value;
+  if (inspType === '출하검사') {
+    // 출하검사는 완료된 작업지시의 LOT을 그대로 쓰므로 이 로직과 무관
+    makerWrap.style.display = 'none';
+    if (genBtn) genBtn.style.display = 'none';
+    return;
+  }
+  const isCore = qcSelectedItem && ((qcSelectedItem.sub||'').toUpperCase()==='CORE' || (qcSelectedItem.name||'').toUpperCase().includes('CORE'));
+  makerWrap.style.display = isCore ? 'block' : 'none';
+  if (genBtn) genBtn.style.display = isCore ? 'none' : 'inline-block';
 }
 
 // ── 출하검사용: 완료된 작업지시 자동완성 (골라 선택하면 품목·LOT·수량 자동 채움) ──
@@ -3133,6 +3169,7 @@ async function openAddQC() {
   document.getElementById('qc-lot').value = '';
   document.getElementById('qc-lot').readOnly = false;
   document.getElementById('qc-lot').placeholder = '예: TGG6QPY-0001';
+  document.getElementById('qc-core-maker').value = '';
   document.getElementById('qc-wo').innerHTML = '<option value="">연결 안 함</option>';
   document.getElementById('qc-total-qty').value = '';
   document.getElementById('qc-sample').value = '';
@@ -3172,6 +3209,7 @@ function onQCTypeChange() {
   document.getElementById('qc-lot').readOnly = isShip;
   document.getElementById('qc-lot').style.background = isShip ? '#f5f6f8' : '#fff';
   document.getElementById('qc-lot-label').firstChild.textContent = isShip ? '작업지시의 LOT (자동 채워짐) ' : 'LOT (선택) ';
+  updateQCCoreMakerVisibility(); // ✅ CORE 자재면 여기서 다시 제조사란 보여주고 생성버튼 숨김
 }
 
 async function openEditQC(id) {
@@ -3188,6 +3226,7 @@ async function openEditQC(id) {
   document.getElementById('qc-code').value = r.code || '';
   document.getElementById('qc-name').value = r.name || '';
   document.getElementById('qc-lot').value = r.lot || '';
+  document.getElementById('qc-core-maker').value = '';
   fillQCWoOptions(r.code);
   document.getElementById('qc-wo').value = r.workOrderId || '';
   document.getElementById('qc-total-qty').value = r.totalQty || '';
@@ -3260,6 +3299,16 @@ async function submitQC() {
     if (!totalQty || totalQty <= 0) { errEl.textContent = '총 입고수량을 입력해주세요.'; errEl.style.display='block'; return; }
   }
 
+  // ✅ CORE 원자재는 제조사(분류용)를 반드시 고르고, LOT은 제조사가 실제로 보낸 값을
+  //    직접 입력해야 한다 (우리가 만드는 게 아니므로).
+  const isCoreMat = document.getElementById('qc-core-maker-wrap').style.display !== 'none';
+  let coreMaker = '';
+  if (isCoreMat) {
+    coreMaker = document.getElementById('qc-core-maker').value;
+    if (!coreMaker) { errEl.textContent = '⚠️ CORE 제조사를 선택해주세요.'; errEl.style.display='block'; return; }
+    if (!document.getElementById('qc-lot').value.trim()) { errEl.textContent = '⚠️ CORE 자재는 제조사가 보낸 실제 LOT을 직접 입력해주세요.'; errEl.style.display='block'; return; }
+  }
+
   // ✅ 첨부파일 읽기 (선택사항)
   let attachment = null;
   const fileEl = document.getElementById('qc-attachment');
@@ -3282,6 +3331,11 @@ async function submitQC() {
     woNo = woSel.value ? (WO.find(w=>w.id===+woSel.value)||{}).orderNo || '' : '';
   }
   const result = document.getElementById('qc-result').value;
+  const makerNames = {C:'CHANGSUNG', P:'POCO', E:'ELECTRO M', A:'ACHROMAT'};
+  let noteVal = document.getElementById('qc-note').value.trim();
+  if (isCoreMat && coreMaker) {
+    noteVal = `[CORE 제조사: ${makerNames[coreMaker]||coreMaker}] ${noteVal}`.trim();
+  }
 
   const body = {
     inspType,
@@ -3291,7 +3345,7 @@ async function submitQC() {
     sampleQty: sample, defectQty: defect, totalQty,
     result,
     inspector: document.getElementById('qc-inspector').value.trim(),
-    note: document.getElementById('qc-note').value.trim(),
+    note: noteVal,
     token: ADMIN_TOKEN, user: CURRENT_USER || ''
   };
   if (attachment) {
@@ -4063,6 +4117,14 @@ function showCP(dir){
   // ── 기본 유효성 검사
   if(!code){alert('품목을 먼저 검색·선택하세요.\n먼저 위 검색창에서 품목을 선택해주세요.');return;}
   if(!qty||qty<=0){alert('수량을 올바르게 입력하세요.');return;}
+
+  // ✅ CORE 자재(자재입고)는 제조사를 반드시 고르고, LOT은 제조사가 보낸 실제 값을
+  //    직접 입력해야 한다 (우리가 자동생성하는 게 아니므로).
+  const makerRowEl = document.getElementById(dir+'-maker-row');
+  if (makerRowEl && makerRowEl.style.display !== 'none') {
+    if (!makerVal) { alert('⚠️ CORE 제조사를 선택해주세요.'); return; }
+    if (!lot) { alert('⚠️ CORE 자재는 제조사가 보낸 실제 LOT을 직접 입력해주세요.'); return; }
+  }
 
   // ── 출고 시 현재고 초과 차단 (code로 전체 DB 직접 검색 - catKey 의존 제거)
   const isOutType = ['omt','otp'].includes(dir);
