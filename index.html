@@ -2356,11 +2356,55 @@ function extractTableRowsFromPlainText(text) {
   }).filter(cells => cells.length > 0);
 }
 
+// ✅ 세 번째 형식: 표를 복사했는데 칸 하나하나가 전부 따로따로 줄바꿈되어 나오는 경우
+//    (탭도 없고, 한 줄에 값이 하나씩만 있음). 이땐 알려진 헤더 이름들("Purchase Order
+//    Number" 등)이 연속된 줄로 나오는 지점을 찾아서, 그 뒤로는 헤더 개수(6개)만큼씩
+//    끊어서 한 행으로 묶는다. 숫자/날짜처럼 안 생긴 청크가 나오면 데이터가 끝난
+//    것으로 보고 멈춘다 (안내문구가 데이터로 잘못 섞이는 것을 방지).
+function extractTableRowsFromFlatLines(text) {
+  const KNOWN_HEADERS = ['Purchase Order Number', 'Purchase Order Item Number', 'Item Code', 'Item Name', 'Purchase Order Quantity', 'Delivery Date'];
+  const lines = text.split('\n').map(l => l.replace(/\r/g,'').trim()).filter(l => l !== '');
+
+  const itemCodePos = KNOWN_HEADERS.indexOf('Item Code'); // 항목코드가 헤더 중 몇 번째인지
+  const itemCodeLineIdx = lines.findIndex(l => l === 'Item Code');
+  if (itemCodeLineIdx === -1) return null;
+
+  const headerStart = itemCodeLineIdx - itemCodePos;
+  if (headerStart < 0) return null;
+
+  const headerCols = lines.slice(headerStart, headerStart + KNOWN_HEADERS.length);
+  const matchCount = headerCols.filter((h, i) => h === KNOWN_HEADERS[i]).length;
+  if (matchCount < 4) return null; // 확신이 부족하면 이 방식은 포기
+
+  const n = KNOWN_HEADERS.length;
+  const qtyPos = headerCols.indexOf('Purchase Order Quantity');
+  const datePos = headerCols.indexOf('Delivery Date');
+  const rows = [headerCols];
+
+  let i = headerStart + n;
+  while (i + n <= lines.length) {
+    const chunk = lines.slice(i, i + n);
+    const qtyOk = qtyPos < 0 || /^\d[\d,]*\.?\d*$/.test(chunk[qtyPos]);
+    const dateOk = datePos < 0 || /^\d{4}-\d{2}-\d{2}$/.test(chunk[datePos]);
+    if (!qtyOk || !dateOk) break; // 더 이상 데이터 행이 아닌 것으로 판단, 중단
+    rows.push(chunk);
+    i += n;
+  }
+  return rows;
+}
+
 // ✅ 서버 파싱(parsePOFromEmail)과 완전히 같은 규칙으로, 붙여넣은 내용에서
-//    발주 라인 항목들을 찾아낸다. HTML 표 구조와 일반 텍스트 둘 다 지원한다.
+//    발주 라인 항목들을 찾아낸다. HTML 표 구조, 탭/공백 구분 텍스트, "칸마다 줄바꿈"
+//    형식까지 세 가지를 순서대로 시도한다.
 function parsePORowsFromText(text) {
   const isHtml = /<table|<tr[\s>]/i.test(text);
-  const rows = isHtml ? extractTableRowsFromHtmlClient(text) : extractTableRowsFromPlainText(text);
+  let rows = isHtml ? extractTableRowsFromHtmlClient(text) : extractTableRowsFromPlainText(text);
+
+  let headerFound = rows.some(cells => cells.indexOf('Item Code') !== -1 && cells.indexOf('Item Name') !== -1);
+  if (!isHtml && !headerFound) {
+    const flatRows = extractTableRowsFromFlatLines(text);
+    if (flatRows) rows = flatRows;
+  }
 
   let sapPoNumber = '', sapVendorNumber = '';
   let headerIdx = -1, headerCols = [];
