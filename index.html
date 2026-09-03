@@ -1207,6 +1207,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <!-- 상단 툴바 -->
   <div class="toolbar">
     <button onclick="window.print()" style="padding:7px 16px;border-radius:7px;border:1px solid #991b1b;background:#991b1b;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🖨️ 인쇄 / In</button>
+    <button onclick="exportNGExcel()" style="padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">📊 엑셀 다운로드</button>
     <div class="sw"><span class="si">🔍</span><input id="ng-q" placeholder="코드·품명 검색 / Tìm kiếm..." oninput="renderNG()"></div>
     <select id="ng-tp" onchange="renderNG()">
       <option value="">전체 불량 / Tất cả NG</option>
@@ -2004,6 +2005,48 @@ function exportInvExcel(){
   const d = new Date();
   const pad = v => String(v).padStart(2,'0');
   const fname = `재고현황_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.xlsx`;
+  XLSX.writeFile(wb, fname);
+}
+
+// ✅ 불량(NG) 목록도 재고현황과 같은 방식으로 엑셀 다운로드할 수 있게 한다.
+//    화면에 지금 걸려있는 검색어·구분·모델 필터를 그대로 반영해서 내보낸다.
+function exportNGExcel(){
+  if (typeof XLSX === 'undefined') {
+    alert('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침 후 다시 시도해주세요.');
+    return;
+  }
+  const q = (document.getElementById('ng-q').value || '').toLowerCase().trim();
+  const tp = document.getElementById('ng-tp').value;
+  const modelSel = document.getElementById('ng-model');
+  const modelF = modelSel ? modelSel.value : '';
+  const tl = {TP:'완성품 NG', copper:'동선 NG', mat:'원자재 NG'};
+
+  let rows = [...DB.ng];
+  if (tp) rows = rows.filter(r => r.type === tp);
+  if (modelF) rows = rows.filter(r => r.model === modelF);
+  if (q) rows = rows.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+  if (!isAdmin) rows = rows.filter(r => r.active !== false);
+
+  if (!rows.length) { alert('내보낼 데이터가 없습니다. (현재 필터 조건에 맞는 품목 없음)'); return; }
+
+  const data = rows.map(r => ({
+    '구분': tl[r.type] || r.type,
+    '모델': r.model || '기타',
+    '코드': r.code,
+    '품명': r.name,
+    '단위': r.unit,
+    '전월재고': +r.prev || 0,
+    '이번달 불량입고': +r.inng || 0,
+    '현재고': +r.cur || 0
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [{wch:12},{wch:16},{wch:16},{wch:30},{wch:6},{wch:10},{wch:14},{wch:10}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '불량현황');
+  const d = new Date();
+  const pad = v => String(v).padStart(2,'0');
+  const fname = `불량현황_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.xlsx`;
   XLSX.writeFile(wb, fname);
 }
 
