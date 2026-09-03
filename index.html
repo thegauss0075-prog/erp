@@ -1203,10 +1203,14 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <label>품목 필터 (선택 — 비워두면 출고 이력 있는 전 품목이 나옵니다)</label>
       <input id="ship-hist-item-q" placeholder="코드 또는 품명으로 좁히기..." autocomplete="off" oninput="renderShipHistTable()" style="width:100%;box-sizing:border-box;font-size:14px;padding:8px 10px;border-radius:8px;border:1px solid #dde">
     </div>
-    <div style="display:flex;gap:6px;margin-bottom:12px">
-      <button class="period-btn on" id="ship-hist-period-1y" onclick="setShipHistPeriod(365)">최근 1년</button>
-      <button class="period-btn" id="ship-hist-period-6m" onclick="setShipHistPeriod(180)">최근 6개월</button>
-      <button class="period-btn" id="ship-hist-period-all" onclick="setShipHistPeriod(null)">전체</button>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <button class="period-btn on" id="ship-hist-period-month" onclick="setShipHistPeriod('month')">이번달</button>
+      <button class="period-btn" id="ship-hist-period-3m" onclick="setShipHistPeriod('3m')">3개월</button>
+      <button class="period-btn" id="ship-hist-period-all" onclick="setShipHistPeriod('all')">전체</button>
+      <div style="width:1px;height:20px;background:#ddd;margin:0 4px"></div>
+      <input type="date" id="ship-hist-date-from" onchange="setShipHistPeriod('custom')" style="font-size:12px;padding:5px 6px;border-radius:6px;border:1px solid #dde">
+      <span style="color:#888;font-size:12px">~</span>
+      <input type="date" id="ship-hist-date-to" onchange="setShipHistPeriod('custom')" style="font-size:12px;padding:5px 6px;border-radius:6px;border:1px solid #dde">
     </div>
     <div id="ship-hist-summary" style="background:#f5f3ff;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:13px"></div>
     <div id="ship-hist-body"></div>
@@ -2001,25 +2005,51 @@ function renderInv(){
 //  완제품 출고 현황 — 검색 없이 열면 출고 이력 있는 전 품목이 자동으로 나온다.
 //  품목별로 접었다 펼 수 있고, 필터로 좁힐 수도 있다.
 // ══════════════════════════════════════════════════════════
-let shipHistPeriodDays = 365;
+let shipHistPeriodMode = 'month'; // 'month' | '3m' | 'all' | 'custom'
 let shipHistExpanded = new Set(); // 펼쳐진 품목 코드 목록
 
 function openShipHist() {
-  shipHistPeriodDays = 365;
+  shipHistPeriodMode = 'month';
   shipHistExpanded = new Set();
   document.getElementById('ship-hist-item-q').value = '';
-  ['1y','6m','all'].forEach(k => document.getElementById('ship-hist-period-'+k).classList.toggle('on', k==='1y'));
+  document.getElementById('ship-hist-date-from').value = '';
+  document.getElementById('ship-hist-date-to').value = '';
+  ['month','3m','all'].forEach(k => document.getElementById('ship-hist-period-'+k).classList.toggle('on', k==='month'));
   renderShipHistTable();
   document.getElementById('ship-hist-ov').classList.add('show');
 }
 
-function setShipHistPeriod(days) {
-  shipHistPeriodDays = days;
-  ['1y','6m','all'].forEach(k => {
-    const isOn = (days===365 && k==='1y') || (days===180 && k==='6m') || (days===null && k==='all');
-    document.getElementById('ship-hist-period-'+k).classList.toggle('on', isOn);
-  });
+function setShipHistPeriod(mode) {
+  shipHistPeriodMode = mode;
+  ['month','3m','all'].forEach(k => document.getElementById('ship-hist-period-'+k).classList.toggle('on', mode===k));
+  if (mode !== 'custom') {
+    document.getElementById('ship-hist-date-from').value = '';
+    document.getElementById('ship-hist-date-to').value = '';
+  }
   renderShipHistTable();
+}
+
+// ✅ 선택한 기간 모드를 실제 날짜 범위(밀리초 타임스탬프)로 바꿔준다.
+//    'custom'일 땐 직접 고른 시작~끝 날짜를 쓰고, 끝 날짜는 그날 23:59:59까지 포함한다.
+function getShipHistDateRange() {
+  const now = Date.now();
+  if (shipHistPeriodMode === 'month') {
+    const d = new Date();
+    const from = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+    return { from, to: null };
+  }
+  if (shipHistPeriodMode === '3m') {
+    return { from: now - 90*24*3600*1000, to: null };
+  }
+  if (shipHistPeriodMode === 'custom') {
+    const fromVal = document.getElementById('ship-hist-date-from').value;
+    const toVal = document.getElementById('ship-hist-date-to').value;
+    return {
+      from: fromVal ? new Date(fromVal + 'T00:00:00').getTime() : null,
+      to: toVal ? new Date(toVal + 'T23:59:59').getTime() : null
+    };
+  }
+  return { from: null, to: null }; // 'all'
 }
 
 function toggleShipHistProduct(code) {
@@ -2054,7 +2084,7 @@ function renderShipHistTable() {
   const container = document.getElementById('ship-hist-body');
   const summaryEl = document.getElementById('ship-hist-summary');
   const products = getShipHistProductList();
-  const cutoffTs = shipHistPeriodDays ? (Date.now() - shipHistPeriodDays*24*3600*1000) : null;
+  const { from, to } = getShipHistDateRange();
 
   if (!products.length) {
     container.innerHTML = '<div style="color:#aaa;font-size:13px;padding:12px 2px">출고 이력이 있는 완제품이 없습니다.</div>';
@@ -2065,7 +2095,12 @@ function renderShipHistTable() {
   let grandTotalPeriod = 0, grandTotalAll = 0, grandCount = 0;
   const sections = products.map(item => {
     const allRowsData = computeShipHistRows(item);
-    const displayRows = cutoffTs ? allRowsData.filter(r => new Date(r.dt).getTime() >= cutoffTs) : allRowsData;
+    const displayRows = allRowsData.filter(r => {
+      const t = new Date(r.dt).getTime();
+      if (from && t < from) return false;
+      if (to && t > to) return false;
+      return true;
+    });
     const totalAllTime = allRowsData.length ? allRowsData[allRowsData.length-1].cumulative : 0;
     const totalInPeriod = displayRows.reduce((s,r) => s + r.qty, 0);
     grandTotalPeriod += totalInPeriod;
@@ -2136,12 +2171,17 @@ function exportShipHistExcel() {
   }
   const products = getShipHistProductList();
   if (!products.length) { alert('내보낼 출고 이력이 없습니다.'); return; }
-  const cutoffTs = shipHistPeriodDays ? (Date.now() - shipHistPeriodDays*24*3600*1000) : null;
+  const { from, to } = getShipHistDateRange();
 
   let data = [];
   products.forEach(item => {
     const allRowsData = computeShipHistRows(item);
-    const displayRows = cutoffTs ? allRowsData.filter(r => new Date(r.dt).getTime() >= cutoffTs) : allRowsData;
+    const displayRows = allRowsData.filter(r => {
+      const t = new Date(r.dt).getTime();
+      if (from && t < from) return false;
+      if (to && t > to) return false;
+      return true;
+    });
     displayRows.forEach(r => {
       data.push({
         '품목코드': item.code,
