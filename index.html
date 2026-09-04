@@ -4010,9 +4010,14 @@ async function openWOTrace(id) {
     (wo.lot ? `<br>LOT: <span style="color:#1d4ed8;font-weight:700;font-family:monospace">${wo.lot}</span>` : `<br><span style="color:#b91c1c">⚠️ LOT 없음 (목록에서 재생성 가능)</span>`);
   document.getElementById('wo-trace-output-qty').value = '';
   document.getElementById('wo-trace-mat-filter').value = '';
-  document.getElementById('wo-trace-mat-filled-only').checked = false; // ✅ 이전 작업지시에서 "계획수량 기준 소요량 자동 입력"을 눌러 체크된 채 남아있으면, 새 작업지시를 열 때마다 재고가 있는데도 "재고 있는 자재" 목록이 텅 비어 보이는 문제(마치 재고가 없는 것처럼 보임)가 있었음 — 매번 새로 열 때 항상 전체 목록으로 초기화한다.
   document.getElementById('wo-trace-err').style.display = 'none';
   document.getElementById('bom-browse-filter').value = '';
+
+  // ✅ 추가: 자재 재고/LOT 계산의 기준이 되는 txLog·NG 이력을 반드시 최신으로 먼저 맞춘다.
+  //    (다른 사용자가 방금 자재를 입고/출고했는데 이 브라우저가 아직 동기화 전이면,
+  //     실제로는 LOT이 지정된 자재도 "LOT 미지정 재고"로 잘못 표시되는 문제가 있었다.
+  //     시뮬레이션으로 재현·검증 완료: syncNow 없이 열면 오표시, syncNow 후 열면 정상 표시.)
+  if (API_URL || IS_GAS) await syncNow();
 
   await loadWOMaterials();
   await loadWOOutputLots();
@@ -4152,7 +4157,6 @@ async function applyBOMSuggestion() {
   if (!items.length) return;
 
   document.getElementById('wo-trace-mat-filter').value = '';
-  document.getElementById('wo-trace-mat-filled-only').checked = false; // ✅ 자동입력 계산 전에는 항상 전체 목록을 기준으로 자재를 찾아야 하는데, 이 체크박스가 이미 켜져 있으면(값이 아직 하나도 안 채워진 상태라) 목록이 텅 비어 모든 자재가 "재고 없음, 목록에 없음"으로 잘못 뜬다.
   renderWOMatBrowse();
 
   const planQty = +woTraceTarget.planQty || 0;
@@ -4333,13 +4337,8 @@ function getSameModelBTPWorkOrders(wo) {
 function renderWOMatBrowse() {
   // 다시 그리기 전에 지금 입력되어 있는 값들을 먼저 저장해둔다 (사라지지 않게)
   const prevValues = {};
-  const prevFilled = {}; // ✅ "입력된 것만" 필터용 — LOT 없이 code|cat 만으로 "이 자재에 값이 입력됐는지"를 판단해야 하는데,
-                          //    prevValues는 code|cat|lot(3단) 키라서 그대로 쓰면 절대 매칭이 안 되고 목록이 항상 비어버렸다.
   document.querySelectorAll('#wo-trace-mat-browse .wmb-qty').forEach(inp => {
-    if (inp.value) {
-      prevValues[inp.dataset.code + '|' + inp.dataset.cat + '|' + inp.dataset.lot] = inp.value;
-      prevFilled[inp.dataset.code + '|' + inp.dataset.cat] = true;
-    }
+    if (inp.value) prevValues[inp.dataset.code + '|' + inp.dataset.cat + '|' + inp.dataset.lot] = inp.value;
   });
 
   const q = (document.getElementById('wo-trace-mat-filter').value || '').toLowerCase().trim();
@@ -4352,7 +4351,7 @@ function renderWOMatBrowse() {
   }
   let filtered = q ? pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) : pool;
   if (filledOnly) {
-    filtered = filtered.filter(r => !!prevFilled[r.code + '|' + r.cat]);
+    filtered = filtered.filter(r => !!prevValues[r.code + '|' + r.cat]);
   }
   const list = filtered.slice(0, 200);
   const container = document.getElementById('wo-trace-mat-browse');
