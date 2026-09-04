@@ -3852,8 +3852,15 @@ async function submitQC() {
 
   // ✅ 수입검사/출하검사 + 합격 + 신규 등록일 때만 자동 입고 (수정 시엔 중복 반영 방지를 위해 하지 않음)
   let inboundOk = null;
+  let consumeResult = null;
   if (isNew && (inspType === '수입검사' || inspType === '출하검사') && result === '합격') {
     inboundOk = await autoInboundFromQC(body, totalQty, qcSelectedItem.unit);
+
+    // ✅ 반제품(BTP) 출하검사 합격 시, BOM(자재 소요량) 설정 기준으로 투입 자재를
+    //    자동으로 계산해서 원자재 재고에서 차감한다 (전공정추적에서 수동으로 안 해도 됨).
+    if (inboundOk && inspType === '출하검사' && qcSelectedItem.cat === 'BTP' && qcSelectedWorkOrder) {
+      consumeResult = await autoConsumeBOMMaterials(body, totalQty, qcSelectedWorkOrder.id, qcSelectedWorkOrder.orderNo);
+    }
   }
 
   qcEditTarget = null;
@@ -3861,8 +3868,73 @@ async function submitQC() {
   await renderQC();
   if (inboundOk === true) {
     const label = inspType === '출하검사' ? '완제품입고' : '자재입고';
-    alert(`✅ 품질검사 등록 완료 + ${label} ${totalQty.toLocaleString()} ${qcSelectedItem.unit||''} 자동 반영되었습니다.`);
+    let msg = `✅ 품질검사 등록 완료 + ${label} ${totalQty.toLocaleString()} ${qcSelectedItem.unit||''} 자동 반영되었습니다.`;
+    if (consumeResult) {
+      if (!consumeResult.consumed.length && !consumeResult.shortages.length) {
+        msg += `\n\n⚠️ 이 품목에 대한 자재 소요량(BOM) 설정이 없어서 자재는 자동 차감되지 않았습니다. 전공정추적에서 BOM을 설정해두시면 다음부터 자동으로 차감됩니다.`;
+      } else if (consumeResult.consumed.length) {
+        const lines = consumeResult.consumed.map(c => `- ${c.name} ${c.qty.toLocaleString()} (LOT: ${c.lot})`).join('\n');
+        msg += `\n\n📦 자동 차감된 자재:\n${lines}`;
+      }
+      if (consumeResult.shortages.length) {
+        msg += `\n\n⚠️ 재고 부족으로 다 못 채운 자재:\n${consumeResult.shortages.join('\n')}`;
+      }
+    }
+    alert(msg);
   }
+}
+
+// ✅ 반제품 출하검사 합격 시, 그 품목의 BOM(자재 소요량) 설정을 기준으로
+//    "합격수량 × 1개당 소요량"만큼 원자재를 선입선출로 자동 출고 처리한다.
+//    한 LOT에 재고가 모자라면 다음(그다음 오래된) LOT으로 넘어가며 채운다.
+//    작업지시가 연결되어 있으면 전공정추적의 "투입 자재" 기록도 같이 남긴다.
+async function autoConsumeBOMMaterials(qcBody, totalQty, woId, woNo) {
+  const bomItems = BOM.filter(b => b.productCode === qcBody.code);
+  const consumed = [], shortages = [];
+  if (!bomItems.length) return { consumed, shortages };
+
+  for (const bomItem of bomItems) {
+    let needed = (+bomItem.qtyPerUnit || 0) * totalQty;
+    if (needed <= 0) continue;
+
+    const { outType } = woMatLotTypes(bomItem.materialCat);
+    const { activeLots } = computeActiveLots(bomItem.materialCode, woMatLotTypes(bomItem.materialCat).inType, outType, bomItem.materialCat);
+
+    let remaining = needed;
+    for (const lotInfo of activeLots) {
+      if (remaining <= 0) break;
+      const takeQty = Math.min(remaining, lotInfo.remain);
+
+      const txEntry = {
+        id: Date.now() + Math.floor(Math.random()*100000), type: outType, code: bomItem.materialCode, name: bomItem.materialName,
+        cat: bomItem.materialCat, unit: bomItem.materialUnit, qty: takeQty,
+        note: `[${woNo || ''} 출하검사 합격 자동 자재차감]`, lot: lotInfo.lot, dt: vnDt(), dest: ''
+      };
+      let res = await api('addTx', { ...txEntry, token: ADMIN_TOKEN, user: CURRENT_USER || '' });
+      if (!res || !res.ok) res = await api('addTx', { ...txEntry, token: ADMIN_TOKEN, user: CURRENT_USER || '' });
+      if (!res || !res.ok) continue; // 이 LOT은 실패, 다음 LOT 시도
+
+      txLog.push(txEntry);
+      const arr = {TP:DB.tp, BTP:DB.btp, KR:DB.kr, VN:DB.vn, VTTH:DB.vtth}[bomItem.materialCat];
+      const item = arr && arr.find(r => r.code === bomItem.materialCode);
+      if (item) { item.cur = Math.max(0,(+item.cur||0) - takeQty); item.total = Math.max(0,(+item.total||0) - takeQty); }
+
+      if (woId) {
+        const matBody = { workOrderId: woId, orderNo: woNo, productCode: qcBody.code, code: bomItem.materialCode, name: bomItem.materialName, cat: bomItem.materialCat, unit: bomItem.materialUnit, lot: lotInfo.lot, qty: takeQty, token: ADMIN_TOKEN, user: CURRENT_USER || '' };
+        let matRes = await api('addWOMaterial', matBody);
+        if (!matRes || !matRes.ok) await api('addWOMaterial', matBody);
+      }
+
+      consumed.push({ code: bomItem.materialCode, name: bomItem.materialName, qty: takeQty, lot: lotInfo.lot === '__nolot__' ? '미지정' : lotInfo.lot });
+      remaining -= takeQty;
+    }
+    if (remaining > 0) {
+      shortages.push(`${bomItem.materialName}(${bomItem.materialCode}) ${remaining.toLocaleString()}${bomItem.materialUnit||''} 부족`);
+    }
+  }
+
+  if (woId) { await loadWOMaterials(); }
+  return { consumed, shortages };
 }
 
 // ✅ 수입검사/출하검사 합격 시, 실제 입고(재고 증가) 거래를 자동으로 생성한다.
@@ -4214,6 +4286,37 @@ function resolveFIFOLot(code, cat) {
   return cur > 0 ? {lot: '__nolot__', remain: cur} : {lot: '', remain: 0};
 }
 
+// ✅ 완제품·반제품 모델명 앞의 전력 표기(30KW, 3.2KW, 40KW, 50KW 등)를 뽑아낸다.
+//    TP는 "30KW PFC INDUCTOR", BTP는 "30KW OUT L1"처럼 모델(model) 필드 값 자체는
+//    서로 다르게 분류되어 있어서, 이 앞자리 표기로 "같은 제품군"인지 판단한다.
+function getPowerPrefix(modelOrName) {
+  const m = String(modelOrName || '').match(/^(\d+\.?\d*\s*KW)/i);
+  return m ? m[1].replace(/\s+/g,'').toUpperCase() : null;
+}
+
+// ✅ 완제품 작업지시와 "같은 모델(전력 표기 기준)"인 반제품 작업지시(실적이 있고
+//    아직 재고가 남은 것)를 찾는다. 여기서 고르면 선입선출이 아니라 그 작업지시가
+//    만든 "특정 LOT"을 정확히 지정해서 쓸 수 있다.
+function getSameModelBTPWorkOrders(wo) {
+  const woItem = allRows().find(r => r.code === wo.code);
+  const targetPrefix = woItem ? getPowerPrefix(woItem.model || woItem.name) : null;
+  if (!targetPrefix) return [];
+  const results = [];
+  WO.forEach(w => {
+    if (String(w.id) === String(wo.id) || !w.lot) return;
+    const item = allRows().find(r => r.code === w.code && r.cat === 'BTP');
+    if (!item) return;
+    const itemPrefix = getPowerPrefix(item.model || item.name);
+    if (itemPrefix !== targetPrefix) return;
+    const { activeLots } = computeActiveLots(w.code, 'tp-in', 'otp', 'BTP');
+    const lotInfo = activeLots.find(l => l.lot === w.lot);
+    const remain = lotInfo ? lotInfo.remain : 0;
+    if (remain <= 0) return; // 이미 다 소진된 LOT은 제외
+    results.push({ woId: w.id, orderNo: w.orderNo, code: w.code, name: w.name, unit: w.unit, lot: w.lot, producedQty: +w.producedQty||0, remain });
+  });
+  return results;
+}
+
 // ✅ 재고가 있는 자재 전체를 검색으로 좁혀서, 체크 없이 수량만 입력하면 되는 목록.
 //    많을 땐 검색어로 줄이도록 최대 200건까지만 표시한다.
 //    ✅ "입력된 것만" 체크박스: BOM 자동입력 등으로 값이 채워진 자재만 걸러서 보여줘서,
@@ -4223,7 +4326,7 @@ function renderWOMatBrowse() {
   // 다시 그리기 전에 지금 입력되어 있는 값들을 먼저 저장해둔다 (사라지지 않게)
   const prevValues = {};
   document.querySelectorAll('#wo-trace-mat-browse .wmb-qty').forEach(inp => {
-    if (inp.value) prevValues[inp.dataset.code + '|' + inp.dataset.cat] = inp.value;
+    if (inp.value) prevValues[inp.dataset.code + '|' + inp.dataset.cat + '|' + inp.dataset.lot] = inp.value;
   });
 
   const q = (document.getElementById('wo-trace-mat-filter').value || '').toLowerCase().trim();
@@ -4235,15 +4338,36 @@ function renderWOMatBrowse() {
   }
   const list = filtered.slice(0, 200);
   const container = document.getElementById('wo-trace-mat-browse');
+
+  // ✅ "같은 모델 반제품 작업지시" 우선 목록 (검색어/필터와 무관하게 항상 위에 보여준다)
+  const sameModelWOs = woTraceTarget ? getSameModelBTPWorkOrders(woTraceTarget) : [];
+  let sameModelHtml = '';
+  if (sameModelWOs.length) {
+    sameModelHtml = `<div style="background:#eef2ff;border-radius:6px;padding:6px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:#3730a3;margin-bottom:4px">🔗 같은 모델 반제품 작업지시 (특정 LOT을 바로 지정해서 사용)</div>
+      ${sameModelWOs.map(w => {
+        const savedVal = prevValues[w.code + '|BTP|' + w.lot] || '';
+        return `<div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #dbeafe;font-size:12px">
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${w.name} (${w.code})">
+            <span style="color:#3730a3;font-weight:600">${w.orderNo}</span> · ${w.name}
+          </span>
+          <span style="color:#888;font-family:monospace;font-size:10px;white-space:nowrap">${w.lot}</span>
+          <span style="color:#166534;font-weight:600;white-space:nowrap;font-size:11px">재고 ${w.remain.toLocaleString()}</span>
+          <input class="wmb-qty" data-code="${w.code}" data-cat="BTP" data-lot="${w.lot}" data-name="${(w.name||'').replace(/"/g,'&quot;')}" data-unit="${w.unit||''}" data-remain="${w.remain}" type="number" placeholder="수량" value="${savedVal}" style="width:56px;font-size:11px">
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
   if (!list.length) {
     const emptyMsg = filledOnly ? '아직 수량을 입력한 자재가 없습니다. 체크를 해제하면 전체 목록이 보입니다.' : (q ? '검색 결과가 없습니다.' : '재고가 있는 자재가 없습니다.');
-    container.innerHTML = `<div style="color:#aaa;font-size:12px;padding:8px 2px">${emptyMsg}</div>`;
+    container.innerHTML = sameModelHtml + `<div style="color:#aaa;font-size:12px;padding:8px 2px">${emptyMsg}</div>`;
     return;
   }
-  container.innerHTML = list.map(r => {
+  container.innerHTML = sameModelHtml + list.map(r => {
     const {lot, remain} = resolveFIFOLot(r.code, r.cat);
     const lotLabel = lot === '__nolot__' ? 'LOT 미지정' : (lot || '-');
-    const savedVal = prevValues[r.code + '|' + r.cat] || '';
+    const savedVal = prevValues[r.code + '|' + r.cat + '|' + lot] || '';
     return `<div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #f5e6c8;font-size:12px">
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.name} (${r.code})">${r.name} <span style="color:#aaa;font-family:monospace;font-size:10px">${r.code}</span></span>
       <span style="color:#888;font-family:monospace;font-size:10px;white-space:nowrap" title="선입선출로 자동 배정되는 LOT">${lotLabel}</span>
