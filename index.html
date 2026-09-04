@@ -2943,29 +2943,42 @@ function acPickWO(i) {
 
 // ✅ 작업지시 생성일 기준으로 LOT을 자동 계산해서 미리 보여준다.
 //    기존 LOT 생성기(buildLot)와 완전히 같은 규칙을 그대로 쓴다.
-//    ✅ 완제품(TP)만 제조사 선택이 필요하다 — 실제로 고객에게 나가는 완제품은 어느
-//    CORE 제조사를 썼는지 LOT에 명확히 남아야 하지만, 반제품(BTP)은 그럴 필요가 없어서
-//    제조사 선택란 자체를 안 보여주고 기본값(C)으로 조용히 LOT을 만든다.
+//    ✅ 완제품(TP)만 제조사 선택이 필요하다 — 고객에게 나가는 완제품은 어느 CORE
+//    제조사를 썼는지 LOT에 명확히 남아야 한다. 반제품(BTP)은 권선 공정이라 제조사
+//    개념이 필요 없고, 그냥 원자재처럼 "LOT-YYYYMMDD-NN" 형식의 날짜 기반 LOT으로
+//    만든다 (실제 사용한 COIL 원자재의 LOT은 전공정추적의 "투입 자재" 목록에서
+//    이미 확인 가능하므로, BTP 자체 LOT에 제조사를 억지로 넣을 필요가 없다).
 function updateWOLotPreview() {
   const lotEl = document.getElementById('wo-lot');
   if (!woSelectedItem) { lotEl.value = ''; return; }
   const needsMaker = woSelectedItem.cat === 'TP';
   document.getElementById('wo-maker-row').style.display = needsMaker ? 'block' : 'none';
-  const maker = needsMaker ? document.getElementById('wo-maker').value : 'C';
 
-  if (needsMaker && !maker) {
-    lotEl.value = '⚠️ 제조사를 먼저 선택하세요';
-    lotEl.style.color = '#b91c1c';
-    return;
+  if (needsMaker) {
+    const maker = document.getElementById('wo-maker').value;
+    if (!maker) {
+      lotEl.value = '⚠️ 제조사를 먼저 선택하세요';
+      lotEl.style.color = '#b91c1c';
+      return;
+    }
+    lotEl.style.color = '#1d4ed8';
+    const today = new Date();
+    const mm = String(today.getMonth()+1).padStart(2,'0');
+    const dd = String(today.getDate()).padStart(2,'0');
+    const prefix = mm+'/'+dd;
+    const seq = txLog.filter(t => t.dt && t.dt.startsWith(prefix) && (t.type==='tp-in' || t.type==='otp')).length + 1;
+    lotEl.value = buildLot(today, 'tp-in', seq, maker);
+  } else {
+    // 반제품(BTP): 원자재와 같은 날짜 기반 LOT (제조사 없음)
+    lotEl.style.color = '#1d4ed8';
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth()+1).padStart(2,'0');
+    const dd = String(today.getDate()).padStart(2,'0');
+    const prefix = mm+'/'+dd;
+    const seq = txLog.filter(t => t.dt && t.dt.startsWith(prefix) && t.type === 'tp-in').length + 1;
+    lotEl.value = buildLot(today, 'wo-btp', seq, '');
   }
-  lotEl.style.color = '#1d4ed8';
-
-  const today = new Date();
-  const mm = String(today.getMonth()+1).padStart(2,'0');
-  const dd = String(today.getDate()).padStart(2,'0');
-  const prefix = mm+'/'+dd;
-  const seq = txLog.filter(t => t.dt && t.dt.startsWith(prefix) && (t.type==='tp-in' || t.type==='otp')).length + 1;
-  lotEl.value = buildLot(today, 'tp-in', seq, maker);
 }
 
 async function submitWO() {
