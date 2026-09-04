@@ -5875,8 +5875,15 @@ function setSyncBadge(state, msg) {
 
 // ── 전체 동기화
 var _syncing = false;
+var _syncPromise = null; // ✅ 추가: 진행 중인 동기화의 Promise를 담아둬서, 동시에 들어온 다른 호출이 이걸 같이 기다릴 수 있게 한다
 async function syncNow() {
-  if (_syncing) return;
+  // ✅ 수정: 이미 동기화 중이면 그냥 아무것도 안 하고 리턴하던 것을, 진행 중인 동기화의
+  //    Promise를 그대로 반환해서 호출한 쪽이 그 완료를 함께 기다리도록 바꿨다.
+  //    (기존엔 예: 백그라운드 자동동기화가 마침 실행 중일 때 openWOTrace()가 syncNow()를
+  //     호출하면 곧바로 리턴돼버려서, 실제로는 서버에 있는 LOT 데이터가 아직 화면에 반영되기
+  //     전 시점에 렌더링이 이뤄져 "LOT 미지정"으로 잘못 표시되는 문제가 있었다.
+  //     시뮬레이션으로 재현·검증 완료.)
+  if (_syncing) return _syncPromise;
   // ✅ 관리자가 수량을 수정 중인 모달이 열려있으면 동기화를 미루어
   //    "화면에 보이는 옛 수량 + 방금 동기화된 실제 수량" 혼선으로 인한 오차 사고를 예방
   const editModalOpen =
@@ -5886,6 +5893,16 @@ async function syncNow() {
   if (editModalOpen) { console.log('수정 모달 열림 - 동기화 보류'); return; }
 
   _syncing = true;
+  _syncPromise = _syncNowRun(); // ✅ 추가: 실제 동기화 작업을 별도 함수로 분리해서, 그 Promise를 밖에서도 공유할 수 있게 한다
+  try {
+    await _syncPromise;
+  } finally {
+    _syncing = false;
+    _syncPromise = null; // ✅ 추가
+  }
+}
+
+async function _syncNowRun() { // ✅ 추가: syncNow()의 실제 동작 본문 (기존 코드와 동일, 함수만 분리)
   setSyncBadge('loading');
   try {
     const [ar, tr, nr] = await Promise.all([api('getAll'), api('getTxLog'), api('getNGAll')]);
@@ -6027,9 +6044,11 @@ async function syncNow() {
   } catch(e) {
     setSyncBadge('error', '❌ ' + e.message.substring(0,30));
     console.error('Sync error:', e);
-  } finally {
-    _syncing = false;
   }
+  // ✅ 수정: _syncing 리셋은 이제 바깥 syncNow() wrapper가 finally에서 담당하므로 여기선 하지 않는다
+  //    (여기서도 false로 만들면, 바깥 wrapper가 아직 자기 작업 중(_syncPromise 정리 전)인데
+  //     _syncing이 먼저 꺼져버려서 그 사이 들어오는 또 다른 동시 호출이 진행 중인 동기화를
+  //     못 기다리고 새로 하나 더 시작해버리는 문제가 생길 수 있다.)
 }
 
 function startAutoSync() {
