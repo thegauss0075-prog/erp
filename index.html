@@ -1053,7 +1053,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     </div>
     <div class="ov-fr"><label>검사자 (선택)</label><input id="qc-inspector" placeholder="선택사항"></div>
     <div class="ov-fr">
-      <label>첨부파일 (선택) — 특성 데이터, 검사성적서 등</label>
+      <label id="qc-attachment-label">첨부파일 (선택) — 특성 데이터, 검사성적서 등</label>
       <input id="qc-attachment" type="file">
       <div id="qc-attachment-current" style="font-size:11px;color:#1d4ed8;margin-top:4px"></div>
     </div>
@@ -1071,6 +1071,11 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   <div class="ov-box" style="max-width:580px;max-height:85vh;overflow-y:auto">
     <h3>🔗 전공정 추적</h3>
     <div id="wo-trace-info" style="font-size:13px;color:#555;margin-bottom:1rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
+
+    <div id="wo-trace-docs-wrap" style="margin-bottom:16px;background:#fefce8;border-radius:8px;padding:10px 12px;border-left:4px solid #ca8a04">
+      <div style="font-weight:700;font-size:13px;margin-bottom:6px;color:#854d0e">📎 첨부 문서 (수입검사 성적서 · 공정검사 특성데이터 · 출하검사 특성데이터)</div>
+      <div id="wo-trace-docs-list" style="font-size:12px"></div>
+    </div>
 
     <div style="margin-bottom:16px">
       <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#166534">📤 산출 LOT (이 작업지시로 만들어진 완제품/반제품 — 작업지시에 배정된 LOT을 사용합니다)</div>
@@ -3639,6 +3644,12 @@ function onQCTypeChange() {
   document.getElementById('qc-lot').style.background = isShip ? '#f5f6f8' : '#fff';
   document.getElementById('qc-lot-label').firstChild.textContent = isShip ? '작업지시의 LOT (자동 채워짐) ' : 'LOT (선택) ';
   updateQCCoreMakerVisibility(); // ✅ CORE 자재면 여기서 다시 제조사란 보여주고 생성버튼 숨김
+
+  // ✅ 수입검사(검사성적서)·출하검사(특성 데이터)는 첨부파일이 필수임을 라벨로 표시
+  const attachLabel = document.getElementById('qc-attachment-label');
+  if (type === '수입검사') attachLabel.innerHTML = '첨부파일 * — 검사 성적서 <span style="color:#b91c1c">(필수)</span>';
+  else if (type === '출하검사') attachLabel.innerHTML = '첨부파일 * — 특성 데이터 <span style="color:#b91c1c">(필수)</span>';
+  else attachLabel.textContent = '첨부파일 (선택) — 특성 데이터, 검사성적서 등';
 }
 
 async function openEditQC(id) {
@@ -3726,6 +3737,19 @@ async function submitQC() {
   if (inspType === '수입검사' || inspType === '출하검사') {
     totalQty = parseFloat(document.getElementById('qc-total-qty').value);
     if (!totalQty || totalQty <= 0) { errEl.textContent = '총 입고수량을 입력해주세요.'; errEl.style.display='block'; return; }
+  }
+
+  // ✅ 수입검사(검사성적서)와 출하검사(특성 데이터)는 첨부파일을 반드시 첨부해야 한다.
+  //    수정 모드에서 이미 첨부된 파일이 있으면(새로 안 골라도) 그대로 인정한다.
+  if (inspType === '수입검사' || inspType === '출하검사') {
+    const hasNewFile = document.getElementById('qc-attachment').files.length > 0;
+    const hasExistingFile = qcEditTarget && qcEditTarget.attachmentUrl;
+    if (!hasNewFile && !hasExistingFile) {
+      const label = inspType === '수입검사' ? '검사 성적서' : '특성 데이터';
+      errEl.textContent = `⚠️ ${inspType}는 ${label} 파일을 반드시 첨부해야 합니다.`;
+      errEl.style.display = 'block';
+      return;
+    }
   }
 
   // ✅ CORE 원자재는 제조사(분류용)를 반드시 고르고, LOT은 제조사가 실제로 보낸 값을
@@ -3892,6 +3916,7 @@ async function openWOTrace(id) {
   await loadWOMaterials();
   await loadWOOutputLots();
   await loadBOM();
+  await loadQC(); // ✅ 투입자재 LOT과 수입검사 기록을 매칭해서 첨부파일 링크를 보여주기 위해 필요
   renderWOTraceLists();
   renderWOMatBrowse();
   renderBOMList();
@@ -4051,11 +4076,54 @@ function renderWOTraceLists() {
     </div>`).join('') : `<div style="color:#aaa;font-size:12px">아직 산출 LOT 기록이 없습니다.</div>`;
 
   const matList = document.getElementById('wo-trace-material-list');
-  matList.innerHTML = materials.length ? materials.map(r => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#fffbeb;border-radius:6px;margin-bottom:4px;font-size:12px">
-      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · <span style="font-family:monospace;color:#92400e">${r.lot||'LOT 미지정'}</span></span>
+  matList.innerHTML = materials.length ? materials.map(r => {
+    // ✅ 이 자재의 LOT과 같은 코드+LOT으로 등록된 수입검사 기록을 찾아서,
+    //    첨부파일(성적서 등)이 있으면 📎로 바로 열어볼 수 있게 링크한다.
+    const qcMatch = r.lot ? QC.find(q => q.inspType === '수입검사' && q.code === r.code && q.lot === r.lot && q.attachmentUrl) : null;
+    const qcLink = qcMatch ? ` <a href="${qcMatch.attachmentUrl}" target="_blank" title="수입검사 첨부파일: ${qcMatch.attachmentName||'파일'} (검사일 ${qcMatch.inspDate||''})" style="text-decoration:none">📎</a>` : '';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#fffbeb;border-radius:6px;margin-bottom:4px;font-size:12px">
+      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · <span style="font-family:monospace;color:#92400e">${r.lot||'LOT 미지정'}</span>${qcLink}</span>
       <span>${(+r.qty||0).toLocaleString()} ${r.unit||''} <button onclick="deleteWOMaterialUI(${r.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button></span>
-    </div>`).join('') : `<div style="color:#aaa;font-size:12px">아직 투입 자재 기록이 없습니다.</div>`;
+    </div>`;
+  }).join('') : `<div style="color:#aaa;font-size:12px">아직 투입 자재 기록이 없습니다.</div>`;
+
+  renderWOTraceDocs(materials);
+}
+
+// ✅ 이 작업지시와 관련된 모든 첨부문서를 한 곳에 모아서 보여준다.
+//    - 수입검사 성적서: 투입자재의 LOT과 코드가 일치하는 수입검사 기록들
+//    - 공정검사/출하검사 특성데이터: 이 작업지시(workOrderId)에 직접 연결된 검사 기록들
+function renderWOTraceDocs(materials) {
+  const wo = woTraceTarget;
+  const docs = [];
+
+  // 수입검사: 투입자재 LOT과 매칭
+  (materials || []).forEach(m => {
+    if (!m.lot) return;
+    const q = QC.find(x => x.inspType === '수입검사' && x.code === m.code && x.lot === m.lot && x.attachmentUrl);
+    if (q && !docs.some(d => d.id === q.id)) {
+      docs.push({ ...q, typeLabel: '수입검사', typeColor: '#0d9488', extra: `${m.name} (${m.code})` });
+    }
+  });
+
+  // 공정검사·출하검사: 이 작업지시에 직접 연결된 기록
+  QC.filter(q => (q.inspType === '공정검사' || q.inspType === '출하검사') && String(q.workOrderId) === String(wo.id) && q.attachmentUrl)
+    .forEach(q => {
+      if (!docs.some(d => d.id === q.id)) {
+        docs.push({ ...q, typeLabel: q.inspType, typeColor: q.inspType === '출하검사' ? '#7c3aed' : '#185FA5', extra: q.name || '' });
+      }
+    });
+
+  const listEl = document.getElementById('wo-trace-docs-list');
+  if (!docs.length) {
+    listEl.innerHTML = `<span style="color:#aaa">아직 연결된 첨부 문서가 없습니다.</span>`;
+    return;
+  }
+  listEl.innerHTML = docs.map(d => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #fef3c7">
+      <span><span style="color:${d.typeColor};font-weight:700">[${d.typeLabel}]</span> ${d.extra} <span style="color:#aaa;font-size:11px">${d.inspDate||''}</span></span>
+      <a href="${d.attachmentUrl}" target="_blank" style="text-decoration:none;color:#1d4ed8;font-weight:600">📎 ${d.attachmentName||'파일 보기'}</a>
+    </div>`).join('');
 }
 
 async function addWOOutputLotUI() {
