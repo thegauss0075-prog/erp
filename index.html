@@ -4081,12 +4081,18 @@ function renderBOMBrowse() {
   if (!woTraceTarget) return;
   const q = (document.getElementById('bom-browse-filter').value || '').toLowerCase().trim();
   const already = new Set(BOM.filter(b => b.productCode === woTraceTarget.code).map(b => b.materialCode + '|' + b.materialCat));
-  const pool = allRows().filter(r => r.cat !== 'TP' && !already.has(r.code + '|' + r.cat));
+  let pool = allRows().filter(r => r.cat !== 'TP' && !already.has(r.code + '|' + r.cat));
+  // ✅ 반제품(BTP)은 권선 공정이라 실제로 필요한 자재가 COIL뿐이다. 다른 부자재까지
+  //    다 보여주면 찾기 번거로우니, 반제품 지시서일 땐 COIL만 목록에 남긴다.
+  if (woTraceTarget.cat === 'BTP') {
+    pool = pool.filter(r => r.name.toUpperCase().includes('COIL'));
+  }
   const filtered = q ? pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) : pool;
   const list = filtered.slice(0, 200);
   const container = document.getElementById('bom-browse-list');
   if (!list.length) {
-    container.innerHTML = `<div style="color:#aaa;font-size:11px;padding:6px 2px">${q ? '검색 결과가 없습니다.' : '추가할 수 있는 자재가 없습니다 (전부 이미 설정됨).'}</div>`;
+    const emptyMsg = q ? '검색 결과가 없습니다.' : (woTraceTarget.cat === 'BTP' ? 'COIL 자재가 없습니다 (전부 이미 설정됨).' : '추가할 수 있는 자재가 없습니다 (전부 이미 설정됨).');
+    container.innerHTML = `<div style="color:#aaa;font-size:11px;padding:6px 2px">${emptyMsg}</div>`;
     return;
   }
   container.innerHTML = list.map(r => `
@@ -4331,7 +4337,12 @@ function renderWOMatBrowse() {
 
   const q = (document.getElementById('wo-trace-mat-filter').value || '').toLowerCase().trim();
   const filledOnly = document.getElementById('wo-trace-mat-filled-only').checked;
-  const pool = allRows().filter(r => r.cat !== 'TP' && (+r.cur || 0) > 0);
+  let pool = allRows().filter(r => r.cat !== 'TP' && (+r.cur || 0) > 0);
+  // ✅ 반제품(BTP) 지시서는 권선 공정이라 실제로 쓰는 자재가 COIL뿐이다. 다른 부자재까지
+  //    섞여 나오면 찾기 번거로우니, 반제품일 땐 COIL만 목록에 남긴다.
+  if (woTraceTarget && woTraceTarget.cat === 'BTP') {
+    pool = pool.filter(r => r.name.toUpperCase().includes('COIL'));
+  }
   let filtered = q ? pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) : pool;
   if (filledOnly) {
     filtered = filtered.filter(r => !!prevValues[r.code + '|' + r.cat]);
@@ -4340,7 +4351,7 @@ function renderWOMatBrowse() {
   const container = document.getElementById('wo-trace-mat-browse');
 
   // ✅ "같은 모델 반제품 작업지시" 우선 목록 (검색어/필터와 무관하게 항상 위에 보여준다)
-  const sameModelWOs = woTraceTarget ? getSameModelBTPWorkOrders(woTraceTarget) : [];
+  const sameModelWOs = (woTraceTarget && woTraceTarget.cat === 'TP') ? getSameModelBTPWorkOrders(woTraceTarget) : [];
   let sameModelHtml = '';
   if (sameModelWOs.length) {
     sameModelHtml = `<div style="background:#eef2ff;border-radius:6px;padding:6px;margin-bottom:8px">
