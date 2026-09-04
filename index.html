@@ -4010,15 +4010,8 @@ async function openWOTrace(id) {
     (wo.lot ? `<br>LOT: <span style="color:#1d4ed8;font-weight:700;font-family:monospace">${wo.lot}</span>` : `<br><span style="color:#b91c1c">⚠️ LOT 없음 (목록에서 재생성 가능)</span>`);
   document.getElementById('wo-trace-output-qty').value = '';
   document.getElementById('wo-trace-mat-filter').value = '';
-  document.getElementById('wo-trace-mat-filled-only').checked = false; // ✅ 추가: 이전 작업지시에서 켜진 채로 남아있던 상태 때문에 새 작업지시를 열었을 때 자재 목록이 처음부터 비어 보이는 문제 방지
   document.getElementById('wo-trace-err').style.display = 'none';
   document.getElementById('bom-browse-filter').value = '';
-
-  // ✅ 추가: 자재 재고/LOT 계산의 기준이 되는 txLog·NG 이력을 반드시 최신으로 먼저 맞춘다.
-  //    (다른 사용자가 방금 자재를 입고/출고했는데 이 브라우저가 아직 동기화 전이면,
-  //     실제로는 LOT이 지정된 자재도 "LOT 미지정 재고"로 잘못 표시되는 문제가 있었다.
-  //     시뮬레이션으로 재현·검증 완료: syncNow 없이 열면 오표시, syncNow 후 열면 정상 표시.)
-  if (API_URL || IS_GAS) await syncNow();
 
   await loadWOMaterials();
   await loadWOOutputLots();
@@ -4158,11 +4151,6 @@ async function applyBOMSuggestion() {
   if (!items.length) return;
 
   document.getElementById('wo-trace-mat-filter').value = '';
-  // ✅ 추가: "입력된 것만" 체크박스는 이전에 자동입력을 한 번이라도 성공시키면 checked=true로
-  //    남아있고, 모달을 닫았다 다시 열어도 DOM이 재사용되어 그 상태가 유지된다. 이 상태로
-  //    자재를 찾기 위한 첫 렌더링을 하면, 아직 아무 값도 안 채워진 시점이라 목록이 텅 비어서
-  //    실제로는 재고가 충분한 자재도 "재고 없음, 목록에 없음"으로 잘못 보고되는 문제가 있었다.
-  document.getElementById('wo-trace-mat-filled-only').checked = false;
   renderWOMatBrowse();
 
   const planQty = +woTraceTarget.planQty || 0;
@@ -4343,13 +4331,8 @@ function getSameModelBTPWorkOrders(wo) {
 function renderWOMatBrowse() {
   // 다시 그리기 전에 지금 입력되어 있는 값들을 먼저 저장해둔다 (사라지지 않게)
   const prevValues = {};
-  const prevFilled = {}; // ✅ 추가: "입력된 것만" 필터용 — LOT 없이 code|cat 만으로 "이 자재에 값이 입력됐는지"를 판단해야 하는데,
-                          //    prevValues는 code|cat|lot(3단) 키라서 그대로 쓰면 절대 매칭이 안 되고 목록이 항상 비어버렸다.
   document.querySelectorAll('#wo-trace-mat-browse .wmb-qty').forEach(inp => {
-    if (inp.value) {
-      prevValues[inp.dataset.code + '|' + inp.dataset.cat + '|' + inp.dataset.lot] = inp.value;
-      prevFilled[inp.dataset.code + '|' + inp.dataset.cat] = true;
-    }
+    if (inp.value) prevValues[inp.dataset.code + '|' + inp.dataset.cat + '|' + inp.dataset.lot] = inp.value;
   });
 
   const q = (document.getElementById('wo-trace-mat-filter').value || '').toLowerCase().trim();
@@ -4362,7 +4345,7 @@ function renderWOMatBrowse() {
   }
   let filtered = q ? pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) : pool;
   if (filledOnly) {
-    filtered = filtered.filter(r => !!prevFilled[r.code + '|' + r.cat]);
+    filtered = filtered.filter(r => !!prevValues[r.code + '|' + r.cat]);
   }
   const list = filtered.slice(0, 200);
   const container = document.getElementById('wo-trace-mat-browse');
@@ -5875,15 +5858,8 @@ function setSyncBadge(state, msg) {
 
 // ── 전체 동기화
 var _syncing = false;
-var _syncPromise = null; // ✅ 추가: 진행 중인 동기화의 Promise를 담아둬서, 동시에 들어온 다른 호출이 이걸 같이 기다릴 수 있게 한다
 async function syncNow() {
-  // ✅ 수정: 이미 동기화 중이면 그냥 아무것도 안 하고 리턴하던 것을, 진행 중인 동기화의
-  //    Promise를 그대로 반환해서 호출한 쪽이 그 완료를 함께 기다리도록 바꿨다.
-  //    (기존엔 예: 백그라운드 자동동기화가 마침 실행 중일 때 openWOTrace()가 syncNow()를
-  //     호출하면 곧바로 리턴돼버려서, 실제로는 서버에 있는 LOT 데이터가 아직 화면에 반영되기
-  //     전 시점에 렌더링이 이뤄져 "LOT 미지정"으로 잘못 표시되는 문제가 있었다.
-  //     시뮬레이션으로 재현·검증 완료.)
-  if (_syncing) return _syncPromise;
+  if (_syncing) return;
   // ✅ 관리자가 수량을 수정 중인 모달이 열려있으면 동기화를 미루어
   //    "화면에 보이는 옛 수량 + 방금 동기화된 실제 수량" 혼선으로 인한 오차 사고를 예방
   const editModalOpen =
@@ -5893,16 +5869,6 @@ async function syncNow() {
   if (editModalOpen) { console.log('수정 모달 열림 - 동기화 보류'); return; }
 
   _syncing = true;
-  _syncPromise = _syncNowRun(); // ✅ 추가: 실제 동기화 작업을 별도 함수로 분리해서, 그 Promise를 밖에서도 공유할 수 있게 한다
-  try {
-    await _syncPromise;
-  } finally {
-    _syncing = false;
-    _syncPromise = null; // ✅ 추가
-  }
-}
-
-async function _syncNowRun() { // ✅ 추가: syncNow()의 실제 동작 본문 (기존 코드와 동일, 함수만 분리)
   setSyncBadge('loading');
   try {
     const [ar, tr, nr] = await Promise.all([api('getAll'), api('getTxLog'), api('getNGAll')]);
@@ -6044,11 +6010,9 @@ async function _syncNowRun() { // ✅ 추가: syncNow()의 실제 동작 본문 
   } catch(e) {
     setSyncBadge('error', '❌ ' + e.message.substring(0,30));
     console.error('Sync error:', e);
+  } finally {
+    _syncing = false;
   }
-  // ✅ 수정: _syncing 리셋은 이제 바깥 syncNow() wrapper가 finally에서 담당하므로 여기선 하지 않는다
-  //    (여기서도 false로 만들면, 바깥 wrapper가 아직 자기 작업 중(_syncPromise 정리 전)인데
-  //     _syncing이 먼저 꺼져버려서 그 사이 들어오는 또 다른 동시 호출이 진행 중인 동기화를
-  //     못 기다리고 새로 하나 더 시작해버리는 문제가 생길 수 있다.)
 }
 
 function startAutoSync() {
