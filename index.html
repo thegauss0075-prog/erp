@@ -4343,8 +4343,13 @@ function getSameModelBTPWorkOrders(wo) {
 function renderWOMatBrowse() {
   // 다시 그리기 전에 지금 입력되어 있는 값들을 먼저 저장해둔다 (사라지지 않게)
   const prevValues = {};
+  const prevFilled = {}; // ✅ 추가: "입력된 것만" 필터용 — LOT 없이 code|cat 만으로 "이 자재에 값이 입력됐는지"를 판단해야 하는데,
+                          //    prevValues는 code|cat|lot(3단) 키라서 그대로 쓰면 절대 매칭이 안 되고 목록이 항상 비어버렸다.
   document.querySelectorAll('#wo-trace-mat-browse .wmb-qty').forEach(inp => {
-    if (inp.value) prevValues[inp.dataset.code + '|' + inp.dataset.cat + '|' + inp.dataset.lot] = inp.value;
+    if (inp.value) {
+      prevValues[inp.dataset.code + '|' + inp.dataset.cat + '|' + inp.dataset.lot] = inp.value;
+      prevFilled[inp.dataset.code + '|' + inp.dataset.cat] = true;
+    }
   });
 
   const q = (document.getElementById('wo-trace-mat-filter').value || '').toLowerCase().trim();
@@ -4357,7 +4362,7 @@ function renderWOMatBrowse() {
   }
   let filtered = q ? pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) : pool;
   if (filledOnly) {
-    filtered = filtered.filter(r => !!prevValues[r.code + '|' + r.cat]);
+    filtered = filtered.filter(r => !!prevFilled[r.code + '|' + r.cat]);
   }
   const list = filtered.slice(0, 200);
   const container = document.getElementById('wo-trace-mat-browse');
