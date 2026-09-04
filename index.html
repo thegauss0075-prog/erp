@@ -4010,6 +4010,7 @@ async function openWOTrace(id) {
     (wo.lot ? `<br>LOT: <span style="color:#1d4ed8;font-weight:700;font-family:monospace">${wo.lot}</span>` : `<br><span style="color:#b91c1c">⚠️ LOT 없음 (목록에서 재생성 가능)</span>`);
   document.getElementById('wo-trace-output-qty').value = '';
   document.getElementById('wo-trace-mat-filter').value = '';
+  document.getElementById('wo-trace-mat-filled-only').checked = false; // ✅ 추가: 이전 작업지시에서 켜진 채로 남아있던 상태 때문에 새 작업지시를 열었을 때 자재 목록이 처음부터 비어 보이는 문제 방지
   document.getElementById('wo-trace-err').style.display = 'none';
   document.getElementById('bom-browse-filter').value = '';
 
@@ -4157,6 +4158,11 @@ async function applyBOMSuggestion() {
   if (!items.length) return;
 
   document.getElementById('wo-trace-mat-filter').value = '';
+  // ✅ 추가: "입력된 것만" 체크박스는 이전에 자동입력을 한 번이라도 성공시키면 checked=true로
+  //    남아있고, 모달을 닫았다 다시 열어도 DOM이 재사용되어 그 상태가 유지된다. 이 상태로
+  //    자재를 찾기 위한 첫 렌더링을 하면, 아직 아무 값도 안 채워진 시점이라 목록이 텅 비어서
+  //    실제로는 재고가 충분한 자재도 "재고 없음, 목록에 없음"으로 잘못 보고되는 문제가 있었다.
+  document.getElementById('wo-trace-mat-filled-only').checked = false;
   renderWOMatBrowse();
 
   const planQty = +woTraceTarget.planQty || 0;
