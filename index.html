@@ -3975,13 +3975,20 @@ function renderBOMList() {
   if (!woTraceTarget) return;
   const items = BOM.filter(b => b.productCode === woTraceTarget.code);
   const listEl = document.getElementById('bom-list');
-  listEl.innerHTML = items.length ? items.map(b => `
+  listEl.innerHTML = items.length ? items.map(b => {
+    // ✅ BOM에는 소요량 처음 입력할 때의 단위가 저장돼 있는데, 그 뒤에 자재의 실제
+    //    단위가 재고현황에서 수정되면 여기 저장된 값은 안 바뀌고 예전 값 그대로 남는다.
+    //    그래서 항상 그 자재의 "지금 현재" 등록된 단위를 다시 찾아서 보여준다.
+    const liveItem = allRows().find(r => r.code === b.materialCode && r.cat === b.materialCat);
+    const displayUnit = (liveItem && liveItem.unit) || b.materialUnit || '';
+    return `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #e0e7ff;font-size:12px">
       <span>${b.materialName} <span style="color:#aaa;font-family:monospace;font-size:10px">${b.materialCode}</span></span>
-      <span>1개당 <strong>${(+b.qtyPerUnit||0).toLocaleString()}</strong> ${b.materialUnit||''}
+      <span>1개당 <strong>${(+b.qtyPerUnit||0).toLocaleString()}</strong> ${displayUnit}
         ${isAdmin ? `<button onclick="deleteBOMItemUI(${b.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button>` : ''}
       </span>
-    </div>`).join('') : `<div style="color:#aaa;font-size:11px">아직 설정된 소요량이 없습니다. 아래에서 검색해서 추가하세요.</div>`;
+    </div>`;
+  }).join('') : `<div style="color:#aaa;font-size:11px">아직 설정된 소요량이 없습니다. 아래에서 검색해서 추가하세요.</div>`;
 
   const suggestWrap = document.getElementById('bom-suggest-wrap');
   const note = document.getElementById('bom-suggest-note');
