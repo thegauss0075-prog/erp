@@ -4709,20 +4709,17 @@ async function deleteProcessLogUI(id) {
 //    cat 없이 code만으로 거래를 모으면 완제품 이력과 반제품 이력이 뒤섞여 잔여량이 틀어진다.
 //    cat을 안 넘기면(하위호환) 예전처럼 code만으로 동작한다.
 function computeActiveLots(code, inType, outType, cat) {
-  let allTx = [...txLog, ...ngLog].filter(t => t.code === code && (!cat || t.cat === cat));
-
-  // ✅ 추가: 과거 catKey 버그로 인해 이 코드의 입고 이력이 실제와 다른 cat(예: 'TP')으로
-  //    잘못 저장된 레거시 데이터가 있으면, 엄격한 cat 매칭으로는 이력을 하나도 못 찾는다.
-  //    이 코드가 TP/BTP처럼 여러 카테고리에 걸쳐 "정상적으로" 공유되는 게 아니라면(그런
-  //    경우엔 cat을 무시하면 서로 다른 품목의 이력이 섞여 위험하다), 코드만으로 다시 찾아서
-  //    이런 레거시 오분류 데이터도 정상적으로 잡아낸다. openTrace()에서 이미 쓰던 것과
-  //    같은 안전장치를 여기(작업지시 전공정추적의 LOT 계산)에도 동일하게 적용한 것이다.
-  if (cat && allTx.length === 0) {
-    const sharedAcrossCats = allRows().filter(r => r.code === code).length > 1;
-    if (!sharedAcrossCats) {
-      allTx = [...txLog, ...ngLog].filter(t => t.code === code);
-    }
-  }
+  // ✅ 재수정: 예전엔 "엄격한 cat 필터로 아무것도 안 나올 때만" 코드만으로 재검색했는데,
+  //    이력 중 일부는 cat이 정상이고 일부만 오염된 경우(예: LOT A는 cat 정상, LOT B는
+  //    cat이 잘못 저장됨) 엄격한 필터가 "0건"이 아니라 "일부"만 찾아버려서, 여전히
+  //    LOT B가 통째로 누락되는 문제가 있었다(실제 사례: 전체 재고 6,320인데 이력상
+  //    320만 잡히던 버그). openTrace()가 이미 쓰고 있는 것과 완전히 동일하게, "이 코드가
+  //    TP/BTP처럼 여러 카테고리에 걸쳐 진짜로 공유되는 게 아니라면" 처음부터 무조건
+  //    카테고리를 무시하고 코드만으로 조회한다 — 부분 오염이든 전체 오염이든 다 잡힌다.
+  const codeSharedAcrossCats = cat && allRows().filter(r => r.code === code).length > 1;
+  let allTx = codeSharedAcrossCats
+    ? [...txLog, ...ngLog].filter(t => t.code === code && t.cat === cat)
+    : [...txLog, ...ngLog].filter(t => t.code === code);
 
   // ✅ 추가: 완제품/반제품(BTP)은 원래 'tp-in'/'otp' 타입으로 기록돼야 하는데, 과거
   //    레거시 데이터 중 일부는 원자재용 타입인 'in'/'omt'로 잘못 저장된 경우가 실제로
