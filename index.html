@@ -4304,6 +4304,25 @@ function resolveFIFOLot(code, cat) {
   return cur > 0 ? {lot: '__nolot__', remain: cur} : {lot: '', remain: 0};
 }
 
+// ✅ 추가: 자재가 여러 LOT에 걸쳐 나뉘어 있을 때(예: LOT 미지정 28개 + LOT-X 30개),
+//    resolveFIFOLot은 "가장 오래된 LOT 하나"의 잔여만 알려주기 때문에, 전공정추적의
+//    "재고 있는 자재에서 선택해서 출고" 화면에서 실제로는 두 LOT 합쳐 58개를 쓸 수 있는데도
+//    30개(또는 28개)만 있는 것처럼 잘못 표시되고, "계획수량 기준 소요량 자동 입력"도
+//    딱 그만큼만 채우고 "재고 부족"으로 잘못 경고하는 문제가 있었다. 이 함수는 해당 자재의
+//    모든 LOT + LOT미지정분을 전부 합산한 "총 가용 수량"을 알려준다 (표시/자동입력 전용).
+function getLotSummary(code, cat) {
+  const {inType, outType} = woMatLotTypes(cat);
+  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
+  const totalFromLots = activeLots.reduce((s,l) => s + l.remain, 0);
+  const totalRemain = totalFromLots + Math.max(noLotRemain, 0);
+  if (activeLots.length) {
+    return { lot: activeLots[0].lot, remain: totalRemain, lotCount: activeLots.length + (noLotRemain > 0 ? 1 : 0) };
+  }
+  if (noLotRemain > 0) return { lot: '__nolot__', remain: totalRemain, lotCount: 1 };
+  const cur = findItemCurByCodeCat(code, cat);
+  return cur > 0 ? { lot: '__nolot__', remain: cur, lotCount: 1 } : { lot: '', remain: 0, lotCount: 0 };
+}
+
 // ✅ 완제품·반제품 모델명 앞의 전력 표기(30KW, 3.2KW, 40KW, 50KW 등)를 뽑아낸다.
 //    TP는 "30KW PFC INDUCTOR", BTP는 "30KW OUT L1"처럼 모델(model) 필드 값 자체는
 //    서로 다르게 분류되어 있어서, 이 앞자리 표기로 "같은 제품군"인지 판단한다.
@@ -4393,12 +4412,13 @@ function renderWOMatBrowse() {
     return;
   }
   container.innerHTML = sameModelHtml + list.map(r => {
-    const {lot, remain} = resolveFIFOLot(r.code, r.cat);
+    const {lot, remain, lotCount} = getLotSummary(r.code, r.cat);
     const lotLabel = lot === '__nolot__' ? 'LOT 미지정' : (lot || '-');
+    const multiLotTag = lotCount > 1 ? ` <span style="color:#7c3aed;font-weight:700">+${lotCount-1}개 LOT</span>` : '';
     const savedVal = prevValues[r.code + '|' + r.cat + '|' + lot] || '';
     return `<div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #f5e6c8;font-size:12px">
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.name} (${r.code})">${r.name} <span style="color:#aaa;font-family:monospace;font-size:10px">${r.code}</span></span>
-      <span style="color:#888;font-family:monospace;font-size:10px;white-space:nowrap" title="선입선출로 자동 배정되는 LOT">${lotLabel}</span>
+      <span style="color:#888;font-family:monospace;font-size:10px;white-space:nowrap" title="선입선출로 자동 배정되는 LOT (재고가 여러 LOT에 걸쳐 있으면 필요한 만큼 순서대로 자동 분배됩니다)">${lotLabel}${multiLotTag}</span>
       <span style="color:#166534;font-weight:600;white-space:nowrap;font-size:11px">재고 ${remain.toLocaleString()}</span>
       <input class="wmb-qty" data-code="${r.code}" data-cat="${r.cat}" data-lot="${lot}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" data-remain="${remain}" type="number" placeholder="수량" value="${savedVal}" style="width:56px;font-size:11px">
     </div>`;
@@ -4430,6 +4450,24 @@ async function submitWOMatBrowse() {
 
   if (!confirm(`선택한 자재 ${rows.length}건을 출고 처리하시겠습니까?\n창고 재고가 실제로 줄어듭니다.`)) return;
 
+  // ✅ 추가: 자재 재고가 여러 LOT에 걸쳐 있을 때(예: LOT-A 28개 + LOT-X 30개), 화면에 입력한
+  //    수량(예: 50개)을 그 자재의 LOT 하나에만 몰아서 기록하면 안 되므로, 이미 검증된
+  //    allocateFIFO()로 오래된 LOT부터 순서대로 필요한 만큼 자동으로 쪼갠다. (일반 자재출고
+  //    화면의 doSubmit이 다중 LOT 출고를 처리하는 것과 완전히 동일한 방식이다.)
+  const expandedRows = [];
+  for (const r of rows) {
+    const {inType, outType} = woMatLotTypes(r.cat);
+    const alloc = allocateFIFO(r.code, inType, outType, '', r.qty, r.cat);
+    if (!alloc.ok || !alloc.allocations.length) {
+      errEl.textContent = `"${r.name}" LOT별 재고 계산 중 문제가 발생했습니다 (부족: ${alloc.shortage||r.qty}). 화면을 새로고침한 뒤 다시 시도해주세요.`;
+      errEl.style.display = 'block';
+      return;
+    }
+    alloc.allocations.forEach(a => {
+      expandedRows.push({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: a.lot, qty: a.qty });
+    });
+  }
+
   // ✅ 자재마다 서버에 따로따로 요청(건당 최대 2번, 왕복마다 1~수 초)을 보내던 게
   //    자재 개수만큼 느려지던 원인이었다. 이제 전부 한 번의 요청으로 모아서 보낸다
   //    (서버가 한 번의 실행 안에서 전부 처리) — POST 방식(apiPost)을 써서 자재가
@@ -4439,7 +4477,7 @@ async function submitWOMatBrowse() {
 
   const body = {
     workOrderId: woTraceTarget.id, orderNo: woTraceTarget.orderNo, productCode: woTraceTarget.code,
-    rows: rows.map(r => ({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: r.lot, qty: r.qty }))
+    rows: expandedRows.map(r => ({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: r.lot, qty: r.qty }))
   };
   let res = await apiPost('addWOMaterialsBatch', body);
   if (!res || !res.ok) res = await apiPost('addWOMaterialsBatch', body);
@@ -4453,8 +4491,9 @@ async function submitWOMatBrowse() {
   }
 
   // ✅ 로컬 상태(재고/이력)도 성공한 만큼 바로 반영해서 화면이 즉시 맞게 보이도록 한다
+  //    (LOT별로 쪼개진 expandedRows 기준으로 반영 — 실제 서버에 기록된 이력과 정확히 일치시킨다)
   const failedSet = new Set(res.failures || []);
-  rows.forEach(r => {
+  expandedRows.forEach(r => {
     if (failedSet.has(r.code + '/' + r.cat)) return;
     const txType = woMatLotTypes(r.cat).outType;
     txLog.push({
