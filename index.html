@@ -7151,6 +7151,12 @@ function openTraceSearch() {
 
 // ── 재고현황 행 클릭으로 이력 추적
 let traceDays = 7;              // ✅ 이력 추적 "전체 이력" 기본 표시 기간 (7=최근 1주일, null=전체)
+let lotTableDays = null;        // ✅ "LOT별 입출고 현황" 표 전용 기간 필터 (null=전체, 기본값)
+
+function setLotTableDays(days) {
+  lotTableDays = days;
+  if (traceLastCode) openTrace(traceLastCode, traceLastCat);
+}
 let traceLastCode = null, traceLastCat = null;
 
 // 이력 추적 창의 기간 필터 버튼에서 호출됨
@@ -7281,11 +7287,26 @@ function openTrace(code, catHint) {
       </div>` : ''}
     </div>` : '';
 
+  // ✅ LOT별 표 기간 필터: 잔여 수량 계산 자체는 항상 전체 이력 기준으로 정확하게
+  //    유지하고(재고 진단·현재고와 어긋나면 안 되므로), "최근 1개월"을 고르면
+  //    그 기간 안에 입고나 출고 활동이 있었던 LOT만 골라서 보여준다(오래전에 이미
+  //    다 빠져나가 지금은 잔여 0인 LOT들까지 매번 다 보여줘서 표가 길어지는 걸 방지).
+  const lotCutoffTs = lotTableDays ? (Date.now() - lotTableDays*24*3600*1000) : null;
+  const visibleLotEntries = Object.entries(lotMap).filter(([lot, d]) => {
+    if (!lotCutoffTs) return true;
+    return d.txs.some(t => { const ts = new Date(t.dt).getTime(); return !isNaN(ts) && ts >= lotCutoffTs; });
+  });
+
   const lotSection = Object.keys(lotMap).length ? `
     <div style="margin-bottom:16px">
-      <div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #e0e0e8">
-        📦 LOT별 입출고 현황
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #e0e0e8;flex-wrap:wrap;gap:6px">
+        <div style="font-size:13px;font-weight:700;color:#1a1a2e">📦 LOT별 입출고 현황</div>
+        <div style="display:flex;gap:4px">
+          <button onclick="setLotTableDays(30)"  style="${periodBtnStyle(lotTableDays===30)}">최근 1개월</button>
+          <button onclick="setLotTableDays(null)" style="${periodBtnStyle(lotTableDays===null)}">전체</button>
+        </div>
       </div>
+      ${!visibleLotEntries.length ? `<div style="color:#aaa;font-size:12px;padding:10px 2px">선택한 기간 안에 활동이 있었던 LOT이 없습니다.</div>` : `
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
           <tr style="background:#f5f6f8">
@@ -7297,7 +7318,7 @@ function openTrace(code, catHint) {
           </tr>
         </thead>
         <tbody>
-          ${Object.entries(lotMap).map(([lot, d]) => {
+          ${visibleLotEntries.map(([lot, d]) => {
             const remain = d.inQty - d.outQty;
             const status = remain <= 0 ? '<span style="color:#991b1b;font-size:11px">🔴 소진</span>'
                          : remain < d.inQty ? '<span style="color:#92400e;font-size:11px">🟡 일부출고</span>'
@@ -7312,6 +7333,7 @@ function openTrace(code, catHint) {
           }).join('')}
         </tbody>
       </table>
+      `}
     </div>` : '';
 
   // ✅ 수정: "이름 있는 진짜 LOT"들의 잔여 합을 현재고에서 빼면, LOT 없이 잡혀있는
