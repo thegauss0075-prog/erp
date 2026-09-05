@@ -3485,8 +3485,8 @@ async function renderQC() {
     <td style="font-size:12px;color:#888">${r.note||'-'}</td>
     <td class="no-print" style="white-space:nowrap">
       ${r.attachmentUrl
-        ? `<a class="edit-btn" href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'} 보기" style="text-decoration:none;display:inline-block">📎</a>`
-        : `<span title="첨부파일 없음" style="display:inline-block;opacity:.3;padding:0 4px">📎</span>`}
+        ? `<a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'} 보기" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#dcfce7;border:1px solid #86efac;font-size:16px;margin-right:2px;vertical-align:middle">📎</a>`
+        : `<span title="첨부파일 없음" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#f3f4f6;border:1px solid #e5e7eb;font-size:16px;opacity:.4;margin-right:2px;vertical-align:middle">📎</span>`}
       ${isAdmin ? `<button class="edit-btn" onclick="openEditQC(${r.id})" title="수정">✏️</button>` : ''}
       ${isAdmin ? `<button class="edit-btn" onclick="deleteQC(${r.id})" title="삭제">🗑️</button>` : ''}
     </td>
