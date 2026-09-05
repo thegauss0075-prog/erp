@@ -7270,13 +7270,25 @@ function openTrace(code, catHint) {
   //  - "코드만 기준(카테고리 무시)": 예전 catKey 버그 등으로 카테고리가 잘못 저장된
   //    이력까지 다 잡아내기 위한 참고값. 코드가 다른 카테고리와 우연히 겹치는
   //    경우엔 이 값이 오히려 부정확할 수 있어 "참고용"으로만 제공한다.
+  //
+  //  ⚠️ 중요한 수정: sync-fix(재고 진단 도구로 직접 보정한 기록)를 예전엔 이 계산에서
+  //  일부러 뺐었는데, 그러면 한 번 고쳐도 "이력 계산값"이 하나도 안 바뀌어서 경고가
+  //  절대 안 사라지고, 관리자가 그 경고를 보고 "또 안 고쳐졌나?" 하며 계속 재클릭하게
+  //  되는 심각한 문제가 있었다. 클릭할 때마다 그 시점의 (여전히 예전 그대로인) 계산값을
+  //  "새 현재고"로 다시 덮어써버려서, 정상으로 고쳐놓은 값이 반복 클릭 한 번마다 다시
+  //  틀어지는 사고가 실제로 발생했다(933→483로 정확히 고쳤는데, 그 후 반복 클릭으로
+  //  943, 그 이상으로 계속 틀어짐). 이제 sync-fix도 계산에 포함시켜서, 한 번 정확히
+  //  고치면 "이력 계산값"이 즉시 저장된 현재고와 일치하도록(더 이상 경고 안 뜨도록)
+  //  바꿨다. 이러면 같은 값을 반복 클릭해도 "현재 저장된 값과 동일합니다"로 막혀서
+  //  안전하다.
   // ══════════════════════════════════════════════════════════
-  const codeAndCatTotal = inQty - outQty + adjTxs.reduce((s,t)=>s+(+t.qty||0),0);
+  const codeAndCatTotal = inQty - outQty + adjTxs.reduce((s,t)=>s+(+t.qty||0),0) + syncFixTxs.reduce((s,t)=>s+(+t.qty||0),0);
   const allSameCodeTxs = txLog.filter(t => t.code === code);
   const codeOnlyIn  = allSameCodeTxs.filter(t=>['in','tp-in'].includes(t.type)).reduce((s,t)=>s+(+t.qty||0),0);
   const codeOnlyOut = allSameCodeTxs.filter(t=>['omt','otp'].includes(t.type)).reduce((s,t)=>s+(+t.qty||0),0);
   const codeOnlyAdj = allSameCodeTxs.filter(t=>t.type==='adjust').reduce((s,t)=>s+(+t.qty||0),0);
-  const codeOnlyTotal = codeOnlyIn - codeOnlyOut + codeOnlyAdj;
+  const codeOnlySyncFix = allSameCodeTxs.filter(t=>t.type==='sync-fix').reduce((s,t)=>s+(+t.qty||0),0);
+  const codeOnlyTotal = codeOnlyIn - codeOnlyOut + codeOnlyAdj + codeOnlySyncFix;
   const storedCur = +item.cur || 0;
   const mismatchCatOk = Math.abs(codeAndCatTotal - storedCur) > 0.001;
   const mismatchCodeOnly = Math.abs(codeOnlyTotal - storedCur) > 0.001;
