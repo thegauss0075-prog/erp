@@ -7471,7 +7471,16 @@ async function convertUnlottedToLot(code, cat) {
 
   // 최신 상태 기준으로 다시 계산 (모달을 띄워둔 사이 값이 바뀌었을 수 있으므로)
   const {inType, outType} = (cat === 'TP' || cat === 'BTP') ? {inType:'tp-in', outType:'otp'} : {inType:'in', outType:'omt'};
-  const relevantTx = txLog.filter(t => t.code === code && t.cat === cat);
+  // ✅ 핵심 수정: openTrace()가 이미 쓰고 있는 것과 반드시 같은 방식으로 이력을 모아야 한다.
+  //    이 코드가 TP/BTP처럼 여러 카테고리에 걸쳐 진짜로 공유되는 게 아니라면, 과거 catKey
+  //    버그로 카테고리가 잘못 저장된 레거시 이력도 놓치지 않도록 카테고리를 무시하고
+  //    코드만으로 찾는다. (이전엔 여기서만 카테고리를 엄격하게 강제해서, 화면에 표시된
+  //    "미지정 6개"와 실제 전환 시 계산되는 값이 서로 달라지는 사고가 있었다 — 화면과
+  //    똑같은 계산 결과가 나오도록 반드시 openTrace와 동일한 로직을 써야 한다.)
+  const codeSharedAcrossCats = allRows().filter(r => r.code === code).length > 1;
+  const relevantTx = codeSharedAcrossCats
+    ? txLog.filter(t => t.code === code && t.cat === cat)
+    : txLog.filter(t => t.code === code);
   const lotMap = {};
   relevantTx.filter(t => t.type === inType).forEach(t => { const lot=t.lot||'(LOT 없음)'; if(!lotMap[lot])lotMap[lot]={inQty:0,outQty:0}; lotMap[lot].inQty += +t.qty||0; });
   relevantTx.filter(t => t.type === outType).forEach(t => { const lot=t.lot||'(LOT 없음)'; if(!lotMap[lot])lotMap[lot]={inQty:0,outQty:0}; lotMap[lot].outQty += +t.qty||0; });
