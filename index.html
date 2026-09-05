@@ -7230,6 +7230,13 @@ function openTrace(code, catHint) {
 
   // ── LOT별 입고 집계
   const adjTxs = txs.filter(t => t.type === 'adjust');
+  // ✅ 추가: 'sync-fix'(재고 진단 도구로 수동 보정한 기록)는 "이력 계산값" 산출식에는
+  //    일부러 안 넣지만(넣으면 반복 보정 시 오차가 눈덩이처럼 불어나는 문제가 있어서),
+  //    그러면 LOT별 표의 잔여 합계가 실제 현재고와 영영 안 맞아 보여서 혼란을 준다.
+  //    그래서 "🔧 재고조정(실사)" 표시 항목에는(진단 계산과 무관하게, 화면에 보여주는
+  //    용도로만) sync-fix 보정치도 같이 넣어서, 표만 봐도 왜 숫자가 그런지 알 수 있게 한다.
+  const syncFixTxs = txs.filter(t => t.type === 'sync-fix');
+  const adjDisplayTxs = [...adjTxs, ...syncFixTxs];
   const lotMap = {};
   inTxs.forEach(t => {
     const lot = t.lot || '(LOT 없음)';
@@ -7246,10 +7253,10 @@ function openTrace(code, catHint) {
   // ✅ 실사 후 "재고조정"은 특정 LOT에 속하지 않지만, 이 값을 반영하지 않으면
   //    LOT별 잔여 합계와 실제 현재고(item.cur)가 서로 다른 숫자로 보여 혼란을 준다.
   //    "🔧 재고조정(실사)" 라는 별도 항목으로 묶어서 합계에 포함시킨다.
-  if (adjTxs.length) {
+  if (adjDisplayTxs.length) {
     const key = '🔧 재고조정(실사)';
-    lotMap[key] = {inQty:0, outQty:0, txs:[...adjTxs]};
-    adjTxs.forEach(t => {
+    lotMap[key] = {inQty:0, outQty:0, txs:[...adjDisplayTxs]};
+    adjDisplayTxs.forEach(t => {
       const q = +t.qty || 0;
       if (q >= 0) lotMap[key].inQty += q;
       else lotMap[key].outQty += -q;
