@@ -7270,6 +7270,20 @@ function openTrace(code, catHint) {
           }).join('')}
         </tbody>
       </table>
+      ${(() => {
+        // ✅ 추가: "이름 있는 진짜 LOT"들의 잔여 합을 현재고에서 빼면, LOT 없이 잡혀있는
+        //    수량(실제 빈 lot 이력 + 이력 자체가 없는 레거시 재고까지 전부 포함)이 나온다.
+        //    이 값이 양수면 관리자가 "오늘 날짜 LOT"으로 정식 전환할 수 있게 버튼을 보여준다.
+        const namedLotRemain = Object.entries(lotMap)
+          .filter(([lot]) => lot !== '(LOT 없음)' && lot !== '🔧 재고조정(실사)')
+          .reduce((s,[,d]) => s + (d.inQty - d.outQty), 0);
+        const unlottedTotal = +((+item.cur||0) - namedLotRemain).toFixed(4);
+        if (!isAdmin || unlottedTotal <= 0) return '';
+        return `<div style="margin-top:8px;padding:10px;background:#eff6ff;border-radius:8px;border:1px dashed #93c5fd">
+          <div style="font-size:12px;color:#1e3a8a;margin-bottom:6px">📅 LOT 없이 잡혀있는 재고 <strong>${n(unlottedTotal)} ${item.unit}</strong>가 있습니다. 오늘 날짜 LOT으로 정리하시겠습니까? (현재고는 바뀌지 않고 LOT만 새로 붙습니다)</div>
+          <button onclick="convertUnlottedToLot('${code}','${item.cat}')" style="padding:6px 14px;border-radius:6px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;font-size:12px;cursor:pointer;font-weight:600">📅 오늘 날짜 LOT으로 전환</button>
+        </div>`;
+      })()}
     </div>` : '';
 
   // ── 전체 이력 타임라인
@@ -7404,6 +7418,69 @@ async function applyStockDiagnosisFix(code, cat) {
 
   alert('✅ 현재고가 수정되었습니다.');
   openTrace(code, cat);
+}
+
+// ✅ LOT 없이 잡혀있는 재고(실제 빈 lot 이력 + 이력 자체가 없는 레거시 재고 포함)를
+//    오늘 날짜 LOT으로 정식 전환한다. "미지정분 출고" + "오늘 날짜 LOT으로 재입고"를
+//    쌍으로 등록해서 서로 상쇄시키므로 현재고는 전혀 바뀌지 않고 LOT만 새로 생긴다.
+//    (기존 addTx를 그대로 두 번 쓰는 방식이라 서버 쪽 수정 없이도 안전하게 동작한다.)
+async function convertUnlottedToLot(code, cat) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  const arr = {TP:DB.tp, BTP:DB.btp, KR:DB.kr, VN:DB.vn, VTTH:DB.vtth}[cat];
+  const item = arr && arr.find(r => r.code === code);
+  if (!item) { alert('품목을 찾을 수 없습니다.'); return; }
+
+  // 최신 상태 기준으로 다시 계산 (모달을 띄워둔 사이 값이 바뀌었을 수 있으므로)
+  const {inType, outType} = (cat === 'TP' || cat === 'BTP') ? {inType:'tp-in', outType:'otp'} : {inType:'in', outType:'omt'};
+  const relevantTx = txLog.filter(t => t.code === code && t.cat === cat);
+  const lotMap = {};
+  relevantTx.filter(t => t.type === inType).forEach(t => { const lot=t.lot||'(LOT 없음)'; if(!lotMap[lot])lotMap[lot]={inQty:0,outQty:0}; lotMap[lot].inQty += +t.qty||0; });
+  relevantTx.filter(t => t.type === outType).forEach(t => { const lot=t.lot||'(LOT 없음)'; if(!lotMap[lot])lotMap[lot]={inQty:0,outQty:0}; lotMap[lot].outQty += +t.qty||0; });
+  const adjSum = relevantTx.filter(t=>t.type==='adjust').reduce((s,t)=>s+(+t.qty||0),0);
+  const namedLotRemain = Object.entries(lotMap)
+    .filter(([lot]) => lot !== '(LOT 없음)')
+    .reduce((s,[,d]) => s + (d.inQty - d.outQty), 0);
+  const unlottedTotal = +((+item.cur||0) - namedLotRemain - adjSum).toFixed(4);
+
+  if (unlottedTotal <= 0) { alert('전환할 미지정 재고가 없습니다.'); openTrace(code, cat); return; }
+  if (!confirm(`LOT 없이 잡혀있는 재고 ${unlottedTotal.toLocaleString()} ${item.unit}를 오늘 날짜 LOT으로 전환하시겠습니까?\n현재고(${(+item.cur||0).toLocaleString()} ${item.unit})는 바뀌지 않습니다.`)) return;
+
+  // 오늘 날짜 기반 LOT 문자열 생성 (같은 코드에 이미 같은 이름의 LOT이 있으면 번호를 붙여 중복 방지)
+  const today = vnNow();
+  const y = today.getFullYear(), m = String(today.getMonth()+1).padStart(2,'0'), d = String(today.getDate()).padStart(2,'0');
+  let seq = 1, todayLot = `LOT-${y}${m}${d}-CONV`;
+  const existingLots = new Set(relevantTx.map(t=>t.lot).filter(Boolean));
+  while (existingLots.has(todayLot)) { seq++; todayLot = `LOT-${y}${m}${d}-CONV${seq}`; }
+
+  const dt = vnDt();
+  const outEntry = { id: Date.now(), type: outType, code, name: item.name, cat, unit: item.unit, qty: unlottedTotal, note: '[LOT 지정 전환] 미지정재고 → LOT', lot: '', dt, dest: '', user: CURRENT_USER || '관리자' };
+  const inEntry  = { id: Date.now()+1, type: inType,  code, name: item.name, cat, unit: item.unit, qty: unlottedTotal, note: '[LOT 지정 전환] 미지정재고 → LOT', lot: todayLot, dt, dest: '', user: CURRENT_USER || '관리자' };
+
+  // ✅ 서버 반영을 먼저 확정한 뒤에만 로컬을 바꾼다 (이 파일 전체에서 일관되게 쓰는 안전 패턴)
+  if (API_URL || IS_GAS) {
+    let res1 = await api('addTx', { ...outEntry, token: ADMIN_TOKEN });
+    if (!res1 || !res1.ok) res1 = await api('addTx', { ...outEntry, token: ADMIN_TOKEN });
+    if (!res1 || !res1.ok) { alert('서버 반영 실패(출고분): ' + (res1 && res1.error ? res1.error : '알 수 없는 오류')); return; }
+
+    let res2 = await api('addTx', { ...inEntry, token: ADMIN_TOKEN });
+    if (!res2 || !res2.ok) res2 = await api('addTx', { ...inEntry, token: ADMIN_TOKEN });
+    if (!res2 || !res2.ok) {
+      alert(`⚠️ 출고분은 반영됐지만 재입고분 반영에 실패했습니다: ${res2 && res2.error ? res2.error : '알 수 없는 오류'}\n현재고가 일시적으로 어긋날 수 있으니 동기화 후 "재고 진단"으로 확인해주세요.`);
+      await syncNow();
+      return;
+    }
+  }
+
+  // 서버 성공(또는 서버 미연동 환경) 후에만 로컬 반영 - 두 거래가 서로 상쇄되어 item.cur는 그대로
+  txLog.push(outEntry);
+  item.cur -= unlottedTotal; item.total -= unlottedTotal;
+  txLog.push(inEntry);
+  item.cur += unlottedTotal; item.total += unlottedTotal;
+
+  if (API_URL || IS_GAS) await syncNow();
+  renderInv(); initDashboard(); renderHist();
+  openTrace(code, cat);
+  alert(`✅ ${unlottedTotal.toLocaleString()} ${item.unit}가 LOT "${todayLot}"으로 전환됐습니다.`);
 }
 
 
