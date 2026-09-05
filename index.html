@@ -7309,20 +7309,22 @@ function openTrace(code, catHint) {
           }).join('')}
         </tbody>
       </table>
-      ${(() => {
-        // ✅ 추가: "이름 있는 진짜 LOT"들의 잔여 합을 현재고에서 빼면, LOT 없이 잡혀있는
-        //    수량(실제 빈 lot 이력 + 이력 자체가 없는 레거시 재고까지 전부 포함)이 나온다.
-        //    이 값이 양수면 관리자가 "오늘 날짜 LOT"으로 정식 전환할 수 있게 버튼을 보여준다.
-        const namedLotRemain = Object.entries(lotMap)
-          .filter(([lot]) => lot !== '(LOT 없음)' && lot !== '🔧 재고조정(실사)')
-          .reduce((s,[,d]) => s + (d.inQty - d.outQty), 0);
-        const unlottedTotal = +((+item.cur||0) - namedLotRemain).toFixed(4);
-        if (!isAdmin || unlottedTotal <= 0) return '';
-        return `<div style="margin-top:8px;padding:10px;background:#eff6ff;border-radius:8px;border:1px dashed #93c5fd">
-          <div style="font-size:12px;color:#1e3a8a;margin-bottom:6px">📅 LOT 없이 잡혀있는 재고 <strong>${n(unlottedTotal)} ${item.unit}</strong>가 있습니다. 오늘 날짜 LOT으로 정리하시겠습니까? (현재고는 바뀌지 않고 LOT만 새로 붙습니다)</div>
-          <button onclick="convertUnlottedToLot('${code}','${item.cat}')" style="padding:6px 14px;border-radius:6px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;font-size:12px;cursor:pointer;font-weight:600">📅 오늘 날짜 LOT으로 전환</button>
-        </div>`;
-      })()}
+    </div>` : '';
+
+  // ✅ 수정: "이름 있는 진짜 LOT"들의 잔여 합을 현재고에서 빼면, LOT 없이 잡혀있는
+  //    수량(실제 빈 lot 이력 + 이력 자체가 아예 없는 레거시 재고까지 전부 포함)이 나온다.
+  //    이전엔 이 버튼이 lotSection(LOT별 표) 안에 있어서, 이 품목처럼 입출고 이력이
+  //    "단 한 건도" 없는 경우(lotMap이 완전히 비어있음) 표 자체가 안 그려지면서 버튼도
+  //    같이 사라지는 문제가 있었다 — 정작 이런 품목이야말로 전환이 필요한 대상인데도.
+  //    이제 lotSection과 별개로 항상 계산해서, 이력이 하나도 없어도 버튼이 뜨게 한다.
+  const namedLotRemain = Object.entries(lotMap)
+    .filter(([lot]) => lot !== '(LOT 없음)' && lot !== '🔧 재고조정(실사)')
+    .reduce((s,[,d]) => s + (d.inQty - d.outQty), 0);
+  const unlottedTotal = +((+item.cur||0) - namedLotRemain).toFixed(4);
+  const lotConvertSection = (isAdmin && unlottedTotal > 0) ? `
+    <div style="margin-bottom:16px;padding:10px;background:#eff6ff;border-radius:8px;border:1px dashed #93c5fd">
+      <div style="font-size:12px;color:#1e3a8a;margin-bottom:6px">📅 LOT 없이 잡혀있는 재고 <strong>${n(unlottedTotal)} ${item.unit}</strong>가 있습니다${Object.keys(lotMap).length ? '' : ' (이 품목은 입출고 이력이 전혀 없어 전체가 미지정 상태입니다)'}. 오늘 날짜 LOT으로 정리하시겠습니까? (현재고는 바뀌지 않고 LOT만 새로 붙습니다)</div>
+      <button onclick="convertUnlottedToLot('${code}','${item.cat}')" style="padding:6px 14px;border-radius:6px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;font-size:12px;cursor:pointer;font-weight:600">📅 오늘 날짜 LOT으로 전환</button>
     </div>` : '';
 
   // ── 전체 이력 타임라인
@@ -7413,7 +7415,7 @@ function openTrace(code, catHint) {
       ${ngTxs.length>10?`<div style="font-size:11px;color:#888;margin-top:4px">...외 ${ngTxs.length-10}건 (불량(NG) 탭에서 전체 확인)</div>`:''}
     </div>` : '';
 
-  document.getElementById('trace-body').innerHTML = diagSection + lotSection + timelineSection + ngSection;
+  document.getElementById('trace-body').innerHTML = diagSection + lotSection + lotConvertSection + timelineSection + ngSection;
   document.getElementById('trace-ov').classList.add('show');
 }
 
