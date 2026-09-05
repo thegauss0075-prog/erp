@@ -2134,8 +2134,13 @@ function toggleShipHistProduct(code) {
 // ✅ "누계"는 화면에 걸린 기간과 무관하게 이 품목의 전체 출고 이력을 기준으로 계산한다
 //    (기간 필터를 최근 6개월로 좁혀도, 누계는 처음부터 쌓인 진짜 누적값을 보여준다).
 function computeShipHistRows(item) {
+  // ✅ 수정: 'otp' 타입은 진짜 고객사 출고뿐 아니라, 반제품을 다른 완제품의 부품으로
+  //    소모할 때("자재투입")나 작업지시 삭제로 인한 재고 복구 시에도 똑같이 쓰인다.
+  //    이런 내부용 기록은 출고처(dest)를 항상 비워두므로, dest가 있는 것만 "진짜 출고"로
+  //    간주해서 집계한다. (실제 사례: BOM에 반제품이 포함된 작업지시에서 "자재 일괄 출고"를
+  //    하면 그 반제품도 otp로 기록되는데, 이게 고객사 출고 집계에 섞여 보이는 문제가 있었다.)
   const all = txLog
-    .filter(t => t.type === 'otp' && t.code === item.code && t.cat === item.cat)
+    .filter(t => t.type === 'otp' && t.code === item.code && t.cat === item.cat && t.dest)
     .sort((a,b) => new Date(a.dt) - new Date(b.dt));
   let running = 0;
   return all.map(t => {
@@ -2147,7 +2152,7 @@ function computeShipHistRows(item) {
 // ✅ 출고 이력이 있는 완제품 전체를 모아서, (선택) 필터로 좁힌 목록을 돌려준다
 function getShipHistProductList() {
   const q = (document.getElementById('ship-hist-item-q').value || '').toLowerCase().trim();
-  const shippedCodes = new Set(txLog.filter(t => t.type === 'otp' && t.cat === 'TP').map(t => t.code));
+  const shippedCodes = new Set(txLog.filter(t => t.type === 'otp' && t.cat === 'TP' && t.dest).map(t => t.code));
   let pool = allRows().filter(r => r.cat === 'TP' && shippedCodes.has(r.code));
   if (q) pool = pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
   return pool.sort((a,b) => a.name.localeCompare(b.name));
