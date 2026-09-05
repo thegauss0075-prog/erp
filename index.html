@@ -4306,10 +4306,15 @@ function findItemCurByCodeCat(code, cat) {
 function resolveFIFOLot(code, cat) {
   const {inType, outType} = woMatLotTypes(cat);
   const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
-  if (activeLots.length) return {lot: activeLots[0].lot, remain: activeLots[0].remain};
-  if (noLotRemain > 0) return {lot: '__nolot__', remain: noLotRemain};
-  const cur = findItemCurByCodeCat(code, cat);
-  return cur > 0 ? {lot: '__nolot__', remain: cur} : {lot: '', remain: 0};
+  // ✅ 안전장치: LOT별 이력 합계는 "재고조정(실사)"이나 "재고 진단" 보정치를 반영하지
+  //    않는다(그 보정은 특정 LOT에 속하지 않는 전체 단위 조정이라서). 그래서 실제로는
+  //    재고가 483개뿐인데 LOT 이력상으로는 943개로 보이는 경우가 생길 수 있다. 이 상태로
+  //    출고를 허용하면 실제로 없는 재고까지 출고 처리돼서 마이너스 재고 사고가 날 수
+  //    있으므로, 항상 진짜 현재고(item.cur)를 넘지 않도록 상한을 씌운다.
+  const actualCur = findItemCurByCodeCat(code, cat);
+  if (activeLots.length) return {lot: activeLots[0].lot, remain: Math.min(activeLots[0].remain, actualCur)};
+  if (noLotRemain > 0) return {lot: '__nolot__', remain: Math.min(noLotRemain, actualCur)};
+  return actualCur > 0 ? {lot: '__nolot__', remain: actualCur} : {lot: '', remain: 0};
 }
 
 // ✅ 추가: 자재가 여러 LOT에 걸쳐 나뉘어 있을 때(예: LOT 미지정 28개 + LOT-X 30개),
@@ -4322,13 +4327,15 @@ function getLotSummary(code, cat) {
   const {inType, outType} = woMatLotTypes(cat);
   const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
   const totalFromLots = activeLots.reduce((s,l) => s + l.remain, 0);
-  const totalRemain = totalFromLots + Math.max(noLotRemain, 0);
+  const totalRemainRaw = totalFromLots + Math.max(noLotRemain, 0);
+  // ✅ resolveFIFOLot과 동일한 이유로, LOT 합산 총량도 실제 현재고를 넘지 않도록 상한을 씌운다.
+  const actualCur = findItemCurByCodeCat(code, cat);
+  const totalRemain = Math.min(totalRemainRaw, actualCur);
   if (activeLots.length) {
     return { lot: activeLots[0].lot, remain: totalRemain, lotCount: activeLots.length + (noLotRemain > 0 ? 1 : 0) };
   }
   if (noLotRemain > 0) return { lot: '__nolot__', remain: totalRemain, lotCount: 1 };
-  const cur = findItemCurByCodeCat(code, cat);
-  return cur > 0 ? { lot: '__nolot__', remain: cur, lotCount: 1 } : { lot: '', remain: 0, lotCount: 0 };
+  return actualCur > 0 ? { lot: '__nolot__', remain: actualCur, lotCount: 1 } : { lot: '', remain: 0, lotCount: 0 };
 }
 
 // ✅ 완제품·반제품 모델명 앞의 전력 표기(30KW, 3.2KW, 40KW, 50KW 등)를 뽑아낸다.
@@ -4784,14 +4791,18 @@ function allocateFIFO(code, inType, outType, startLot, qty, cat) {
     pool = activeLots.map(d => ({lot:d.lot, remain:d.remain}));
   }
 
+  const actualCur = findItemCurByCodeCat(code, cat);
   const allocations = [];
   let need = qty;
+  let totalAllocated = 0;
   for (const p of pool) {
     if (need <= 0) break;
-    const take = Math.min(need, p.remain);
-    if (take > 0) { allocations.push({lot:p.lot, qty:take}); need -= take; }
+    // ✅ 안전장치: LOT별 이력 합계가 재고조정으로 부풀어 있어도, 실제 현재고를
+    //    넘어서까지 분배(=출고 허용)하지 않는다.
+    const take = Math.min(need, p.remain, actualCur - totalAllocated);
+    if (take > 0) { allocations.push({lot:p.lot, qty:take}); need -= take; totalAllocated += take; }
   }
-  const totalAvailable = pool.reduce((s,p)=>s+p.remain, 0);
+  const totalAvailable = Math.min(pool.reduce((s,p)=>s+p.remain, 0), actualCur);
   return { ok: need <= 0, allocations, shortage: Math.max(0, need), totalAvailable };
 }
 
