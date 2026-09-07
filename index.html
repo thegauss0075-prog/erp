@@ -1057,11 +1057,6 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <input id="qc-attachment" type="file">
       <div id="qc-attachment-current" style="font-size:11px;color:#1d4ed8;margin-top:4px"></div>
     </div>
-    <div class="ov-fr" id="qc-attachment2-wrap" style="display:none">
-      <label id="qc-attachment2-label">출하 성적서 * <span style="color:#b91c1c">(필수 · 출하검사)</span></label>
-      <input id="qc-attachment2" type="file">
-      <div id="qc-attachment2-current" style="font-size:11px;color:#1d4ed8;margin-top:4px"></div>
-    </div>
     <div class="ov-fr"><label>비고 (선택)</label><input id="qc-note" placeholder="선택사항"></div>
     <div id="qc-add-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div class="ov-actions">
@@ -2139,13 +2134,8 @@ function toggleShipHistProduct(code) {
 // ✅ "누계"는 화면에 걸린 기간과 무관하게 이 품목의 전체 출고 이력을 기준으로 계산한다
 //    (기간 필터를 최근 6개월로 좁혀도, 누계는 처음부터 쌓인 진짜 누적값을 보여준다).
 function computeShipHistRows(item) {
-  // ✅ 수정: 'otp' 타입은 진짜 고객사 출고뿐 아니라, 반제품을 다른 완제품의 부품으로
-  //    소모할 때("자재투입")나 작업지시 삭제로 인한 재고 복구 시에도 똑같이 쓰인다.
-  //    이런 내부용 기록은 출고처(dest)를 항상 비워두므로, dest가 있는 것만 "진짜 출고"로
-  //    간주해서 집계한다. (실제 사례: BOM에 반제품이 포함된 작업지시에서 "자재 일괄 출고"를
-  //    하면 그 반제품도 otp로 기록되는데, 이게 고객사 출고 집계에 섞여 보이는 문제가 있었다.)
   const all = txLog
-    .filter(t => t.type === 'otp' && t.code === item.code && t.cat === item.cat && t.dest)
+    .filter(t => t.type === 'otp' && t.code === item.code && t.cat === item.cat)
     .sort((a,b) => new Date(a.dt) - new Date(b.dt));
   let running = 0;
   return all.map(t => {
@@ -2157,7 +2147,7 @@ function computeShipHistRows(item) {
 // ✅ 출고 이력이 있는 완제품 전체를 모아서, (선택) 필터로 좁힌 목록을 돌려준다
 function getShipHistProductList() {
   const q = (document.getElementById('ship-hist-item-q').value || '').toLowerCase().trim();
-  const shippedCodes = new Set(txLog.filter(t => t.type === 'otp' && t.cat === 'TP' && t.dest).map(t => t.code));
+  const shippedCodes = new Set(txLog.filter(t => t.type === 'otp' && t.cat === 'TP').map(t => t.code));
   let pool = allRows().filter(r => r.cat === 'TP' && shippedCodes.has(r.code));
   if (q) pool = pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
   return pool.sort((a,b) => a.name.localeCompare(b.name));
@@ -3492,14 +3482,8 @@ async function renderQC() {
     <td><span style="color:${resultColor[r.result]||'#555'};font-weight:600">${r.result||'-'}</span></td>
     <td style="font-size:12px;color:#666">${r.inspector||'-'}</td>
     <td style="font-size:12px;color:#666">${r.inspDate||'-'}</td>
-    <td style="font-size:12px;color:#888">${r.note||'-'}</td>
+    <td style="font-size:12px;color:#888">${r.note||'-'}${r.attachmentUrl?` <a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'}" style="text-decoration:none">📎</a>`:''}</td>
     <td class="no-print" style="white-space:nowrap">
-      ${r.attachmentUrl
-        ? `<a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'특성 데이터/검사성적서'} 보기" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#dcfce7;border:1px solid #86efac;font-size:16px;margin-right:2px;vertical-align:middle">📎</a>`
-        : `<span title="첨부파일 없음" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#f3f4f6;border:1px solid #e5e7eb;font-size:16px;opacity:.4;margin-right:2px;vertical-align:middle">📎</span>`}
-      ${r.inspType === '출하검사' ? (r.attachmentUrl2
-        ? `<a href="${r.attachmentUrl2}" target="_blank" title="${r.attachmentName2||'출하 성적서'} 보기" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#dbeafe;border:1px solid #93c5fd;font-size:16px;margin-right:2px;vertical-align:middle">📄</a>`
-        : `<span title="출하 성적서 없음" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#f3f4f6;border:1px solid #e5e7eb;font-size:16px;opacity:.4;margin-right:2px;vertical-align:middle">📄</span>`) : ''}
       ${isAdmin ? `<button class="edit-btn" onclick="openEditQC(${r.id})" title="수정">✏️</button>` : ''}
       ${isAdmin ? `<button class="edit-btn" onclick="deleteQC(${r.id})" title="삭제">🗑️</button>` : ''}
     </td>
@@ -3641,8 +3625,6 @@ async function openAddQC() {
   document.getElementById('qc-inspector').value = '';
   document.getElementById('qc-attachment').value = '';
   document.getElementById('qc-attachment-current').textContent = '';
-  document.getElementById('qc-attachment2').value = '';
-  document.getElementById('qc-attachment2-current').textContent = '';
   document.getElementById('qc-note').value = '';
   document.getElementById('qc-add-err').style.display = 'none';
   onQCTypeChange();
@@ -3684,19 +3666,16 @@ function onQCTypeChange() {
 function updateQCAttachmentLabel() {
   const type = document.getElementById('qc-type').value;
   const attachLabel = document.getElementById('qc-attachment-label');
-  const attach2Wrap = document.getElementById('qc-attachment2-wrap');
   const isKR = qcSelectedItem && qcSelectedItem.cat === 'KR';
   if (type === '수입검사' && isKR) {
     attachLabel.innerHTML = '첨부파일 * — 검사 성적서 <span style="color:#b91c1c">(필수 · 원자재KR)</span>';
   } else if (type === '수입검사') {
     attachLabel.textContent = '첨부파일 (선택) — 검사 성적서 (원자재KR만 필수)';
   } else if (type === '출하검사') {
-    // ✅ 출하검사는 특성 데이터 + 출하 성적서, 두 개의 서로 다른 문서를 각각 첨부해야 한다.
     attachLabel.innerHTML = '첨부파일 * — 특성 데이터 <span style="color:#b91c1c">(필수)</span>';
   } else {
     attachLabel.textContent = '첨부파일 (선택) — 특성 데이터, 검사성적서 등';
   }
-  attach2Wrap.style.display = (type === '출하검사') ? 'block' : 'none';
 }
 
 async function openEditQC(id) {
@@ -3724,10 +3703,6 @@ async function openEditQC(id) {
   document.getElementById('qc-attachment').value = '';
   document.getElementById('qc-attachment-current').innerHTML = r.attachmentUrl
     ? `📎 현재 첨부: <a href="${r.attachmentUrl}" target="_blank" style="color:#1d4ed8">${r.attachmentName||'파일 보기'}</a> (새 파일을 선택하면 교체됩니다)`
-    : '';
-  document.getElementById('qc-attachment2').value = '';
-  document.getElementById('qc-attachment2-current').innerHTML = r.attachmentUrl2
-    ? `📎 현재 첨부: <a href="${r.attachmentUrl2}" target="_blank" style="color:#1d4ed8">${r.attachmentName2||'파일 보기'}</a> (새 파일을 선택하면 교체됩니다)`
     : '';
   document.getElementById('qc-note').value = r.note || '';
   document.getElementById('qc-add-err').style.display = 'none';
@@ -3804,16 +3779,6 @@ async function submitQC() {
       return;
     }
   }
-  // ✅ 추가: 출하검사는 특성 데이터와 별개로 "출하 성적서"도 반드시 첨부해야 한다.
-  if (inspType === '출하검사') {
-    const hasNewFile2 = document.getElementById('qc-attachment2').files.length > 0;
-    const hasExistingFile2 = qcEditTarget && qcEditTarget.attachmentUrl2;
-    if (!hasNewFile2 && !hasExistingFile2) {
-      errEl.textContent = '⚠️ 출하검사는 출하 성적서 파일도 반드시 첨부해야 합니다.';
-      errEl.style.display = 'block';
-      return;
-    }
-  }
 
   // ✅ CORE 원자재는 제조사(분류용)를 반드시 고르고, LOT은 제조사가 실제로 보낸 값을
   //    직접 입력해야 한다 (우리가 만드는 게 아니므로).
@@ -3831,16 +3796,6 @@ async function submitQC() {
   if (fileEl.files && fileEl.files[0]) {
     try {
       attachment = await readFileAsBase64(fileEl.files[0]);
-    } catch (e) {
-      errEl.textContent = e.message; errEl.style.display='block'; return;
-    }
-  }
-  // ✅ 추가: 출하 성적서(두 번째 첨부파일) 읽기
-  let attachment2 = null;
-  const fileEl2 = document.getElementById('qc-attachment2');
-  if (fileEl2.files && fileEl2.files[0]) {
-    try {
-      attachment2 = await readFileAsBase64(fileEl2.files[0]);
     } catch (e) {
       errEl.textContent = e.message; errEl.style.display='block'; return;
     }
@@ -3879,17 +3834,11 @@ async function submitQC() {
     body.attachmentMime = attachment.mimeType;
     body.attachmentFileName = attachment.name;
   }
-  // ✅ 추가: 출하 성적서(두 번째 첨부파일)
-  if (attachment2) {
-    body.attachmentBase64_2 = attachment2.base64;
-    body.attachmentMime_2 = attachment2.mimeType;
-    body.attachmentFileName_2 = attachment2.name;
-  }
 
   const isNew = !qcEditTarget;
   // ✅ 첨부파일이 있을 땐 데이터가 커서 JSONP(주소창 방식)로는 실패할 수 있으니
   //    실제 POST 요청(apiPost)으로 보낸다. 첨부파일이 없으면 기존 방식 그대로 유지.
-  const submitFn = (attachment || attachment2) ? apiPost : api;
+  const submitFn = attachment ? apiPost : api;
   let res;
   if (qcEditTarget) {
     body.id = qcEditTarget.id;
@@ -4061,15 +4010,9 @@ async function openWOTrace(id) {
     (wo.lot ? `<br>LOT: <span style="color:#1d4ed8;font-weight:700;font-family:monospace">${wo.lot}</span>` : `<br><span style="color:#b91c1c">⚠️ LOT 없음 (목록에서 재생성 가능)</span>`);
   document.getElementById('wo-trace-output-qty').value = '';
   document.getElementById('wo-trace-mat-filter').value = '';
-  document.getElementById('wo-trace-mat-filled-only').checked = false; // ✅ 추가: 이전 작업지시에서 켜진 채로 남아있던 상태 때문에 새 작업지시를 열었을 때 자재 목록이 처음부터 비어 보이는 문제 방지
+  document.getElementById('wo-trace-mat-filled-only').checked = false; // ✅ 이전 작업지시에서 "계획수량 기준 소요량 자동 입력"을 눌러 체크된 채 남아있으면, 새 작업지시를 열 때마다 재고가 있는데도 "재고 있는 자재" 목록이 텅 비어 보이는 문제(마치 재고가 없는 것처럼 보임)가 있었음 — 매번 새로 열 때 항상 전체 목록으로 초기화한다.
   document.getElementById('wo-trace-err').style.display = 'none';
   document.getElementById('bom-browse-filter').value = '';
-
-  // ✅ 추가: 자재 재고/LOT 계산의 기준이 되는 txLog·NG 이력을 반드시 최신으로 먼저 맞춘다.
-  //    (다른 사용자가 방금 자재를 입고/출고했는데 이 브라우저가 아직 동기화 전이면,
-  //     실제로는 LOT이 지정된 자재도 "LOT 미지정 재고"로 잘못 표시되는 문제가 있었다.
-  //     시뮬레이션으로 재현·검증 완료: syncNow 없이 열면 오표시, syncNow 후 열면 정상 표시.)
-  if (API_URL || IS_GAS) await syncNow();
 
   await loadWOMaterials();
   await loadWOOutputLots();
@@ -4209,11 +4152,7 @@ async function applyBOMSuggestion() {
   if (!items.length) return;
 
   document.getElementById('wo-trace-mat-filter').value = '';
-  // ✅ 추가: "입력된 것만" 체크박스는 이전에 자동입력을 한 번이라도 성공시키면 checked=true로
-  //    남아있고, 모달을 닫았다 다시 열어도 DOM이 재사용되어 그 상태가 유지된다. 이 상태로
-  //    자재를 찾기 위한 첫 렌더링을 하면, 아직 아무 값도 안 채워진 시점이라 목록이 텅 비어서
-  //    실제로는 재고가 충분한 자재도 "재고 없음, 목록에 없음"으로 잘못 보고되는 문제가 있었다.
-  document.getElementById('wo-trace-mat-filled-only').checked = false;
+  document.getElementById('wo-trace-mat-filled-only').checked = false; // ✅ 자동입력 계산 전에는 항상 전체 목록을 기준으로 자재를 찾아야 하는데, 이 체크박스가 이미 켜져 있으면(값이 아직 하나도 안 채워진 상태라) 목록이 텅 비어 모든 자재가 "재고 없음, 목록에 없음"으로 잘못 뜬다.
   renderWOMatBrowse();
 
   const planQty = +woTraceTarget.planQty || 0;
@@ -4283,7 +4222,7 @@ function renderWOTraceDocs(materials) {
   });
 
   // 공정검사·출하검사: 이 작업지시에 직접 연결된 기록
-  QC.filter(q => (q.inspType === '공정검사' || q.inspType === '출하검사') && String(q.workOrderId) === String(wo.id) && (q.attachmentUrl || q.attachmentUrl2))
+  QC.filter(q => (q.inspType === '공정검사' || q.inspType === '출하검사') && String(q.workOrderId) === String(wo.id) && q.attachmentUrl)
     .forEach(q => {
       if (!docs.some(d => d.id === q.id)) {
         docs.push({ ...q, typeLabel: q.inspType, typeColor: q.inspType === '출하검사' ? '#7c3aed' : '#185FA5', extra: q.name || '' });
@@ -4298,10 +4237,7 @@ function renderWOTraceDocs(materials) {
   listEl.innerHTML = docs.map(d => `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #fef3c7">
       <span><span style="color:${d.typeColor};font-weight:700">[${d.typeLabel}]</span> ${d.extra} <span style="color:#aaa;font-size:11px">${d.inspDate||''}</span></span>
-      <span>
-        ${d.attachmentUrl ? `<a href="${d.attachmentUrl}" target="_blank" style="text-decoration:none;color:#1d4ed8;font-weight:600;margin-right:8px">📎 ${d.attachmentName||'특성데이터'}</a>` : ''}
-        ${d.attachmentUrl2 ? `<a href="${d.attachmentUrl2}" target="_blank" style="text-decoration:none;color:#7c3aed;font-weight:600">📄 ${d.attachmentName2||'출하성적서'}</a>` : ''}
-      </span>
+      <a href="${d.attachmentUrl}" target="_blank" style="text-decoration:none;color:#1d4ed8;font-weight:600">📎 ${d.attachmentName||'파일 보기'}</a>
     </div>`).join('');
 }
 
@@ -4352,36 +4288,35 @@ function findItemCurByCodeCat(code, cat) {
 function resolveFIFOLot(code, cat) {
   const {inType, outType} = woMatLotTypes(cat);
   const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
-  // ✅ 안전장치: LOT별 이력 합계는 "재고조정(실사)"이나 "재고 진단" 보정치를 반영하지
-  //    않는다(그 보정은 특정 LOT에 속하지 않는 전체 단위 조정이라서). 그래서 실제로는
-  //    재고가 483개뿐인데 LOT 이력상으로는 943개로 보이는 경우가 생길 수 있다. 이 상태로
-  //    출고를 허용하면 실제로 없는 재고까지 출고 처리돼서 마이너스 재고 사고가 날 수
-  //    있으므로, 항상 진짜 현재고(item.cur)를 넘지 않도록 상한을 씌운다.
-  const actualCur = findItemCurByCodeCat(code, cat);
-  if (activeLots.length) return {lot: activeLots[0].lot, remain: Math.min(activeLots[0].remain, actualCur)};
-  if (noLotRemain > 0) return {lot: '__nolot__', remain: Math.min(noLotRemain, actualCur)};
-  return actualCur > 0 ? {lot: '__nolot__', remain: actualCur} : {lot: '', remain: 0};
+  if (activeLots.length) return {lot: activeLots[0].lot, remain: activeLots[0].remain};
+  if (noLotRemain > 0) return {lot: '__nolot__', remain: noLotRemain};
+  const cur = findItemCurByCodeCat(code, cat);
+  return cur > 0 ? {lot: '__nolot__', remain: cur} : {lot: '', remain: 0};
 }
 
-// ✅ 추가: 자재가 여러 LOT에 걸쳐 나뉘어 있을 때(예: LOT 미지정 28개 + LOT-X 30개),
-//    resolveFIFOLot은 "가장 오래된 LOT 하나"의 잔여만 알려주기 때문에, 전공정추적의
-//    "재고 있는 자재에서 선택해서 출고" 화면에서 실제로는 두 LOT 합쳐 58개를 쓸 수 있는데도
-//    30개(또는 28개)만 있는 것처럼 잘못 표시되고, "계획수량 기준 소요량 자동 입력"도
-//    딱 그만큼만 채우고 "재고 부족"으로 잘못 경고하는 문제가 있었다. 이 함수는 해당 자재의
-//    모든 LOT + LOT미지정분을 전부 합산한 "총 가용 수량"을 알려준다 (표시/자동입력 전용).
-function getLotSummary(code, cat) {
+// ✅ resolveFIFOLot()은 "가장 오래된 LOT 딱 하나"의 잔량만 알려주는데, 이 값을 작업지시
+//    자재출고 목록의 "재고"로 그대로 보여주면 자재가 여러 LOT에 나뉘어 있을 때(예:
+//    460+23=483) 총재고(483)보다 훨씬 적은 값(460)만 보이고, 그 이상은 "재고 부족"으로
+//    잘못 표시되는 문제가 있었다. 이 함수는 활성 LOT 전체 + LOT 미지정 잔량을 모두 더한
+//    "실제로 지금 꺼내 쓸 수 있는 총량"을 계산한다. 실제 출고 시 LOT별로 어떻게 나눠
+//    쓸지는 submitWOMatBrowse()에서 allocateFIFO()로 따로 계산한다.
+function resolveStockSummary(code, cat) {
   const {inType, outType} = woMatLotTypes(cat);
   const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
-  const totalFromLots = activeLots.reduce((s,l) => s + l.remain, 0);
-  const totalRemainRaw = totalFromLots + Math.max(noLotRemain, 0);
-  // ✅ resolveFIFOLot과 동일한 이유로, LOT 합산 총량도 실제 현재고를 넘지 않도록 상한을 씌운다.
-  const actualCur = findItemCurByCodeCat(code, cat);
-  const totalRemain = Math.min(totalRemainRaw, actualCur);
-  if (activeLots.length) {
-    return { lot: activeLots[0].lot, remain: totalRemain, lotCount: activeLots.length + (noLotRemain > 0 ? 1 : 0) };
+  const lotTotal = activeLots.reduce((s, l) => s + l.remain, 0);
+  if (activeLots.length || noLotRemain > 0) {
+    const total = lotTotal + Math.max(0, noLotRemain);
+    let label;
+    if (!activeLots.length) {
+      label = 'LOT 미지정';
+    } else {
+      const extraLots = (activeLots.length - 1) + (noLotRemain > 0 ? 1 : 0);
+      label = activeLots[0].lot + (extraLots > 0 ? ` 외 ${extraLots}건` : '');
+    }
+    return { remain: total, label };
   }
-  if (noLotRemain > 0) return { lot: '__nolot__', remain: totalRemain, lotCount: 1 };
-  return actualCur > 0 ? { lot: '__nolot__', remain: actualCur, lotCount: 1 } : { lot: '', remain: 0, lotCount: 0 };
+  const cur = findItemCurByCodeCat(code, cat);
+  return { remain: cur, label: cur > 0 ? 'LOT 미지정' : '-' };
 }
 
 // ✅ 완제품·반제품 모델명 앞의 전력 표기(30KW, 3.2KW, 40KW, 50KW 등)를 뽑아낸다.
@@ -4422,14 +4357,12 @@ function getSameModelBTPWorkOrders(wo) {
 //    입력해둔 값은 사라지지 않고 그대로 유지된다.
 function renderWOMatBrowse() {
   // 다시 그리기 전에 지금 입력되어 있는 값들을 먼저 저장해둔다 (사라지지 않게)
-  const prevValues = {};
-  const prevFilled = {}; // ✅ 추가: "입력된 것만" 필터용 — LOT 없이 code|cat 만으로 "이 자재에 값이 입력됐는지"를 판단해야 하는데,
-                          //    prevValues는 code|cat|lot(3단) 키라서 그대로 쓰면 절대 매칭이 안 되고 목록이 항상 비어버렸다.
+  const prevValues = {};     // code|cat|lot(3단) — "같은 모델 반제품 작업지시"처럼 특정 LOT 하나를 콕 집어 쓰는 행 전용
+  const prevByCodeCat = {};  // code|cat(2단) — 일반 재고 목록(여러 LOT 자동 배분 대상) 값 복원 + "입력된 것만" 필터 겸용
   document.querySelectorAll('#wo-trace-mat-browse .wmb-qty').forEach(inp => {
-    if (inp.value) {
-      prevValues[inp.dataset.code + '|' + inp.dataset.cat + '|' + inp.dataset.lot] = inp.value;
-      prevFilled[inp.dataset.code + '|' + inp.dataset.cat] = true;
-    }
+    if (!inp.value) return;
+    prevValues[inp.dataset.code + '|' + inp.dataset.cat + '|' + inp.dataset.lot] = inp.value;
+    prevByCodeCat[inp.dataset.code + '|' + inp.dataset.cat] = inp.value;
   });
 
   const q = (document.getElementById('wo-trace-mat-filter').value || '').toLowerCase().trim();
@@ -4442,7 +4375,7 @@ function renderWOMatBrowse() {
   }
   let filtered = q ? pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) : pool;
   if (filledOnly) {
-    filtered = filtered.filter(r => !!prevFilled[r.code + '|' + r.cat]);
+    filtered = filtered.filter(r => !!prevByCodeCat[r.code + '|' + r.cat]);
   }
   const list = filtered.slice(0, 200);
   const container = document.getElementById('wo-trace-mat-browse');
@@ -4473,15 +4406,17 @@ function renderWOMatBrowse() {
     return;
   }
   container.innerHTML = sameModelHtml + list.map(r => {
-    const {lot, remain, lotCount} = getLotSummary(r.code, r.cat);
-    const lotLabel = lot === '__nolot__' ? 'LOT 미지정' : (lot || '-');
-    const multiLotTag = lotCount > 1 ? ` <span style="color:#7c3aed;font-weight:700">+${lotCount-1}개 LOT</span>` : '';
-    const savedVal = prevValues[r.code + '|' + r.cat + '|' + lot] || '';
+    // ✅ "재고"는 LOT 하나가 아니라 이 자재가 지금 총 몇 개나 있는지(여러 LOT 합계)를 보여준다.
+    //    실제 출고할 땐 submitWOMatBrowse()가 오래된 LOT부터 자동으로 나눠서 처리한다
+    //    (data-multilot="1"로 표시해서, 아래 "같은 모델 반제품 작업지시"처럼 특정 LOT 하나만
+    //    쓰기로 정해진 행과 구분한다).
+    const {remain, label: lotLabel} = resolveStockSummary(r.code, r.cat);
+    const savedVal = prevByCodeCat[r.code + '|' + r.cat] || '';
     return `<div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #f5e6c8;font-size:12px">
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.name} (${r.code})">${r.name} <span style="color:#aaa;font-family:monospace;font-size:10px">${r.code}</span></span>
-      <span style="color:#888;font-family:monospace;font-size:10px;white-space:nowrap" title="선입선출로 자동 배정되는 LOT (재고가 여러 LOT에 걸쳐 있으면 필요한 만큼 순서대로 자동 분배됩니다)">${lotLabel}${multiLotTag}</span>
+      <span style="color:#888;font-family:monospace;font-size:10px;white-space:nowrap" title="선입선출로 자동 배정되는 LOT (여러 LOT이면 오래된 순으로 자동 배분)">${lotLabel}</span>
       <span style="color:#166534;font-weight:600;white-space:nowrap;font-size:11px">재고 ${remain.toLocaleString()}</span>
-      <input class="wmb-qty" data-code="${r.code}" data-cat="${r.cat}" data-lot="${lot}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" data-remain="${remain}" type="number" placeholder="수량" value="${savedVal}" style="width:56px;font-size:11px">
+      <input class="wmb-qty" data-code="${r.code}" data-cat="${r.cat}" data-multilot="1" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" data-remain="${remain}" type="number" placeholder="수량" value="${savedVal}" style="width:56px;font-size:11px">
     </div>`;
   }).join('');
 }
@@ -4494,40 +4429,40 @@ async function submitWOMatBrowse() {
   errEl.style.display = 'none';
   if (!woTraceTarget) return;
 
-  const rows = Array.from(document.querySelectorAll('#wo-trace-mat-browse .wmb-qty'))
+  const inputs = Array.from(document.querySelectorAll('#wo-trace-mat-browse .wmb-qty'))
     .map(inp => ({
       code: inp.dataset.code, cat: inp.dataset.cat, lot: inp.dataset.lot,
+      multilot: inp.dataset.multilot === '1',
       name: inp.dataset.name, unit: inp.dataset.unit, remain: +inp.dataset.remain,
       qty: parseFloat(inp.value)
     }))
     .filter(r => r.qty && r.qty > 0);
 
-  if (!rows.length) { errEl.textContent = '수량을 입력한 자재가 없습니다.'; errEl.style.display='block'; return; }
+  if (!inputs.length) { errEl.textContent = '수량을 입력한 자재가 없습니다.'; errEl.style.display='block'; return; }
 
   // ✅ 저장 전에 전부 재고 검증부터 한다 (일부만 반영되는 걸 방지)
-  for (const r of rows) {
+  for (const r of inputs) {
     if (r.qty > r.remain) { errEl.textContent = `"${r.name}" 실제 재고(${r.remain.toLocaleString()})보다 많은 수량입니다.`; errEl.style.display='block'; return; }
   }
 
-  if (!confirm(`선택한 자재 ${rows.length}건을 출고 처리하시겠습니까?\n창고 재고가 실제로 줄어듭니다.`)) return;
-
-  // ✅ 추가: 자재 재고가 여러 LOT에 걸쳐 있을 때(예: LOT-A 28개 + LOT-X 30개), 화면에 입력한
-  //    수량(예: 50개)을 그 자재의 LOT 하나에만 몰아서 기록하면 안 되므로, 이미 검증된
-  //    allocateFIFO()로 오래된 LOT부터 순서대로 필요한 만큼 자동으로 쪼갠다. (일반 자재출고
-  //    화면의 doSubmit이 다중 LOT 출고를 처리하는 것과 완전히 동일한 방식이다.)
-  const expandedRows = [];
-  for (const r of rows) {
-    const {inType, outType} = woMatLotTypes(r.cat);
-    const alloc = allocateFIFO(r.code, inType, outType, '', r.qty, r.cat);
+  // ✅ 일반 재고 목록(data-multilot="1")에서 입력한 자재는 재고가 여러 LOT에 나뉘어
+  //    있을 수 있다(예: 460+23=483). 이럴 땐 오래된 LOT부터 순서대로 자동으로 나눠서
+  //    출고 항목을 만든다 — "같은 모델 반제품 작업지시"처럼 사용자가 직접 특정 LOT
+  //    하나를 고른 행(multilot=false)은 그 LOT 그대로 사용한다.
+  const rows = [];
+  for (const r of inputs) {
+    if (!r.multilot) { rows.push({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: r.lot, qty: r.qty }); continue; }
+    const { inType, outType } = woMatLotTypes(r.cat);
+    const alloc = allocateFIFO(r.code, inType, outType, null, r.qty, r.cat);
     if (!alloc.ok || !alloc.allocations.length) {
-      errEl.textContent = `"${r.name}" LOT별 재고 계산 중 문제가 발생했습니다 (부족: ${alloc.shortage||r.qty}). 화면을 새로고침한 뒤 다시 시도해주세요.`;
+      errEl.textContent = `"${r.name}" LOT 배분 계산에 실패했습니다 (재고를 다시 확인해주세요).`;
       errEl.style.display = 'block';
       return;
     }
-    alloc.allocations.forEach(a => {
-      expandedRows.push({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: a.lot, qty: a.qty });
-    });
+    alloc.allocations.forEach(a => rows.push({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: a.lot, qty: a.qty }));
   }
+
+  if (!confirm(`선택한 자재 ${inputs.length}건을 출고 처리하시겠습니까?\n창고 재고가 실제로 줄어듭니다.`)) return;
 
   // ✅ 자재마다 서버에 따로따로 요청(건당 최대 2번, 왕복마다 1~수 초)을 보내던 게
   //    자재 개수만큼 느려지던 원인이었다. 이제 전부 한 번의 요청으로 모아서 보낸다
@@ -4538,7 +4473,7 @@ async function submitWOMatBrowse() {
 
   const body = {
     workOrderId: woTraceTarget.id, orderNo: woTraceTarget.orderNo, productCode: woTraceTarget.code,
-    rows: expandedRows.map(r => ({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: r.lot, qty: r.qty }))
+    rows: rows.map(r => ({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: r.lot, qty: r.qty }))
   };
   let res = await apiPost('addWOMaterialsBatch', body);
   if (!res || !res.ok) res = await apiPost('addWOMaterialsBatch', body);
@@ -4552,9 +4487,8 @@ async function submitWOMatBrowse() {
   }
 
   // ✅ 로컬 상태(재고/이력)도 성공한 만큼 바로 반영해서 화면이 즉시 맞게 보이도록 한다
-  //    (LOT별로 쪼개진 expandedRows 기준으로 반영 — 실제 서버에 기록된 이력과 정확히 일치시킨다)
   const failedSet = new Set(res.failures || []);
-  expandedRows.forEach(r => {
+  rows.forEach(r => {
     if (failedSet.has(r.code + '/' + r.cat)) return;
     const txType = woMatLotTypes(r.cat).outType;
     txLog.push({
@@ -4767,56 +4701,34 @@ async function deleteProcessLogUI(id) {
 //    cat 없이 code만으로 거래를 모으면 완제품 이력과 반제품 이력이 뒤섞여 잔여량이 틀어진다.
 //    cat을 안 넘기면(하위호환) 예전처럼 code만으로 동작한다.
 function computeActiveLots(code, inType, outType, cat) {
-  // ✅ 재수정: 예전엔 "엄격한 cat 필터로 아무것도 안 나올 때만" 코드만으로 재검색했는데,
-  //    이력 중 일부는 cat이 정상이고 일부만 오염된 경우(예: LOT A는 cat 정상, LOT B는
-  //    cat이 잘못 저장됨) 엄격한 필터가 "0건"이 아니라 "일부"만 찾아버려서, 여전히
-  //    LOT B가 통째로 누락되는 문제가 있었다(실제 사례: 전체 재고 6,320인데 이력상
-  //    320만 잡히던 버그). openTrace()가 이미 쓰고 있는 것과 완전히 동일하게, "이 코드가
-  //    TP/BTP처럼 여러 카테고리에 걸쳐 진짜로 공유되는 게 아니라면" 처음부터 무조건
-  //    카테고리를 무시하고 코드만으로 조회한다 — 부분 오염이든 전체 오염이든 다 잡힌다.
-  const codeSharedAcrossCats = cat && allRows().filter(r => r.code === code).length > 1;
-  let allTx = codeSharedAcrossCats
-    ? [...txLog, ...ngLog].filter(t => t.code === code && t.cat === cat)
-    : [...txLog, ...ngLog].filter(t => t.code === code);
+  const allTx = [...txLog, ...ngLog].filter(t => t.code === code && (!cat || t.cat === cat));
+  const lotMap = {};
 
-  // ✅ 추가: 완제품/반제품(BTP)은 원래 'tp-in'/'otp' 타입으로 기록돼야 하는데, 과거
-  //    레거시 데이터 중 일부는 원자재용 타입인 'in'/'omt'로 잘못 저장된 경우가 실제로
-  //    발견됐다 (예: cat='BTP'인데 type='in'으로 저장된 입고 이력 — 카테고리는 맞는데
-  //    타입이 안 맞아서 LOT을 못 찾고 "LOT 미지정"으로 잘못 표시됐었다). 정확한 타입으로
-  //    찾아서 아무것도 안 나올 때만, 레거시 표기까지 관대하게 인정해서 한 번 더 찾는다.
-  const INBOUND_SYNONYMS  = {'tp-in':['tp-in','in'], 'in':['in']};
-  const OUTBOUND_SYNONYMS = {'otp':['otp','omt'],    'omt':['omt']};
+  // 입고 집계
+  allTx.filter(t => t.type === inType && t.lot).forEach(t => {
+    const lot = t.lot;
+    if (!lotMap[lot]) lotMap[lot] = {inQty:0, outQty:0, dt:t.dt||''};
+    lotMap[lot].inQty += +t.qty||0;
+    if (!lotMap[lot].dt || t.dt < lotMap[lot].dt) lotMap[lot].dt = t.dt;
+  });
+  // 출고 차감
+  allTx.filter(t => t.type === outType && t.lot).forEach(t => {
+    const lot = t.lot;
+    if (lotMap[lot]) lotMap[lot].outQty += +t.qty||0;
+  });
 
-  const buildLotResult = (inTypes, outTypes) => {
-    const lotMap = {};
-    // 입고 집계
-    allTx.filter(t => inTypes.includes(t.type) && t.lot).forEach(t => {
-      const lot = t.lot;
-      if (!lotMap[lot]) lotMap[lot] = {inQty:0, outQty:0, dt:t.dt||''};
-      lotMap[lot].inQty += +t.qty||0;
-      if (!lotMap[lot].dt || t.dt < lotMap[lot].dt) lotMap[lot].dt = t.dt;
-    });
-    // 출고 차감
-    allTx.filter(t => outTypes.includes(t.type) && t.lot).forEach(t => {
-      const lot = t.lot;
-      if (lotMap[lot]) lotMap[lot].outQty += +t.qty||0;
-    });
-    // 잔여량 있는 LOT만 필터 (FIFO 순서: 입고일 오래된 것부터)
-    const activeLots = Object.entries(lotMap)
-      .map(([lot, d]) => ({lot, remain: d.inQty - d.outQty, inQty: d.inQty, outQty: d.outQty, dt: d.dt}))
-      .filter(d => d.remain > 0)
-      .sort((a,b) => a.dt.localeCompare(b.dt));
-    // LOT 없이 입고된 잔여 수량
-    const noLotIn     = allTx.filter(t=>inTypes.includes(t.type)  && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
-    const noLotOut    = allTx.filter(t=>outTypes.includes(t.type) && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
-    return { activeLots, noLotRemain: noLotIn - noLotOut };
-  };
+  // 잔여량 있는 LOT만 필터 (FIFO 순서: 입고일 오래된 것부터)
+  const activeLots = Object.entries(lotMap)
+    .map(([lot, d]) => ({lot, remain: d.inQty - d.outQty, inQty: d.inQty, outQty: d.outQty, dt: d.dt}))
+    .filter(d => d.remain > 0)
+    .sort((a,b) => a.dt.localeCompare(b.dt));
 
-  let result = buildLotResult([inType], [outType]);
-  if (!result.activeLots.length && result.noLotRemain === 0) {
-    result = buildLotResult(INBOUND_SYNONYMS[inType] || [inType], OUTBOUND_SYNONYMS[outType] || [outType]);
-  }
-  return result;
+  // LOT 없이 입고된 잔여 수량
+  const noLotIn     = allTx.filter(t=>t.type===inType  && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
+  const noLotOut    = allTx.filter(t=>t.type===outType  && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
+  const noLotRemain = noLotIn - noLotOut;
+
+  return {activeLots, noLotRemain};
 }
 
 // ✅ 한 LOT 잔여량으로 부족한 수량을 요청했을 때, 선택한 LOT부터 FIFO 순서로
@@ -4837,18 +4749,14 @@ function allocateFIFO(code, inType, outType, startLot, qty, cat) {
     pool = activeLots.map(d => ({lot:d.lot, remain:d.remain}));
   }
 
-  const actualCur = findItemCurByCodeCat(code, cat);
   const allocations = [];
   let need = qty;
-  let totalAllocated = 0;
   for (const p of pool) {
     if (need <= 0) break;
-    // ✅ 안전장치: LOT별 이력 합계가 재고조정으로 부풀어 있어도, 실제 현재고를
-    //    넘어서까지 분배(=출고 허용)하지 않는다.
-    const take = Math.min(need, p.remain, actualCur - totalAllocated);
-    if (take > 0) { allocations.push({lot:p.lot, qty:take}); need -= take; totalAllocated += take; }
+    const take = Math.min(need, p.remain);
+    if (take > 0) { allocations.push({lot:p.lot, qty:take}); need -= take; }
   }
-  const totalAvailable = Math.min(pool.reduce((s,p)=>s+p.remain, 0), actualCur);
+  const totalAvailable = pool.reduce((s,p)=>s+p.remain, 0);
   return { ok: need <= 0, allocations, shortage: Math.max(0, need), totalAvailable };
 }
 
@@ -6001,15 +5909,8 @@ function setSyncBadge(state, msg) {
 
 // ── 전체 동기화
 var _syncing = false;
-var _syncPromise = null; // ✅ 추가: 진행 중인 동기화의 Promise를 담아둬서, 동시에 들어온 다른 호출이 이걸 같이 기다릴 수 있게 한다
 async function syncNow() {
-  // ✅ 수정: 이미 동기화 중이면 그냥 아무것도 안 하고 리턴하던 것을, 진행 중인 동기화의
-  //    Promise를 그대로 반환해서 호출한 쪽이 그 완료를 함께 기다리도록 바꿨다.
-  //    (기존엔 예: 백그라운드 자동동기화가 마침 실행 중일 때 openWOTrace()가 syncNow()를
-  //     호출하면 곧바로 리턴돼버려서, 실제로는 서버에 있는 LOT 데이터가 아직 화면에 반영되기
-  //     전 시점에 렌더링이 이뤄져 "LOT 미지정"으로 잘못 표시되는 문제가 있었다.
-  //     시뮬레이션으로 재현·검증 완료.)
-  if (_syncing) return _syncPromise;
+  if (_syncing) return;
   // ✅ 관리자가 수량을 수정 중인 모달이 열려있으면 동기화를 미루어
   //    "화면에 보이는 옛 수량 + 방금 동기화된 실제 수량" 혼선으로 인한 오차 사고를 예방
   const editModalOpen =
@@ -6019,16 +5920,6 @@ async function syncNow() {
   if (editModalOpen) { console.log('수정 모달 열림 - 동기화 보류'); return; }
 
   _syncing = true;
-  _syncPromise = _syncNowRun(); // ✅ 추가: 실제 동기화 작업을 별도 함수로 분리해서, 그 Promise를 밖에서도 공유할 수 있게 한다
-  try {
-    await _syncPromise;
-  } finally {
-    _syncing = false;
-    _syncPromise = null; // ✅ 추가
-  }
-}
-
-async function _syncNowRun() { // ✅ 추가: syncNow()의 실제 동작 본문 (기존 코드와 동일, 함수만 분리)
   setSyncBadge('loading');
   try {
     const [ar, tr, nr] = await Promise.all([api('getAll'), api('getTxLog'), api('getNGAll')]);
@@ -6170,11 +6061,9 @@ async function _syncNowRun() { // ✅ 추가: syncNow()의 실제 동작 본문 
   } catch(e) {
     setSyncBadge('error', '❌ ' + e.message.substring(0,30));
     console.error('Sync error:', e);
+  } finally {
+    _syncing = false;
   }
-  // ✅ 수정: _syncing 리셋은 이제 바깥 syncNow() wrapper가 finally에서 담당하므로 여기선 하지 않는다
-  //    (여기서도 false로 만들면, 바깥 wrapper가 아직 자기 작업 중(_syncPromise 정리 전)인데
-  //     _syncing이 먼저 꺼져버려서 그 사이 들어오는 또 다른 동시 호출이 진행 중인 동기화를
-  //     못 기다리고 새로 하나 더 시작해버리는 문제가 생길 수 있다.)
 }
 
 function startAutoSync() {
@@ -7210,12 +7099,6 @@ function openTraceSearch() {
 
 // ── 재고현황 행 클릭으로 이력 추적
 let traceDays = 7;              // ✅ 이력 추적 "전체 이력" 기본 표시 기간 (7=최근 1주일, null=전체)
-let lotTableDays = null;        // ✅ "LOT별 입출고 현황" 표 전용 기간 필터 (null=전체, 기본값)
-
-function setLotTableDays(days) {
-  lotTableDays = days;
-  if (traceLastCode) openTrace(traceLastCode, traceLastCat);
-}
 let traceLastCode = null, traceLastCat = null;
 
 // 이력 추적 창의 기간 필터 버튼에서 호출됨
@@ -7227,12 +7110,6 @@ function setTraceDays(days) {
 function openTrace(code, catHint) {
   traceLastCode = code;
   traceLastCat  = catHint;
-  // ✅ 버그 수정: periodBtnStyle을 예전엔 함수 뒷부분(전체 이력 섹션 바로 위)에서만
-  //    정의했는데, 이번에 LOT별 표에도 기간 필터 버튼을 추가하면서 그보다 먼저(함수
-  //    앞쪽에서) periodBtnStyle을 참조하게 됐다. const는 선언 전에 참조하면
-  //    "Cannot access before initialization" 에러가 나므로, 함수 맨 앞으로 옮겨서
-  //    어디서 쓰든 항상 정의된 이후가 되도록 한다.
-  const periodBtnStyle = (active) => `padding:4px 10px;border-radius:6px;border:1px solid ${active?'#185FA5':'#ddd'};background:${active?'#185FA5':'#fff'};color:${active?'#fff':'#555'};font-size:12px;cursor:pointer;font-weight:${active?'700':'500'}`;
   // ✅ 핵심 수정: code만으로는 TP/BTP/NG가 같은 코드를 공유하는 경우를 구분할 수 없다.
   //    catHint가 있으면 정확히 그 카테고리의 품목을 우선 찾는다.
   const pool = allRows();
@@ -7287,13 +7164,6 @@ function openTrace(code, catHint) {
 
   // ── LOT별 입고 집계
   const adjTxs = txs.filter(t => t.type === 'adjust');
-  // ✅ 추가: 'sync-fix'(재고 진단 도구로 수동 보정한 기록)는 "이력 계산값" 산출식에는
-  //    일부러 안 넣지만(넣으면 반복 보정 시 오차가 눈덩이처럼 불어나는 문제가 있어서),
-  //    그러면 LOT별 표의 잔여 합계가 실제 현재고와 영영 안 맞아 보여서 혼란을 준다.
-  //    그래서 "🔧 재고조정(실사)" 표시 항목에는(진단 계산과 무관하게, 화면에 보여주는
-  //    용도로만) sync-fix 보정치도 같이 넣어서, 표만 봐도 왜 숫자가 그런지 알 수 있게 한다.
-  const syncFixTxs = txs.filter(t => t.type === 'sync-fix');
-  const adjDisplayTxs = [...adjTxs, ...syncFixTxs];
   const lotMap = {};
   inTxs.forEach(t => {
     const lot = t.lot || '(LOT 없음)';
@@ -7310,10 +7180,10 @@ function openTrace(code, catHint) {
   // ✅ 실사 후 "재고조정"은 특정 LOT에 속하지 않지만, 이 값을 반영하지 않으면
   //    LOT별 잔여 합계와 실제 현재고(item.cur)가 서로 다른 숫자로 보여 혼란을 준다.
   //    "🔧 재고조정(실사)" 라는 별도 항목으로 묶어서 합계에 포함시킨다.
-  if (adjDisplayTxs.length) {
+  if (adjTxs.length) {
     const key = '🔧 재고조정(실사)';
-    lotMap[key] = {inQty:0, outQty:0, txs:[...adjDisplayTxs]};
-    adjDisplayTxs.forEach(t => {
+    lotMap[key] = {inQty:0, outQty:0, txs:[...adjTxs]};
+    adjTxs.forEach(t => {
       const q = +t.qty || 0;
       if (q >= 0) lotMap[key].inQty += q;
       else lotMap[key].outQty += -q;
@@ -7327,25 +7197,13 @@ function openTrace(code, catHint) {
   //  - "코드만 기준(카테고리 무시)": 예전 catKey 버그 등으로 카테고리가 잘못 저장된
   //    이력까지 다 잡아내기 위한 참고값. 코드가 다른 카테고리와 우연히 겹치는
   //    경우엔 이 값이 오히려 부정확할 수 있어 "참고용"으로만 제공한다.
-  //
-  //  ⚠️ 중요한 수정: sync-fix(재고 진단 도구로 직접 보정한 기록)를 예전엔 이 계산에서
-  //  일부러 뺐었는데, 그러면 한 번 고쳐도 "이력 계산값"이 하나도 안 바뀌어서 경고가
-  //  절대 안 사라지고, 관리자가 그 경고를 보고 "또 안 고쳐졌나?" 하며 계속 재클릭하게
-  //  되는 심각한 문제가 있었다. 클릭할 때마다 그 시점의 (여전히 예전 그대로인) 계산값을
-  //  "새 현재고"로 다시 덮어써버려서, 정상으로 고쳐놓은 값이 반복 클릭 한 번마다 다시
-  //  틀어지는 사고가 실제로 발생했다(933→483로 정확히 고쳤는데, 그 후 반복 클릭으로
-  //  943, 그 이상으로 계속 틀어짐). 이제 sync-fix도 계산에 포함시켜서, 한 번 정확히
-  //  고치면 "이력 계산값"이 즉시 저장된 현재고와 일치하도록(더 이상 경고 안 뜨도록)
-  //  바꿨다. 이러면 같은 값을 반복 클릭해도 "현재 저장된 값과 동일합니다"로 막혀서
-  //  안전하다.
   // ══════════════════════════════════════════════════════════
-  const codeAndCatTotal = inQty - outQty + adjTxs.reduce((s,t)=>s+(+t.qty||0),0) + syncFixTxs.reduce((s,t)=>s+(+t.qty||0),0);
+  const codeAndCatTotal = inQty - outQty + adjTxs.reduce((s,t)=>s+(+t.qty||0),0);
   const allSameCodeTxs = txLog.filter(t => t.code === code);
   const codeOnlyIn  = allSameCodeTxs.filter(t=>['in','tp-in'].includes(t.type)).reduce((s,t)=>s+(+t.qty||0),0);
   const codeOnlyOut = allSameCodeTxs.filter(t=>['omt','otp'].includes(t.type)).reduce((s,t)=>s+(+t.qty||0),0);
   const codeOnlyAdj = allSameCodeTxs.filter(t=>t.type==='adjust').reduce((s,t)=>s+(+t.qty||0),0);
-  const codeOnlySyncFix = allSameCodeTxs.filter(t=>t.type==='sync-fix').reduce((s,t)=>s+(+t.qty||0),0);
-  const codeOnlyTotal = codeOnlyIn - codeOnlyOut + codeOnlyAdj + codeOnlySyncFix;
+  const codeOnlyTotal = codeOnlyIn - codeOnlyOut + codeOnlyAdj;
   const storedCur = +item.cur || 0;
   const mismatchCatOk = Math.abs(codeAndCatTotal - storedCur) > 0.001;
   const mismatchCodeOnly = Math.abs(codeOnlyTotal - storedCur) > 0.001;
@@ -7371,26 +7229,11 @@ function openTrace(code, catHint) {
       </div>` : ''}
     </div>` : '';
 
-  // ✅ LOT별 표 기간 필터: 잔여 수량 계산 자체는 항상 전체 이력 기준으로 정확하게
-  //    유지하고(재고 진단·현재고와 어긋나면 안 되므로), "최근 1개월"을 고르면
-  //    그 기간 안에 입고나 출고 활동이 있었던 LOT만 골라서 보여준다(오래전에 이미
-  //    다 빠져나가 지금은 잔여 0인 LOT들까지 매번 다 보여줘서 표가 길어지는 걸 방지).
-  const lotCutoffTs = lotTableDays ? (Date.now() - lotTableDays*24*3600*1000) : null;
-  const visibleLotEntries = Object.entries(lotMap).filter(([lot, d]) => {
-    if (!lotCutoffTs) return true;
-    return d.txs.some(t => { const ts = new Date(t.dt).getTime(); return !isNaN(ts) && ts >= lotCutoffTs; });
-  });
-
   const lotSection = Object.keys(lotMap).length ? `
     <div style="margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #e0e0e8;flex-wrap:wrap;gap:6px">
-        <div style="font-size:13px;font-weight:700;color:#1a1a2e">📦 LOT별 입출고 현황</div>
-        <div style="display:flex;gap:4px">
-          <button onclick="setLotTableDays(30)"  style="${periodBtnStyle(lotTableDays===30)}">최근 1개월</button>
-          <button onclick="setLotTableDays(null)" style="${periodBtnStyle(lotTableDays===null)}">전체</button>
-        </div>
+      <div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid #e0e0e8">
+        📦 LOT별 입출고 현황
       </div>
-      ${!visibleLotEntries.length ? `<div style="color:#aaa;font-size:12px;padding:10px 2px">선택한 기간 안에 활동이 있었던 LOT이 없습니다.</div>` : `
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
           <tr style="background:#f5f6f8">
@@ -7402,7 +7245,7 @@ function openTrace(code, catHint) {
           </tr>
         </thead>
         <tbody>
-          ${visibleLotEntries.map(([lot, d]) => {
+          ${Object.entries(lotMap).map(([lot, d]) => {
             const remain = d.inQty - d.outQty;
             const status = remain <= 0 ? '<span style="color:#991b1b;font-size:11px">🔴 소진</span>'
                          : remain < d.inQty ? '<span style="color:#92400e;font-size:11px">🟡 일부출고</span>'
@@ -7417,23 +7260,6 @@ function openTrace(code, catHint) {
           }).join('')}
         </tbody>
       </table>
-      `}
-    </div>` : '';
-
-  // ✅ 수정: "이름 있는 진짜 LOT"들의 잔여 합을 현재고에서 빼면, LOT 없이 잡혀있는
-  //    수량(실제 빈 lot 이력 + 이력 자체가 아예 없는 레거시 재고까지 전부 포함)이 나온다.
-  //    이전엔 이 버튼이 lotSection(LOT별 표) 안에 있어서, 이 품목처럼 입출고 이력이
-  //    "단 한 건도" 없는 경우(lotMap이 완전히 비어있음) 표 자체가 안 그려지면서 버튼도
-  //    같이 사라지는 문제가 있었다 — 정작 이런 품목이야말로 전환이 필요한 대상인데도.
-  //    이제 lotSection과 별개로 항상 계산해서, 이력이 하나도 없어도 버튼이 뜨게 한다.
-  const namedLotRemain = Object.entries(lotMap)
-    .filter(([lot]) => lot !== '(LOT 없음)' && lot !== '🔧 재고조정(실사)')
-    .reduce((s,[,d]) => s + (d.inQty - d.outQty), 0);
-  const unlottedTotal = +((+item.cur||0) - namedLotRemain).toFixed(4);
-  const lotConvertSection = (isAdmin && unlottedTotal > 0) ? `
-    <div style="margin-bottom:16px;padding:10px;background:#eff6ff;border-radius:8px;border:1px dashed #93c5fd">
-      <div style="font-size:12px;color:#1e3a8a;margin-bottom:6px">📅 LOT 없이 잡혀있는 재고 <strong>${n(unlottedTotal)} ${item.unit}</strong>가 있습니다${Object.keys(lotMap).length ? '' : ' (이 품목은 입출고 이력이 전혀 없어 전체가 미지정 상태입니다)'}. 오늘 날짜 LOT으로 정리하시겠습니까? (현재고는 바뀌지 않고 LOT만 새로 붙습니다)</div>
-      <button onclick="convertUnlottedToLot('${code}','${item.cat}')" style="padding:6px 14px;border-radius:6px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;font-size:12px;cursor:pointer;font-weight:600">📅 오늘 날짜 LOT으로 전환</button>
     </div>` : '';
 
   // ── 전체 이력 타임라인
@@ -7454,6 +7280,7 @@ function openTrace(code, catHint) {
   const timelineTxs = cutoffTs ? txs.filter(t => t.id >= cutoffTs) : txs;
   const hiddenCount = txs.length - timelineTxs.length;
 
+  const periodBtnStyle = (active) => `padding:4px 10px;border-radius:6px;border:1px solid ${active?'#185FA5':'#ddd'};background:${active?'#185FA5':'#fff'};color:${active?'#fff':'#555'};font-size:12px;cursor:pointer;font-weight:${active?'700':'500'}`;
   const periodBar = `
     <div style="display:flex;gap:6px;margin-bottom:10px">
       <button onclick="setTraceDays(7)"   style="${periodBtnStyle(traceDays===7)}">최근 1주일</button>
@@ -7523,7 +7350,7 @@ function openTrace(code, catHint) {
       ${ngTxs.length>10?`<div style="font-size:11px;color:#888;margin-top:4px">...외 ${ngTxs.length-10}건 (불량(NG) 탭에서 전체 확인)</div>`:''}
     </div>` : '';
 
-  document.getElementById('trace-body').innerHTML = diagSection + lotSection + lotConvertSection + timelineSection + ngSection;
+  document.getElementById('trace-body').innerHTML = diagSection + lotSection + timelineSection + ngSection;
   document.getElementById('trace-ov').classList.add('show');
 }
 
@@ -7567,78 +7394,6 @@ async function applyStockDiagnosisFix(code, cat) {
 
   alert('✅ 현재고가 수정되었습니다.');
   openTrace(code, cat);
-}
-
-// ✅ LOT 없이 잡혀있는 재고(실제 빈 lot 이력 + 이력 자체가 없는 레거시 재고 포함)를
-//    오늘 날짜 LOT으로 정식 전환한다. "미지정분 출고" + "오늘 날짜 LOT으로 재입고"를
-//    쌍으로 등록해서 서로 상쇄시키므로 현재고는 전혀 바뀌지 않고 LOT만 새로 생긴다.
-//    (기존 addTx를 그대로 두 번 쓰는 방식이라 서버 쪽 수정 없이도 안전하게 동작한다.)
-async function convertUnlottedToLot(code, cat) {
-  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
-  const arr = {TP:DB.tp, BTP:DB.btp, KR:DB.kr, VN:DB.vn, VTTH:DB.vtth}[cat];
-  const item = arr && arr.find(r => r.code === code);
-  if (!item) { alert('품목을 찾을 수 없습니다.'); return; }
-
-  // 최신 상태 기준으로 다시 계산 (모달을 띄워둔 사이 값이 바뀌었을 수 있으므로)
-  const {inType, outType} = (cat === 'TP' || cat === 'BTP') ? {inType:'tp-in', outType:'otp'} : {inType:'in', outType:'omt'};
-  // ✅ 핵심 수정: openTrace()가 이미 쓰고 있는 것과 반드시 같은 방식으로 이력을 모아야 한다.
-  //    이 코드가 TP/BTP처럼 여러 카테고리에 걸쳐 진짜로 공유되는 게 아니라면, 과거 catKey
-  //    버그로 카테고리가 잘못 저장된 레거시 이력도 놓치지 않도록 카테고리를 무시하고
-  //    코드만으로 찾는다. (이전엔 여기서만 카테고리를 엄격하게 강제해서, 화면에 표시된
-  //    "미지정 6개"와 실제 전환 시 계산되는 값이 서로 달라지는 사고가 있었다 — 화면과
-  //    똑같은 계산 결과가 나오도록 반드시 openTrace와 동일한 로직을 써야 한다.)
-  const codeSharedAcrossCats = allRows().filter(r => r.code === code).length > 1;
-  const relevantTx = codeSharedAcrossCats
-    ? txLog.filter(t => t.code === code && t.cat === cat)
-    : txLog.filter(t => t.code === code);
-  const lotMap = {};
-  relevantTx.filter(t => t.type === inType).forEach(t => { const lot=t.lot||'(LOT 없음)'; if(!lotMap[lot])lotMap[lot]={inQty:0,outQty:0}; lotMap[lot].inQty += +t.qty||0; });
-  relevantTx.filter(t => t.type === outType).forEach(t => { const lot=t.lot||'(LOT 없음)'; if(!lotMap[lot])lotMap[lot]={inQty:0,outQty:0}; lotMap[lot].outQty += +t.qty||0; });
-  const adjSum = relevantTx.filter(t=>t.type==='adjust').reduce((s,t)=>s+(+t.qty||0),0);
-  const namedLotRemain = Object.entries(lotMap)
-    .filter(([lot]) => lot !== '(LOT 없음)')
-    .reduce((s,[,d]) => s + (d.inQty - d.outQty), 0);
-  const unlottedTotal = +((+item.cur||0) - namedLotRemain - adjSum).toFixed(4);
-
-  if (unlottedTotal <= 0) { alert('전환할 미지정 재고가 없습니다.'); openTrace(code, cat); return; }
-  if (!confirm(`LOT 없이 잡혀있는 재고 ${unlottedTotal.toLocaleString()} ${item.unit}를 오늘 날짜 LOT으로 전환하시겠습니까?\n현재고(${(+item.cur||0).toLocaleString()} ${item.unit})는 바뀌지 않습니다.`)) return;
-
-  // 오늘 날짜 기반 LOT 문자열 생성 (같은 코드에 이미 같은 이름의 LOT이 있으면 번호를 붙여 중복 방지)
-  const today = vnNow();
-  const y = today.getFullYear(), m = String(today.getMonth()+1).padStart(2,'0'), d = String(today.getDate()).padStart(2,'0');
-  let seq = 1, todayLot = `LOT-${y}${m}${d}-CONV`;
-  const existingLots = new Set(relevantTx.map(t=>t.lot).filter(Boolean));
-  while (existingLots.has(todayLot)) { seq++; todayLot = `LOT-${y}${m}${d}-CONV${seq}`; }
-
-  const dt = vnDt();
-  const outEntry = { id: Date.now(), type: outType, code, name: item.name, cat, unit: item.unit, qty: unlottedTotal, note: '[LOT 지정 전환] 미지정재고 → LOT', lot: '', dt, dest: '', user: CURRENT_USER || '관리자' };
-  const inEntry  = { id: Date.now()+1, type: inType,  code, name: item.name, cat, unit: item.unit, qty: unlottedTotal, note: '[LOT 지정 전환] 미지정재고 → LOT', lot: todayLot, dt, dest: '', user: CURRENT_USER || '관리자' };
-
-  // ✅ 서버 반영을 먼저 확정한 뒤에만 로컬을 바꾼다 (이 파일 전체에서 일관되게 쓰는 안전 패턴)
-  if (API_URL || IS_GAS) {
-    let res1 = await api('addTx', { ...outEntry, token: ADMIN_TOKEN });
-    if (!res1 || !res1.ok) res1 = await api('addTx', { ...outEntry, token: ADMIN_TOKEN });
-    if (!res1 || !res1.ok) { alert('서버 반영 실패(출고분): ' + (res1 && res1.error ? res1.error : '알 수 없는 오류')); return; }
-
-    let res2 = await api('addTx', { ...inEntry, token: ADMIN_TOKEN });
-    if (!res2 || !res2.ok) res2 = await api('addTx', { ...inEntry, token: ADMIN_TOKEN });
-    if (!res2 || !res2.ok) {
-      alert(`⚠️ 출고분은 반영됐지만 재입고분 반영에 실패했습니다: ${res2 && res2.error ? res2.error : '알 수 없는 오류'}\n현재고가 일시적으로 어긋날 수 있으니 동기화 후 "재고 진단"으로 확인해주세요.`);
-      await syncNow();
-      return;
-    }
-  }
-
-  // 서버 성공(또는 서버 미연동 환경) 후에만 로컬 반영 - 두 거래가 서로 상쇄되어 item.cur는 그대로
-  txLog.push(outEntry);
-  item.cur -= unlottedTotal; item.total -= unlottedTotal;
-  txLog.push(inEntry);
-  item.cur += unlottedTotal; item.total += unlottedTotal;
-
-  if (API_URL || IS_GAS) await syncNow();
-  renderInv(); initDashboard(); renderHist();
-  openTrace(code, cat);
-  alert(`✅ ${unlottedTotal.toLocaleString()} ${item.unit}가 LOT "${todayLot}"으로 전환됐습니다.`);
 }
 
 
