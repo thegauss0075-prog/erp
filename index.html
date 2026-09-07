@@ -4733,7 +4733,18 @@ async function deleteProcessLogUI(id) {
 //    cat 없이 code만으로 거래를 모으면 완제품 이력과 반제품 이력이 뒤섞여 잔여량이 틀어진다.
 //    cat을 안 넘기면(하위호환) 예전처럼 code만으로 동작한다.
 function computeActiveLots(code, inType, outType, cat) {
-  const allTx = [...txLog, ...ngLog].filter(t => t.code === code && (!cat || t.cat === cat));
+  // ✅ 재고 상세(전공정 추적) 화면에서 이미 쓰고 있는 것과 같은 우회 방법이다: 예전
+  //    catKey 버그로 일부 옛 이력의 카테고리(cat)가 실제와 다르게 잘못 저장된 경우가
+  //    있다. 이 코드가 여러 카테고리에 걸쳐 등록되어 있지 않다면(=카테고리를 엄격히
+  //    구분할 필요가 없는 평범한 코드라면) 카테고리가 안 맞아도 같은 코드의 이력은
+  //    전부 인정한다 — 안 그러면 실제로 존재하는 LOT이 이 함수를 쓰는 모든 곳
+  //    (작업지시 자재출고 목록, LOT 자동분배 등)에서 "LOT 미지정"으로 잘못 표시되고,
+  //    출고할 때도 진짜 LOT 대신 엉뚱하게 "LOT 없음"으로 기록되는 문제가 있었다.
+  //    코드가 여러 카테고리에 걸쳐 있는 경우(TP/BTP가 같은 코드를 공유하는 등)는
+  //    혼동을 막기 위해 기존처럼 카테고리를 엄격히 맞춘다.
+  const codeSharedAcrossCats = cat && allRows().filter(r => r.code === code).length > 1;
+  const catFilter = codeSharedAcrossCats ? cat : null;
+  const allTx = [...txLog, ...ngLog].filter(t => t.code === code && (!catFilter || t.cat === catFilter));
   const lotMap = {};
 
   // 입고 집계
@@ -7197,14 +7208,18 @@ function openTrace(code, catHint) {
   // ── LOT별 입고 집계
   const adjTxs = txs.filter(t => t.type === 'adjust');
   const lotMap = {};
+  // ✅ '__nolot__'은 LOT 자동분배 로직에서 "LOT 미지정 재고"를 나타낼 때 쓰는 내부
+  //    표기다 — 화면엔 빈 LOT과 똑같이 "(LOT 없음)"으로 묶어서 보여준다(원래 코드도
+  //    아님).
+  const lotLabelOf = (t) => (!t.lot || t.lot === '__nolot__') ? '(LOT 없음)' : t.lot;
   inTxs.forEach(t => {
-    const lot = t.lot || '(LOT 없음)';
+    const lot = lotLabelOf(t);
     if (!lotMap[lot]) lotMap[lot] = {inQty:0, outQty:0, txs:[]};
     lotMap[lot].inQty += +t.qty||0;
     lotMap[lot].txs.push(t);
   });
   outTxs.forEach(t => {
-    const lot = t.lot || '(LOT 없음)';
+    const lot = lotLabelOf(t);
     if (!lotMap[lot]) lotMap[lot] = {inQty:0, outQty:0, txs:[]};
     lotMap[lot].outQty += +t.qty||0;
     lotMap[lot].txs.push(t);
