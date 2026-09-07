@@ -1057,6 +1057,11 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
       <input id="qc-attachment" type="file">
       <div id="qc-attachment-current" style="font-size:11px;color:#1d4ed8;margin-top:4px"></div>
     </div>
+    <div class="ov-fr" id="qc-attachment2-wrap" style="display:none">
+      <label id="qc-attachment2-label">출하 성적서 * <span style="color:#b91c1c">(필수 · 출하검사)</span></label>
+      <input id="qc-attachment2" type="file">
+      <div id="qc-attachment2-current" style="font-size:11px;color:#1d4ed8;margin-top:4px"></div>
+    </div>
     <div class="ov-fr"><label>비고 (선택)</label><input id="qc-note" placeholder="선택사항"></div>
     <div id="qc-add-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div class="ov-actions">
@@ -3490,8 +3495,11 @@ async function renderQC() {
     <td style="font-size:12px;color:#888">${r.note||'-'}</td>
     <td class="no-print" style="white-space:nowrap">
       ${r.attachmentUrl
-        ? `<a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'} 보기" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#dcfce7;border:1px solid #86efac;font-size:16px;margin-right:2px;vertical-align:middle">📎</a>`
+        ? `<a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'특성 데이터/검사성적서'} 보기" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#dcfce7;border:1px solid #86efac;font-size:16px;margin-right:2px;vertical-align:middle">📎</a>`
         : `<span title="첨부파일 없음" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#f3f4f6;border:1px solid #e5e7eb;font-size:16px;opacity:.4;margin-right:2px;vertical-align:middle">📎</span>`}
+      ${r.inspType === '출하검사' ? (r.attachmentUrl2
+        ? `<a href="${r.attachmentUrl2}" target="_blank" title="${r.attachmentName2||'출하 성적서'} 보기" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#dbeafe;border:1px solid #93c5fd;font-size:16px;margin-right:2px;vertical-align:middle">📄</a>`
+        : `<span title="출하 성적서 없음" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;background:#f3f4f6;border:1px solid #e5e7eb;font-size:16px;opacity:.4;margin-right:2px;vertical-align:middle">📄</span>`) : ''}
       ${isAdmin ? `<button class="edit-btn" onclick="openEditQC(${r.id})" title="수정">✏️</button>` : ''}
       ${isAdmin ? `<button class="edit-btn" onclick="deleteQC(${r.id})" title="삭제">🗑️</button>` : ''}
     </td>
@@ -3633,6 +3641,8 @@ async function openAddQC() {
   document.getElementById('qc-inspector').value = '';
   document.getElementById('qc-attachment').value = '';
   document.getElementById('qc-attachment-current').textContent = '';
+  document.getElementById('qc-attachment2').value = '';
+  document.getElementById('qc-attachment2-current').textContent = '';
   document.getElementById('qc-note').value = '';
   document.getElementById('qc-add-err').style.display = 'none';
   onQCTypeChange();
@@ -3674,16 +3684,19 @@ function onQCTypeChange() {
 function updateQCAttachmentLabel() {
   const type = document.getElementById('qc-type').value;
   const attachLabel = document.getElementById('qc-attachment-label');
+  const attach2Wrap = document.getElementById('qc-attachment2-wrap');
   const isKR = qcSelectedItem && qcSelectedItem.cat === 'KR';
   if (type === '수입검사' && isKR) {
     attachLabel.innerHTML = '첨부파일 * — 검사 성적서 <span style="color:#b91c1c">(필수 · 원자재KR)</span>';
   } else if (type === '수입검사') {
     attachLabel.textContent = '첨부파일 (선택) — 검사 성적서 (원자재KR만 필수)';
   } else if (type === '출하검사') {
+    // ✅ 출하검사는 특성 데이터 + 출하 성적서, 두 개의 서로 다른 문서를 각각 첨부해야 한다.
     attachLabel.innerHTML = '첨부파일 * — 특성 데이터 <span style="color:#b91c1c">(필수)</span>';
   } else {
     attachLabel.textContent = '첨부파일 (선택) — 특성 데이터, 검사성적서 등';
   }
+  attach2Wrap.style.display = (type === '출하검사') ? 'block' : 'none';
 }
 
 async function openEditQC(id) {
@@ -3711,6 +3724,10 @@ async function openEditQC(id) {
   document.getElementById('qc-attachment').value = '';
   document.getElementById('qc-attachment-current').innerHTML = r.attachmentUrl
     ? `📎 현재 첨부: <a href="${r.attachmentUrl}" target="_blank" style="color:#1d4ed8">${r.attachmentName||'파일 보기'}</a> (새 파일을 선택하면 교체됩니다)`
+    : '';
+  document.getElementById('qc-attachment2').value = '';
+  document.getElementById('qc-attachment2-current').innerHTML = r.attachmentUrl2
+    ? `📎 현재 첨부: <a href="${r.attachmentUrl2}" target="_blank" style="color:#1d4ed8">${r.attachmentName2||'파일 보기'}</a> (새 파일을 선택하면 교체됩니다)`
     : '';
   document.getElementById('qc-note').value = r.note || '';
   document.getElementById('qc-add-err').style.display = 'none';
@@ -3787,6 +3804,16 @@ async function submitQC() {
       return;
     }
   }
+  // ✅ 추가: 출하검사는 특성 데이터와 별개로 "출하 성적서"도 반드시 첨부해야 한다.
+  if (inspType === '출하검사') {
+    const hasNewFile2 = document.getElementById('qc-attachment2').files.length > 0;
+    const hasExistingFile2 = qcEditTarget && qcEditTarget.attachmentUrl2;
+    if (!hasNewFile2 && !hasExistingFile2) {
+      errEl.textContent = '⚠️ 출하검사는 출하 성적서 파일도 반드시 첨부해야 합니다.';
+      errEl.style.display = 'block';
+      return;
+    }
+  }
 
   // ✅ CORE 원자재는 제조사(분류용)를 반드시 고르고, LOT은 제조사가 실제로 보낸 값을
   //    직접 입력해야 한다 (우리가 만드는 게 아니므로).
@@ -3804,6 +3831,16 @@ async function submitQC() {
   if (fileEl.files && fileEl.files[0]) {
     try {
       attachment = await readFileAsBase64(fileEl.files[0]);
+    } catch (e) {
+      errEl.textContent = e.message; errEl.style.display='block'; return;
+    }
+  }
+  // ✅ 추가: 출하 성적서(두 번째 첨부파일) 읽기
+  let attachment2 = null;
+  const fileEl2 = document.getElementById('qc-attachment2');
+  if (fileEl2.files && fileEl2.files[0]) {
+    try {
+      attachment2 = await readFileAsBase64(fileEl2.files[0]);
     } catch (e) {
       errEl.textContent = e.message; errEl.style.display='block'; return;
     }
@@ -3842,11 +3879,17 @@ async function submitQC() {
     body.attachmentMime = attachment.mimeType;
     body.attachmentFileName = attachment.name;
   }
+  // ✅ 추가: 출하 성적서(두 번째 첨부파일)
+  if (attachment2) {
+    body.attachmentBase64_2 = attachment2.base64;
+    body.attachmentMime_2 = attachment2.mimeType;
+    body.attachmentFileName_2 = attachment2.name;
+  }
 
   const isNew = !qcEditTarget;
   // ✅ 첨부파일이 있을 땐 데이터가 커서 JSONP(주소창 방식)로는 실패할 수 있으니
   //    실제 POST 요청(apiPost)으로 보낸다. 첨부파일이 없으면 기존 방식 그대로 유지.
-  const submitFn = attachment ? apiPost : api;
+  const submitFn = (attachment || attachment2) ? apiPost : api;
   let res;
   if (qcEditTarget) {
     body.id = qcEditTarget.id;
@@ -4240,7 +4283,7 @@ function renderWOTraceDocs(materials) {
   });
 
   // 공정검사·출하검사: 이 작업지시에 직접 연결된 기록
-  QC.filter(q => (q.inspType === '공정검사' || q.inspType === '출하검사') && String(q.workOrderId) === String(wo.id) && q.attachmentUrl)
+  QC.filter(q => (q.inspType === '공정검사' || q.inspType === '출하검사') && String(q.workOrderId) === String(wo.id) && (q.attachmentUrl || q.attachmentUrl2))
     .forEach(q => {
       if (!docs.some(d => d.id === q.id)) {
         docs.push({ ...q, typeLabel: q.inspType, typeColor: q.inspType === '출하검사' ? '#7c3aed' : '#185FA5', extra: q.name || '' });
@@ -4255,7 +4298,10 @@ function renderWOTraceDocs(materials) {
   listEl.innerHTML = docs.map(d => `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #fef3c7">
       <span><span style="color:${d.typeColor};font-weight:700">[${d.typeLabel}]</span> ${d.extra} <span style="color:#aaa;font-size:11px">${d.inspDate||''}</span></span>
-      <a href="${d.attachmentUrl}" target="_blank" style="text-decoration:none;color:#1d4ed8;font-weight:600">📎 ${d.attachmentName||'파일 보기'}</a>
+      <span>
+        ${d.attachmentUrl ? `<a href="${d.attachmentUrl}" target="_blank" style="text-decoration:none;color:#1d4ed8;font-weight:600;margin-right:8px">📎 ${d.attachmentName||'특성데이터'}</a>` : ''}
+        ${d.attachmentUrl2 ? `<a href="${d.attachmentUrl2}" target="_blank" style="text-decoration:none;color:#7c3aed;font-weight:600">📄 ${d.attachmentName2||'출하성적서'}</a>` : ''}
+      </span>
     </div>`).join('');
 }
 
