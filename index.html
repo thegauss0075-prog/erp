@@ -3598,7 +3598,13 @@ async function renderQC() {
     return;
   }
   const resultColor = {'합격':'#166534','조건부합격':'#b45309','불합격':'#b91c1c'};
-  body.innerHTML = sorted.map(r => `<tr>
+  body.innerHTML = sorted.map(r => {
+    // ✅ 첨부파일 유무를 액션란 아이콘 하나로 바로 알 수 있게: 첨부돼 있으면
+    //    진하게(클릭해서 바로 열림), 없으면 흐리게(비활성) 표시한다.
+    const attachIcon = r.attachmentUrl
+      ? `<a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'} 열기" style="text-decoration:none;opacity:1">📎</a>`
+      : `<span title="첨부된 파일 없음" style="opacity:0.25;cursor:default">📎</span>`;
+    return `<tr>
     <td>${r.inspType||'-'}</td>
     <td>${r.name||''} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
     <td style="font-family:monospace;font-size:11px;color:#1d4ed8">${r.lot||'-'}</td>
@@ -3608,13 +3614,15 @@ async function renderQC() {
     <td style="text-align:right;color:${(+r.defectQty||0)>0?'#b91c1c':'#333'}">${(+r.defectQty||0).toLocaleString()}</td>
     <td><span style="color:${resultColor[r.result]||'#555'};font-weight:600">${r.result||'-'}</span></td>
     <td style="font-size:12px;color:#666">${r.inspector||'-'}</td>
-    <td style="font-size:12px;color:#666">${r.inspDate||'-'}</td>
-    <td style="font-size:12px;color:#888">${r.note||'-'}${r.attachmentUrl?` <a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'}" style="text-decoration:none">📎</a>`:''}</td>
+    <td style="font-size:12px;color:#666">${fmtDt(r.inspDate)}</td>
+    <td style="font-size:12px;color:#888">${r.note||'-'}</td>
     <td class="no-print" style="white-space:nowrap">
+      ${attachIcon}
       ${isAdmin ? `<button class="edit-btn" onclick="openEditQC(${r.id})" title="수정">✏️</button>` : ''}
       ${isAdmin ? `<button class="edit-btn" onclick="deleteQC(${r.id})" title="삭제">🗑️</button>` : ''}
     </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 // ── 작업지시 드롭다운을 선택된 품목코드에 맞게 채운다
@@ -4376,9 +4384,12 @@ function renderWOTraceLists() {
   const matList = document.getElementById('wo-trace-material-list');
   matList.innerHTML = materials.length ? materials.map(r => {
     // ✅ 이 자재의 LOT과 같은 코드+LOT으로 등록된 수입검사 기록을 찾아서,
-    //    첨부파일(성적서 등)이 있으면 📎로 바로 열어볼 수 있게 링크한다.
+    //    첨부파일(성적서 등)이 있으면 액션 영역에 📎로 바로 열어볼 수 있게 링크한다.
+    //    첨부가 없으면 흐리게 표시해서 "첨부 없음" 상태를 한눈에 알 수 있게 한다.
     const qcMatch = r.lot ? QC.find(q => q.inspType === '수입검사' && q.code === r.code && q.lot === r.lot && q.attachmentUrl) : null;
-    const qcLink = qcMatch ? ` <a href="${qcMatch.attachmentUrl}" target="_blank" title="수입검사 첨부파일: ${qcMatch.attachmentName||'파일'} (검사일 ${qcMatch.inspDate||''})" style="text-decoration:none">📎</a>` : '';
+    const qcLink = qcMatch
+      ? `<a href="${qcMatch.attachmentUrl}" target="_blank" title="수입검사 첨부파일: ${qcMatch.attachmentName||'파일'} (검사일 ${fmtDt(qcMatch.inspDate)})" style="text-decoration:none;opacity:1;margin-left:6px">📎</a>`
+      : `<span title="연결된 수입검사 첨부파일 없음" style="opacity:0.25;margin-left:6px;cursor:default">📎</span>`;
     // ✅ '__nolot__'은 "LOT 미지정" 재고를 나타내는 내부 표기라 화면엔 절대 그대로
     //    노출하면 안 된다 — 빈 값과 똑같이 "LOT 미지정"으로 보여준다.
     const lotDisplay = (!r.lot || r.lot === '__nolot__') ? 'LOT 미지정' : r.lot;
@@ -4389,8 +4400,8 @@ function renderWOTraceLists() {
       ? `<div style="margin-top:2px;font-size:11px;color:#991b1b" title="${String(r.ngRefLabel).replace(/"/g,'&quot;')}">🔴 불량 대체 · ${r.ngRefLabel}</div>`
       : '';
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#fffbeb;border-radius:6px;margin-bottom:4px;font-size:12px">
-      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · <span style="font-family:monospace;color:#92400e">${lotDisplay}</span>${qcLink}${ngRefBadge}</span>
-      <span>${(+r.qty||0).toLocaleString()} ${r.unit||''} <button onclick="deleteWOMaterialUI(${r.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button></span>
+      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · <span style="font-family:monospace;color:#92400e">${lotDisplay}</span>${ngRefBadge}</span>
+      <span>${(+r.qty||0).toLocaleString()} ${r.unit||''}${qcLink}<button onclick="deleteWOMaterialUI(${r.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button></span>
     </div>`;
   }).join('') : `<div style="color:#aaa;font-size:12px">아직 투입 자재 기록이 없습니다.</div>`;
 
@@ -4428,7 +4439,7 @@ function renderWOTraceDocs(materials) {
   }
   listEl.innerHTML = docs.map(d => `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #fef3c7">
-      <span><span style="color:${d.typeColor};font-weight:700">[${d.typeLabel}]</span> ${d.extra} <span style="color:#aaa;font-size:11px">${d.inspDate||''}</span></span>
+      <span><span style="color:${d.typeColor};font-weight:700">[${d.typeLabel}]</span> ${d.extra} <span style="color:#aaa;font-size:11px">${fmtDt(d.inspDate)}</span></span>
       <a href="${d.attachmentUrl}" target="_blank" style="text-decoration:none;color:#1d4ed8;font-weight:600">📎 ${d.attachmentName||'파일 보기'}</a>
     </div>`).join('');
 }
