@@ -4126,6 +4126,14 @@ async function openWOTrace(id) {
   document.getElementById('wo-trace-mat-filled-only').checked = false; // ✅ 이전 작업지시에서 "계획수량 기준 소요량 자동 입력"을 눌러 체크된 채 남아있으면, 새 작업지시를 열 때마다 재고가 있는데도 "재고 있는 자재" 목록이 텅 비어 보이는 문제(마치 재고가 없는 것처럼 보임)가 있었음 — 매번 새로 열 때 항상 전체 목록으로 초기화한다.
   document.getElementById('wo-trace-err').style.display = 'none';
   document.getElementById('bom-browse-filter').value = '';
+  // ✅ renderWOMatBrowse()는 재렌더링 전에 화면에 남아있는 입력값을 그대로 복원해서
+  //    보여주는데(체크박스/검색어 토글 중 값이 안 사라지게 하려는 의도), 이 모달은
+  //    닫아도(closeOv) DOM이 파괴되지 않아 "이전에 열었던 다른 작업지시"에서 입력만
+  //    하고 제출은 안 한 자재 수량이 여기 그대로 남아있었다 — 예: BTP 지시서에서
+  //    COIL 수량을 입력해보고 안 넣은 채 닫았다가, 전혀 다른 TP 지시서를 열어도 그
+  //    COIL 값이 자동으로 딸려 나오는 문제. 새 작업지시를 열 때는 항상 빈 목록에서
+  //    시작하도록 여기서 확실히 비운다.
+  document.getElementById('wo-trace-mat-browse').innerHTML = '';
 
   await loadWOMaterials();
   await loadWOOutputLots();
