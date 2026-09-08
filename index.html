@@ -1131,6 +1131,17 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 
       <div style="background:#fffbeb;border-radius:8px;padding:10px">
         <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⚡ 재고 있는 자재에서 선택해서 출고 (선입선출 — 가장 오래된 LOT이 자동으로 사용됩니다)</div>
+
+        <!-- ✅ 생산 중 불량이 나서 부족분을 추가로 출고하는 경우, 어느 불량 건 때문인지
+             참조를 남길 수 있게 한다 — 나중에 "이 불량 때문에 자재가 얼마나 더
+             나갔는지" 서로 연결해서 볼 수 있다. -->
+        <div style="background:#fff1f2;border:1px solid #fecdd3;border-radius:6px;padding:6px 8px;margin-bottom:8px">
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#991b1b;white-space:nowrap;cursor:pointer;font-weight:600">
+            <input type="checkbox" id="wo-trace-ngref-toggle" onchange="renderWOTraceNgRefSelect()"> 🔴 불량으로 인한 추가 출고 (관련 불량 건 참조)
+          </label>
+          <select id="wo-trace-ngref-select" style="display:none;width:100%;box-sizing:border-box;font-size:11px;margin-top:6px;padding:4px 6px;border-radius:6px;border:1px solid #fda4af"></select>
+        </div>
+
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
           <input id="wo-trace-mat-filter" placeholder="자재명·코드로 검색..." autocomplete="off" oninput="renderWOMatBrowse()" style="flex:1;box-sizing:border-box;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid #dde">
           <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#92400e;white-space:nowrap;cursor:pointer">
@@ -2956,8 +2967,11 @@ async function printWO(id) {
   const materials = WO_MAT.filter(r => r.workOrderId === wo.id);
   const matRowsHtml = materials.length ? materials.map(m => {
     const lotDisplay = (!m.lot || m.lot === '__nolot__') ? 'LOT 미지정' : m.lot;
+    // ✅ 불량으로 인한 추가 출고로 등록된 자재는 인쇄물에도 표시해서, 자재팀이
+    //    서명 확인할 때 "이건 대체분"이라는 걸 바로 알 수 있게 한다.
+    const ngRefNote = m.ngRefLabel ? `<div style="color:#991b1b;font-size:10px;margin-top:2px">🔴 불량 대체</div>` : '';
     return `<tr>
-      <td style="${matCellBase};width:50%">${m.name||''} <span style="color:#888;font-family:monospace;font-size:11px">${m.code||''}</span></td>
+      <td style="${matCellBase};width:50%">${m.name||''} <span style="color:#888;font-family:monospace;font-size:11px">${m.code||''}</span>${ngRefNote}</td>
       <td style="${matCellBase};width:25%;font-family:monospace">${lotDisplay}</td>
       <td style="${matCellBase};width:25%;text-align:right">${(+m.qty||0).toLocaleString()} ${m.unit||''}</td>
     </tr>`;
@@ -4134,6 +4148,12 @@ async function openWOTrace(id) {
   //    COIL 값이 자동으로 딸려 나오는 문제. 새 작업지시를 열 때는 항상 빈 목록에서
   //    시작하도록 여기서 확실히 비운다.
   document.getElementById('wo-trace-mat-browse').innerHTML = '';
+  // ✅ "불량으로 인한 추가 출고" 참조 선택도 위와 같은 이유로 다른 작업지시를 열 때
+  //    반드시 초기화해야 한다 — 안 그러면 이전 작업지시에서 골라둔 불량 건이 전혀
+  //    상관없는 작업지시의 자재 출고에도 그대로 딸려가서 잘못 연결될 수 있다.
+  document.getElementById('wo-trace-ngref-toggle').checked = false;
+  document.getElementById('wo-trace-ngref-select').style.display = 'none';
+  document.getElementById('wo-trace-ngref-select').innerHTML = '';
 
   await loadWOMaterials();
   await loadWOOutputLots();
@@ -4143,6 +4163,28 @@ async function openWOTrace(id) {
   renderWOMatBrowse();
   renderBOMList();
   document.getElementById('wo-trace-ov').classList.add('show');
+}
+
+// ✅ "🔴 불량으로 인한 추가 출고" 체크박스를 켜면, 최근 등록된 불량 입고(NG-in) 건
+//    목록을 보여줘서 "이번 추가 출고가 어느 불량 때문인지" 하나 골라 참조로 남길 수
+//    있게 한다. 특정 자재/모델로 좁히지 않고 최근 순으로 전부 보여준다 — 불량난
+//    자재와 실제로 대체 출고하는 자재가 코드까지 똑같으리라는 보장이 없기 때문
+//    (예: 원인 자재는 NG 처리하고, 대체품은 다른 LOT/규격으로 나갈 수도 있음).
+function renderWOTraceNgRefSelect() {
+  const toggle = document.getElementById('wo-trace-ngref-toggle');
+  const sel = document.getElementById('wo-trace-ngref-select');
+  if (!toggle.checked) { sel.style.display = 'none'; return; }
+  sel.style.display = 'block';
+
+  const recent = [...ngLog].filter(l => l.type === 'ng-in').sort((a, b) => new Date(b.dt) - new Date(a.dt)).slice(0, 100);
+  if (!recent.length) {
+    sel.innerHTML = `<option value="">최근 등록된 불량 입고 건이 없습니다</option>`;
+    return;
+  }
+  sel.innerHTML = `<option value="">-- 관련 불량 건 선택 --</option>` + recent.map(l => {
+    const label = `${fmtDt(l.dt)} · ${l.name} (${l.code}) · ${(+l.qty||0).toLocaleString()}${l.unit||''}${l.reason ? ' · ' + l.reason : ''}${l.note ? ' · ' + l.note : ''}`;
+    return `<option value="${l.id}">${label.replace(/"/g, '&quot;')}</option>`;
+  }).join('');
 }
 
 // ══════════════════════════════════════════════════════════
@@ -4340,8 +4382,14 @@ function renderWOTraceLists() {
     // ✅ '__nolot__'은 "LOT 미지정" 재고를 나타내는 내부 표기라 화면엔 절대 그대로
     //    노출하면 안 된다 — 빈 값과 똑같이 "LOT 미지정"으로 보여준다.
     const lotDisplay = (!r.lot || r.lot === '__nolot__') ? 'LOT 미지정' : r.lot;
+    // ✅ 이 출고가 "불량으로 인한 추가 출고"로 등록될 때 참조를 남긴 경우, 관련
+    //    불량 건 정보를 같이 보여준다 — 어느 불량 때문에 이만큼 더 나갔는지 한눈에
+    //    확인할 수 있게.
+    const ngRefBadge = r.ngRefLabel
+      ? `<div style="margin-top:2px;font-size:11px;color:#991b1b" title="${String(r.ngRefLabel).replace(/"/g,'&quot;')}">🔴 불량 대체 · ${r.ngRefLabel}</div>`
+      : '';
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#fffbeb;border-radius:6px;margin-bottom:4px;font-size:12px">
-      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · <span style="font-family:monospace;color:#92400e">${lotDisplay}</span>${qcLink}</span>
+      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · <span style="font-family:monospace;color:#92400e">${lotDisplay}</span>${qcLink}${ngRefBadge}</span>
       <span>${(+r.qty||0).toLocaleString()} ${r.unit||''} <button onclick="deleteWOMaterialUI(${r.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button></span>
     </div>`;
   }).join('') : `<div style="color:#aaa;font-size:12px">아직 투입 자재 기록이 없습니다.</div>`;
@@ -4640,6 +4688,16 @@ async function submitWOMatBrowse() {
 
   if (!confirm(`선택한 자재 ${inputs.length}건을 출고 처리하시겠습니까?\n창고 재고가 실제로 줄어듭니다.`)) return;
 
+  // ✅ "🔴 불량으로 인한 추가 출고" 참조 — 체크박스가 켜져 있고 실제로 어떤 불량
+  //    건을 골랐으면, 그 정보를 이번 출고 각 행에 같이 실어 보낸다. 나중에 시트
+  //    조회/필터링이 쉽도록 id뿐 아니라 사람이 읽을 수 있는 문구(ngRefLabel)도
+  //    그 당시 값 그대로 같이 저장해둔다(불량 기록이 나중에 수정/삭제돼도 이 출고
+  //    기록에 남은 참조 문구는 그대로 유지되도록).
+  const ngRefToggle = document.getElementById('wo-trace-ngref-toggle');
+  const ngRefSelect = document.getElementById('wo-trace-ngref-select');
+  const ngRefId = (ngRefToggle.checked && ngRefSelect.value) ? ngRefSelect.value : '';
+  const ngRefLabel = ngRefId ? ngRefSelect.options[ngRefSelect.selectedIndex].textContent : '';
+
   // ✅ 자재마다 서버에 따로따로 요청(건당 최대 2번, 왕복마다 1~수 초)을 보내던 게
   //    자재 개수만큼 느려지던 원인이었다. 이제 전부 한 번의 요청으로 모아서 보낸다
   //    (서버가 한 번의 실행 안에서 전부 처리) — POST 방식(apiPost)을 써서 자재가
@@ -4649,7 +4707,7 @@ async function submitWOMatBrowse() {
 
   const body = {
     workOrderId: woTraceTarget.id, orderNo: woTraceTarget.orderNo, productCode: woTraceTarget.code,
-    rows: rows.map(r => ({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: r.lot, qty: r.qty }))
+    rows: rows.map(r => ({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: r.lot, qty: r.qty, ngRefId, ngRefLabel }))
   };
   let res = await apiPost('addWOMaterialsBatch', body);
   if (!res || !res.ok) res = await apiPost('addWOMaterialsBatch', body);
@@ -4680,8 +4738,26 @@ async function submitWOMatBrowse() {
   });
 
   await loadWOMaterials();
+
+  // ✅ Code.gs가 아직 ngRefId/ngRefLabel을 저장·반환하도록 업데이트되기 전에는,
+  //    방금 서버에 실어 보낸 참조가 loadWOMaterials()로 새로고침되면서 사라진다
+  //    (서버가 모르는 필드라 그냥 무시하고 돌려주기 때문). Code.gs가 업데이트되기
+  //    전까지는, 지금 이 화면에서만이라도 방금 선택한 참조가 바로 보이도록
+  //    로컬로 붙여준다 — 새로고침하거나 다른 화면/기기에서 보면 이 임시 표시는
+  //    사라지고, Code.gs가 반영되면 그때부터는 서버에서 내려온 값이 그대로 쓰인다.
+  if (ngRefId) {
+    rows.forEach(r => {
+      if (failedSet.has(r.code + '/' + r.cat)) return;
+      const match = WO_MAT.find(m => !m.ngRefId && String(m.workOrderId) === String(woTraceTarget.id) && m.code === r.code && m.lot === r.lot && Math.abs((+m.qty||0) - r.qty) < 0.0001);
+      if (match) { match.ngRefId = ngRefId; match.ngRefLabel = ngRefLabel; }
+    });
+  }
+
   renderWOTraceLists();
   renderWOMatBrowse(); // 반영된 만큼 잔여수량 갱신 + 입력값 초기화
+  // ✅ 이번 출고에 쓴 불량 참조를 다음 번 출고에 실수로 이어서 쓰지 않도록 초기화
+  ngRefToggle.checked = false;
+  renderWOTraceNgRefSelect();
 
   if (res.failures && res.failures.length) {
     errEl.textContent = `⚠️ 일부 자재(${res.failures.join(', ')})는 품목을 찾지 못해 처리되지 않았습니다. 나머지 ${res.processedCount||0}건은 정상 처리되었습니다.`;
@@ -5861,6 +5937,12 @@ function renderNGLog(){
     const mtype=getNGMatType(t.code);
     const mmodel=getNGModel(t.code);
     const qty=t.qty%1?t.qty.toFixed(2):t.qty.toLocaleString();
+    // ✅ 이 불량 건을 참조로 걸어서 추가 출고된 자재가 있으면 역방향으로 보여준다
+    //    (전공정 추적에서 "🔴 불량으로 인한 추가 출고"로 이 건을 골랐던 기록들).
+    const linked = t.type === 'ng-in' ? WO_MAT.filter(m => String(m.ngRefId) === String(t.id)) : [];
+    const linkedNote = linked.length
+      ? `<br><span style="color:#991b1b;font-weight:600;cursor:help" title="${linked.map(m=>`${m.name} ${(+m.qty||0).toLocaleString()}${m.unit||''} (지시서 ${m.orderNo||m.workOrderId})`).join(', ').replace(/"/g,'&quot;')}">🔗 대체출고 ${linked.length}건</span>`
+      : '';
     return`<tr>
       <td style="font-size:12px;color:#888;white-space:nowrap">${fmtDt(t.dt)}</td>
       <td><span class="badge ${t.type==='ng-in'?'b-ng':'b-kr'}">${t.type==='ng-in'?'불량 입고':'불량 출고'}</span></td>
@@ -5871,7 +5953,7 @@ function renderNGLog(){
       <td style="color:#666;text-align:center">${t.unit}</td>
       <td style="text-align:right;font-weight:700" class="${t.type==='ng-in'?'ngc':''}">${t.type==='ng-in'?'+':'−'}${qty}</td>
       <td style="font-size:12px;color:#888">${t.reason||'—'}</td>
-      <td style="font-size:12px;color:#888">${t.note||'—'}</td>
+      <td style="font-size:12px;color:#888">${t.note||'—'}${linkedNote}</td>
       <td style="display:flex;gap:5px;white-space:nowrap">
         ${isAdmin ? `<button class="edit-btn" onclick="openNGEdit(${t.id})">✏️</button>
         <button class="del-btn" onclick="openNGDel(${t.id})">🗑️</button>` : ''}
