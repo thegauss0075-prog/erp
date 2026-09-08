@@ -4002,7 +4002,7 @@ async function submitQC() {
 //    한 LOT에 재고가 모자라면 다음(그다음 오래된) LOT으로 넘어가며 채운다.
 //    작업지시가 연결되어 있으면 전공정추적의 "투입 자재" 기록도 같이 남긴다.
 async function autoConsumeBOMMaterials(qcBody, totalQty, woId, woNo) {
-  const bomItems = BOM.filter(b => b.productCode === qcBody.code);
+  const bomItems = BOM.filter(b => b.productCode === qcBody.code && effectiveBOMCat(b) === qcBody.cat);
   const consumed = [], shortages = [];
   if (!bomItems.length) return { consumed, shortages };
 
@@ -4151,6 +4151,26 @@ async function openWOTrace(id) {
 // ══════════════════════════════════════════════════════════
 let BOM = [];
 
+// ✅ 근본 원인: 완제품(TP)과 반제품(BTP)이 "같은 품목 코드"를 그대로 공유하는 코드
+//    체계라서(예: 30KW OUT L3는 완제품/반제품 둘 다 코드가 ML27A040127A), BOM을
+//    코드만으로 조회하면 완제품용으로 등록한 소요량이 반제품 지시서에도 그대로
+//    섞여 나온다. 이제부터는 BOM 등록 시 productCat(TP/BTP 구분)을 같이 저장해서
+//    코드+구분 조합으로 정확히 구분한다.
+//    ✅ 다만 이 필드가 생기기 "전"에 이미 등록된 옛날 BOM 행에는 productCat이 없다.
+//    시트를 따로 손대지 않고도 바로 정확하게 갈리도록, "반제품(BTP) 지시서는 권선
+//    공정이라 COIL만 필요하다"는 이미 확립된 규칙을 그대로 적용해서: 자재명에 COIL이
+//    포함되면 반제품(BTP)용, 아니면 완제품(TP)용으로 자동 판정한다.
+//    ✅ 예외: 50KW DM / 50KW PFC INDUCTOR는 권선을 외주(외부 업체)에서 진행해서 사내
+//    반제품(BTP) 공정 자체가 없다 — 전부 완제품(TP) 지시서로 처리한다. 그래서 이 두
+//    모델의 코드에 등록된 옛날 BOM은 COIL이 포함되어 있어도 예외적으로 전부 완제품
+//    (TP)용으로 봐야 한다 (다른 모델들은 원래 규칙 그대로 COIL=반제품용).
+const OUTSOURCED_WINDING_CODES = new Set(['ML27M020003A', 'ML27M040025A']); // 50KW DM, 50KW PFC INDUCTOR
+function effectiveBOMCat(b) {
+  if (b.productCat === 'TP' || b.productCat === 'BTP') return b.productCat;
+  if (OUTSOURCED_WINDING_CODES.has(b.productCode)) return 'TP';
+  return (b.materialName || '').toUpperCase().includes('COIL') ? 'BTP' : 'TP';
+}
+
 async function loadBOM() {
   if (!(API_URL || IS_GAS)) return;
   const res = await api('getBOM', {});
@@ -4167,7 +4187,7 @@ function toggleBOMPanel() {
 
 function renderBOMList() {
   if (!woTraceTarget) return;
-  const items = BOM.filter(b => b.productCode === woTraceTarget.code);
+  const items = BOM.filter(b => b.productCode === woTraceTarget.code && effectiveBOMCat(b) === woTraceTarget.cat);
   const listEl = document.getElementById('bom-list');
   listEl.innerHTML = items.length ? items.map(b => {
     // ✅ BOM에는 소요량 처음 입력할 때의 단위가 저장돼 있는데, 그 뒤에 자재의 실제
@@ -4202,7 +4222,7 @@ function renderBOMList() {
 function renderBOMBrowse() {
   if (!woTraceTarget) return;
   const q = (document.getElementById('bom-browse-filter').value || '').toLowerCase().trim();
-  const already = new Set(BOM.filter(b => b.productCode === woTraceTarget.code).map(b => b.materialCode + '|' + b.materialCat));
+  const already = new Set(BOM.filter(b => b.productCode === woTraceTarget.code && effectiveBOMCat(b) === woTraceTarget.cat).map(b => b.materialCode + '|' + b.materialCat));
   let pool = allRows().filter(r => r.cat !== 'TP' && !already.has(r.code + '|' + r.cat));
   // ✅ 반제품(BTP)은 권선 공정이라 실제로 필요한 자재가 COIL뿐이다. 다른 부자재까지
   //    다 보여주면 찾기 번거로우니, 반제품 지시서일 땐 COIL만 목록에 남긴다.
@@ -4240,7 +4260,7 @@ async function submitBOMBrowse() {
 
   for (const r of rows) {
     const body = {
-      productCode: woTraceTarget.code, productName: woTraceTarget.name,
+      productCode: woTraceTarget.code, productName: woTraceTarget.name, productCat: woTraceTarget.cat,
       materialCode: r.code, materialName: r.name, materialCat: r.cat, materialUnit: r.unit,
       qtyPerUnit: r.qtyPerUnit, token: ADMIN_TOKEN, user: CURRENT_USER || ''
     };
@@ -4269,7 +4289,7 @@ async function deleteBOMItemUI(id) {
 //    먼저 검색창을 비우고 전체 목록을 다시 그린 다음 채운다.
 async function applyBOMSuggestion() {
   if (!woTraceTarget) return;
-  const items = BOM.filter(b => b.productCode === woTraceTarget.code);
+  const items = BOM.filter(b => b.productCode === woTraceTarget.code && effectiveBOMCat(b) === woTraceTarget.cat);
   if (!items.length) return;
 
   document.getElementById('wo-trace-mat-filter').value = '';
