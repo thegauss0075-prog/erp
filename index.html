@@ -6100,7 +6100,10 @@ setInterval(updateClock, 1000);
 // ════════════════════════════════════════════════════════════
 //  멀티유저 / Google Apps Script 연동
 // ════════════════════════════════════════════════════════════
-var API_URL      = 'https://script.google.com/macros/s/AKfycbwzkfmNEW7n7X1Ql-e-7efiaL4rYlvY0usP7XTyNWLMh1_Bkzg-2Nt9-PeTQEjvseBJGA/exec';  // 자동 연결
+// ✅ 관리자가 "API 설정" 화면에서 URL을 저장해두면 그걸 최우선으로 쓰고,
+//    저장된 게 없으면 아래 기본 URL(최신 배포)을 쓴다. 예전엔 저장은 되는데
+//    새로고침하면 다시 기본 URL로 돌아가버리는 버그가 있어서 여기서 같이 고쳤다.
+var API_URL      = safeLSGet('erp_api_url','') || 'https://script.google.com/macros/s/AKfycbyo_eOJACEPPqV-CHA9rUnYK1ncJbr3EXmFrKPYgNlncHtwI5N5sChHs-wOUmVV-Jgiwg/exec';  // 자동 연결 (최신 배포)
 var ADMIN_TOKEN  = '';
 var CURRENT_USER = '';
 var isAdmin      = false;
@@ -8854,7 +8857,7 @@ if (document.readyState === 'loading') {
       <input id="api-url-input" placeholder="https://script.google.com/macros/s/..." style="font-size:11px">
     </div>
     <div style="margin:10px 0">
-      <button onclick="document.getElementById('api-url-input').value='https://script.google.com/macros/s/AKfycbzDGC6Tf2NBW3zyMzItBPUPUw0k6FIIS1KT5gDKYFIkiFvN87bBCjCLw5JsbTosmbojmg/exec'" 
+      <button onclick="document.getElementById('api-url-input').value='https://script.google.com/macros/s/AKfycbyo_eOJACEPPqV-CHA9rUnYK1ncJbr3EXmFrKPYgNlncHtwI5N5sChHs-wOUmVV-Jgiwg/exec'"
         style="width:100%;padding:8px;border-radius:7px;border:1px solid #185FA5;background:#eff6ff;color:#185FA5;font-size:12px;cursor:pointer;text-align:left;word-break:break-all">
         📋 현재 프로젝트 URL 자동 입력
       </button>
