@@ -272,6 +272,23 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
   #tab-inv, #tab-ng { padding: 0 !important; }
 }
 
+/* ✅ 작업지시서 단건 인쇄 — printWO()가 body에 이 클래스를 붙이면, 화면의 다른 모든
+   요소는 숨기고 #wo-print-area만 인쇄한다. DOM 구조(어디에 중첩돼 있는지)에 상관없이
+   항상 동작하도록 "visibility:hidden으로 전부 숨기고 인쇄할 요소만 다시 보이게" 하는
+   방식을 쓴다 — display:none은 부모가 감춰지면 자식도 같이 사라지지만, 이 방식은
+   그렇지 않다. 위쪽 일반 @media print 규칙(.sec.on만 표시 등)과는 겹치지 않게 완전히
+   별도 블록으로 뒀다. */
+@media print {
+  body.printing-wo * { visibility: hidden !important; }
+  body.printing-wo #wo-print-area,
+  body.printing-wo #wo-print-area * { visibility: visible !important; }
+  body.printing-wo #wo-print-area {
+    display: block !important;
+    position: absolute; left: 0; top: 0; width: 100%;
+  }
+}
+body:not(.printing-wo) #wo-print-area { display: none !important; }
+
 /* 인쇄 전용 요소 (화면에서 숨김) */
 .print-header, .print-footer { display: none; }
 
@@ -844,6 +861,10 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
     </div>
   </div>
 </div>
+
+<!-- ✅ 작업지시서 인쇄 전용 영역 (평소엔 화면에 안 보이고, printWO()가 내용을 채운 뒤
+     document.body에 printing-wo 클래스를 붙이면 이 영역만 인쇄된다) -->
+<div id="wo-print-area"></div>
 
 <!-- 실적 입력 모달 -->
 <div class="ov-bg" id="wo-prod-ov">
@@ -2203,7 +2224,7 @@ function renderShipHistTable() {
         rows.forEach(r => {
           bodyHtml += `<tr style="border-bottom:1px solid #f0f0f5">
             <td style="padding:5px 4px;color:#666">${r.dt || '-'}</td>
-            <td style="padding:5px 4px;font-family:monospace;color:#1d4ed8">${r.lot}</td>
+            <td style="padding:5px 4px;font-family:monospace;color:#1d4ed8">${(!r.lot || r.lot === '__nolot__') ? 'LOT 미지정' : r.lot}</td>
             <td style="padding:5px 4px;text-align:right">${r.qty.toLocaleString()}</td>
             <td style="padding:5px 4px;color:#7c3aed">${r.dest}</td>
             <td style="padding:5px 4px;text-align:right;font-weight:600;color:#166534">${r.cumulative.toLocaleString()}</td>
@@ -2863,6 +2884,7 @@ async function renderWO() {
         <button class="edit-btn" onclick="openWOProd(${r.id})" title="실적 입력">📈</button>
         <button class="edit-btn" onclick="openWOTrace(${r.id})" title="전공정 추적">🔗</button>
         <button class="edit-btn" onclick="openWOProcess(${r.id})" title="공정별 작업일지">🏭</button>
+        <button class="edit-btn" onclick="printWO(${r.id})" title="작업지시서 인쇄 (자재 요청/자재부서 서명란 포함)">🖨️</button>
         <button class="edit-btn" onclick="cycleWOStatus(${r.id},'${r.status||'대기'}')" title="상태 변경">🔁</button>
         ${isAdmin ? `<button class="edit-btn" onclick="deleteWO(${r.id})" title="삭제">🗑️</button>` : ''}
       </td>
@@ -2893,6 +2915,63 @@ async function regenerateWOLotUI(id) {
   if (!res || !res.ok) { alert('재생성 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
   await renderWO();
 }
+
+// ✅ 작업지시서를 종이로 출력할 수 있게 만든다 — 자재를 실제로 준비/불출하는 과정이라
+//    "자재 요청부서"(작업지시를 낸 생산 쪽)와 "자재부서"(창고에서 실제로 자재를 내주는
+//    쪽) 양쪽이 서명으로 확인하는 절차가 필요하다는 요청에 따라 서명란을 넣었다.
+//    #wo-print-area(평소엔 숨겨진 영역)를 이 내용으로 채우고 body에 printing-wo
+//    클래스를 붙인 뒤 인쇄하면, CSS가 이 영역만 보이게 만들어준다.
+function printWO(id) {
+  const wo = WO.find(w => w.id === id);
+  if (!wo) return;
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const row = (label, value) => `
+    <tr>
+      <th style="width:120px;background:#f0f4ff;border:1px solid #b9c4e0;padding:8px 10px;text-align:left;font-size:12px;color:#333">${label}</th>
+      <td style="border:1px solid #b9c4e0;padding:8px 10px;font-size:13px">${value == null || value === '' ? '-' : value}</td>
+    </tr>`;
+  const signBox = (title) => `
+    <td style="width:50%;border:1px solid #333;padding:0;vertical-align:top">
+      <div style="background:#eef2ff;border-bottom:1px solid #333;padding:8px 10px;font-weight:700;font-size:13px;text-align:center">${title}</div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr><td style="width:70px;padding:10px;font-size:12px;color:#555;border-bottom:1px solid #ddd">소속/직책</td><td style="padding:10px;border-bottom:1px solid #ddd">&nbsp;</td></tr>
+        <tr><td style="padding:10px;font-size:12px;color:#555;border-bottom:1px solid #ddd">성명</td><td style="padding:10px;border-bottom:1px solid #ddd">&nbsp;</td></tr>
+        <tr><td style="padding:10px;font-size:12px;color:#555;border-bottom:1px solid #ddd">서명</td><td style="padding:10px;height:50px;border-bottom:1px solid #ddd">&nbsp;</td></tr>
+        <tr><td style="padding:10px;font-size:12px;color:#555">확인일자</td><td style="padding:10px">&nbsp;</td></tr>
+      </table>
+    </td>`;
+
+  document.getElementById('wo-print-area').innerHTML = `
+    <div style="font-family:'Malgun Gothic','맑은 고딕',Arial,sans-serif;color:#000;padding:16mm 14mm;max-width:210mm;margin:0 auto">
+      <div style="text-align:center;margin-bottom:18px">
+        <div style="font-size:12px;color:#555">THE GAUSS VINA CO., LTD</div>
+        <div style="font-size:22px;font-weight:800;letter-spacing:2px;margin-top:4px">작업 지시서</div>
+        <div style="font-size:11px;color:#888;margin-top:2px">Lệnh sản xuất</div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#555;margin-bottom:10px">
+        <div>지시번호: <strong style="color:#000">${wo.orderNo||'-'}</strong></div>
+        <div>발행일: ${todayStr}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:22px">
+        ${row('품목', `${wo.name||''} <span style="color:#888;font-family:monospace;font-size:12px">${wo.code||''}</span>`)}
+        ${row('LOT', `<span style="font-family:monospace;font-weight:700">${wo.lot||'-'}</span>`)}
+        ${row('계획수량', `<strong>${(+wo.planQty||0).toLocaleString()}</strong> ${wo.unit||''}`)}
+        ${row('생산 라인', wo.line)}
+        ${row('마감일', wo.dueDate)}
+        ${row('비고', wo.note)}
+      </table>
+
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px">■ 자재 불출 확인 (서명)</div>
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+        <tr>${signBox('자재 요청부서')}${signBox('자재부서')}</tr>
+      </table>
+    </div>`;
+
+  document.body.classList.add('printing-wo');
+  window.print();
+}
+window.addEventListener('afterprint', () => document.body.classList.remove('printing-wo'));
 
 // ── 작업지시 추가 모달 ──────────────────────────────
 function openAddWO() {
@@ -4196,8 +4275,11 @@ function renderWOTraceLists() {
     //    첨부파일(성적서 등)이 있으면 📎로 바로 열어볼 수 있게 링크한다.
     const qcMatch = r.lot ? QC.find(q => q.inspType === '수입검사' && q.code === r.code && q.lot === r.lot && q.attachmentUrl) : null;
     const qcLink = qcMatch ? ` <a href="${qcMatch.attachmentUrl}" target="_blank" title="수입검사 첨부파일: ${qcMatch.attachmentName||'파일'} (검사일 ${qcMatch.inspDate||''})" style="text-decoration:none">📎</a>` : '';
+    // ✅ '__nolot__'은 "LOT 미지정" 재고를 나타내는 내부 표기라 화면엔 절대 그대로
+    //    노출하면 안 된다 — 빈 값과 똑같이 "LOT 미지정"으로 보여준다.
+    const lotDisplay = (!r.lot || r.lot === '__nolot__') ? 'LOT 미지정' : r.lot;
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#fffbeb;border-radius:6px;margin-bottom:4px;font-size:12px">
-      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · <span style="font-family:monospace;color:#92400e">${r.lot||'LOT 미지정'}</span>${qcLink}</span>
+      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · <span style="font-family:monospace;color:#92400e">${lotDisplay}</span>${qcLink}</span>
       <span>${(+r.qty||0).toLocaleString()} ${r.unit||''} <button onclick="deleteWOMaterialUI(${r.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button></span>
     </div>`;
   }).join('') : `<div style="color:#aaa;font-size:12px">아직 투입 자재 기록이 없습니다.</div>`;
@@ -5162,7 +5244,7 @@ function renderIOTable(){
       <td>${t.name}</td>
       <td style="color:#666">${t.unit}</td>
       <td style="text-align:right;font-weight:700" class="${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty}</td>
-      <td style="font-family:monospace;font-size:12px;color:#1d4ed8">${t.lot||'<span class="dim">—</span>'}</td>
+      <td style="font-family:monospace;font-size:12px;color:#1d4ed8">${(!t.lot || t.lot === '__nolot__') ? 'LOT 미지정' : t.lot}</td>
       <td>${t.dest?destBadge(t.dest):t.reason||'<span class="dim">—</span>'}</td>
       <td style="font-size:12px;color:#888">${t.note||'—'}</td>
       <td style="display:flex;gap:5px">
@@ -5286,7 +5368,8 @@ function renderHist(){
     const isIn=!!isInType[t.type];
     const qty=t.qty%1?t.qty.toFixed(2):t.qty.toLocaleString();
     const catName=CL[t.cat]||t.cat||'';
-    return`<div class="hitem" data-code="${t.code}"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle"><span onclick="openTrace('${t.code}','${t.cat||''}')" style="cursor:pointer;font-weight:600" title="이력 추적">${t.name}</span> <code style="font-size:11px;color:#888">${t.code}</code>${t.dest?destBadge(t.dest):t.lot?` <span style="font-size:11px;color:#1d4ed8;font-family:monospace">LOT:${t.lot}</span>`:''}</div><div class="hmeta">${typeName}${catName?' · '+catName:''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div>
+    const lotBadge = t.lot ? ` <span style="font-size:11px;color:#1d4ed8;font-family:monospace">LOT:${t.lot === '__nolot__' ? '미지정' : t.lot}</span>` : '';
+    return`<div class="hitem" data-code="${t.code}"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle"><span onclick="openTrace('${t.code}','${t.cat||''}')" style="cursor:pointer;font-weight:600" title="이력 추적">${t.name}</span> <code style="font-size:11px;color:#888">${t.code}</code>${t.dest?destBadge(t.dest):lotBadge}</div><div class="hmeta">${typeName}${catName?' · '+catName:''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div>
       <button onclick="openTrace('${t.code}','${t.cat||''}')" title="이력 추적" style="padding:2px 7px;border-radius:4px;border:1px solid #7c3aed;background:#faf5ff;color:#7c3aed;cursor:pointer;font-size:11px;margin-left:4px;white-space:nowrap">🔍</button>
     </div>`;
   }).join('');
@@ -7365,7 +7448,7 @@ function openTrace(code, catHint) {
               <td style="padding:6px 8px;color:#888;white-space:nowrap">${t.dt||''}</td>
               <td style="padding:6px 8px"><span style="color:${color};font-weight:600">${typeLabel[t.type]||t.type}</span></td>
               <td style="padding:6px 8px;text-align:right;font-weight:700;color:${isAdjust?(t.qty>0?'#166534':'#b91c1c'):(isIn?'#166534':'#b91c1c')}">${sign}${absQty?n(absQty):'-'} ${t.unit||''}</td>
-              <td style="padding:6px 8px;font-family:monospace;color:#1d4ed8;font-size:11px">${t.lot||'-'}</td>
+              <td style="padding:6px 8px;font-family:monospace;color:#1d4ed8;font-size:11px">${(!t.lot || t.lot === '__nolot__') ? 'LOT 미지정' : t.lot}</td>
               <td style="padding:6px 8px;color:#555">${t.user||'-'}</td>
               <td style="padding:6px 8px;color:#888">${t.note||'-'}</td>
             </tr>`;
