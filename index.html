@@ -2921,9 +2921,13 @@ async function regenerateWOLotUI(id) {
 //    쪽) 양쪽이 서명으로 확인하는 절차가 필요하다는 요청에 따라 서명란을 넣었다.
 //    #wo-print-area(평소엔 숨겨진 영역)를 이 내용으로 채우고 body에 printing-wo
 //    클래스를 붙인 뒤 인쇄하면, CSS가 이 영역만 보이게 만들어준다.
-function printWO(id) {
+async function printWO(id) {
   const wo = WO.find(w => w.id === id);
   if (!wo) return;
+  // ✅ WO_MAT은 "전공정 추적" 모달을 연 적이 있어야만 채워져 있을 수 있다 — 작업지시
+  //    목록에서 바로 🖨️를 눌러도 투입 자재가 빠짐없이 나오도록 인쇄 직전에 항상
+  //    최신으로 다시 불러온다.
+  await loadWOMaterials();
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
   const row = (label, value) => `
@@ -2935,12 +2939,23 @@ function printWO(id) {
     <td style="width:50%;border:1px solid #333;padding:0;vertical-align:top">
       <div style="background:#eef2ff;border-bottom:1px solid #333;padding:8px 10px;font-weight:700;font-size:13px;text-align:center">${title}</div>
       <table style="width:100%;border-collapse:collapse">
-        <tr><td style="width:70px;padding:10px;font-size:12px;color:#555;border-bottom:1px solid #ddd">소속/직책</td><td style="padding:10px;border-bottom:1px solid #ddd">&nbsp;</td></tr>
-        <tr><td style="padding:10px;font-size:12px;color:#555;border-bottom:1px solid #ddd">성명</td><td style="padding:10px;border-bottom:1px solid #ddd">&nbsp;</td></tr>
+        <tr><td style="width:70px;padding:10px;font-size:12px;color:#555;border-bottom:1px solid #ddd">성명</td><td style="padding:10px;border-bottom:1px solid #ddd">&nbsp;</td></tr>
         <tr><td style="padding:10px;font-size:12px;color:#555;border-bottom:1px solid #ddd">서명</td><td style="padding:10px;height:50px;border-bottom:1px solid #ddd">&nbsp;</td></tr>
         <tr><td style="padding:10px;font-size:12px;color:#555">확인일자</td><td style="padding:10px">&nbsp;</td></tr>
       </table>
     </td>`;
+
+  // ✅ 이 작업지시에 실제로 투입된 자재(WO_MAT) — 자재명/LOT/수량이 인쇄물에도 그대로
+  //    나와야 자재팀이 뭘 내줬는지 서명하면서 같이 확인할 수 있다.
+  const materials = WO_MAT.filter(r => r.workOrderId === wo.id);
+  const matRowsHtml = materials.length ? materials.map(m => {
+    const lotDisplay = (!m.lot || m.lot === '__nolot__') ? 'LOT 미지정' : m.lot;
+    return `<tr>
+      <td style="border:1px solid #b9c4e0;padding:6px 10px;font-size:12px">${m.name||''} <span style="color:#888;font-family:monospace;font-size:11px">${m.code||''}</span></td>
+      <td style="border:1px solid #b9c4e0;padding:6px 10px;font-size:12px;font-family:monospace">${lotDisplay}</td>
+      <td style="border:1px solid #b9c4e0;padding:6px 10px;font-size:12px;text-align:right">${(+m.qty||0).toLocaleString()} ${m.unit||''}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="3" style="border:1px solid #b9c4e0;padding:10px;text-align:center;color:#888;font-size:12px">등록된 투입 자재가 없습니다.</td></tr>`;
 
   document.getElementById('wo-print-area').innerHTML = `
     <div style="font-family:'Malgun Gothic','맑은 고딕',Arial,sans-serif;color:#000;padding:16mm 14mm;max-width:210mm;margin:0 auto">
@@ -2962,9 +2977,19 @@ function printWO(id) {
         ${row('비고', wo.note)}
       </table>
 
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px">■ 투입 자재</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:22px">
+        <thead><tr>
+          <th style="border:1px solid #b9c4e0;background:#f0f4ff;padding:6px 10px;text-align:left;font-size:12px">자재명</th>
+          <th style="border:1px solid #b9c4e0;background:#f0f4ff;padding:6px 10px;text-align:left;font-size:12px;width:140px">LOT</th>
+          <th style="border:1px solid #b9c4e0;background:#f0f4ff;padding:6px 10px;text-align:right;font-size:12px;width:110px">수량</th>
+        </tr></thead>
+        <tbody>${matRowsHtml}</tbody>
+      </table>
+
       <div style="font-size:13px;font-weight:700;margin-bottom:8px">■ 자재 불출 확인 (서명)</div>
       <table style="width:100%;border-collapse:collapse;table-layout:fixed">
-        <tr>${signBox('자재 요청부서')}${signBox('자재부서')}</tr>
+        <tr>${signBox('생산팀')}${signBox('자재팀')}</tr>
       </table>
     </div>`;
 
