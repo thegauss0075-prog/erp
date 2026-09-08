@@ -65,13 +65,10 @@
         </table>
     </div>
 
-    <script>// 수정 전:
-const GAS_WEB_APP_URL = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec";
+  <script>// 
+        const GAS_WEB_APP_URL =                 });// Apps Script 배포 후 생성된 Web App URL
 
-// 수정 후:
-const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycb.../exec";
-        // Apps Script 배포 후 생성된 Web App URL로 교체하세요.
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec";
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyVLQSU2yP1U51nFtY5_w5w0Vi_T96aVZu5kHyzaeu-8nZJM9IN8atohYZaskECDQKw/exec";
 
         // [API 1] 현장 자재 투입 실적 전송 (POST)
         async function submitMaterialIssue() {
@@ -93,9 +90,8 @@ const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycb.../exec";
                     method: "POST",
                     headers: { "Content-Type": "text/plain;charset=utf-8" },
                     body: JSON.stringify(payload)
-                });// Apps Script 배포 후 생성된 Web App URL
-     
-              const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyVLQSU2yP1U5lnFtY5_w5w0Vi_T96aVZu5kHyzaeu-8nZJM9IN8atohYZaskECDQKw/exec";
+                });// 
+             
                 const result = await response.json();
                 if (result.status === "SUCCESS") {
                     alert("성공: " + result.data);
