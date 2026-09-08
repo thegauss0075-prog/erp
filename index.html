@@ -1,6 +1,152 @@
 <!DOCTYPE html>
 <html lang="ko">
+<head><!DOCTYPE html>
+<html lang="ko">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE GAUSS ERP - MES 현장 바코드 연동 모듈</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background-color: #f4f6f9; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .form-group { margin-bottom: 12px; }
+        label { font-weight: bold; display: block; margin-bottom: 4px; }
+        input, select, button { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #0056b3; color: white; font-weight: bold; cursor: pointer; border: none; margin-top: 10px; }
+        button:hover { background-color: #003d80; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+
+    <h2>현장 자재 스캔 및 MES 연동</h2>
+
+    <!-- 자재 실투입 폼 -->
+    <div class="card">
+        <h3>1. 공정 원자재 실투입 (바코드 스캔)</h3>
+        <div class="form-group">
+            <label>작업지시번호</label>
+            <input type="text" id="workOrderNo" value="WO-20260908-01">
+        </div>
+        <div class="form-group">
+            <label>자재 Lot 바코드</label>
+            <input type="text" id="lotNo" placeholder="자재 Lot QR/바코드 스캔" autofocus>
+        </div>
+        <div class="form-group">
+            <label>자재 품번</label>
+            <input type="text" id="itemCode" placeholder="예: AIW-0.8X6.0">
+        </div>
+        <div class="form-group">
+            <label>투입 수량</label>
+            <input type="number" id="issueQty" placeholder="0.00">
+        </div>
+        <button onclick="submitMaterialIssue()">MES 자재 투입 전송</button>
+    </div>
+
+    <!-- 실시간 재고 조회 테이블 -->
+    <div class="card">
+        <h3>2. MES 실시간 자재/완제품 재고 현황</h3>
+        <button onclick="fetchRealtimeStock()" style="background-color: #28a745;">재고 새로고침</button>
+        <table>
+            <thead>
+                <tr>
+                    <th>품번</th>
+                    <th>품명</th>
+                    <th>현재 재고량</th>
+                    <th>단위</th>
+                    <th>최종 업데이트</th>
+                </tr>
+            </thead>
+            <tbody id="stockTableBody">
+                <tr><td colspan="5">데이터를 불러오는 중...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>// 수정 전:
+const GAS_WEB_APP_URL = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec";
+
+// 수정 후:
+const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycb.../exec";
+        // Apps Script 배포 후 생성된 Web App URL로 교체하세요.
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec";
+
+        // [API 1] 현장 자재 투입 실적 전송 (POST)
+        async function submitMaterialIssue() {
+            const payload = {
+                action: "INSERT_MATERIAL_ISSUE",
+                data: {
+                    workOrderNo: document.getElementById("workOrderNo").value,
+                    lotNo: document.getElementById("lotNo").value,
+                    itemCode: document.getElementById("itemCode").value,
+                    issueQty: document.getElementById("issueQty").value,
+                    workerId: "EMP1001",
+                    processCode: "PROC_WIND"
+                }
+            };
+
+            try {
+                // CORS 우회를 위해 text/plain 컨텐트 타입 활용
+                const response = await fetch(GAS_WEB_APP_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+                if (result.status === "SUCCESS") {
+                    alert("성공: " + result.data);
+                    document.getElementById("lotNo").value = "";
+                    document.getElementById("issueQty").value = "";
+                    fetchRealtimeStock(); // 재고 현황 자동 갱신
+                } else {
+                    alert("오류: " + result.data);
+                }
+            } catch (err) {
+                console.error("통신 오류:", err);
+                alert("MES 서버 연동 실패");
+            }
+        }
+
+        // [API 2] 실시간 재고 현황 가져오기 (GET)
+        async function fetchRealtimeStock() {
+            try {
+                const response = await fetch(`${GAS_WEB_APP_URL}?action=GET_STOCK_LIST`);
+                const result = await response.json();
+
+                if (result.status === "SUCCESS") {
+                    const tbody = document.getElementById("stockTableBody");
+                    tbody.innerHTML = "";
+
+                    if(result.data.length === 0) {
+                        tbody.innerHTML = "<tr><td colspan='5'>등록된 재고가 없습니다.</td></tr>";
+                        return;
+                    }
+
+                    result.data.forEach(row => {
+                        const tr = document.createElement("tr");
+                        tr.innerHTML = `
+                            <td>${row.itemCode}</td>
+                            <td>${row.itemName}</td>
+                            <td style="font-weight:bold; color:#0056b3;">${row.stockQty}</td>
+                            <td>${row.unit}</td>
+                            <td>${new Date(row.lastUpdated).toLocaleString()}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            } catch (err) {
+                console.error("재고 불러오기 실패:", err);
+            }
+        }
+
+        // 페이지 로드 시 실시간 재고 자동 조회
+        window.onload = fetchRealtimeStock;
+    </script>
+</body>
+</html>
 <meta charset="UTF-8">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
