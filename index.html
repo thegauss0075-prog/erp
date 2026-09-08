@@ -1830,6 +1830,12 @@ function fmtDt(str) {
   return s; // 이미 "MM/dd HH:mm" 형식
 }
 
+// ✅ 첨부파일 클립 아이콘 공통 SVG — 이모지(📎)는 브라우저가 항상 같은 색으로만
+//    그려서 색으로 상태를 구분할 수 없기 때문에, 선으로 그린 아이콘을 써서
+//    CSS color로 초록(첨부됨)/회색(없음)을 직접 입힌다. QC 목록과 작업지시서
+//    투입자재 목록 등 첨부 상태를 표시하는 모든 화면에서 공통으로 사용한다.
+const CLIP_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align:-2px"><path d="M21.4 11.1 12.4 20a5 5 0 0 1-7.1-7.1l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-2.8-2.8l8.3-8.3"/></svg>`;
+
 // ✅ 출고처(dest) 배지 HTML 생성 공통 함수 - KR/솔루엠비나/NG 정확히 구분
 // (이전엔 dest==='KR' 가 아니면 무조건 "솔루엠비나"로 표시하는 버그가 있었음)
 function destBadge(dest) {
@@ -2234,7 +2240,7 @@ function renderShipHistTable() {
         bodyHtml += `<tr style="background:#f8faff"><td colspan="5" style="padding:6px 4px;font-weight:700;color:#3730a3">📅 ${ym}월 · 소계 ${monthSum.toLocaleString()} ${item.unit}</td></tr>`;
         rows.forEach(r => {
           bodyHtml += `<tr style="border-bottom:1px solid #f0f0f5">
-            <td style="padding:5px 4px;color:#666">${r.dt || '-'}</td>
+            <td style="padding:5px 4px;color:#666">${fmtDt(r.dt)}</td>
             <td style="padding:5px 4px;font-family:monospace;color:#1d4ed8">${(!r.lot || r.lot === '__nolot__') ? 'LOT 미지정' : r.lot}</td>
             <td style="padding:5px 4px;text-align:right">${r.qty.toLocaleString()}</td>
             <td style="padding:5px 4px;color:#7c3aed">${r.dest}</td>
@@ -2291,7 +2297,7 @@ function exportShipHistExcel() {
       data.push({
         '품목코드': item.code,
         '품명': item.name,
-        '출고일자': r.dt,
+        '출고일자': fmtDt(r.dt),
         'LOT': r.lot,
         '수량': r.qty,
         '출고처': r.dest,
@@ -3599,15 +3605,13 @@ async function renderQC() {
   }
   const resultColor = {'합격':'#166534','조건부합격':'#b45309','불합격':'#b91c1c'};
   body.innerHTML = sorted.map(r => {
-    // ✅ 첨부파일 유무를 액션란 아이콘 하나로 바로 알 수 있게: 첨부돼 있으면
-    //    진하게(클릭해서 바로 열림), 없으면 흐리게(비활성) 표시한다.
     const attachIcon = r.attachmentUrl
-      ? `<a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'} 열기" style="text-decoration:none;opacity:1">📎</a>`
-      : `<span title="첨부된 파일 없음" style="opacity:0.25;cursor:default">📎</span>`;
+      ? `<a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'} 열기" style="text-decoration:none;color:#16a34a;margin-right:4px">${CLIP_SVG}</a>`
+      : `<span title="첨부된 파일 없음" style="color:#cbd5e1;margin-right:4px;cursor:default">${CLIP_SVG}</span>`;
     return `<tr>
     <td>${r.inspType||'-'}</td>
     <td>${r.name||''} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
-    <td style="font-family:monospace;font-size:11px;color:#1d4ed8">${r.lot||'-'}</td>
+    <td style="font-family:monospace;font-size:11px;color:#1d4ed8">${attachIcon}${r.lot||'-'}</td>
     <td style="font-family:monospace;font-size:11px">${r.workOrderNo||'-'}</td>
     <td style="text-align:right;font-weight:600;color:#1d4ed8">${(r.inspType==='수입검사'||r.inspType==='출하검사') ? (+r.totalQty||0).toLocaleString() : '-'}</td>
     <td style="text-align:right">${(+r.sampleQty||0).toLocaleString()}</td>
@@ -3617,7 +3621,6 @@ async function renderQC() {
     <td style="font-size:12px;color:#666">${fmtDt(r.inspDate)}</td>
     <td style="font-size:12px;color:#888">${r.note||'-'}</td>
     <td class="no-print" style="white-space:nowrap">
-      ${attachIcon}
       ${isAdmin ? `<button class="edit-btn" onclick="openEditQC(${r.id})" title="수정">✏️</button>` : ''}
       ${isAdmin ? `<button class="edit-btn" onclick="deleteQC(${r.id})" title="삭제">🗑️</button>` : ''}
     </td>
@@ -4384,12 +4387,13 @@ function renderWOTraceLists() {
   const matList = document.getElementById('wo-trace-material-list');
   matList.innerHTML = materials.length ? materials.map(r => {
     // ✅ 이 자재의 LOT과 같은 코드+LOT으로 등록된 수입검사 기록을 찾아서,
-    //    첨부파일(성적서 등)이 있으면 액션 영역에 📎로 바로 열어볼 수 있게 링크한다.
-    //    첨부가 없으면 흐리게 표시해서 "첨부 없음" 상태를 한눈에 알 수 있게 한다.
+    //    첨부파일(성적서 등)이 있으면 LOT 앞에 초록색 클립 아이콘으로 바로 열어볼
+    //    수 있게 링크한다. 첨부가 없으면 회색으로 표시해서 색만 보고도 "첨부 없음"
+    //    상태를 한눈에 알 수 있게 한다 (QC 목록 화면과 동일한 방식).
     const qcMatch = r.lot ? QC.find(q => q.inspType === '수입검사' && q.code === r.code && q.lot === r.lot && q.attachmentUrl) : null;
     const qcLink = qcMatch
-      ? `<a href="${qcMatch.attachmentUrl}" target="_blank" title="수입검사 첨부파일: ${qcMatch.attachmentName||'파일'} (검사일 ${fmtDt(qcMatch.inspDate)})" style="text-decoration:none;opacity:1;margin-left:6px">📎</a>`
-      : `<span title="연결된 수입검사 첨부파일 없음" style="opacity:0.25;margin-left:6px;cursor:default">📎</span>`;
+      ? `<a href="${qcMatch.attachmentUrl}" target="_blank" title="수입검사 첨부파일: ${qcMatch.attachmentName||'파일'} (검사일 ${fmtDt(qcMatch.inspDate)})" style="text-decoration:none;color:#16a34a;margin-right:4px">${CLIP_SVG}</a>`
+      : `<span title="연결된 수입검사 첨부파일 없음" style="color:#cbd5e1;margin-right:4px;cursor:default">${CLIP_SVG}</span>`;
     // ✅ '__nolot__'은 "LOT 미지정" 재고를 나타내는 내부 표기라 화면엔 절대 그대로
     //    노출하면 안 된다 — 빈 값과 똑같이 "LOT 미지정"으로 보여준다.
     const lotDisplay = (!r.lot || r.lot === '__nolot__') ? 'LOT 미지정' : r.lot;
@@ -4400,8 +4404,8 @@ function renderWOTraceLists() {
       ? `<div style="margin-top:2px;font-size:11px;color:#991b1b" title="${String(r.ngRefLabel).replace(/"/g,'&quot;')}">🔴 불량 대체 · ${r.ngRefLabel}</div>`
       : '';
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#fffbeb;border-radius:6px;margin-bottom:4px;font-size:12px">
-      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · <span style="font-family:monospace;color:#92400e">${lotDisplay}</span>${ngRefBadge}</span>
-      <span>${(+r.qty||0).toLocaleString()} ${r.unit||''}${qcLink}<button onclick="deleteWOMaterialUI(${r.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button></span>
+      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · ${qcLink}<span style="font-family:monospace;color:#92400e">${lotDisplay}</span>${ngRefBadge}</span>
+      <span>${(+r.qty||0).toLocaleString()} ${r.unit||''}<button onclick="deleteWOMaterialUI(${r.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button></span>
     </div>`;
   }).join('') : `<div style="color:#aaa;font-size:12px">아직 투입 자재 기록이 없습니다.</div>`;
 
@@ -7600,7 +7604,7 @@ function openTrace(code, catHint) {
             const absQty = isAdjust ? Math.abs(+t.qty||0) : t.qty;
             const color = typeColor[t.type] || '#555';
             return `<tr style="border-bottom:1px solid #f5f5f8">
-              <td style="padding:6px 8px;color:#888;white-space:nowrap">${t.dt||''}</td>
+              <td style="padding:6px 8px;color:#888;white-space:nowrap">${fmtDt(t.dt)}</td>
               <td style="padding:6px 8px"><span style="color:${color};font-weight:600">${typeLabel[t.type]||t.type}</span></td>
               <td style="padding:6px 8px;text-align:right;font-weight:700;color:${isAdjust?(t.qty>0?'#166534':'#b91c1c'):(isIn?'#166534':'#b91c1c')}">${sign}${absQty?n(absQty):'-'} ${t.unit||''}</td>
               <td style="padding:6px 8px;font-family:monospace;color:#1d4ed8;font-size:11px">${(!t.lot || t.lot === '__nolot__') ? 'LOT 미지정' : t.lot}</td>
@@ -7624,7 +7628,7 @@ function openTrace(code, catHint) {
           ${ngTxs.slice(0,10).map(t => {
             const isIn = t.type==='ng-in';
             return `<tr style="border-bottom:1px solid #fee2e2">
-              <td style="padding:4px 6px;color:#888;white-space:nowrap">${t.dt||''}</td>
+              <td style="padding:4px 6px;color:#888;white-space:nowrap">${fmtDt(t.dt)}</td>
               <td style="padding:4px 6px;color:#991b1b">${typeLabel[t.type]||t.type}</td>
               <td style="padding:4px 6px;text-align:right;font-weight:700;color:${isIn?'#166534':'#b91c1c'}">${isIn?'+':'-'}${n(t.qty)} ${t.unit||''}</td>
               <td style="padding:4px 6px;color:#888">${t.note||'-'}</td>
