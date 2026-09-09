@@ -3056,20 +3056,25 @@ async function printWO(id) {
         <tr><td style="padding:10px;font-size:12px;color:#555;box-sizing:border-box">서명</td><td style="padding:10px;height:50px;box-sizing:border-box">&nbsp;</td></tr>
       </table>
     </td>`;
-  // ✅ 결재란(작성/검토/승인 3단계) — 기존에 QR이 있던 우측 상단 자리에 넣는다.
-  //    테두리를 진하게(#333) 줘서 QR과 마찬가지로 인쇄했을 때 선이 흐리게 나오지 않게 한다.
+  // ✅ 결재란(작성/검토/승인 3단계) — 대시보드 상단에 이미 있는 "결재란(프린트용)"과
+  //    같은 구성(작성/검토/승인 헤더 + 서명 칸 + 담당자/검토자/승인자)으로 맞추되,
+  //    거기서 쓰인 파란색(#1e3a8a/#c7d7fe)은 빼고 무채색(#333/#999)으로 통일한다.
   const approvalBox = `
-    <table style="border-collapse:collapse;font-size:9px;text-align:center;border:1px solid #333">
-      <tr><td colspan="3" style="border-bottom:1px solid #333;padding:3px 4px;font-weight:700;background:#eef2ff">결재</td></tr>
+    <table style="border-collapse:collapse;width:210px">
       <tr>
-        <td style="width:30px;border-right:1px solid #333;border-bottom:1px solid #333;padding:3px 2px;font-weight:700">작성</td>
-        <td style="width:30px;border-right:1px solid #333;border-bottom:1px solid #333;padding:3px 2px;font-weight:700">검토</td>
-        <td style="width:30px;padding:3px 2px;font-weight:700">승인</td>
+        <td style="border:1.5px solid #333;background:#333;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:4px 0;width:70px">작 성</td>
+        <td style="border:1.5px solid #333;background:#333;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:4px 0;width:70px">검 토</td>
+        <td style="border:1.5px solid #333;background:#333;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:4px 0;width:70px">승 인</td>
       </tr>
       <tr>
-        <td style="height:38px;border-right:1px solid #333">&nbsp;</td>
-        <td style="height:38px;border-right:1px solid #333">&nbsp;</td>
-        <td style="height:38px">&nbsp;</td>
+        <td style="border:1.5px solid #999;height:44px;vertical-align:bottom;padding:4px"></td>
+        <td style="border:1.5px solid #999;height:44px;vertical-align:bottom;padding:4px"></td>
+        <td style="border:1.5px solid #999;height:44px;vertical-align:bottom;padding:4px"></td>
+      </tr>
+      <tr>
+        <td style="border:1.5px solid #999;font-size:10px;color:#888;text-align:center;padding:3px">담당자</td>
+        <td style="border:1.5px solid #999;font-size:10px;color:#888;text-align:center;padding:3px">검토자</td>
+        <td style="border:1.5px solid #999;font-size:10px;color:#888;text-align:center;padding:3px">승인자</td>
       </tr>
     </table>`;
 
@@ -3093,17 +3098,17 @@ async function printWO(id) {
 
   document.getElementById('wo-print-area').innerHTML = `
     <div style="font-family:'Malgun Gothic','맑은 고딕',Arial,sans-serif;color:#000;padding:16mm 14mm;max-width:210mm;margin:0 auto">
-      <div style="position:relative;margin-bottom:22px;min-height:80px">
-        ${woQrDataUrl ? `<div style="position:absolute;top:0;left:0;text-align:center">
-          <img src="${woQrDataUrl}" style="width:64px;height:64px;display:block">
-          <div style="font-size:8px;color:#888;margin-top:2px;font-family:monospace">${wo.orderNo||''}</div>
-        </div>` : ''}
-        <div style="position:absolute;top:0;right:0">${approvalBox}</div>
-        <div style="text-align:center">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:22px">
+        <div style="flex:0 0 70px;text-align:center">
+          ${woQrDataUrl ? `<img src="${woQrDataUrl}" style="width:64px;height:64px;display:block;margin:0 auto">
+          <div style="font-size:8px;color:#888;margin-top:2px;font-family:monospace">${wo.orderNo||''}</div>` : ''}
+        </div>
+        <div style="flex:1;text-align:center">
           <div style="font-size:12px;color:#555">THE GAUSS VINA CO., LTD</div>
           <div style="font-size:22px;font-weight:800;letter-spacing:2px;margin-top:4px">작업 지시서</div>
           <div style="font-size:11px;color:#888;margin-top:2px">Lệnh sản xuất</div>
         </div>
+        <div style="flex:0 0 auto">${approvalBox}</div>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:12px;color:#555;margin-bottom:10px">
         <div>지시번호: <strong style="color:#000">${wo.orderNo||'-'}</strong></div>
