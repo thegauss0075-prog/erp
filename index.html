@@ -6597,7 +6597,12 @@ if (!_urlMode || _urlMode === '__ERP_MODE__') {
   try { _urlMode = new URLSearchParams(window.location.search).get('mode')||''; } catch(e){}
   try { if(!_urlMode && window.location.hash) _urlMode = window.location.hash.replace('#',''); } catch(e){}
 }
-var IS_VN = (_urlMode === 'vn' || _urlMode === 'admin');
+// ✅ 생산 현장에 고정해둘 기기용 전용 URL(?mode=floor). 대시보드/재고/발주 같은
+//    민감한 화면까지 다 보이는 게 아니라, 로그인 화면 자체는 기존 베트남 로그인
+//    (이름+비밀번호)을 그대로 쓰되, 관리자가 아니면 로그인 직후 현장입력 탭만
+//    남기고 나머지 탭을 숨긴다 — 관리자 비밀번호로 들어오면 그대로 전체 탭이 보인다.
+var IS_FLOOR = (_urlMode === 'floor');
+var IS_VN = (_urlMode === 'vn' || _urlMode === 'admin' || IS_FLOOR);
 var IS_GAS = (typeof google !== 'undefined' && google.script && google.script.run);
 
 // ── API 호출
@@ -6894,6 +6899,26 @@ function applyRoleUI() {
   // 공통: 유저 배지 이름
   const lbl = document.getElementById('user-label');
   if (lbl) lbl.textContent = CURRENT_USER || '-';
+
+  // ✅ 현장 전용 기기(?mode=floor)면 로그인 직후에도 다시 한번 탭 제한을 적용한다.
+  applyFloorModeUI();
+}
+
+// ✅ 현장 전용 기기(?mode=floor)에서 관리자가 아니면 현장입력 탭만 남기고 나머지를
+//    숨긴다. applyRoleUI()(로그인 직후)와 applyAdminUI()(🔐 관리자 즉석 승격/해제)
+//    양쪽에서 호출해야, "🔐 관리자"로 그 자리에서 승격했을 때도 즉시 전체 탭이
+//    열리고 다시 해제하면 즉시 현장입력만 남는다.
+function applyFloorModeUI() {
+  if (!IS_FLOOR) return;
+  // 한국 열람(viewer) 로그인은 원래 현장입력 자체를 막아두므로(위 분기 참고) 이
+  // 제한과 겹치면 아무 탭도 못 보게 되니 그 경우엔 건드리지 않는다 — 실제로는
+  // 현장 기기에서 열람으로 로그인할 일이 없으니 발생하지 않는 조합이다.
+  if (USER_ROLE === 'viewer') return;
+  const restrict = !isAdmin;
+  document.querySelectorAll('.tb').forEach(b => {
+    if (!b.textContent.includes('현장입력')) b.style.display = restrict ? 'none' : '';
+  });
+  if (restrict) go('mes');
 }
 
 // ── 한국 열람 로그인
@@ -7048,6 +7073,9 @@ function applyAdminUI(on) {
   if (mcBtn) mcBtn.style.display = on ? 'inline-block' : 'none';
   const cleanupBtn = document.getElementById('ng-cleanup-btn');
   if (cleanupBtn) cleanupBtn.style.display = on ? 'inline-block' : 'none';
+  // ✅ 현장 전용 기기에서 "🔐 관리자"로 즉석 승격/해제할 때도 탭 제한이 즉시
+  //    반영되도록 (관리자 로그인의 applyRoleUI() 경로가 아닌, 이 즉석 버튼 경로).
+  applyFloorModeUI();
 }
 
 // ── API URL 저장
@@ -7347,6 +7375,9 @@ function showLoginModal() {
   if (IS_VN) {
     if (vv) vv.style.display = 'block';
     if (kk) kk.style.display = 'none';
+    // ✅ 현장 전용 기기임을 로그인 화면에서부터 알 수 있게 (URL을 잘못 열었을 때 바로 확인 가능)
+    const vnSub = document.getElementById('login-vn-sub');
+    if (vnSub) vnSub.textContent = IS_FLOOR ? '🏭 생산 현장 전용 기기 · 관리자 외에는 현장입력만 가능' : '베트남 로그인 / Đăng nhập';
     setTimeout(()=>{ const el=document.getElementById('vn-name-input'); if(el)el.focus(); },100);
   } else {
     if (kk) kk.style.display = 'block';
@@ -9237,7 +9268,7 @@ if (document.readyState === 'loading') {
     <div id="login-vn" style="display:none;text-align:center">
       <div style="font-size:40px;margin-bottom:8px">🇻🇳</div>
       <h3 style="margin-bottom:6px">베트남 법인 통합 ERP</h3>
-      <p style="font-size:13px;color:#666;margin-bottom:16px">베트남 로그인 / Đăng nhập</p>
+      <p id="login-vn-sub" style="font-size:13px;color:#666;margin-bottom:16px">베트남 로그인 / Đăng nhập</p>
       <div class="ov-fr" style="text-align:left">
         <label>이름 / Tên *</label>
         <input id="vn-name-input" placeholder="예: Nguyen Van A" maxlength="30">
