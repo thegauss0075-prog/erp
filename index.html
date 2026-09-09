@@ -1456,6 +1456,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
            화면(전공정 추적 / 실적입력 / addNG)을 그대로 재사용한다. -->
       <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:14px">
         <button onclick="mesOpenMaterial()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#92400e;color:#fff;cursor:pointer;line-height:1.4">📦 자재투입 (전공정 추적)</button>
+        <button onclick="mesOpenProcessLog()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#7c3aed;color:#fff;cursor:pointer;line-height:1.4">🏭 공정별 작업일지</button>
         <button onclick="mesOpenProcessInspection()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#0d9488;color:#fff;cursor:pointer;line-height:1.4">🔬 공정검사 등록</button>
         <button onclick="mesOpenProd()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#166534;color:#fff;cursor:pointer;line-height:1.4">📈 생산실적 입력</button>
         <button onclick="mesOpenDefect()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#b91c1c;color:#fff;cursor:pointer;line-height:1.4">⚠️ 불량 등록</button>
@@ -5702,6 +5703,16 @@ function mesOpenProd() {
 function mesOpenMaterial() {
   if (!mesTarget) return;
   openWOTrace(mesTarget.id);
+}
+
+// ✅ 공정별 작업일지(권선/디핑/조립1·2·3/경화/EOL검사/DCB/본딩 등) — 작업지시 목록의
+//    "🏭 공정별 작업일지" 모달을 그대로 연다. 공정마다 작업자·시작/종료시간·적합/부적합
+//    수량·중점관리항목(파라미터)까지 이미 다 갖춰져 있어 새로 만들 필요가 없다.
+//    관리자 권한이 없어도 기록 추가는 가능하게 되어 있어(삭제만 관리자 전용) 현장에서도
+//    그대로 쓸 수 있다.
+function mesOpenProcessLog() {
+  if (!mesTarget) return;
+  openWOProcess(mesTarget.id);
 }
 
 // ✅ MES 1단계(수입검사): 품질검사 탭의 "➕ 품질검사 기록 추가" 모달을 그대로 연다.
