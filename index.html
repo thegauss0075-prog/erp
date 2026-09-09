@@ -3002,6 +3002,24 @@ async function printWO(id) {
   await loadWOMaterials();
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+  // ✅ 작업지시서 자체에 QR을 같이 인쇄한다 (현장입력 탭에서 이 QR을 스캔해서 바로
+  //    실적/불량을 등록할 수 있도록). QR 라벨을 따로 인쇄하지 않아도 되게 하기 위함.
+  //    QR 안에는 지시번호만 들어가고, 스캔 시 최신 데이터를 그 자리에서 조회하는
+  //    방식이라 인쇄 시점의 계획/실적 수량이 QR 안에 그대로 박제되지 않는다.
+  //    인터넷이 안 되거나 라이브러리 로드에 실패해도 지시서 인쇄 자체는 계속 진행한다.
+  let woQrDataUrl = '';
+  try {
+    await mesLoadQrGenLib();
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+    document.body.appendChild(holder);
+    new QRCode(holder, { text: String(wo.orderNo || wo.id), width: 120, height: 120, correctLevel: QRCode.CorrectLevel.M });
+    await new Promise(r => setTimeout(r, 60));
+    const qrImg = holder.querySelector('img') || holder.querySelector('canvas');
+    woQrDataUrl = qrImg ? (qrImg.tagName === 'CANVAS' ? qrImg.toDataURL('image/png') : qrImg.src) : '';
+    document.body.removeChild(holder);
+  } catch (e) { console.warn('작업지시서 QR 생성 실패 (인쇄는 계속 진행):', e); }
   // ✅ 셀 크기 정렬: 모든 표를 table-layout:fixed + colgroup 퍼센트 폭으로 통일해서
   //    품목/LOT/계획수량/생산라인 표와 투입자재 표, 서명란 표의 좌우 폭이 서로
   //    어긋나지 않고 인쇄 용지 폭(100%) 안에서 일정하게 맞도록 한다.
@@ -3040,10 +3058,16 @@ async function printWO(id) {
 
   document.getElementById('wo-print-area').innerHTML = `
     <div style="font-family:'Malgun Gothic','맑은 고딕',Arial,sans-serif;color:#000;padding:16mm 14mm;max-width:210mm;margin:0 auto">
-      <div style="text-align:center;margin-bottom:18px">
-        <div style="font-size:12px;color:#555">THE GAUSS VINA CO., LTD</div>
-        <div style="font-size:22px;font-weight:800;letter-spacing:2px;margin-top:4px">작업 지시서</div>
-        <div style="font-size:11px;color:#888;margin-top:2px">Lệnh sản xuất</div>
+      <div style="position:relative;margin-bottom:18px">
+        ${woQrDataUrl ? `<div style="position:absolute;top:0;right:0;text-align:center">
+          <img src="${woQrDataUrl}" style="width:64px;height:64px;display:block">
+          <div style="font-size:8px;color:#888;margin-top:2px;font-family:monospace">${wo.orderNo||''}</div>
+        </div>` : ''}
+        <div style="text-align:center">
+          <div style="font-size:12px;color:#555">THE GAUSS VINA CO., LTD</div>
+          <div style="font-size:22px;font-weight:800;letter-spacing:2px;margin-top:4px">작업 지시서</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">Lệnh sản xuất</div>
+        </div>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:12px;color:#555;margin-bottom:10px">
         <div>지시번호: <strong style="color:#000">${wo.orderNo||'-'}</strong></div>
