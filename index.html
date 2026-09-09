@@ -1456,6 +1456,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
            화면(전공정 추적 / 실적입력 / addNG)을 그대로 재사용한다. -->
       <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:14px">
         <button onclick="mesOpenMaterial()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#92400e;color:#fff;cursor:pointer;line-height:1.4">📦 자재투입 (전공정 추적)</button>
+        <button onclick="mesOpenProcessInspection()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#0d9488;color:#fff;cursor:pointer;line-height:1.4">🔬 공정검사 등록</button>
         <button onclick="mesOpenProd()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#166534;color:#fff;cursor:pointer;line-height:1.4">📈 생산실적 입력</button>
         <button onclick="mesOpenDefect()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#b91c1c;color:#fff;cursor:pointer;line-height:1.4">⚠️ 불량 등록</button>
       </div>
@@ -3834,13 +3835,16 @@ function acPickQCWO(i) {
 }
 
 // ── 추가/수정 모달 ──────────────────────────────
-async function openAddQC() {
+async function openAddQC(presetType) {
   await loadWO();
   qcEditTarget = null;
   qcSelectedItem = null;
   qcSelectedWorkOrder = null;
   document.getElementById('qc-add-title').textContent = '➕ 품질검사 기록 추가';
-  document.getElementById('qc-type').value = '수입검사';
+  // ✅ 현장입력 탭에서 "공정검사 등록"으로 들어올 때는 검사유형을 공정검사로 미리
+  //    맞춰서 열어준다. 인자가 없으면(기존 데스크탑 "➕ 검사 기록 추가" 버튼) 그대로
+  //    수입검사가 기본값이라 기존 동작은 바뀌지 않는다.
+  document.getElementById('qc-type').value = presetType || '수입검사';
   document.getElementById('qc-item-q').value = '';
   document.getElementById('qc-wo-search-q').value = '';
   document.getElementById('qc-code').value = '';
@@ -5680,6 +5684,26 @@ function mesOpenMaterial() {
 //    기존에 검증된 로직을 그대로 탄다.
 function mesOpenInspection() {
   openAddQC();
+}
+
+// ✅ MES 공정검사(중간검사): 이미 선택된 작업지시가 있으므로, 품질검사 모달을
+//    "공정검사" 유형으로 열고 품목을 다시 검색하지 않아도 되게 작업지시 정보로
+//    바로 채워준다. openAddQC()가 폼을 전부 초기화한 "이후"에 값을 채워야 하므로
+//    openAddQC의 완료를 기다렸다가(await) 이어서 채운다.
+async function mesOpenProcessInspection() {
+  if (!mesTarget) return;
+  await openAddQC('공정검사');
+  qcSelectedItem = { code: mesTarget.code, name: mesTarget.name, cat: mesTarget.cat, unit: mesTarget.unit };
+  document.getElementById('qc-item-q').value = (mesTarget.code || '') + ' — ' + (mesTarget.name || '');
+  document.getElementById('qc-code').value = mesTarget.code || '';
+  document.getElementById('qc-name').value = mesTarget.name || '';
+  fillQCWoOptions(mesTarget.code);
+  const woSel = document.getElementById('qc-wo');
+  if (woSel && [...woSel.options].some(o => o.value === String(mesTarget.id))) {
+    woSel.value = String(mesTarget.id);
+  }
+  updateQCCoreMakerVisibility();
+  updateQCAttachmentLabel();
 }
 
 function mesOpenDefect() {
