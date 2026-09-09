@@ -1425,6 +1425,16 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <div style="font-size:14px;color:#888;margin-top:2px">작업지시 QR을 스캔하거나 검색해서 선택하세요</div>
     </div>
 
+    <!-- ✅ MES 1단계: 수입검사 — 원자재 입고 시에는 아직 작업지시가 없으므로, 작업지시
+         선택과 무관하게 항상 눌러서 바로 등록할 수 있게 최상단에 별도로 둔다. 새 로직을
+         만들지 않고 품질검사 탭의 "➕ 품질검사 기록 추가" 모달(이미 검증됨, 수입검사가
+         기본값)을 그대로 재사용한다 — 합격 시 자동 입고, 원자재(KR) 첨부파일 필수 등. -->
+    <button onclick="mesOpenInspection()" style="width:100%;padding:22px 10px;font-size:19px;font-weight:800;border-radius:14px;border:none;background:#0d9488;color:#fff;cursor:pointer;margin-bottom:8px">🔬 수입검사 등록 (원자재 입고 시)</button>
+    <div style="text-align:center;color:#aaa;font-size:12px;margin:2px 0 18px">— 작업지시와 무관하게 언제든 등록 가능 —</div>
+    <div style="border-top:1px dashed #dde;margin-bottom:16px"></div>
+
+    <div style="text-align:center;font-size:13px;color:#888;font-weight:700;margin-bottom:10px">작업지시 기반 입력 (생산실적 · 불량)</div>
+
     <div id="mes-select-box">
       <button id="mes-scan-btn" onclick="mesStartScan()" style="width:100%;padding:22px 10px;font-size:19px;font-weight:800;border-radius:14px;border:none;background:#185FA5;color:#fff;cursor:pointer;margin-bottom:14px">📷 QR 스캔으로 작업지시 찾기</button>
 
@@ -5649,6 +5659,14 @@ function mesOpenProd() {
   // ✅ 작업지시 탭의 "📈 실적입력"과 완전히 동일한 로직(자재 미투입 경고, 계획초과
   //    확인, 산출LOT 이력 기록 등)을 그대로 재사용 — 현장입력용으로 따로 만들지 않는다.
   openWOProd(mesTarget.id);
+}
+
+// ✅ MES 1단계(수입검사): 품질검사 탭의 "➕ 품질검사 기록 추가" 모달을 그대로 연다.
+//    openAddQC()는 이미 검사유형 기본값이 "수입검사"라서 별도 분기 없이 그대로 재사용
+//    가능하다 — 합격 시 자동 입고(autoInboundFromQC), 원자재(KR) 첨부파일 필수 등
+//    기존에 검증된 로직을 그대로 탄다.
+function mesOpenInspection() {
+  openAddQC();
 }
 
 function mesOpenDefect() {
