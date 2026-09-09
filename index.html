@@ -5541,19 +5541,45 @@ function renderLocationAssignList() {
     return;
   }
 
-  wrap.innerHTML = rows.map((r, idx) => `
-    <div style="display:flex;gap:6px;align-items:center;background:#fff;border:1px solid #e0e0e8;border-radius:8px;padding:8px 10px;margin-bottom:6px">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:700">${r.name} <span style="color:#888;font-weight:400">(${r.code})</span></div>
-        <div style="font-size:11px;color:#888">LOT ${r.lot} · 잔여 ${(+r.remain || 0).toLocaleString()}${r.unit || ''} · ${r.cat}${r.loc && r.loc.locationCode ? ` · 현재: 📍${r.loc.locationName || r.loc.locationCode}` : ''}</div>
+  // ✅ 인수인계 확인(책임소재용): 등록수량(시스템상 잔여)을 기본값으로 채워두고,
+  //    자재팀이 실제로 세어본 수량이 다르면 그 자리에서 고쳐 넣게 한다. 다르면
+  //    사유 입력칸이 나타나고, 사유 없이는 저장이 안 된다(assignLocationUI에서 막음).
+  wrap.innerHTML = rows.map((r, idx) => {
+    const registeredQty = +r.remain || 0;
+    const hasSaved = r.loc && r.loc.confirmedQty !== undefined && r.loc.confirmedQty !== '';
+    const confirmedVal = hasSaved ? r.loc.confirmedQty : registeredQty;
+    const mismatchNow = (+confirmedVal || 0) !== registeredQty;
+    return `
+    <div style="background:#fff;border:1px solid #e0e0e8;border-radius:8px;padding:8px 10px;margin-bottom:6px">
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700">${r.name} <span style="color:#888;font-weight:400">(${r.code})</span></div>
+          <div style="font-size:11px;color:#888">LOT ${r.lot} · 등록수량 ${registeredQty.toLocaleString()}${r.unit || ''} · ${r.cat}${r.loc && r.loc.locationCode ? ` · 현재: 📍${r.loc.locationName || r.loc.locationCode}` : ''}${r.loc && r.loc.hasDiscrepancy === 'Y' ? ' · <span style="color:#b91c1c;font-weight:700">⚠️ 수량 불일치</span>' : ''}</div>
+        </div>
+        <button type="button" onclick="printLotHandoff(${idx})" title="인수인계 확인서 인쇄" style="border:1px solid #999;background:#fff;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:13px">🖨️</button>
       </div>
-      <select id="loc-sel-${idx}" style="font-size:12px;max-width:130px">
-        <option value="">위치 선택</option>
-        ${LOCATIONS.map(l => `<option value="${l.code}" ${r.loc && r.loc.locationCode === l.code ? 'selected' : ''}>${l.name}</option>`).join('')}
-      </select>
-      <button onclick="assignLocationUI(${idx})" style="padding:6px 10px;border-radius:6px;border:1px solid #0369a1;background:#0369a1;color:#fff;font-size:12px;cursor:pointer;white-space:nowrap">${r.loc && r.loc.locationCode ? '이동' : '지정'}</button>
-    </div>
-  `).join('');
+      <div style="display:grid;grid-template-columns:1fr 90px auto;gap:6px;align-items:center">
+        <select id="loc-sel-${idx}" style="font-size:12px">
+          <option value="">위치 선택</option>
+          ${LOCATIONS.map(l => `<option value="${l.code}" ${r.loc && r.loc.locationCode === l.code ? 'selected' : ''}>${l.name}</option>`).join('')}
+        </select>
+        <input id="loc-qty-${idx}" type="number" value="${confirmedVal}" oninput="toggleLocDiscrepancyNote(${idx})" title="확인수량 (실사)" style="font-size:12px;width:100%;box-sizing:border-box">
+        <button onclick="assignLocationUI(${idx})" style="padding:6px 10px;border-radius:6px;border:1px solid #0369a1;background:#0369a1;color:#fff;font-size:12px;cursor:pointer;white-space:nowrap">${r.loc && r.loc.locationCode ? '이동' : '지정'}</button>
+      </div>
+      <input id="loc-note-${idx}" placeholder="⚠️ 확인수량이 등록수량과 다릅니다 - 사유를 입력하세요 (예: 파손 2개 발견)" value="${(r.loc && r.loc.discrepancyNote) || ''}" style="width:100%;box-sizing:border-box;font-size:11px;margin-top:4px;color:#b91c1c;${mismatchNow ? '' : 'display:none'}">
+    </div>`;
+  }).join('');
+}
+
+// ✅ 확인수량 입력이 등록수량과 달라지면 사유 입력칸을 보여주고, 다시 같아지면 숨긴다.
+function toggleLocDiscrepancyNote(idx) {
+  const row = locAssignRows[idx];
+  if (!row) return;
+  const qtyEl = document.getElementById('loc-qty-' + idx);
+  const noteEl = document.getElementById('loc-note-' + idx);
+  if (!qtyEl || !noteEl) return;
+  const mismatch = (+qtyEl.value || 0) !== (+row.remain || 0);
+  noteEl.style.display = mismatch ? 'block' : 'none';
 }
 
 async function assignLocationUI(idx) {
@@ -5562,18 +5588,102 @@ async function assignLocationUI(idx) {
   if (errEl) errEl.style.display = 'none';
   if (!row) return;
   const sel = document.getElementById('loc-sel-' + idx);
+  const qtyEl = document.getElementById('loc-qty-' + idx);
+  const noteEl = document.getElementById('loc-note-' + idx);
   const locCode = sel ? sel.value : '';
   if (!locCode) { if(errEl){errEl.textContent='위치를 선택해주세요.';errEl.style.display='block';} return; }
+  const registeredQty = +row.remain || 0;
+  const confirmedQty = qtyEl ? (+qtyEl.value || 0) : registeredQty;
+  const hasDiscrepancy = confirmedQty !== registeredQty;
+  const note = noteEl ? noteEl.value.trim() : '';
+  // ✅ 인수인계 확인(책임소재용) 핵심 규칙: 수량이 등록수량과 다른데 사유가 없으면
+  //    저장을 막는다 - 나중에 "왜 달랐는지" 기록이 반드시 남게 하기 위함.
+  if (hasDiscrepancy && !note) {
+    if (errEl) { errEl.textContent = '⚠️ 확인수량이 등록수량과 다릅니다. 사유를 입력해주세요.'; errEl.style.display = 'block'; }
+    if (noteEl) noteEl.style.display = 'block';
+    return;
+  }
   const loc = LOCATIONS.find(l => l.code === locCode);
   const body = {
     code: row.code, name: row.name, cat: row.cat, lot: row.lot,
-    locationCode: locCode, locationName: loc ? loc.name : '', qty: row.remain,
+    locationCode: locCode, locationName: loc ? loc.name : '',
+    qty: registeredQty, confirmedQty, hasDiscrepancy: hasDiscrepancy ? 'Y' : '', discrepancyNote: note,
     token: ADMIN_TOKEN, user: CURRENT_USER || ''
   };
   const res = await api('assignLotLocation', body);
   if (!res || !res.ok) { if(errEl){errEl.textContent='저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류');errEl.style.display='block';} return; }
   await loadLotLocations();
   renderLocationAssignList();
+}
+
+// ✅ 인수인계 확인서 인쇄 - 작업지시서(printWO)와 완전히 같은 인쇄 방식(#wo-print-area +
+//    printing-wo 클래스)을 그대로 재사용한다. 새 인쇄 영역/CSS를 따로 만들지 않는다.
+//    저장 전에도(값 확인용) 인쇄할 수 있고, 저장 후에는 실제 확정된 값이 그대로 찍힌다.
+function printLotHandoff(idx) {
+  const row = locAssignRows[idx];
+  if (!row) return;
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const registeredQty = +row.remain || 0;
+  const qtyEl = document.getElementById('loc-qty-' + idx);
+  const noteEl = document.getElementById('loc-note-' + idx);
+  const selEl = document.getElementById('loc-sel-' + idx);
+  // ✅ 화면에 입력 중인 값이 있으면 그걸 우선 쓰고(아직 저장 전이어도 확인용으로 인쇄
+  //    가능하게), 없으면 이미 저장된 값을 쓴다.
+  const confirmedQty = qtyEl ? (+qtyEl.value || 0) : (row.loc && row.loc.confirmedQty !== undefined && row.loc.confirmedQty !== '' ? +row.loc.confirmedQty : registeredQty);
+  const note = noteEl && noteEl.value.trim() ? noteEl.value.trim() : ((row.loc && row.loc.discrepancyNote) || '');
+  const selectedLocCode = selEl && selEl.value ? selEl.value : (row.loc ? row.loc.locationCode : '');
+  const selectedLoc = LOCATIONS.find(l => l.code === selectedLocCode);
+  const locLabel = selectedLoc ? selectedLoc.name : (row.loc ? (row.loc.locationName || row.loc.locationCode) : '');
+  const mismatch = confirmedQty !== registeredQty;
+
+  const cellBase = 'border:1px solid #333;padding:8px 10px;font-size:13px;box-sizing:border-box;word-break:break-word';
+  const rowHtml = (label, value) => `
+    <tr>
+      <th style="${cellBase};width:25%;background:#f0f4ff;text-align:left;color:#333">${label}</th>
+      <td style="${cellBase};width:75%;text-align:left">${value == null || value === '' ? '-' : value}</td>
+    </tr>`;
+  // ✅ 작업지시서(printWO)의 서명란과 완전히 같은 모양 - 성명/서명 2줄.
+  const signBox = (title) => `
+    <td style="width:50%;border:1px solid #333;padding:0;vertical-align:top;box-sizing:border-box">
+      <div style="background:#eef2ff;border-bottom:1px solid #333;padding:8px 10px;font-weight:700;font-size:13px;text-align:center">${title}</div>
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+        <colgroup><col style="width:25%"><col style="width:75%"></colgroup>
+        <tr><td style="padding:10px;font-size:12px;color:#555;border-bottom:1px solid #ddd;box-sizing:border-box">성명</td><td style="padding:10px;border-bottom:1px solid #ddd;box-sizing:border-box">&nbsp;</td></tr>
+        <tr><td style="padding:10px;font-size:12px;color:#555;box-sizing:border-box">서명</td><td style="padding:10px;height:50px;box-sizing:border-box">&nbsp;</td></tr>
+      </table>
+    </td>`;
+
+  document.getElementById('wo-print-area').innerHTML = `
+    <div style="font-family:'Malgun Gothic','맑은 고딕',Arial,sans-serif;color:#000;padding:16mm 14mm;max-width:210mm;margin:0 auto">
+      <div style="text-align:center;margin-bottom:22px">
+        <div style="font-size:12px;color:#555">THE GAUSS VINA CO., LTD</div>
+        <div style="font-size:22px;font-weight:800;letter-spacing:2px;margin-top:4px">인수인계 확인서</div>
+        <div style="font-size:11px;color:#888;margin-top:2px">Biên bản bàn giao</div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;font-size:12px;color:#555;margin-bottom:10px">
+        <div>발행일: ${todayStr}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:22px">
+        <colgroup><col style="width:25%"><col style="width:75%"></colgroup>
+        ${rowHtml('품목', `${row.name||''} <span style="color:#000;font-weight:700;font-family:monospace;font-size:12px">${row.code||''}</span>`)}
+        ${rowHtml('구분', row.cat)}
+        ${rowHtml('LOT', `<span style="font-family:monospace;font-weight:700">${row.lot||'-'}</span>`)}
+        ${rowHtml('등록수량', `<strong>${registeredQty.toLocaleString()}</strong> ${row.unit||''}`)}
+        ${rowHtml('확인수량 (실사)', `<strong>${confirmedQty.toLocaleString()}</strong> ${row.unit||''} ${mismatch ? '<span style="color:#b91c1c;font-weight:700">⚠️ 불일치</span>' : '<span style="color:#166534;font-weight:700">✓ 일치</span>'}`)}
+        ${mismatch ? rowHtml('불일치 사유', note || '-') : ''}
+        ${rowHtml('보관 위치', locLabel || '미지정')}
+      </table>
+
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px">■ 인수인계 확인 (서명)</div>
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+        <colgroup><col style="width:50%"><col style="width:50%"></colgroup>
+        <tr>${signBox('품질팀 (인계)')}${signBox('자재팀 (인수)')}</tr>
+      </table>
+    </div>`;
+
+  document.body.classList.add('printing-wo');
+  window.print();
 }
 
 // ✅ 위치 마스터 관리 (설비 마스터와 완전히 같은 패턴 - 전체 공통, 관리자만 등록/삭제)
