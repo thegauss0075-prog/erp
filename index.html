@@ -335,6 +335,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <button class="tb" onclick="go('hist')">📋 이력</button>
   <button class="tb" onclick="go('ng')">⚠️ 불량(NG)</button>
   <button class="tb" onclick="go('po')">📧 발주관리</button>
+  <button class="tb" onclick="go('mes')">📷 현장입력</button>
   <div style="flex:1"></div>
   <span id="user-badge" style="font-size:12px;padding:5px 12px;border-radius:7px;background:#f0f4ff;color:#1d4ed8;border:1px solid #c7d7fe">👤 <span id="user-label">-</span></span>
   <button onclick="logoutUser()" style="padding:6px 12px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555" title="로그아웃">🚪 로그아웃</button>
@@ -1414,6 +1415,58 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <div id="po-empty" style="display:none;color:#aaa;font-size:13px;padding:20px;text-align:center">등록된 발주가 없습니다. "📊 엑셀 업로드로 등록"으로 시작해보세요.</div>
 </div>
 
+<!-- ✅ MES 현장입력: 태블릿/폰 카메라로 작업지시 QR을 스캔해서 생산실적/불량을
+     그 자리에서 바로 등록하는 화면. 큰 버튼·큰 글씨로 현장에서 쓰기 쉽게 만들었고,
+     실제 데이터 반영은 기존에 이미 검증된 openWOProd()/addNG()를 그대로 재사용한다. -->
+<div id="tab-mes" class="sec">
+  <div style="max-width:640px;margin:0 auto">
+    <div style="text-align:center;padding:16px 0 14px">
+      <div style="font-size:21px;font-weight:800;color:#1a1a2e">📷 현장입력</div>
+      <div style="font-size:14px;color:#888;margin-top:2px">작업지시 QR을 스캔하거나 검색해서 선택하세요</div>
+    </div>
+
+    <div id="mes-select-box">
+      <button id="mes-scan-btn" onclick="mesStartScan()" style="width:100%;padding:22px 10px;font-size:19px;font-weight:800;border-radius:14px;border:none;background:#185FA5;color:#fff;cursor:pointer;margin-bottom:14px">📷 QR 스캔으로 작업지시 찾기</button>
+
+      <div id="mes-scan-panel" style="display:none;margin-bottom:16px;background:#000;border-radius:14px;overflow:hidden;position:relative">
+        <video id="mes-video" style="width:100%;display:block" playsinline muted></video>
+        <button onclick="mesStopScan()" style="position:absolute;top:10px;right:10px;padding:9px 16px;border-radius:8px;border:none;background:rgba(255,255,255,.92);font-weight:700;font-size:14px;cursor:pointer">✕ 닫기</button>
+        <div id="mes-scan-status" style="position:absolute;bottom:0;left:0;right:0;padding:9px;text-align:center;color:#fff;background:rgba(0,0,0,.55);font-size:13px">카메라를 QR코드에 비춰주세요</div>
+      </div>
+
+      <div style="text-align:center;color:#aaa;font-size:12px;margin:12px 0 8px">또는 직접 검색</div>
+      <input id="mes-search" oninput="renderMESList()" placeholder="지시번호·품명·코드 검색..." style="width:100%;font-size:17px;padding:14px;border-radius:10px;border:1px solid #dde;margin-bottom:10px;box-sizing:border-box">
+      <div id="mes-list" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto"></div>
+    </div>
+
+    <div id="mes-target-box" style="display:none">
+      <div id="mes-target-info" style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:10px;padding:16px;font-size:16px;line-height:1.7;margin-bottom:16px"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <button onclick="mesOpenProd()" style="padding:26px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#166534;color:#fff;cursor:pointer;line-height:1.4">📈<br>생산실적 입력</button>
+        <button onclick="mesOpenDefect()" style="padding:26px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#b91c1c;color:#fff;cursor:pointer;line-height:1.4">⚠️<br>불량 등록</button>
+      </div>
+      <button onclick="mesClearTarget()" style="width:100%;padding:13px;font-size:15px;border-radius:10px;border:1px solid #dde;background:#fff;color:#555;cursor:pointer">↩ 다른 작업지시 선택</button>
+    </div>
+
+    <div id="mes-defect-box" style="display:none">
+      <div id="mes-defect-info" style="background:#fef2f2;border-left:4px solid #b91c1c;border-radius:10px;padding:16px;font-size:16px;line-height:1.7;margin-bottom:16px"></div>
+      <div style="margin-bottom:14px">
+        <label style="display:block;font-size:14px;font-weight:700;color:#555;margin-bottom:6px">불량 수량 *</label>
+        <input id="mes-defect-qty" type="number" placeholder="0" style="width:100%;font-size:26px;padding:16px;border-radius:10px;border:1px solid #dde;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="display:block;font-size:14px;font-weight:700;color:#555;margin-bottom:6px">불량 사유</label>
+        <input id="mes-defect-reason" type="text" placeholder="예: 치수불량, 외관불량 등" style="width:100%;font-size:16px;padding:14px;border-radius:10px;border:1px solid #dde;box-sizing:border-box">
+      </div>
+      <div id="mes-defect-err" style="color:#b91c1c;font-size:13px;margin-bottom:10px;display:none"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <button onclick="mesCancelDefect()" style="padding:18px;font-size:16px;border-radius:12px;border:1px solid #dde;background:#fff;color:#555;cursor:pointer">취소</button>
+        <button id="mes-defect-submit-btn" onclick="mesSubmitDefect()" style="padding:18px;font-size:16px;font-weight:800;border-radius:12px;border:none;background:#b91c1c;color:#fff;cursor:pointer">⚠️ 등록</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- 발주 이메일 붙여넣기 모달 -->
 <div class="ov-bg" id="po-paste-ov">
   <div class="ov-box" style="max-width:600px;max-height:85vh;overflow-y:auto">
@@ -2033,7 +2086,7 @@ function go(id){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.tb').forEach(b=>b.classList.remove('on'));
   document.getElementById('tab-'+id).classList.add('on');
-  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,qc:5,hist:6,ng:7,po:8};
+  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,qc:5,hist:6,ng:7,po:8,mes:9};
   document.querySelectorAll('.tb')[order[id]].classList.add('on');
   if(id==='inv'){initMS();renderInv();}
   if(id==='io') renderIOTable();
@@ -2043,6 +2096,7 @@ function go(id){
   if(id==='hist') renderHist();
   if(id==='ng'){renderNG();renderNGLog();initNGLogModel();}
   if(id==='po') renderPO();
+  if(id==='mes') renderMES();
 }
 function setIC(c){document.getElementById('inv-cat').value=c;initMS();renderInv();}
 
@@ -2902,6 +2956,7 @@ async function renderWO() {
         <button class="edit-btn" onclick="openWOTrace(${r.id})" title="전공정 추적">🔗</button>
         <button class="edit-btn" onclick="openWOProcess(${r.id})" title="공정별 작업일지">🏭</button>
         <button class="edit-btn" onclick="printWO(${r.id})" title="작업지시서 인쇄 (자재 요청/자재부서 서명란 포함)">🖨️</button>
+        <button class="edit-btn" onclick="printWOQR(${r.id})" title="QR 라벨 인쇄 (현장입력 탭에서 스캔용)">🔖</button>
         <button class="edit-btn" onclick="cycleWOStatus(${r.id},'${r.status||'대기'}')" title="상태 변경">🔁</button>
         ${isAdmin ? `<button class="edit-btn" onclick="deleteWO(${r.id})" title="삭제">🗑️</button>` : ''}
       </td>
@@ -5499,6 +5554,238 @@ function confirmDel(){
 }
 function closeOv(id){document.getElementById(id).classList.remove('show');}
 
+// ════════════════════════════════════════════════
+//  MES 현장입력 (생산실적 입력 / 불량 등록) — QR 스캔 우선, 검색은 대체 수단
+//  ✅ 실제 데이터 반영은 새로 만들지 않고 기존에 검증된 로직을 그대로 재사용한다:
+//     - 생산실적 입력 → openWOProd()/submitWOProd() (작업지시 탭의 "📈 실적입력"과 동일)
+//     - 불량 등록     → addNG() (완제품→NG 이동 시 쓰는 것과 같은, 불량 등록 전용 엔드포인트)
+// ════════════════════════════════════════════════
+let mesTarget = null;
+let mesQrScanner = null;
+
+async function renderMES() {
+  mesStopScan();
+  mesTarget = null;
+  document.getElementById('mes-select-box').style.display = 'block';
+  document.getElementById('mes-target-box').style.display = 'none';
+  document.getElementById('mes-defect-box').style.display = 'none';
+  const s = document.getElementById('mes-search'); if (s) s.value = '';
+  await loadWO();
+  renderMESList();
+}
+
+function renderMESList() {
+  const listEl = document.getElementById('mes-list');
+  if (!listEl) return;
+  const q = (document.getElementById('mes-search').value || '').toLowerCase().trim();
+  let rows = (WO || []).filter(r => r.status !== '완료');
+  if (q) rows = rows.filter(r =>
+    (r.orderNo||'').toLowerCase().includes(q) ||
+    (r.code||'').toLowerCase().includes(q) ||
+    (r.name||'').toLowerCase().includes(q)
+  );
+  rows = rows.slice(0, 30);
+  if (!rows.length) {
+    listEl.innerHTML = `<div style="text-align:center;color:#aaa;padding:20px;font-size:14px">${q ? '검색 결과가 없습니다.' : '진행 중인 작업지시가 없습니다.'}</div>`;
+    return;
+  }
+  listEl.innerHTML = rows.map(r => `
+    <div onclick="mesSelectWO(${r.id})" style="padding:14px 16px;border:1px solid #e5e7eb;border-radius:10px;cursor:pointer;background:#fff">
+      <div style="font-weight:700;font-size:15px;color:#1a1a2e">${r.orderNo||''} · ${r.name||''}</div>
+      <div style="font-size:12px;color:#888;margin-top:3px">${r.code||''} · LOT ${r.lot||'미지정'} · ${(+r.producedQty||0).toLocaleString()}/${(+r.planQty||0).toLocaleString()} ${r.unit||''} · ${r.status||'대기'}</div>
+    </div>
+  `).join('');
+}
+
+function mesSelectWO(id) {
+  const wo = (WO || []).find(r => r.id === id);
+  if (!wo) { alert('작업지시를 찾을 수 없습니다.'); return; }
+  mesTarget = wo;
+  mesStopScan();
+  document.getElementById('mes-select-box').style.display = 'none';
+  document.getElementById('mes-defect-box').style.display = 'none';
+  document.getElementById('mes-target-box').style.display = 'block';
+  const plan = +wo.planQty || 0, produced = +wo.producedQty || 0;
+  document.getElementById('mes-target-info').innerHTML =
+    `<strong style="font-size:18px">${wo.orderNo||''}</strong><br>${wo.name||''} <span style="color:#aaa;font-family:monospace;font-size:13px">${wo.code||''}</span><br>
+     계획 ${plan.toLocaleString()} ${wo.unit||''} · 실적 ${produced.toLocaleString()} ${wo.unit||''} · 잔여 ${Math.max(0,plan-produced).toLocaleString()} ${wo.unit||''}<br>
+     LOT: <span style="color:#1d4ed8;font-weight:700;font-family:monospace">${wo.lot||'미지정'}</span>`;
+}
+
+function mesClearTarget() {
+  mesTarget = null;
+  document.getElementById('mes-defect-box').style.display = 'none';
+  document.getElementById('mes-target-box').style.display = 'none';
+  document.getElementById('mes-select-box').style.display = 'block';
+  renderMESList();
+}
+
+function mesOpenProd() {
+  if (!mesTarget) return;
+  // ✅ 작업지시 탭의 "📈 실적입력"과 완전히 동일한 로직(자재 미투입 경고, 계획초과
+  //    확인, 산출LOT 이력 기록 등)을 그대로 재사용 — 현장입력용으로 따로 만들지 않는다.
+  openWOProd(mesTarget.id);
+}
+
+function mesOpenDefect() {
+  if (!mesTarget) return;
+  document.getElementById('mes-target-box').style.display = 'none';
+  document.getElementById('mes-defect-box').style.display = 'block';
+  document.getElementById('mes-defect-info').innerHTML =
+    `<strong style="font-size:18px">${mesTarget.orderNo||''}</strong> · ${mesTarget.name||''}<br>LOT <span style="font-family:monospace;font-weight:700">${mesTarget.lot||'미지정'}</span>`;
+  document.getElementById('mes-defect-qty').value = '';
+  document.getElementById('mes-defect-reason').value = '';
+  document.getElementById('mes-defect-err').style.display = 'none';
+}
+
+function mesCancelDefect() {
+  document.getElementById('mes-defect-box').style.display = 'none';
+  document.getElementById('mes-target-box').style.display = 'block';
+}
+
+async function mesSubmitDefect() {
+  const errEl = document.getElementById('mes-defect-err');
+  errEl.style.display = 'none';
+  if (!mesTarget) return;
+  const qty = parseFloat(document.getElementById('mes-defect-qty').value);
+  if (isNaN(qty) || qty <= 0) { errEl.textContent = '불량 수량을 올바르게 입력해주세요.'; errEl.style.display = 'block'; return; }
+  const reason = document.getElementById('mes-defect-reason').value.trim();
+  const btn = document.getElementById('mes-defect-submit-btn');
+  btn.disabled = true; btn.textContent = '저장 중...';
+
+  const ngLogEntry = {
+    id: Date.now(), type: 'ng-in', code: mesTarget.code, name: mesTarget.name,
+    cat: mesTarget.cat || 'TP', unit: mesTarget.unit, qty,
+    note: `[작업지시 ${mesTarget.orderNo||''} 현장입력] 불량 등록`,
+    reason, dt: vnDt(), user: CURRENT_USER || ''
+  };
+  let res = await api('addNG', { ...ngLogEntry, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('addNG', { ...ngLogEntry, token: ADMIN_TOKEN }); // 1회 재시도
+  btn.disabled = false; btn.textContent = '⚠️ 등록';
+
+  if (!res || !res.ok) {
+    errEl.textContent = '서버 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류');
+    errEl.style.display = 'block';
+    return;
+  }
+  if (typeof renderNG === 'function') renderNG();
+  if (typeof renderNGLog === 'function') renderNGLog();
+  if (typeof initNGModel === 'function') initNGModel();
+  if (typeof initNGLogModel === 'function') initNGLogModel();
+  alert(`✅ 불량 ${qty.toLocaleString()} ${mesTarget.unit||''} 등록 완료`);
+  mesCancelDefect();
+}
+
+// ── QR 스캔 (카메라, jsQR 기반의 qr-scanner 라이브러리 사용) ──
+let mesQrLibLoading = null;
+function mesLoadQrLib() {
+  if (window.QrScanner) return Promise.resolve();
+  if (mesQrLibLoading) return mesQrLibLoading;
+  mesQrLibLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner.umd.min.js';
+    s.onload = () => {
+      window.QrScanner.WORKER_PATH = 'https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner-worker.min.js';
+      resolve();
+    };
+    s.onerror = () => reject(new Error('QR 스캔 라이브러리 로드 실패'));
+    document.head.appendChild(s);
+  });
+  return mesQrLibLoading;
+}
+
+async function mesStartScan() {
+  try {
+    await mesLoadQrLib();
+  } catch (e) {
+    alert('QR 스캔 기능을 불러오지 못했습니다. 인터넷 연결을 확인해주세요.\n(검색으로도 작업지시를 찾을 수 있습니다)');
+    return;
+  }
+  const video = document.getElementById('mes-video');
+  document.getElementById('mes-scan-panel').style.display = 'block';
+  document.getElementById('mes-scan-status').textContent = '카메라를 QR코드에 비춰주세요';
+  if (mesQrScanner) { try { await mesQrScanner.start(); } catch(e) {} return; }
+  mesQrScanner = new QrScanner(video, result => {
+    const text = (typeof result === 'string' ? result : (result && result.data) || '').trim();
+    mesHandleScan(text);
+  }, { highlightScanRegion: true, highlightCodeOutline: true, maxScansPerSecond: 5 });
+  try {
+    await mesQrScanner.start();
+  } catch (e) {
+    document.getElementById('mes-scan-status').textContent = '카메라를 시작할 수 없습니다. 브라우저의 카메라 권한을 확인해주세요.';
+  }
+}
+
+function mesStopScan() {
+  if (mesQrScanner) { try { mesQrScanner.stop(); } catch(e) {} }
+  const panel = document.getElementById('mes-scan-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function mesHandleScan(text) {
+  if (!text) return;
+  // QR 안에는 작업지시번호(orderNo)를 그대로 넣는다 (printWOQR로 인쇄한 라벨과 짝이 맞음)
+  const code = text.replace(/^WO:/i, '').trim();
+  const wo = (WO || []).find(r => String(r.orderNo) === code || String(r.id) === code);
+  if (!wo) {
+    const st = document.getElementById('mes-scan-status');
+    if (st) st.textContent = `⚠️ "${code}" 에 해당하는 작업지시를 찾을 수 없습니다. 계속 스캔 중...`;
+    return;
+  }
+  mesStopScan();
+  mesSelectWO(wo.id);
+}
+
+// ── QR 라벨 생성/인쇄 (작업지시 목록 🔖 버튼) ──
+let mesQrGenLibLoading = null;
+function mesLoadQrGenLib() {
+  if (window.QRCode) return Promise.resolve();
+  if (mesQrGenLibLoading) return mesQrGenLibLoading;
+  mesQrGenLibLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('QR 코드 생성 라이브러리 로드 실패'));
+    document.head.appendChild(s);
+  });
+  return mesQrGenLibLoading;
+}
+
+async function printWOQR(id) {
+  const wo = (WO || []).find(w => w.id === id);
+  if (!wo) return;
+  try { await mesLoadQrGenLib(); } catch (e) { alert('QR 코드 생성 기능을 불러오지 못했습니다. 인터넷 연결을 확인해주세요.'); return; }
+
+  // qrcodejs는 컨테이너 DOM에 직접 그리는 방식이라, 화면 밖 임시 컨테이너에 그린 뒤
+  // 그 안의 <img>/<canvas>를 데이터 URL로 뽑아서 인쇄 창에 넣는다.
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+  document.body.appendChild(holder);
+  new QRCode(holder, { text: String(wo.orderNo || wo.id), width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
+  await new Promise(r => setTimeout(r, 60));
+  const img = holder.querySelector('img') || holder.querySelector('canvas');
+  const src = img && (img.tagName === 'CANVAS' ? img.toDataURL('image/png') : img.src);
+  document.body.removeChild(holder);
+  if (!src) { alert('QR 코드 생성에 실패했습니다.'); return; }
+
+  const w = window.open('', '_blank', 'width=420,height=560');
+  if (!w) { alert('팝업이 차단되었습니다. 브라우저의 팝업 차단을 해제해주세요.'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>QR 라벨 - ${wo.orderNo||''}</title>
+    <style>body{font-family:-apple-system,"Malgun Gothic",sans-serif;text-align:center;padding:24px}
+    img{width:220px;height:220px;margin:12px auto}
+    .t1{font-size:20px;font-weight:800;margin-top:6px}
+    .t2{font-size:14px;color:#444;margin-top:4px}
+    .t3{font-size:12px;color:#888;font-family:monospace;margin-top:2px}
+    @media print{body{padding:0}}</style></head><body>
+    <img src="${src}">
+    <div class="t1">${wo.orderNo||''}</div>
+    <div class="t2">${wo.name||''}</div>
+    <div class="t3">${wo.code||''}${wo.lot?(' · LOT '+wo.lot):''}</div>
+    <script>window.onload=()=>{setTimeout(()=>window.print(),200)}<\/script>
+    </body></html>`);
+  w.document.close();
+}
+
 function renderHist(){
   const q=(document.getElementById('hist-q').value||'').toLowerCase();
   const tp=document.getElementById('hist-tp').value;
@@ -6381,6 +6668,11 @@ function applyRoleUI() {
         b.style.opacity = '0.4';
         b.style.pointerEvents = 'none';
         b.title = '열람 전용 - 입출고 등록 불가';
+      }
+      if (b.textContent.includes('현장입력')) {
+        b.style.opacity = '0.4';
+        b.style.pointerEvents = 'none';
+        b.title = '열람 전용 - 현장입력 불가';
       }
     });
     const blk = document.getElementById('io-viewer-block');
