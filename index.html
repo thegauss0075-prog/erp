@@ -1451,9 +1451,13 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 
     <div id="mes-target-box" style="display:none">
       <div id="mes-target-info" style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:10px;padding:16px;font-size:16px;line-height:1.7;margin-bottom:16px"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-        <button onclick="mesOpenProd()" style="padding:26px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#166534;color:#fff;cursor:pointer;line-height:1.4">📈<br>생산실적 입력</button>
-        <button onclick="mesOpenDefect()" style="padding:26px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#b91c1c;color:#fff;cursor:pointer;line-height:1.4">⚠️<br>불량 등록</button>
+      <!-- ✅ 실제 공정 순서대로 배치: 자재투입(생산 시작 전) → 생산실적 입력(생산 중/후)
+           → 불량 등록(발생 시점마다). 세 버튼 모두 새 로직이 아니라, 이미 검증된 기존
+           화면(전공정 추적 / 실적입력 / addNG)을 그대로 재사용한다. -->
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:14px">
+        <button onclick="mesOpenMaterial()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#92400e;color:#fff;cursor:pointer;line-height:1.4">📦 자재투입 (전공정 추적)</button>
+        <button onclick="mesOpenProd()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#166534;color:#fff;cursor:pointer;line-height:1.4">📈 생산실적 입력</button>
+        <button onclick="mesOpenDefect()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#b91c1c;color:#fff;cursor:pointer;line-height:1.4">⚠️ 불량 등록</button>
       </div>
       <button onclick="mesClearTarget()" style="width:100%;padding:13px;font-size:15px;border-radius:10px;border:1px solid #dde;background:#fff;color:#555;cursor:pointer">↩ 다른 작업지시 선택</button>
     </div>
@@ -5660,6 +5664,14 @@ function mesOpenProd() {
   // ✅ 작업지시 탭의 "📈 실적입력"과 완전히 동일한 로직(자재 미투입 경고, 계획초과
   //    확인, 산출LOT 이력 기록 등)을 그대로 재사용 — 현장입력용으로 따로 만들지 않는다.
   openWOProd(mesTarget.id);
+}
+
+// ✅ MES 2단계(자재투입): 작업지시 목록의 "🔗 전공정 추적" 모달을 그대로 연다.
+//    BOM 기반 자동 소요량 계산, 재고 있는 자재 검색, 선입선출(FIFO) 자동 출고 등
+//    이미 검증된 로직을 그대로 재사용한다 — 현장입력용으로 따로 만들지 않는다.
+function mesOpenMaterial() {
+  if (!mesTarget) return;
+  openWOTrace(mesTarget.id);
 }
 
 // ✅ MES 1단계(수입검사): 품질검사 탭의 "➕ 품질검사 기록 추가" 모달을 그대로 연다.
