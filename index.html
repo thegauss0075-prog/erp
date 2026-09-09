@@ -5730,6 +5730,25 @@ async function mesOpenProcessInspection() {
   }
   updateQCCoreMakerVisibility();
   updateQCAttachmentLabel();
+  // ✅ 공정검사는 지금 생산 중인 이 작업지시의 LOT을 그대로 따라가야 한다 — 새 LOT을
+  //    만들면 같은 배치인데 LOT이 갈라져서 추적이 끊긴다(출하검사가 완료된 작업지시의
+  //    LOT을 그대로 쓰는 것과 같은 이유, acPickQCWO 참고). updateQCCoreMakerVisibility()가
+  //    LOT 생성 버튼을 다시 보이게 만들 수 있으므로, 반드시 그 다음에 마지막으로 덮어쓴다.
+  const lotEl = document.getElementById('qc-lot');
+  const genBtn = document.getElementById('qc-lot-gen-btn');
+  if (mesTarget.lot) {
+    lotEl.value = mesTarget.lot;
+    lotEl.readOnly = true;
+    lotEl.style.background = '#f5f6f8';
+    if (genBtn) genBtn.style.display = 'none';
+    document.getElementById('qc-lot-label').firstChild.textContent = '작업지시의 LOT (자동 채워짐) ';
+  } else {
+    // 예전 방식으로 등록되어 LOT이 없는 작업지시 — 직접 입력할 수 있게 열어둔다
+    lotEl.value = '';
+    lotEl.readOnly = false;
+    lotEl.style.background = '#fff';
+    lotEl.placeholder = '⚠️ 이 작업지시엔 LOT이 없습니다 (직접 입력해주세요)';
+  }
 }
 
 function mesOpenDefect() {
@@ -5809,7 +5828,18 @@ async function mesStartScan() {
   const video = document.getElementById('mes-video');
   document.getElementById('mes-scan-panel').style.display = 'block';
   document.getElementById('mes-scan-status').textContent = '카메라를 QR코드에 비춰주세요';
-  if (mesQrScanner) { try { await mesQrScanner.start(); } catch(e) {} return; }
+  // ✅ http로 접속했거나 브라우저가 카메라 API 자체를 지원하지 않으면 권한 요청까지도
+  //    못 가고 여기서 막힌다 — 이 경우 "권한을 확인해주세요"라고 하면 사용자가 계속
+  //    권한만 들여다보게 되므로 원인을 구분해서 안내한다.
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    document.getElementById('mes-scan-status').textContent = '이 브라우저 또는 접속 방식(http)에서는 카메라를 사용할 수 없습니다. https 주소로 접속했는지 확인해주세요.';
+    return;
+  }
+  if (mesQrScanner) {
+    try { await mesQrScanner.start(); }
+    catch (e) { document.getElementById('mes-scan-status').textContent = mesCameraErrorMessage(e); }
+    return;
+  }
   mesQrScanner = new QrScanner(video, result => {
     const text = (typeof result === 'string' ? result : (result && result.data) || '').trim();
     mesHandleScan(text);
@@ -5817,8 +5847,28 @@ async function mesStartScan() {
   try {
     await mesQrScanner.start();
   } catch (e) {
-    document.getElementById('mes-scan-status').textContent = '카메라를 시작할 수 없습니다. 브라우저의 카메라 권한을 확인해주세요.';
+    document.getElementById('mes-scan-status').textContent = mesCameraErrorMessage(e);
   }
+}
+
+// ✅ 카메라 시작 실패 원인별로 다른 안내 — "권한을 확인해주세요"라는 문구 하나로는
+//    권한 문제가 아닌 경우(카메라가 없음/다른 앱이 점유 중)에 사용자가 계속 권한
+//    설정만 들여다보게 되어 헷갈린다. 브라우저의 DOMException.name으로 구분한다.
+function mesCameraErrorMessage(e) {
+  const name = e && e.name;
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+    return '카메라 권한이 거부되어 있습니다. 주소창의 자물쇠(또는 카메라) 아이콘을 눌러 이 사이트의 카메라 접근을 허용한 뒤 다시 시도해주세요.';
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return '이 기기에서 사용 가능한 카메라를 찾을 수 없습니다. 검색으로 작업지시를 찾아주세요.';
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return '카메라가 다른 앱에서 사용 중입니다. 카메라를 쓰는 다른 앱(화상회의 등)을 끄고 다시 시도해주세요.';
+  }
+  if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+    return '요청한 카메라 설정을 지원하지 않습니다. 기기의 다른 카메라를 사용해보세요.';
+  }
+  return '카메라를 시작할 수 없습니다. 브라우저의 카메라 권한을 확인해주세요.';
 }
 
 function mesStopScan() {
