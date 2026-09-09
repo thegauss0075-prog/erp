@@ -1130,6 +1130,40 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
         </div>
       </div>
 
+      <!-- ✅ 품목별 공정순서(라우팅) — 작업표준서 문서 자체는 관리하지 않고(현장에 실물
+           비치), 이 제품이 어떤 공정을 어떤 순서로 거치는지만 등록한다. 등록해두면
+           현장입력의 "공정별 작업일지"에서 이 제품에 해당하는 공정만 순서대로 뜬다. -->
+      <div style="background:#f5f3ff;border-radius:8px;padding:10px;margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleRoutingPanel()">
+          <div style="font-size:12px;font-weight:700;color:#5b21b6">🧭 공정순서(라우팅) 설정 — 이 제품이 거치는 공정과 순서</div>
+          <span id="routing-toggle-icon" style="font-size:11px;color:#5b21b6">펼치기 ▾</span>
+        </div>
+        <div id="routing-panel" style="display:none;margin-top:8px">
+          <div id="routing-list" style="margin-bottom:8px"></div>
+          <div style="font-size:11px;color:#888;margin-bottom:6px">등록해두면 현장입력의 "공정별 작업일지"에서 이 제품에 해당하는 공정만 순서대로 표시됩니다. (작업표준서는 현장에 실물로 비치)</div>
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:6px;margin-bottom:6px">
+            <select id="routing-process-name" onchange="onRoutingProcessNameChange()">
+              <option value="권선">권선</option>
+              <option value="디핑">디핑</option>
+              <option value="조립1">조립1</option>
+              <option value="조립2">조립2</option>
+              <option value="조립3">조립3</option>
+              <option value="경화">경화</option>
+              <option value="EOL검사">EOL검사</option>
+              <option value="DCB">DCB</option>
+              <option value="본딩">본딩</option>
+              <option value="기타">기타 (직접 입력)</option>
+            </select>
+            <input id="routing-seq" type="number" placeholder="순서" min="1">
+          </div>
+          <input id="routing-process-name-custom" placeholder="공정명 직접 입력" style="display:none;width:100%;box-sizing:border-box;margin-bottom:6px">
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#5b21b6;margin-bottom:8px;cursor:pointer">
+            <input type="checkbox" id="routing-required" checked> 필수 공정 (해제 시 선택 공정으로 표시)
+          </label>
+          <button onclick="addRoutingStepUI()" style="padding:6px 14px;border-radius:6px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;font-size:12px;cursor:pointer;font-weight:600">➕ 공정 추가</button>
+        </div>
+      </div>
+
       <div style="background:#fffbeb;border-radius:8px;padding:10px">
         <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px">⚡ 재고 있는 자재에서 선택해서 출고 (선입선출 — 가장 오래된 LOT이 자동으로 사용됩니다)</div>
 
@@ -4290,14 +4324,21 @@ async function openWOTrace(id) {
   document.getElementById('wo-trace-ngref-toggle').checked = false;
   document.getElementById('wo-trace-ngref-select').style.display = 'none';
   document.getElementById('wo-trace-ngref-select').innerHTML = '';
+  // ✅ 다른 작업지시(다른 품목)를 열 때 이전 품목에서 입력만 하고 등록은 안 한
+  //    라우팅 직접입력 값이 그대로 남아있지 않도록 초기화
+  document.getElementById('routing-process-name-custom').value = '';
+  document.getElementById('routing-process-name-custom').style.display = 'none';
+  document.getElementById('routing-required').checked = true;
 
   await loadWOMaterials();
   await loadWOOutputLots();
   await loadBOM();
+  await loadRouting();
   await loadQC(); // ✅ 투입자재 LOT과 수입검사 기록을 매칭해서 첨부파일 링크를 보여주기 위해 필요
   renderWOTraceLists();
   renderWOMatBrowse();
   renderBOMList();
+  renderRoutingList();
   document.getElementById('wo-trace-ov').classList.add('show');
 }
 
@@ -4328,6 +4369,23 @@ function renderWOTraceNgRefSelect() {
 //  작업지시 계획수량에 맞춰 투입 자재 수량을 자동으로 계산/입력한다.
 // ══════════════════════════════════════════════════════════
 let BOM = [];
+let ROUTING = [];
+
+// ✅ 공정별 작업일지(MES 5단계)의 공정명 선택지 마스터 목록 — 라우팅 등록 시에도
+//    똑같은 목록을 재사용해서 공정명 표기가 서로 어긋나지 않게 한다.
+const PROCESS_NAME_MASTER = ['권선','디핑','조립1','조립2','조립3','경화','EOL검사','DCB','본딩'];
+
+async function loadRouting() {
+  if (!(API_URL || IS_GAS)) return;
+  const res = await api('getRouting', {});
+  if (res && res.ok) ROUTING = res.data || [];
+}
+
+// ✅ 이 품목(코드+구분)에 등록된 라우팅(공정순서)을 순서대로 반환. 없으면 빈 배열.
+function routingFor(code, cat) {
+  return ROUTING.filter(r => r.productCode === code && r.productCat === cat)
+                .sort((a,b) => (+a.seq||0) - (+b.seq||0));
+}
 
 // ✅ 근본 원인: 완제품(TP)과 반제품(BTP)이 "같은 품목 코드"를 그대로 공유하는 코드
 //    체계라서(예: 30KW OUT L3는 완제품/반제품 둘 다 코드가 ML27A040127A), BOM을
@@ -4460,6 +4518,76 @@ async function deleteBOMItemUI(id) {
   if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
   await loadBOM();
   renderBOMList();
+}
+
+// ══════════════════════════════════════════════════════════
+//  품목별 공정순서(라우팅) — 제품마다 실제로 거치는 공정과 그 순서를 등록해두면,
+//  현장입력의 "공정별 작업일지"에서 그 제품에 해당하는 공정만 순서대로 뜬다.
+//  작업표준서 문서 자체는 관리하지 않는다 (현장에 실물로 비치).
+// ══════════════════════════════════════════════════════════
+function toggleRoutingPanel() {
+  const panel = document.getElementById('routing-panel');
+  const icon = document.getElementById('routing-toggle-icon');
+  const willShow = panel.style.display === 'none';
+  panel.style.display = willShow ? 'block' : 'none';
+  icon.textContent = willShow ? '접기 ▴' : '펼치기 ▾';
+}
+
+function onRoutingProcessNameChange() {
+  const sel = document.getElementById('routing-process-name').value;
+  document.getElementById('routing-process-name-custom').style.display = sel === '기타' ? 'block' : 'none';
+}
+
+function renderRoutingList() {
+  if (!woTraceTarget) return;
+  const steps = routingFor(woTraceTarget.code, woTraceTarget.cat);
+  const listEl = document.getElementById('routing-list');
+  listEl.innerHTML = steps.length ? steps.map(r => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #ede9fe;font-size:12px">
+      <span><strong style="color:#5b21b6">${r.seq}.</strong> ${r.processName}${String(r.required) === 'N' ? ' <span style="color:#aaa;font-size:10px">(선택)</span>' : ''}</span>
+      ${isAdmin ? `<button onclick="deleteRoutingStepUI(${r.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>` : ''}
+    </div>`).join('') : `<div style="color:#aaa;font-size:11px">아직 등록된 공정순서가 없습니다. 등록 전까지는 공정별 작업일지에 전체 공정 목록이 표시됩니다.</div>`;
+
+  // ✅ 다음 순서 번호를 자동으로 제안 (마지막 순서 + 1)
+  const nextSeq = steps.length ? (Math.max(...steps.map(s => +s.seq || 0)) + 1) : 1;
+  const seqEl = document.getElementById('routing-seq');
+  if (seqEl) seqEl.value = nextSeq;
+}
+
+async function addRoutingStepUI() {
+  if (!woTraceTarget) return;
+  const errEl = document.getElementById('wo-trace-err');
+  errEl.style.display = 'none';
+
+  const selVal = document.getElementById('routing-process-name').value;
+  const processName = selVal === '기타' ? document.getElementById('routing-process-name-custom').value.trim() : selVal;
+  const seq = parseInt(document.getElementById('routing-seq').value, 10) || 0;
+  const required = document.getElementById('routing-required').checked;
+
+  if (!processName) { errEl.textContent = '공정명을 입력하세요.'; errEl.style.display = 'block'; return; }
+  if (!seq || seq <= 0) { errEl.textContent = '순서를 1 이상의 숫자로 입력하세요.'; errEl.style.display = 'block'; return; }
+
+  const body = {
+    productCode: woTraceTarget.code, productName: woTraceTarget.name, productCat: woTraceTarget.cat,
+    seq, processName, required, token: ADMIN_TOKEN, user: CURRENT_USER || ''
+  };
+  let res = await api('addRoutingItem', body);
+  if (!res || !res.ok) res = await api('addRoutingItem', body);
+  if (!res || !res.ok) { errEl.textContent = '공정순서 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display = 'block'; return; }
+
+  document.getElementById('routing-process-name-custom').value = '';
+  await loadRouting();
+  renderRoutingList();
+}
+
+async function deleteRoutingStepUI(id) {
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (!confirm('이 공정순서를 삭제하시겠습니까?')) return;
+  let res = await api('deleteRoutingItem', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) res = await api('deleteRoutingItem', { id, token: ADMIN_TOKEN });
+  if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
+  await loadRouting();
+  renderRoutingList();
 }
 
 // ✅ 계획수량 × 1개당 소요량 = 필요 수량을 계산해서, 재고 목록의 해당 자재 수량칸에
@@ -4937,13 +5065,26 @@ async function loadProcessParams() {
   if (res && res.ok) PROCESS_PARAMS = res.data || [];
 }
 
+// ✅ 이 품목에 라우팅(공정순서)이 등록되어 있으면 그 공정만, 순서대로 선택지에
+//    보여준다. 아직 라우팅이 없는 품목은 기존처럼 전체 공정 목록을 그대로 보여줘서
+//    (하위호환) 라우팅 등록 여부와 무관하게 공정별 작업일지를 계속 쓸 수 있게 한다.
+function renderWPProcessNameOptions(wo) {
+  const sel = document.getElementById('wp-process-name');
+  const steps = routingFor(wo.code, wo.cat);
+  const names = steps.length ? steps.map(s => s.processName) : PROCESS_NAME_MASTER;
+  sel.innerHTML = names.map(n => `<option value="${n}">${n}</option>`).join('') +
+    `<option value="기타">기타 (직접 입력)</option>`;
+}
+
 async function openWOProcess(id) {
   const wo = WO.find(r => r.id === id); if (!wo) return;
   woProcessTarget = wo;
   expandedProcessLogId = null;
   document.getElementById('wo-process-info').innerHTML = `<strong>${wo.orderNo}</strong> · ${wo.name} (${wo.code})`;
 
-  document.getElementById('wp-process-name').value = '권선';
+  await loadRouting(); // ✅ 이 품목에 등록된 공정순서가 있으면 그 공정만 선택지로 보여준다
+  renderWPProcessNameOptions(wo);
+  document.getElementById('wp-process-name').selectedIndex = 0;
   document.getElementById('wp-process-name-custom').value = '';
   document.getElementById('wp-process-name-custom').style.display = 'none';
   document.getElementById('wp-date').value = new Date().toISOString().slice(0,10);
