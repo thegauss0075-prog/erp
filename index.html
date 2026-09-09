@@ -1494,6 +1494,14 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
          만들지 않고 품질검사 탭의 "➕ 품질검사 기록 추가" 모달(이미 검증됨, 수입검사가
          기본값)을 그대로 재사용한다 — 합격 시 자동 입고, 원자재(KR) 첨부파일 필수 등. -->
     <button onclick="mesOpenInspection()" style="width:100%;padding:22px 10px;font-size:19px;font-weight:800;border-radius:14px;border:none;background:#0d9488;color:#fff;cursor:pointer;margin-bottom:8px">🔬 수입검사 등록 (원자재 입고 시)</button>
+
+    <!-- ✅ MES 마지막 단계: 출하검사 — 이미 "완료"된 작업지시를 검사하는 것이므로
+         (완료된 지시서는 아래 작업지시 검색 목록에서 일부러 제외돼 있음), 수입검사와
+         마찬가지로 작업지시 선택과 무관하게 최상단에 따로 둔다. 새 로직을 만들지 않고
+         품질검사 탭의 "➕ 품질검사 기록 추가" 모달을 "출하검사" 유형으로 그대로 연다 —
+         완료된 지시서 자동완성 검색(acSearchQCWO), 합격 시 자동 완제품 입고까지 기존
+         로직 그대로 재사용. -->
+    <button onclick="mesOpenShipInspection()" style="width:100%;padding:22px 10px;font-size:19px;font-weight:800;border-radius:14px;border:none;background:#7c3aed;color:#fff;cursor:pointer;margin-bottom:8px">📦 출하검사 등록 (생산 완료 후)</button>
     <div style="text-align:center;color:#aaa;font-size:12px;margin:2px 0 18px">— 작업지시와 무관하게 언제든 등록 가능 —</div>
     <div style="border-top:1px dashed #dde;margin-bottom:16px"></div>
 
@@ -6006,6 +6014,15 @@ function mesOpenProcessLog() {
 //    기존에 검증된 로직을 그대로 탄다.
 function mesOpenInspection() {
   openAddQC();
+}
+
+// ✅ MES 마지막 단계(출하검사): 품질검사 탭의 "➕ 품질검사 기록 추가" 모달을
+//    "출하검사" 유형으로 그대로 연다. openAddQC('출하검사')가 onQCTypeChange()를
+//    거치면서 화면을 자동으로 "완료된 작업지시 검색" 모드로 바꿔주므로(품목 직접
+//    검색이 아니라 acSearchQCWO/acPickQCWO로 완료 지시서를 골라 LOT·수량 자동 채움),
+//    여기서는 새 로직 없이 그대로 위임만 한다.
+function mesOpenShipInspection() {
+  openAddQC('출하검사');
 }
 
 // ✅ MES 공정검사(중간검사): 이미 선택된 작업지시가 있으므로, 품질검사 모달을
