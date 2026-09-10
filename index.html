@@ -384,6 +384,12 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:#b91c1c">⚠️ 안전재고 미달 품목 <span id="d-low-stock-cnt" style="font-weight:400;color:#888;font-size:12px"></span></div>
     <div id="d-low-stock"></div>
   </div>
+  <div id="d-po-shortage-wrap" style="display:none;background:#fff;border:1.5px solid #fbbf24;border-radius:12px;padding:1.1rem;margin-bottom:1.25rem">
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px;color:#92400e">🧮 발주 잔량 대비 부족 자재 <span id="d-po-shortage-cnt" style="font-weight:400;color:#888;font-size:12px"></span></div>
+    <div style="font-size:11px;color:#aaa;margin-bottom:10px">완제품 발주 잔량 × BOM(자재소요량) 기준으로 계산한 예상 부족 수량입니다</div>
+    <div id="d-po-shortage"></div>
+    <div id="d-po-shortage-nobom" style="margin-top:8px;font-size:11px;color:#aaa"></div>
+  </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem">
     <div style="background:#fff;border:1px solid #e0e0e8;border-radius:12px;padding:1.1rem"><div style="font-size:14px;font-weight:700;margin-bottom:10px">완제품 현황</div><div id="tp-bars"></div></div>
     <div style="background:#fff;border:1px solid #e0e0e8;border-radius:12px;padding:1.1rem"><div style="font-size:14px;font-weight:700;margin-bottom:10px">불량(NG) 상위</div><div id="ng-bars"></div></div>
@@ -2558,12 +2564,8 @@ async function renderPO() {
 }
 
 // ✅ 품목코드별로 발주들을 묶어서 "총 발주수량"과 "총 잔량"을 보여준다.
-function renderPOSummary() {
-  const body = document.getElementById('po-summary-body');
-  const emptyEl = document.getElementById('po-summary-empty');
-  if (!PO.length) { body.innerHTML = ''; emptyEl.style.display = 'block'; return; }
-  emptyEl.style.display = 'none';
-
+//    (발주관리 요약 화면과 대시보드 "부족 자재" 카드가 이 그룹핑을 함께 사용한다)
+function groupPOByItem() {
   const grouped = {};
   PO.forEach(r => {
     const key = r.itemCode;
@@ -2573,14 +2575,95 @@ function renderPOSummary() {
     grouped[key].totalQty += poQty;
     grouped[key].totalRemain += remain;
   });
+  return Object.values(grouped);
+}
 
-  const rows = Object.values(grouped).sort((a,b) => b.totalRemain - a.totalRemain);
+function renderPOSummary() {
+  const body = document.getElementById('po-summary-body');
+  const emptyEl = document.getElementById('po-summary-empty');
+  if (!PO.length) { body.innerHTML = ''; emptyEl.style.display = 'block'; return; }
+  emptyEl.style.display = 'none';
+
+  const rows = groupPOByItem().sort((a,b) => b.totalRemain - a.totalRemain);
   body.innerHTML = rows.map(g => `<tr>
     <td style="font-family:monospace;font-size:11px">${g.itemCode}</td>
     <td>${g.itemName}</td>
     <td style="text-align:right">${g.totalQty.toLocaleString()}</td>
     <td style="text-align:right;font-weight:700;color:${g.totalRemain>0?'#b45309':'#166534'}">${g.totalRemain.toLocaleString()}</td>
   </tr>`).join('');
+}
+
+// ✅ "총 발주 잔량 대비 부족 자재 현황" (대시보드용, MRP 방식)
+//    완제품(TP) 발주 잔량 × BOM(1개당 자재 소요량)으로 "이 발주들을 다 만들려면
+//    자재가 얼마나 필요한지"를 계산한 뒤, 현재 자재 재고와 비교해서 부족한 자재만 반환한다.
+//    ※ BOM은 반제품(BTP, 권선 공정) 단계와 완제품(TP, 최종 조립) 단계가 따로 등록될 수 있는데
+//      (effectiveBOMCat 참고), 여기서는 "완제품을 만드는 데 바로 투입되는 자재"만 계산 대상으로
+//      삼는다 — 반제품 자체 재고가 이미 있을 수 있어 권선 단계 자재까지 역산하는 건 별도의
+//      다단계 MRP 영역이라 이번 기능 범위에서는 제외한다 (품목별 BOM 미설정은 별도로 안내).
+function computePOMaterialShortage() {
+  const poItems = groupPOByItem().filter(g => g.totalRemain > 0);
+  const need = {}; // key: materialCode|materialCat
+  const noBom = [];
+
+  poItems.forEach(g => {
+    const boms = BOM.filter(b => b.productCode === g.itemCode && effectiveBOMCat(b) === 'TP');
+    if (!boms.length) { noBom.push(g); return; }
+    boms.forEach(b => {
+      const key = b.materialCode + '|' + b.materialCat;
+      if (!need[key]) need[key] = { materialCode: b.materialCode, materialName: b.materialName, materialCat: b.materialCat, materialUnit: b.materialUnit, needQty: 0 };
+      need[key].needQty += (+b.qtyPerUnit || 0) * g.totalRemain;
+    });
+  });
+
+  const catMap = { TP: DB.tp, BTP: DB.btp, KR: DB.kr, VN: DB.vn, VTTH: DB.vtth };
+  const shortages = Object.values(need).map(m => {
+    const arr = catMap[m.materialCat] || [];
+    const item = arr.find(r => r.code === m.materialCode);
+    const cur = item ? (+item.cur || 0) : 0;
+    return { ...m, cur, shortQty: m.needQty - cur };
+  }).filter(m => m.shortQty > 0.0001)
+    .sort((a, b) => b.shortQty - a.shortQty);
+
+  return { shortages, noBom };
+}
+
+// ✅ 대시보드의 "발주 잔량 대비 부족 자재" 카드를 그린다. (데이터는 이미 로드된
+//    PO/BOM/DB를 재사용하고, 이 함수 자체는 순수 렌더링만 담당한다)
+function renderPOShortageCard() {
+  const wrap = document.getElementById('d-po-shortage-wrap');
+  if (!wrap) return;
+  const { shortages, noBom } = computePOMaterialShortage();
+  const noBomEl = document.getElementById('d-po-shortage-nobom');
+  if (!shortages.length) {
+    wrap.style.display = 'none';
+    if (noBomEl) noBomEl.textContent = '';
+    return;
+  }
+  wrap.style.display = 'block';
+  const cntEl = document.getElementById('d-po-shortage-cnt');
+  if (cntEl) cntEl.textContent = `${shortages.length}건`;
+  const fmt = v => (typeof v === 'number' && v % 1) ? v.toFixed(2) : v.toLocaleString();
+  document.getElementById('d-po-shortage').innerHTML = shortages.map(m => {
+    const unit = m.materialUnit || '';
+    return `<div onclick="go('inv');document.getElementById('inv-q').value='${m.materialCode}';renderInv()" style="cursor:pointer;padding:8px 0;border-bottom:1px solid #fde68a">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+        <span style="font-size:13px;color:#333"><span class="badge ${CB[m.materialCat]}" style="margin-right:6px">${CL[m.materialCat]}</span>${m.materialName} <span style="color:#aaa;font-size:11px;font-family:monospace">${m.materialCode}</span></span>
+        <span style="font-size:13px;font-weight:700;color:#92400e;flex-shrink:0;margin-left:8px">부족 ${fmt(m.shortQty)} ${unit}</span>
+      </div>
+      <div style="font-size:11px;color:#999">필요 ${fmt(m.needQty)}${unit} · 현재고 ${fmt(m.cur)}${unit}</div>
+    </div>`;
+  }).join('');
+  if (noBomEl) {
+    noBomEl.textContent = noBom.length ? `⚠️ BOM(자재소요량) 미설정: ${noBom.map(g => g.itemName || g.itemCode).join(', ')} — 이 품목은 계산에서 제외되었습니다.` : '';
+  }
+}
+
+// ✅ 대시보드가 열릴 때 PO/BOM을 최신으로 불러온 뒤 부족 자재 카드를 새로 그린다.
+//    (initDashboard는 여러 곳에서 동기 함수로 호출되므로, 이 함수는 별도로 비동기 실행한다)
+async function refreshPOShortageCard() {
+  if (!(API_URL || IS_GAS)) return;
+  await Promise.all([loadPO(), loadBOM()]);
+  renderPOShortageCard();
 }
 
 // ✅ SOLUM 발주 현황 엑셀(No, 운영조직, ... SAP 발주 번호, 항번, ... 품목 코드, 품목 명, ...
@@ -7179,6 +7262,9 @@ function initDashboard(){
       lowWrap.style.display = 'none';
     }
   }
+
+  // ✅ 발주 잔량 대비 부족 자재 (PO/BOM을 최신으로 불러온 뒤 비동기로 렌더링)
+  refreshPOShortageCard();
 
   const tpD=DB.tp.filter(r=>r.total>0).sort((a,b)=>b.total-a.total).slice(0,6);
   const tpMax=Math.max(...tpD.map(r=>r.total),1);
