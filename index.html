@@ -2578,10 +2578,14 @@ function renderPOSummary() {
 // ✅ "총 발주 잔량 대비 부족 자재 현황" (대시보드용, MRP 방식)
 //    완제품(TP) 발주 잔량 × BOM(1개당 자재 소요량)으로 "이 발주들을 다 만들려면
 //    자재가 얼마나 필요한지"를 계산한 뒤, 현재 자재 재고와 비교해서 부족한 자재만 반환한다.
-//    ※ BOM은 반제품(BTP, 권선 공정) 단계와 완제품(TP, 최종 조립) 단계가 따로 등록될 수 있는데
-//      (effectiveBOMCat 참고), 여기서는 "완제품을 만드는 데 바로 투입되는 자재"만 계산 대상으로
-//      삼는다 — 반제품 자체 재고가 이미 있을 수 있어 권선 단계 자재까지 역산하는 건 별도의
-//      다단계 MRP 영역이라 이번 기능 범위에서는 제외한다 (품목별 BOM 미설정은 별도로 안내).
+//    ✅ 반제품(BTP)이 걸린 다단계 MRP도 전부 "지시서에 실제로 등록된 소요량"만으로
+//    계산한다 — 완제품 1개당 반제품이 몇 개 필요한지는 완제품 BOM에 그 반제품을 자재로
+//    (materialCat='BTP') 등록해둔 소요량(qtyPerUnit)을 그대로 쓰고, 그 반제품을 만드는 데
+//    필요한 원자재(COIL 등)는 반제품 자체 BOM(productCat='BTP')에 등록된 소요량을 그대로
+//    쓴다. "완제품 1개당 반제품 1개"라고 가정하지 않는다 — 모델마다 실제 비율이 다를 수
+//    있다(예: 3.2KW OUT-L은 1개당 반제품 5개가 등록되어 있음). 반제품 재고 조회도
+//    DB.btp에 같은 코드가 "있는지"로 짐작하지 않고, 완제품 BOM에 그 반제품이 자재로
+//    등록되어 있는지로만 판단한다.
 function computePOMaterialShortage() {
   const poItems = groupPOByItem().filter(g => g.totalRemain > 0);
   const need = {}; // key: materialCode|materialCat
@@ -2619,45 +2623,44 @@ function computePOMaterialShortage() {
     if (!byProductMap[itemCode]) byProductMap[itemCode] = { itemCode, itemName, totalRemain, materials: [], btp: null };
     return byProductMap[itemCode];
   };
-  shortages.forEach(m => {
-    m.byProduct.forEach(p => {
-      const g = poItems.find(x => x.itemCode === p.itemCode);
-      const entry = ensureProduct(p.itemCode, p.itemName, g ? g.totalRemain : 0);
-      entry.materials.push({
-        materialCode: m.materialCode, materialName: m.materialName, materialCat: m.materialCat, materialUnit: m.materialUnit,
-        neededQty: p.neededQty, shortQty: m.shortQty, cur: m.cur
-      });
-    });
-  });
 
-  // ✅ 완제품 발주는 실제로는 완제품(TP) 지시서의 자재투입에 반제품(BTP)이 쓰여서
-  //    채워진다 (COIL을 원자재로 입고받아 BTP 지시서에서 권선 → BTP → TP 지시서에서
-  //    최종 조립하는 2단계 구조). "총 원자재 소요량"만 보여주면 실제로 부족한 게
-  //    원자재인지 반제품(BTP) 자체 재고인지 알 수 없어서, 발주 잔량보다 반제품 재고가
-  //    부족한지 먼저 확인하고, 부족하면 그만큼 새로 만들어야 하니 반제품 자체 BOM
-  //    (예: COIL 소요량 — BTP로 따로 등록되어 있어야 함, effectiveBOMCat 참고)으로
-  //    역산해서 추가로 필요한 원자재까지 보여준다.
-  poItems.forEach(g => {
-    // ✅ 이 품목코드로 등록된 반제품(BTP) 품목 자체가 없으면(=반제품 단계를 재고로
-    //    따로 추적하지 않는 품목) 이 검사 대상이 아니다 — 재고가 0으로 잡혀서 매번
-    //    "반제품 전량 부족"으로 오탐하는 것을 막는다.
-    const btpItem = DB.btp.find(r => r.code === g.itemCode);
-    if (!btpItem) return;
-    const btpCur = +btpItem.cur || 0;
-    const btpShort = g.totalRemain - btpCur;
-    if (btpShort <= 0.0001) return; // 반제품 재고가 발주 잔량을 이미 충분히 커버함
-    const entry = ensureProduct(g.itemCode, g.itemName, g.totalRemain);
-    const btpBoms = BOM.filter(b => b.productCode === g.itemCode && effectiveBOMCat(b) === 'BTP');
-    if (!btpBoms.length) {
-      entry.btp = { btpCur, btpShort, materials: [], bomMissing: true };
-      return;
+  shortages.forEach(m => {
+    if (m.materialCat === 'BTP') {
+      // ✅ 완제품 BOM에 반제품(BTP)이 자재로 등록되어 있다 — 이미 등록된 소요량
+      //    (qtyPerUnit) 비율 그대로 정확한 반제품 부족 수량(m.shortQty)이 나온 상태다.
+      //    이 반제품 자체를 만드는 데 필요한 원자재(COIL 등)까지, 반제품 자체 BOM에
+      //    등록된 소요량으로 한 단계 더 역산한다.
+      const btpBoms = BOM.filter(b => b.productCode === m.materialCode && effectiveBOMCat(b) === 'BTP');
+      let btpMaterials = [];
+      let bomMissing = false;
+      if (!btpBoms.length) {
+        bomMissing = true;
+      } else {
+        btpMaterials = btpBoms.map(b => {
+          const neededQty = (+b.qtyPerUnit || 0) * m.shortQty;
+          const cur = findCur(b.materialCode, b.materialCat);
+          return { materialCode: b.materialCode, materialName: b.materialName, materialCat: b.materialCat, materialUnit: b.materialUnit, neededQty, cur, shortQty: neededQty - cur };
+        }).filter(x => x.shortQty > 0.0001);
+      }
+      m.byProduct.forEach(p => {
+        const g = poItems.find(x => x.itemCode === p.itemCode);
+        const entry = ensureProduct(p.itemCode, p.itemName, g ? g.totalRemain : 0);
+        entry.btp = {
+          btpCode: m.materialCode, btpName: m.materialName, materialUnit: m.materialUnit,
+          btpNeeded: p.neededQty, btpCur: m.cur, btpShort: m.shortQty,
+          materials: btpMaterials, bomMissing
+        };
+      });
+    } else {
+      m.byProduct.forEach(p => {
+        const g = poItems.find(x => x.itemCode === p.itemCode);
+        const entry = ensureProduct(p.itemCode, p.itemName, g ? g.totalRemain : 0);
+        entry.materials.push({
+          materialCode: m.materialCode, materialName: m.materialName, materialCat: m.materialCat, materialUnit: m.materialUnit,
+          neededQty: p.neededQty, shortQty: m.shortQty, cur: m.cur
+        });
+      });
     }
-    const materials = btpBoms.map(b => {
-      const neededQty = (+b.qtyPerUnit || 0) * btpShort;
-      const cur = findCur(b.materialCode, b.materialCat);
-      return { materialCode: b.materialCode, materialName: b.materialName, materialCat: b.materialCat, materialUnit: b.materialUnit, neededQty, cur, shortQty: neededQty - cur };
-    }).filter(m => m.shortQty > 0.0001);
-    entry.btp = { btpCur, btpShort, materials, bomMissing: false };
   });
 
   const severity = p => Math.max(Math.max(...p.materials.map(m => m.shortQty), 0), p.btp ? p.btp.btpShort : 0);
@@ -2693,12 +2696,14 @@ function renderPOShortageCard() {
           <span style="font-size:12px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="badge ${CB[m.materialCat]}" style="margin-right:6px">${CL[m.materialCat]}</span>${m.materialName} <span style="color:#aaa;font-size:10px;font-family:monospace">${m.materialCode}</span></span>
           <span style="font-size:12px;font-weight:700;color:#92400e;flex-shrink:0">부족 ${fmt(m.shortQty)}${m.materialUnit || ''}</span>
         </div>`;
-  // ✅ 반제품(BTP) 부족분 — 발주 잔량만큼 완제품을 만들 반제품 재고 자체가 모자란
-  //    경우, 그만큼 새로 권선해야 하니 반제품 자체 BOM(예: COIL 소요량)으로 역산한
+  // ✅ 반제품(BTP) 부족분 — 완제품 BOM에 등록된 소요량(qtyPerUnit) 비율 그대로 계산된
+  //    반제품 부족 수량이다(완제품 1개당 반제품 1개라고 가정하지 않음 — 예: 3.2KW OUT-L은
+  //    1개당 5개). 그만큼 새로 권선해야 하니 반제품 자체 BOM(예: COIL 소요량)으로 역산한
   //    추가 원자재 소요를 함께 보여준다. (계산 로직은 computePOMaterialShortage 참고)
   const btpBlock = p => {
     if (!p.btp) return '';
-    const head = `<div style="font-size:11px;color:#92400e;font-weight:700;margin:6px 0 2px 12px">🔧 반제품(BTP) 재고 부족: 현재 ${fmt(p.btp.btpCur)} / 발주잔량 ${fmt(p.totalRemain)} → 부족 ${fmt(p.btp.btpShort)}개</div>`;
+    const unit = p.btp.materialUnit || '개';
+    const head = `<div style="font-size:11px;color:#92400e;font-weight:700;margin:6px 0 2px 12px">🔧 반제품(BTP) 재고 부족 — ${p.btp.btpName}: 필요 ${fmt(p.btp.btpNeeded)}${unit} - 현재 ${fmt(p.btp.btpCur)}${unit} → 부족 ${fmt(p.btp.btpShort)}${unit}</div>`;
     if (p.btp.bomMissing) {
       return head + `<div style="font-size:11px;color:#b91c1c;padding-left:12px">⚠️ 반제품(BTP) 자체 BOM이 등록되어 있지 않아 추가로 필요한 원자재(COIL 등)는 계산할 수 없습니다 — 전공정추적에서 이 품목의 BTP 지시서를 열어 소요량을 등록해주세요.</div>`;
     }
