@@ -1496,10 +1496,12 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <button onclick="document.getElementById('po-excel-input').click()" style="padding:8px 16px;border-radius:8px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:700">📊 엑셀 업로드로 등록</button>
       <input type="file" id="po-excel-input" accept=".xlsx,.xls" style="display:none" onchange="handlePOExcelUpload(event)">
       <button onclick="openPOPasteModal()" style="padding:8px 16px;border-radius:8px;border:1px solid #c026d3;background:#c026d3;color:#fff;font-size:13px;cursor:pointer;font-weight:700">📋 이메일 붙여넣기로 등록</button>
+      <button onclick="if(!isAdmin){alert('관리자 로그인이 필요합니다.');}else{document.getElementById('bom-import-excel-input').click();}" style="padding:8px 16px;border-radius:8px;border:1px solid #3730a3;background:#3730a3;color:#fff;font-size:13px;cursor:pointer;font-weight:700">🧮 BOM 엑셀 일괄 업로드</button>
+      <input type="file" id="bom-import-excel-input" accept=".xlsx,.xls" style="display:none" onchange="handleBOMImportExcelUpload(event)">
       <button onclick="clearAllPOItemsUI()" id="po-clear-btn" style="padding:8px 16px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-size:13px;cursor:pointer;font-weight:700">🗑️ 전체 삭제</button>
     </div>
   </div>
-  <div style="font-size:12px;color:#888;margin-bottom:1rem">SOLUM 발주 현황 엑셀을 업로드하거나, 발주 메일 내용을 붙여넣으면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다). 완제품이 실제로 출고되면 오래된 발주부터 자동으로 잔량이 차감됩니다.</div>
+  <div style="font-size:12px;color:#888;margin-bottom:1rem">SOLUM 발주 현황 엑셀을 업로드하거나, 발주 메일 내용을 붙여넣으면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다). 완제품이 실제로 출고되면 오래된 발주부터 자동으로 잔량이 차감됩니다. "🧮 BOM 엑셀 일괄 업로드"로는 모델별 BOM(자재명세서) 엑셀을 한 번에 올려서 "발주 잔량 대비 부족 자재" 계산에 쓰이는 자재 소요량을 등록할 수 있습니다.</div>
 
   <div id="po-review-wrap" style="display:none;background:#fdf4ff;border:1.5px solid #e9a3f0;border-radius:12px;padding:1rem;margin-bottom:1.5rem">
     <div style="font-weight:700;color:#a21caf;margin-bottom:8px">📥 읽어낸 발주 항목 (검토 후 등록하세요)</div>
@@ -1621,6 +1623,26 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <div class="ov-actions">
       <button class="ov-cancel" onclick="closeOv('po-paste-ov')">취소</button>
       <button class="ov-save" onclick="parsePOPasteText()">🔍 분석하기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ BOM(자재명세서) 엑셀 일괄 업로드 — 여러 모델 BOM을 한 번에 등록하기 위한 화면.
+     회사 공식 BOM 엑셀(모델별 시트, "NO/품명/규격/업체명/소요량/단위" 표) 형식을 그대로
+     읽어서 재고에 등록된 자재와 이름을 자동으로 맞춰보고, 확인 후 기존 addBOMItem을
+     그대로 호출해 등록한다 (완제품(TP) 전체 소요량 기준으로 등록됨). -->
+<div class="ov-bg" id="bom-import-ov" style="z-index:2090">
+  <div class="ov-box" style="max-width:760px;max-height:88vh;overflow-y:auto">
+    <h3>🧮 BOM 엑셀 일괄 업로드</h3>
+    <div style="font-size:12px;color:#888;margin-bottom:10px">
+      모델별로 자재 이름을 재고 목록과 자동으로 맞춰봤습니다. <strong style="color:#b45309">매칭 안 됨</strong> 또는 <strong style="color:#b45309">후보 여러 개</strong>인 항목은 자재를 직접 선택해주세요. 이미 등록된 자재는 기본적으로 체크가 해제되어 있습니다(중복 방지). 전부 완제품(TP) 소요량 기준으로 저장됩니다.
+    </div>
+    <div id="bom-import-body"></div>
+    <div id="bom-import-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none;white-space:pre-line"></div>
+    <div class="ov-actions" style="align-items:center">
+      <span id="bom-import-cnt" style="font-size:12px;color:#888;margin-right:auto"></span>
+      <button class="ov-cancel" onclick="closeOv('bom-import-ov')">취소</button>
+      <button class="ov-save" onclick="confirmBOMImportUI()">✔ 선택한 항목 등록</button>
     </div>
   </div>
 </div>
@@ -4716,6 +4738,254 @@ async function deleteBOMItemUI(id) {
   if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
   await loadBOM();
   renderBOMList();
+}
+
+// ══════════════════════════════════════════════════════════
+//  BOM 엑셀 일괄 업로드 — 회사 공식 BOM(자재명세서) 엑셀은 모델(제품)별로 시트가
+//  나뉘어 있고, 시트마다 "NO/품명/규격/업체명/소요량/단위" 표로 자재 목록이 있다.
+//  이 표를 그대로 읽어서, 재고에 이미 등록된 자재와 이름을 맞춰본 뒤 검토 화면을
+//  보여주고, 확인을 누르면 위의 submitBOMBrowse()와 똑같이 addBOMItem을 호출해
+//  등록한다 (여러 모델을 한 번에 처리한다는 점만 다르고, 등록 로직 자체는 재사용).
+//  ✅ 이 회사 BOM 문서는 제품 하나당 필요한 자재 전체를 한 표로 관리하고 있어서
+//    (반제품 권선 단계/완제품 조립 단계로 나누지 않음), 전부 완제품(TP) 소요량으로
+//    등록한다 — "발주 잔량 대비 부족 자재" 계산이 바로 이 완제품 기준 소요량을 쓴다.
+// ══════════════════════════════════════════════════════════
+let bomImportRows = [];
+
+// ✅ 엑셀 시트 한 장(2차원 배열, header:1 형식)에서 "Code No." / "Product Name" /
+//    "Spec." 라벨 셀을 찾아 그 오른쪽에 있는 첫 값을 읽어온다. 회사 양식마다 라벨
+//    위치가 살짝씩 밀려 있어서(예: 50KW 시리즈는 컬럼이 하나 더 있음) 라벨 텍스트로
+//    찾는 방식이 셀 위치를 고정하는 것보다 안전하다.
+const BOM_HEADER_LABELS = new Set(['Code No.', 'Product Name', 'Spec.', '제품분류', 'BOM 상태', '양산이관일', '작성일', '작성자', 'Level']);
+function findBOMLabelValue(rows, label) {
+  for (const row of rows) {
+    const idx = row.findIndex(c => (c || '').toString().trim() === label);
+    if (idx === -1) continue;
+    for (let i = idx + 1; i < row.length; i++) {
+      const v = row[i];
+      if (v === '' || v === null || v === undefined) continue;
+      const vStr = String(v).trim();
+      if (BOM_HEADER_LABELS.has(vStr)) break; // ✅ 값 없이 다음 라벨이 바로 나오면(예: Code No.가 비어있는 시트) 그 행에서는 못 찾은 것으로 처리
+      return vStr;
+    }
+  }
+  return '';
+}
+
+// ✅ 시트 한 장을 파싱해서 {productCode, productName, materials:[...]}로 반환.
+//    표 형식이 아니거나(헤더를 못 찾음) 자재가 하나도 없으면 null.
+function parseBOMSheetRows(rows) {
+  let headerRowIdx = -1, col = {};
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r] || [];
+    if (row.includes('NO') && row.includes('품명')) {
+      headerRowIdx = r;
+      row.forEach((v, i) => { if (v !== '' && v !== null && v !== undefined) col[String(v).replace(/\n/g, ' ').trim()] = i; });
+      break;
+    }
+  }
+  if (headerRowIdx === -1) return null;
+
+  const productCode = findBOMLabelValue(rows, 'Code No.') || findBOMLabelValue(rows, 'Product Name');
+  const productName = findBOMLabelValue(rows, 'Spec.') || productCode;
+  if (!productCode) return null;
+
+  const idxNo = col['NO'], idxName = col['품명'], idxSpec = col['규격'], idxVendor = col['업체명'], idxQty = col['소요량'], idxUnit = col['단위'];
+  if (idxName === undefined || idxQty === undefined) return null;
+
+  const rawMaterials = [];
+  for (let r = headerRowIdx + 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const name = (row[idxName] || '').toString().trim();
+    if (!name) continue; // 자재명이 비어있으면 아직 등록 안 된 빈 템플릿 행
+    const no = row[idxNo];
+    if (no === 0 || no === '0') continue; // NO=0은 완제품 자기 자신 행 — 자재가 아님
+    const qty = parseFloat(row[idxQty]);
+    if (!qty || qty <= 0) continue; // 소요량이 없는 설명/참고 행 또는 미적용(0) 행 제외
+    rawMaterials.push({
+      materialName: name,
+      spec: (row[idxSpec] || '').toString().trim(),
+      vendor: (row[idxVendor] || '').toString().trim(),
+      qtyPerUnit: qty,
+      unit: (row[idxUnit] || '').toString().trim()
+    });
+  }
+
+  // ✅ 같은 자재(품명+규격+단위)가 조립 여러 곳에 쓰여 여러 줄로 나뉜 경우, 하나로
+  //    합쳐서 소요량을 더한다 (예: NOMEX가 부위별로 3줄 등록된 경우).
+  const merged = {};
+  rawMaterials.forEach(m => {
+    const key = m.materialName + '|' + m.spec + '|' + m.unit;
+    if (!merged[key]) merged[key] = { ...m };
+    else merged[key].qtyPerUnit += m.qtyPerUnit;
+  });
+
+  return { productCode, productName, materials: Object.values(merged) };
+}
+
+// ✅ 파싱된 자재 한 줄을, 이미 재고에 등록된 자재(완제품 제외)와 이름/규격 기준으로
+//    맞춰본다. 정확한 등록 코드 체계를 알 수 없으니 "포함 관계" 매칭만 시도하고,
+//    후보가 정확히 하나일 때만 자동 채택 — 애매하면 화면에서 사람이 직접 고른다.
+function normalizeBOMMatchStr(s) {
+  return (s || '').toString().toLowerCase().replace(/[\s\-_./()]/g, '');
+}
+function findBOMInventoryMatches(material) {
+  const specNorm = normalizeBOMMatchStr(material.spec);
+  const nameNorm = normalizeBOMMatchStr(material.materialName);
+  return allRows().filter(r => r.cat !== 'TP').filter(r => {
+    const rNorm = normalizeBOMMatchStr(r.name);
+    if (!rNorm) return false;
+    return (specNorm && (rNorm.includes(specNorm) || specNorm.includes(rNorm))) ||
+           (nameNorm.length > 1 && (rNorm.includes(nameNorm) || nameNorm.includes(rNorm)));
+  });
+}
+
+async function handleBOMImportExcelUpload(event) {
+  const file = event.target.files[0];
+  event.target.value = ''; // 같은 파일 다시 선택 가능하도록 초기화
+  if (!file) return;
+  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (typeof XLSX === 'undefined') {
+    alert('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침 후 다시 시도해주세요.');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const items = [];
+      wb.SheetNames.forEach(sn => {
+        const ws = wb.Sheets[sn];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        const parsed = parseBOMSheetRows(rows);
+        if (parsed && parsed.materials.length) {
+          parsed.materials.forEach(m => items.push({ productCode: parsed.productCode, productName: parsed.productName, ...m }));
+        }
+      });
+      if (!items.length) {
+        alert('⚠️ BOM 데이터를 찾지 못했습니다.\n\n"NO"와 "품명" 헤더가 있는 표 형식(BOM 자재명세서 양식)의 파일이 맞는지 확인해주세요.');
+        return;
+      }
+
+      bomImportRows = items.map(it => {
+        const candidates = findBOMInventoryMatches(it);
+        const matched = candidates.length === 1 ? candidates[0] : null;
+        const already = matched ? BOM.some(b => b.productCode === it.productCode && effectiveBOMCat(b) === 'TP' && b.materialCode === matched.code && b.materialCat === matched.cat) : false;
+        return {
+          ...it,
+          matchedCode: matched ? matched.code : '',
+          matchedCat: matched ? matched.cat : '',
+          matchedName: matched ? matched.name : '',
+          matchedUnit: matched ? (matched.unit || it.unit) : it.unit,
+          candidateCount: candidates.length,
+          already,
+          skip: already // 이미 등록된 항목은 기본적으로 체크 해제 상태로 시작 (중복 방지)
+        };
+      });
+      renderBOMImportReview();
+      document.getElementById('bom-import-ov').classList.add('show');
+    } catch (err) {
+      alert('엑셀 파일을 읽는 중 오류가 발생했습니다: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderBOMImportReview() {
+  const wrap = document.getElementById('bom-import-body');
+  if (!wrap) return;
+  const pool = allRows().filter(r => r.cat !== 'TP');
+
+  const groups = {};
+  const order = [];
+  bomImportRows.forEach((row, idx) => {
+    const key = row.productCode + '|' + row.productName;
+    if (!groups[key]) { groups[key] = { productCode: row.productCode, productName: row.productName, rows: [] }; order.push(key); }
+    groups[key].rows.push(idx);
+  });
+
+  const optionsHtml = (selectedCode, selectedCat) => {
+    let html = `<option value="">-- 선택 안 함 --</option>`;
+    pool.forEach(r => {
+      const sel = (r.code === selectedCode && r.cat === selectedCat) ? 'selected' : '';
+      html += `<option value="${r.code}|${r.cat}" ${sel}>[${CL[r.cat] || r.cat}] ${r.name} (${r.code})</option>`;
+    });
+    return html;
+  };
+
+  wrap.innerHTML = order.map(key => {
+    const g = groups[key];
+    return `
+    <div style="margin-bottom:14px;border:1px solid #e0e0e8;border-radius:8px;padding:10px">
+      <div style="font-weight:700;font-size:13px;color:#3730a3;margin-bottom:6px">${g.productName} <span style="color:#aaa;font-family:monospace;font-size:11px">${g.productCode}</span></div>
+      ${g.rows.map(idx => {
+        const r = bomImportRows[idx];
+        const badge = r.already ? `<span style="color:#166534">✔ 이미 등록됨</span>`
+          : (r.candidateCount === 1 ? `<span style="color:#166534">자동 매칭됨</span>`
+          : (r.candidateCount > 1 ? `<span style="color:#b45309">후보 ${r.candidateCount}개 — 직접 선택</span>`
+          : `<span style="color:#b91c1c">매칭 안 됨 — 직접 선택</span>`));
+        return `
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #f0f0f5;font-size:12px;flex-wrap:wrap">
+          <input type="checkbox" ${r.skip ? '' : 'checked'} onchange="bomImportRows[${idx}].skip = !this.checked; renderBOMImportReview()">
+          <div style="min-width:170px;flex:1">
+            <div>${r.materialName}${r.spec ? ` <span style="color:#aaa">· ${r.spec}</span>` : ''}</div>
+            <div style="color:#aaa;font-size:10px">${r.vendor || ''} ${r.vendor ? '·' : ''} <span style="font-size:10px">${badge}</span></div>
+          </div>
+          <select onchange="const v=this.value.split('|'); bomImportRows[${idx}].matchedCode=v[0]||''; bomImportRows[${idx}].matchedCat=v[1]||''; const f=allRows().find(x=>x.code===v[0]&&x.cat===v[1]); bomImportRows[${idx}].matchedName=f?f.name:''; bomImportRows[${idx}].matchedUnit=f?(f.unit||bomImportRows[${idx}].unit):bomImportRows[${idx}].unit; renderBOMImportReview();" style="max-width:220px;font-size:11px">
+            ${optionsHtml(r.matchedCode, r.matchedCat)}
+          </select>
+          <input type="number" value="${r.qtyPerUnit}" oninput="bomImportRows[${idx}].qtyPerUnit = parseFloat(this.value) || 0" style="width:80px;font-size:11px" placeholder="1개당 소요량">
+          <span style="color:#888;font-size:11px;width:36px">${r.unit || ''}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+
+  const cnt = bomImportRows.filter(r => !r.skip && r.matchedCode).length;
+  const cntEl = document.getElementById('bom-import-cnt');
+  if (cntEl) cntEl.textContent = `등록 대상 ${cnt}건`;
+}
+
+async function confirmBOMImportUI() {
+  const errEl = document.getElementById('bom-import-err');
+  if (errEl) errEl.style.display = 'none';
+
+  const targets = bomImportRows.filter(r => !r.skip && r.matchedCode && r.qtyPerUnit > 0);
+  if (!targets.length) {
+    if (errEl) { errEl.textContent = '등록할 항목이 없습니다. 자재를 선택했는지, 체크가 되어 있는지 확인해주세요.'; errEl.style.display = 'block'; }
+    return;
+  }
+
+  let okCount = 0, skipDupCount = 0;
+  const failMsgs = [];
+  for (const r of targets) {
+    // ✅ 이미 등록된 조합은 건너뛴다 (중복 방지 — 같은 엑셀을 다시 올려도 안전)
+    const dup = BOM.some(b => b.productCode === r.productCode && effectiveBOMCat(b) === 'TP' && b.materialCode === r.matchedCode && b.materialCat === r.matchedCat);
+    if (dup) { skipDupCount++; continue; }
+    const body = {
+      productCode: r.productCode, productName: r.productName, productCat: 'TP',
+      materialCode: r.matchedCode, materialName: r.matchedName, materialCat: r.matchedCat, materialUnit: r.matchedUnit,
+      qtyPerUnit: r.qtyPerUnit, token: ADMIN_TOKEN, user: CURRENT_USER || ''
+    };
+    let res = await api('addBOMItem', body);
+    if (!res || !res.ok) res = await api('addBOMItem', body);
+    if (!res || !res.ok) { failMsgs.push(`${r.productName} - ${r.matchedName}: ` + (res && res.error ? res.error : '알 수 없는 오류')); continue; }
+    okCount++;
+  }
+
+  await loadBOM();
+  if (typeof renderBOMList === 'function') renderBOMList();
+  if (typeof refreshPOShortageCard === 'function') refreshPOShortageCard();
+
+  if (failMsgs.length) {
+    if (errEl) { errEl.textContent = `${okCount}건 등록 완료, ${skipDupCount}건은 이미 등록되어 건너뜀, ${failMsgs.length}건 실패:\n` + failMsgs.join('\n'); errEl.style.display = 'block'; }
+  } else {
+    alert(`✅ ${okCount}건 등록 완료되었습니다.` + (skipDupCount ? ` (이미 등록되어 건너뛴 항목 ${skipDupCount}건)` : ''));
+    closeOv('bom-import-ov');
+    bomImportRows = [];
+  }
 }
 
 // ══════════════════════════════════════════════════════════
