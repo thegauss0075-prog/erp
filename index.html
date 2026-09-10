@@ -2627,6 +2627,13 @@ function computePOMaterialShortage() {
   const need = {}; // key: materialCode|materialCat
   const noBom = [];
 
+  const catMap = { TP: DB.tp, BTP: DB.btp, KR: DB.kr, VN: DB.vn, VTTH: DB.vtth };
+  const findCur = (code, cat) => {
+    const arr = catMap[cat] || [];
+    const item = arr.find(r => r.code === code);
+    return item ? (+item.cur || 0) : 0;
+  };
+
   poItems.forEach(g => {
     const boms = BOM.filter(b => b.productCode === g.itemCode && effectiveBOMCat(b) === 'TP');
     if (!boms.length) { noBom.push(g); return; }
@@ -2639,11 +2646,8 @@ function computePOMaterialShortage() {
     });
   });
 
-  const catMap = { TP: DB.tp, BTP: DB.btp, KR: DB.kr, VN: DB.vn, VTTH: DB.vtth };
   const shortages = Object.values(need).map(m => {
-    const arr = catMap[m.materialCat] || [];
-    const item = arr.find(r => r.code === m.materialCode);
-    const cur = item ? (+item.cur || 0) : 0;
+    const cur = findCur(m.materialCode, m.materialCat);
     return { ...m, cur, shortQty: m.needQty - cur };
   }).filter(m => m.shortQty > 0.0001);
 
@@ -2651,19 +2655,55 @@ function computePOMaterialShortage() {
   //    "이 완제품 발주 때문에 부족한 자재"로 다시 묶는다 — 완제품 품목코드/품명으로
   //    바로 찾아볼 수 있게 하기 위함 (자재만 쭉 나열하면 어느 모델 문제인지 알기 어려움).
   const byProductMap = {};
+  const ensureProduct = (itemCode, itemName, totalRemain) => {
+    if (!byProductMap[itemCode]) byProductMap[itemCode] = { itemCode, itemName, totalRemain, materials: [], btp: null };
+    return byProductMap[itemCode];
+  };
   shortages.forEach(m => {
     m.byProduct.forEach(p => {
-      if (!byProductMap[p.itemCode]) byProductMap[p.itemCode] = { itemCode: p.itemCode, itemName: p.itemName, materials: [] };
-      byProductMap[p.itemCode].materials.push({
+      const g = poItems.find(x => x.itemCode === p.itemCode);
+      const entry = ensureProduct(p.itemCode, p.itemName, g ? g.totalRemain : 0);
+      entry.materials.push({
         materialCode: m.materialCode, materialName: m.materialName, materialCat: m.materialCat, materialUnit: m.materialUnit,
         neededQty: p.neededQty, shortQty: m.shortQty, cur: m.cur
       });
     });
   });
 
+  // ✅ 완제품 발주는 실제로는 완제품(TP) 지시서의 자재투입에 반제품(BTP)이 쓰여서
+  //    채워진다 (COIL을 원자재로 입고받아 BTP 지시서에서 권선 → BTP → TP 지시서에서
+  //    최종 조립하는 2단계 구조). "총 원자재 소요량"만 보여주면 실제로 부족한 게
+  //    원자재인지 반제품(BTP) 자체 재고인지 알 수 없어서, 발주 잔량보다 반제품 재고가
+  //    부족한지 먼저 확인하고, 부족하면 그만큼 새로 만들어야 하니 반제품 자체 BOM
+  //    (예: COIL 소요량 — BTP로 따로 등록되어 있어야 함, effectiveBOMCat 참고)으로
+  //    역산해서 추가로 필요한 원자재까지 보여준다.
+  poItems.forEach(g => {
+    // ✅ 이 품목코드로 등록된 반제품(BTP) 품목 자체가 없으면(=반제품 단계를 재고로
+    //    따로 추적하지 않는 품목) 이 검사 대상이 아니다 — 재고가 0으로 잡혀서 매번
+    //    "반제품 전량 부족"으로 오탐하는 것을 막는다.
+    const btpItem = DB.btp.find(r => r.code === g.itemCode);
+    if (!btpItem) return;
+    const btpCur = +btpItem.cur || 0;
+    const btpShort = g.totalRemain - btpCur;
+    if (btpShort <= 0.0001) return; // 반제품 재고가 발주 잔량을 이미 충분히 커버함
+    const entry = ensureProduct(g.itemCode, g.itemName, g.totalRemain);
+    const btpBoms = BOM.filter(b => b.productCode === g.itemCode && effectiveBOMCat(b) === 'BTP');
+    if (!btpBoms.length) {
+      entry.btp = { btpCur, btpShort, materials: [], bomMissing: true };
+      return;
+    }
+    const materials = btpBoms.map(b => {
+      const neededQty = (+b.qtyPerUnit || 0) * btpShort;
+      const cur = findCur(b.materialCode, b.materialCat);
+      return { materialCode: b.materialCode, materialName: b.materialName, materialCat: b.materialCat, materialUnit: b.materialUnit, neededQty, cur, shortQty: neededQty - cur };
+    }).filter(m => m.shortQty > 0.0001);
+    entry.btp = { btpCur, btpShort, materials, bomMissing: false };
+  });
+
+  const severity = p => Math.max(Math.max(...p.materials.map(m => m.shortQty), 0), p.btp ? p.btp.btpShort : 0);
   const byProduct = Object.values(byProductMap)
     .map(p => ({ ...p, materials: p.materials.sort((a, b) => b.shortQty - a.shortQty) }))
-    .sort((a, b) => Math.max(...b.materials.map(m => m.shortQty), 0) - Math.max(...a.materials.map(m => m.shortQty), 0));
+    .sort((a, b) => severity(b) - severity(a));
 
   return { byProduct, noBom };
 }
@@ -2684,17 +2724,34 @@ function renderPOShortageCard() {
   }
   wrap.style.display = 'block';
   const cntEl = document.getElementById('d-po-shortage-cnt');
-  const totalLines = byProduct.reduce((s, p) => s + p.materials.length, 0);
-  if (cntEl) cntEl.textContent = `${byProduct.length}개 모델 · 부족자재 ${totalLines}건`;
+  const totalLines = byProduct.reduce((s, p) => s + p.materials.length + (p.btp ? p.btp.materials.length : 0), 0);
+  const btpAffected = byProduct.filter(p => p.btp).length;
+  if (cntEl) cntEl.textContent = `${byProduct.length}개 모델 · 부족자재 ${totalLines}건` + (btpAffected ? ` · 반제품 부족 ${btpAffected}건` : '');
   const fmt = v => (typeof v === 'number' && v % 1) ? v.toFixed(2) : v.toLocaleString();
-  document.getElementById('d-po-shortage').innerHTML = byProduct.map(p => `
-    <div style="padding:8px 0;border-bottom:1px solid #fde68a">
-      <div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:4px">${p.itemName} <span style="color:#aaa;font-size:11px;font-family:monospace">${p.itemCode}</span></div>
-      ${p.materials.map(m => `
+  const matRow = m => `
         <div onclick="go('inv');document.getElementById('inv-q').value='${m.materialCode}';renderInv()" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0 3px 12px">
           <span style="font-size:12px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="badge ${CB[m.materialCat]}" style="margin-right:6px">${CL[m.materialCat]}</span>${m.materialName} <span style="color:#aaa;font-size:10px;font-family:monospace">${m.materialCode}</span></span>
           <span style="font-size:12px;font-weight:700;color:#92400e;flex-shrink:0">부족 ${fmt(m.shortQty)}${m.materialUnit || ''}</span>
-        </div>`).join('')}
+        </div>`;
+  // ✅ 반제품(BTP) 부족분 — 발주 잔량만큼 완제품을 만들 반제품 재고 자체가 모자란
+  //    경우, 그만큼 새로 권선해야 하니 반제품 자체 BOM(예: COIL 소요량)으로 역산한
+  //    추가 원자재 소요를 함께 보여준다. (계산 로직은 computePOMaterialShortage 참고)
+  const btpBlock = p => {
+    if (!p.btp) return '';
+    const head = `<div style="font-size:11px;color:#92400e;font-weight:700;margin:6px 0 2px 12px">🔧 반제품(BTP) 재고 부족: 현재 ${fmt(p.btp.btpCur)} / 발주잔량 ${fmt(p.totalRemain)} → 부족 ${fmt(p.btp.btpShort)}개</div>`;
+    if (p.btp.bomMissing) {
+      return head + `<div style="font-size:11px;color:#b91c1c;padding-left:12px">⚠️ 반제품(BTP) 자체 BOM이 등록되어 있지 않아 추가로 필요한 원자재(COIL 등)는 계산할 수 없습니다 — 전공정추적에서 이 품목의 BTP 지시서를 열어 소요량을 등록해주세요.</div>`;
+    }
+    if (!p.btp.materials.length) {
+      return head + `<div style="font-size:11px;color:#166534;padding-left:12px">✔ 추가로 필요한 원자재(COIL 등)는 재고가 충분합니다.</div>`;
+    }
+    return head + p.btp.materials.map(matRow).join('');
+  };
+  document.getElementById('d-po-shortage').innerHTML = byProduct.map(p => `
+    <div style="padding:8px 0;border-bottom:1px solid #fde68a">
+      <div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:4px">${p.itemName} <span style="color:#aaa;font-size:11px;font-family:monospace">${p.itemCode}</span></div>
+      ${p.materials.map(matRow).join('')}
+      ${btpBlock(p)}
     </div>`).join('');
   if (noBomEl) {
     noBomEl.textContent = noBom.length ? `⚠️ BOM(자재소요량) 미설정: ${noBom.map(g => g.itemName || g.itemCode).join(', ')} — 이 품목은 계산에서 제외되었습니다.` : '';
