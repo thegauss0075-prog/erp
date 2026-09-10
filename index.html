@@ -2631,6 +2631,12 @@ function exportPOExcel() {
 // ✅ "총 발주 잔량 대비 부족 자재 현황" (대시보드용, MRP 방식)
 //    완제품(TP) 발주 잔량 × BOM(1개당 자재 소요량)으로 "이 발주들을 다 만들려면
 //    자재가 얼마나 필요한지"를 계산한 뒤, 현재 자재 재고와 비교해서 부족한 자재만 반환한다.
+//    ✅ [완제품 재고 반영] 발주 잔량 중 이미 완제품(TP)으로 창고에 있는 만큼은 새로
+//    만들 필요가 없으므로, "발주 잔량 - 완제품 현재고"(0 미만이면 0)를 실제 생산
+//    필요 수량으로 보고 그 수량 기준으로 자재 소요량을 계산한다. 예: 발주 잔량 100개,
+//    완제품 재고 30개 → 생산 필요 70개 기준으로 자재 계산(전에는 100개 기준으로 계산해서
+//    실제보다 더 많이 필요한 것처럼 나왔음). 완제품 재고만으로 발주를 다 채울 수 있으면
+//    (생산 필요 0개) 그 품목은 자재 계산에서 제외한다.
 //    ✅ 반제품(BTP)이 걸린 다단계 MRP도 전부 "지시서에 실제로 등록된 소요량"만으로
 //    계산한다 — 완제품 1개당 반제품이 몇 개 필요한지는 완제품 BOM에 그 반제품을 자재로
 //    (materialCat='BTP') 등록해둔 소요량(qtyPerUnit)을 그대로 쓰고, 그 반제품을 만드는 데
@@ -2654,12 +2660,17 @@ function computePOMaterialShortage() {
   poItems.forEach(g => {
     const boms = BOM.filter(b => b.productCode === g.itemCode && effectiveBOMCat(b) === 'TP');
     if (!boms.length) { noBom.push(g); return; }
+    // ✅ 완제품 재고 반영: 발주 잔량에서 이미 만들어져 있는 완제품 수량만큼을 뺀
+    //    "실제 생산 필요 수량" 기준으로 자재를 계산한다.
+    const tpCur = findCur(g.itemCode, 'TP');
+    const netRemain = Math.max(0, g.totalRemain - tpCur);
+    if (netRemain <= 0) return; // 완제품 재고만으로 충분히 커버되면 추가 생산/자재 불필요
     boms.forEach(b => {
       const key = b.materialCode + '|' + b.materialCat;
       if (!need[key]) need[key] = { materialCode: b.materialCode, materialName: b.materialName, materialCat: b.materialCat, materialUnit: b.materialUnit, needQty: 0, byProduct: [] };
-      const addQty = (+b.qtyPerUnit || 0) * g.totalRemain;
+      const addQty = (+b.qtyPerUnit || 0) * netRemain;
       need[key].needQty += addQty;
-      need[key].byProduct.push({ itemCode: g.itemCode, itemName: g.itemName, neededQty: addQty });
+      need[key].byProduct.push({ itemCode: g.itemCode, itemName: g.itemName, neededQty: addQty, tpCur, netRemain });
     });
   });
 
@@ -2672,8 +2683,8 @@ function computePOMaterialShortage() {
   //    "이 완제품 발주 때문에 부족한 자재"로 다시 묶는다 — 완제품 품목코드/품명으로
   //    바로 찾아볼 수 있게 하기 위함 (자재만 쭉 나열하면 어느 모델 문제인지 알기 어려움).
   const byProductMap = {};
-  const ensureProduct = (itemCode, itemName, totalRemain) => {
-    if (!byProductMap[itemCode]) byProductMap[itemCode] = { itemCode, itemName, totalRemain, materials: [], btp: null };
+  const ensureProduct = (itemCode, itemName, totalRemain, tpCur, netRemain) => {
+    if (!byProductMap[itemCode]) byProductMap[itemCode] = { itemCode, itemName, totalRemain, tpCur, netRemain, materials: [], btp: null };
     return byProductMap[itemCode];
   };
 
@@ -2697,7 +2708,7 @@ function computePOMaterialShortage() {
       }
       m.byProduct.forEach(p => {
         const g = poItems.find(x => x.itemCode === p.itemCode);
-        const entry = ensureProduct(p.itemCode, p.itemName, g ? g.totalRemain : 0);
+        const entry = ensureProduct(p.itemCode, p.itemName, g ? g.totalRemain : 0, p.tpCur, p.netRemain);
         entry.btp = {
           btpCode: m.materialCode, btpName: m.materialName, materialUnit: m.materialUnit,
           btpNeeded: p.neededQty, btpCur: m.cur, btpShort: m.shortQty,
@@ -2707,7 +2718,7 @@ function computePOMaterialShortage() {
     } else {
       m.byProduct.forEach(p => {
         const g = poItems.find(x => x.itemCode === p.itemCode);
-        const entry = ensureProduct(p.itemCode, p.itemName, g ? g.totalRemain : 0);
+        const entry = ensureProduct(p.itemCode, p.itemName, g ? g.totalRemain : 0, p.tpCur, p.netRemain);
         entry.materials.push({
           materialCode: m.materialCode, materialName: m.materialName, materialCat: m.materialCat, materialUnit: m.materialUnit,
           neededQty: p.neededQty, shortQty: m.shortQty, cur: m.cur
@@ -2765,9 +2776,15 @@ function renderPOShortageCard() {
     }
     return head + p.btp.materials.map(matRow).join('');
   };
+  // ✅ 완제품 재고가 있으면 "발주잔량 - 완제품재고 = 생산필요"를 보여줘서, 아래 자재
+  //    수량이 발주 잔량 전체가 아니라 실제 생산 필요 수량 기준으로 계산됐음을 알 수 있게 한다.
+  const stockNote = p => (p.tpCur > 0)
+    ? `<div style="font-size:11px;color:#888;margin-bottom:4px">발주잔량 ${fmt(p.totalRemain)} - 완제품재고 ${fmt(p.tpCur)} = 생산필요 ${fmt(p.netRemain)}</div>`
+    : '';
   document.getElementById('d-po-shortage').innerHTML = byProduct.map(p => `
     <div style="padding:8px 0;border-bottom:1px solid #fde68a">
       <div style="font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:4px">${p.itemName} <span style="color:#aaa;font-size:11px;font-family:monospace">${p.itemCode}</span></div>
+      ${stockNote(p)}
       ${p.materials.map(matRow).join('')}
       ${btpBlock(p)}
     </div>`).join('');
