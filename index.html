@@ -1495,6 +1495,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button onclick="document.getElementById('po-excel-input').click()" style="padding:8px 16px;border-radius:8px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:700">📊 엑셀 업로드로 등록</button>
       <input type="file" id="po-excel-input" accept=".xlsx,.xls" style="display:none" onchange="handlePOExcelUpload(event)">
+      <button onclick="exportPOExcel()" style="padding:8px 16px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:700">📊 엑셀 다운로드</button>
       <button onclick="clearAllPOItemsUI()" id="po-clear-btn" style="padding:8px 16px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-size:13px;cursor:pointer;font-weight:700">🗑️ 전체 삭제</button>
     </div>
   </div>
@@ -2573,6 +2574,58 @@ function renderPOSummary() {
     <td style="text-align:right">${g.totalQty.toLocaleString()}</td>
     <td style="text-align:right;font-weight:700;color:${g.totalRemain>0?'#b45309':'#166534'}">${g.totalRemain.toLocaleString()}</td>
   </tr>`).join('');
+}
+
+// ✅ 발주(PO) 관리 화면을 엑셀로 다운로드한다 — 재고현황(exportInvExcel)과 같은 방식.
+//    한 파일에 시트 2개로 내보낸다: "발주목록"(PO 원본 한 줄씩, 화면 표와 동일한 컬럼+상태 계산)과
+//    "품목별합계"(품목코드별로 묶은 총 발주수량/총 잔량, 화면의 "품목별 발주 현황" 표와 동일).
+function exportPOExcel() {
+  if (typeof XLSX === 'undefined') {
+    alert('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침 후 다시 시도해주세요.');
+    return;
+  }
+  if (!PO.length) { alert('내보낼 발주 데이터가 없습니다.'); return; }
+
+  const detailData = PO.map(r => {
+    const poQty = +r.poQty || 0;
+    const deducted = +r.deductedQty || 0;
+    const remain = Math.max(0, poQty - deducted);
+    const status = r.closedYN === 'Y' || remain <= 0 ? '완료' : (deducted > 0 ? '진행중' : '대기');
+    return {
+      'PO번호': r.poNumber || '',
+      '항목': r.poItemNumber || '',
+      '품목코드': r.itemCode || '',
+      '품명': r.itemName || '',
+      '단위': r.unit || '',
+      '발주수량': poQty,
+      '차감수량': deducted,
+      '잔량': remain,
+      '발주일': r.poDate || '',
+      '납기일': r.deliveryDate || '',
+      '상태': status
+    };
+  });
+
+  const summaryData = groupPOByItem().sort((a, b) => b.totalRemain - a.totalRemain).map(g => ({
+    '품목코드': g.itemCode,
+    '품명': g.itemName,
+    '총 발주수량': g.totalQty,
+    '총 잔량': g.totalRemain
+  }));
+
+  const wb = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.json_to_sheet(detailData);
+  ws1['!cols'] = [{wch:14},{wch:6},{wch:16},{wch:30},{wch:6},{wch:10},{wch:10},{wch:10},{wch:12},{wch:12},{wch:8}];
+  XLSX.utils.book_append_sheet(wb, ws1, '발주목록');
+
+  const ws2 = XLSX.utils.json_to_sheet(summaryData);
+  ws2['!cols'] = [{wch:16},{wch:30},{wch:12},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, ws2, '품목별합계');
+
+  const d = new Date();
+  const pad = v => String(v).padStart(2,'0');
+  const fname = `발주현황_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.xlsx`;
+  XLSX.writeFile(wb, fname);
 }
 
 // ✅ "총 발주 잔량 대비 부족 자재 현황" (대시보드용, MRP 방식)
