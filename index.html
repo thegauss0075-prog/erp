@@ -2720,28 +2720,12 @@ function renderPOShortageCard() {
 
 // ✅ 대시보드가 열릴 때 PO/BOM을 최신으로 불러온 뒤 부족 자재 카드를 새로 그린다.
 //    (initDashboard는 여러 곳에서 동기 함수로 호출되므로, 이 함수는 별도로 비동기 실행한다)
-let _poShortageLastLoad = 0;
-// ✅ 발주(PO)/BOM은 하루 중 수시로 바뀌는 데이터가 아니므로, 베트남 시간(UTC+7) 기준
-//    매일 오전 6시가 지난 뒤 첫 호출에서만 새로 불러오고, 그 전까지는 화면을 아무리
-//    많이 오가도(대시보드가 열릴 때마다) 이미 불러온 데이터로만 다시 그린다.
-function poShortageVNRefreshBoundary(nowMs) {
-  const VN_OFFSET_MS = 7 * 60 * 60 * 1000; // 베트남은 UTC+7, 서머타임 없음
-  const vn = new Date(nowMs + VN_OFFSET_MS);
-  let boundary = Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate(), 6, 0, 0, 0) - VN_OFFSET_MS;
-  if (nowMs < boundary) boundary -= 24 * 60 * 60 * 1000; // 아직 오늘 오전 6시(VN) 전이면 기준을 어제 오전 6시(VN)로
-  return boundary;
-}
+//    ✅ 사용자 요청으로 완전 실시간 조회로 되돌림 — 대시보드가 열릴 때마다(즉 initDashboard가
+//    호출될 때마다) 매번 발주(PO)/BOM을 새로 불러온다. BOM 소요량을 자주 등록/수정하는
+//    중이라 캐시로 인해 최신 상태가 늦게 반영되는 것보다, 매번 정확한 값을 보는 것이 우선이다.
 async function refreshPOShortageCard() {
   if (!(API_URL || IS_GAS)) return;
-  // ✅ initDashboard()는 이 카드와 무관한 화면(재고 수정, NG 등록 등) 수십 곳에서도
-  //    "대시보드 숫자 갱신용"으로 호출된다. 그때마다 매번 발주(PO)/BOM을 새로 불러오면
-  //    Apps Script 왕복이 그만큼 추가돼서 앱 전체가 느려진다 — 그래서 베트남 시간
-  //    오전 6시가 지난 뒤 아직 그 날짜의 데이터를 불러온 적이 없을 때만 새로 불러온다.
-  const now = Date.now();
-  if (_poShortageLastLoad < poShortageVNRefreshBoundary(now)) {
-    await Promise.all([loadPO(), loadBOM()]);
-    _poShortageLastLoad = now;
-  }
+  await Promise.all([loadPO(), loadBOM()]);
   renderPOShortageCard();
 }
 
