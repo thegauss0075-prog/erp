@@ -2781,9 +2781,21 @@ function renderPOShortageCard() {
 //    ✅ 사용자 요청으로 완전 실시간 조회로 되돌림 — 대시보드가 열릴 때마다(즉 initDashboard가
 //    호출될 때마다) 매번 발주(PO)/BOM을 새로 불러온다. BOM 소요량을 자주 등록/수정하는
 //    중이라 캐시로 인해 최신 상태가 늦게 반영되는 것보다, 매번 정확한 값을 보는 것이 우선이다.
+//    ✅ [연결 속도 저하 수정] initDashboard()가 19곳에서 호출되고 그때마다 이 함수가
+//    실행되는데, 짧은 시간에 여러 동작이 겹치거나(예: 입출고 등록 직후 + 30초 자동
+//    동기화가 겹칠 때) 이 함수가 동시에 여러 번 호출되면 기존엔 그때마다 각각 별도로
+//    getPOLog/getBOM을 새로 서버에 요청했다 — 네트워크 탭에 같은 요청이 3~4개씩 동시에
+//    쌓여 응답이 서로 밀리는(pending) 원인이었다. syncNow()의 _syncing 가드와 동일한
+//    방식으로, 이미 진행 중인 요청이 있으면 새로 요청을 또 보내지 않고 그 요청이 끝나길
+//    기다렸다가 같은(가장 최신) 결과로 다시 그리기만 한다. "완전 실시간"은 그대로
+//    유지된다 — 시간 기반 캐시가 아니라 "동시에 겹치는 중복 요청만" 하나로 합치는 것이다.
+let _poShortageInFlight = null;
 async function refreshPOShortageCard() {
   if (!(API_URL || IS_GAS)) return;
-  await Promise.all([loadPO(), loadBOM()]);
+  if (_poShortageInFlight) { await _poShortageInFlight; renderPOShortageCard(); return; }
+  _poShortageInFlight = Promise.all([loadPO(), loadBOM()]);
+  try { await _poShortageInFlight; }
+  finally { _poShortageInFlight = null; }
   renderPOShortageCard();
 }
 
