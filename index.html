@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-6">
+<meta charset="UTF-8">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -1495,13 +1495,10 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button onclick="document.getElementById('po-excel-input').click()" style="padding:8px 16px;border-radius:8px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:700">📊 엑셀 업로드로 등록</button>
       <input type="file" id="po-excel-input" accept=".xlsx,.xls" style="display:none" onchange="handlePOExcelUpload(event)">
-      <button onclick="openPOPasteModal()" style="padding:8px 16px;border-radius:8px;border:1px solid #c026d3;background:#c026d3;color:#fff;font-size:13px;cursor:pointer;font-weight:700">📋 이메일 붙여넣기로 등록</button>
-      <button onclick="if(!isAdmin){alert('관리자 로그인이 필요합니다.');}else{document.getElementById('bom-import-excel-input').click();}" style="padding:8px 16px;border-radius:8px;border:1px solid #3730a3;background:#3730a3;color:#fff;font-size:13px;cursor:pointer;font-weight:700">🧮 BOM 엑셀 일괄 업로드</button>
-      <input type="file" id="bom-import-excel-input" accept=".xlsx,.xls" style="display:none" onchange="handleBOMImportExcelUpload(event)">
       <button onclick="clearAllPOItemsUI()" id="po-clear-btn" style="padding:8px 16px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-size:13px;cursor:pointer;font-weight:700">🗑️ 전체 삭제</button>
     </div>
   </div>
-  <div style="font-size:12px;color:#888;margin-bottom:1rem">SOLUM 발주 현황 엑셀을 업로드하거나, 발주 메일 내용을 붙여넣으면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다). 완제품이 실제로 출고되면 오래된 발주부터 자동으로 잔량이 차감됩니다. "🧮 BOM 엑셀 일괄 업로드"로는 모델별 BOM(자재명세서) 엑셀을 한 번에 올려서 "발주 잔량 대비 부족 자재" 계산에 쓰이는 자재 소요량을 등록할 수 있습니다.</div>
+  <div style="font-size:12px;color:#888;margin-bottom:1rem">SOLUM 발주 현황 엑셀을 업로드하면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다). 완제품이 실제로 출고되면 오래된 발주부터 자동으로 잔량이 차감됩니다.</div>
 
   <div id="po-review-wrap" style="display:none;background:#fdf4ff;border:1.5px solid #e9a3f0;border-radius:12px;padding:1rem;margin-bottom:1.5rem">
     <div style="font-weight:700;color:#a21caf;margin-bottom:8px">📥 읽어낸 발주 항목 (검토 후 등록하세요)</div>
@@ -1606,43 +1603,6 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
         <button onclick="mesCancelDefect()" style="padding:18px;font-size:16px;border-radius:12px;border:1px solid #dde;background:#fff;color:#555;cursor:pointer">취소</button>
         <button id="mes-defect-submit-btn" onclick="mesSubmitDefect()" style="padding:18px;font-size:16px;font-weight:800;border-radius:12px;border:none;background:#b91c1c;color:#fff;cursor:pointer">⚠️ 등록</button>
       </div>
-    </div>
-  </div>
-</div>
-
-<!-- 발주 이메일 붙여넣기 모달 -->
-<div class="ov-bg" id="po-paste-ov">
-  <div class="ov-box" style="max-width:600px;max-height:85vh;overflow-y:auto">
-    <h3>📋 발주 이메일 붙여넣기</h3>
-    <div style="font-size:12px;color:#888;margin-bottom:10px">
-      SOLUM 발주 이메일을 열어서 <strong>전체 내용을 선택(Ctrl+A) → 복사(Ctrl+C)</strong>한 다음, 아래에 <strong>붙여넣기(Ctrl+V)</strong> 해주세요.
-      (표 형태 그대로 붙여넣으면 자동으로 인식합니다)
-    </div>
-    <textarea id="po-paste-text" placeholder="여기에 이메일 내용을 붙여넣으세요..." style="width:100%;box-sizing:border-box;min-height:220px;font-size:12px;padding:10px;border-radius:8px;border:1px solid #dde;font-family:monospace"></textarea>
-    <div id="po-paste-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
-    <div class="ov-actions">
-      <button class="ov-cancel" onclick="closeOv('po-paste-ov')">취소</button>
-      <button class="ov-save" onclick="parsePOPasteText()">🔍 분석하기</button>
-    </div>
-  </div>
-</div>
-
-<!-- ✅ BOM(자재명세서) 엑셀 일괄 업로드 — 여러 모델 BOM을 한 번에 등록하기 위한 화면.
-     회사 공식 BOM 엑셀(모델별 시트, "NO/품명/규격/업체명/소요량/단위" 표) 형식을 그대로
-     읽어서 재고에 등록된 자재와 이름을 자동으로 맞춰보고, 확인 후 기존 addBOMItem을
-     그대로 호출해 등록한다 (완제품(TP) 전체 소요량 기준으로 등록됨). -->
-<div class="ov-bg" id="bom-import-ov" style="z-index:2090">
-  <div class="ov-box" style="max-width:760px;max-height:88vh;overflow-y:auto">
-    <h3>🧮 BOM 엑셀 일괄 업로드</h3>
-    <div style="font-size:12px;color:#888;margin-bottom:10px">
-      모델별로 자재 이름을 재고 목록과 자동으로 맞춰봤습니다. <strong style="color:#b45309">매칭 안 됨</strong> 또는 <strong style="color:#b45309">후보 여러 개</strong>인 항목은 자재를 직접 선택해주세요. 이미 등록된 자재는 기본적으로 체크가 해제되어 있습니다(중복 방지). 전부 완제품(TP) 소요량 기준으로 저장됩니다.
-    </div>
-    <div id="bom-import-body"></div>
-    <div id="bom-import-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none;white-space:pre-line"></div>
-    <div class="ov-actions" style="align-items:center">
-      <span id="bom-import-cnt" style="font-size:12px;color:#888;margin-right:auto"></span>
-      <button class="ov-cancel" onclick="closeOv('bom-import-ov')">취소</button>
-      <button class="ov-save" onclick="confirmBOMImportUI()">✔ 선택한 항목 등록</button>
     </div>
   </div>
 </div>
@@ -2540,7 +2500,7 @@ function exportShipHistExcel() {
 //  발주(PO) 관리 — SOLUM 발주 이메일을 읽어서 검토 후 등록
 // ══════════════════════════════════════════════════════════
 let PO = [];
-let poReviewData = []; // 이메일에서 방금 읽어온, 아직 등록 안 한 항목들
+let poReviewData = []; // 엑셀 업로드로 방금 읽어온, 아직 등록 안 한 항목들
 
 async function loadPO() {
   if (!(API_URL || IS_GAS)) return;
@@ -2762,13 +2722,13 @@ function renderPOShortageCard() {
 //    (initDashboard는 여러 곳에서 동기 함수로 호출되므로, 이 함수는 별도로 비동기 실행한다)
 let _poShortageLastLoad = 0;
 // ✅ 발주(PO)/BOM은 하루 중 수시로 바뀌는 데이터가 아니므로, 베트남 시간(UTC+7) 기준
-//    매일 오전 10시가 지난 뒤 첫 호출에서만 새로 불러오고, 그 전까지는 화면을 아무리
+//    매일 오전 6시가 지난 뒤 첫 호출에서만 새로 불러오고, 그 전까지는 화면을 아무리
 //    많이 오가도(대시보드가 열릴 때마다) 이미 불러온 데이터로만 다시 그린다.
 function poShortageVNRefreshBoundary(nowMs) {
   const VN_OFFSET_MS = 7 * 60 * 60 * 1000; // 베트남은 UTC+7, 서머타임 없음
   const vn = new Date(nowMs + VN_OFFSET_MS);
-  let boundary = Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate(), 10, 0, 0, 0) - VN_OFFSET_MS;
-  if (nowMs < boundary) boundary -= 24 * 60 * 60 * 1000; // 아직 오늘 오전 10시(VN) 전이면 기준을 어제 오전 10시(VN)로
+  let boundary = Date.UTC(vn.getUTCFullYear(), vn.getUTCMonth(), vn.getUTCDate(), 6, 0, 0, 0) - VN_OFFSET_MS;
+  if (nowMs < boundary) boundary -= 24 * 60 * 60 * 1000; // 아직 오늘 오전 6시(VN) 전이면 기준을 어제 오전 6시(VN)로
   return boundary;
 }
 async function refreshPOShortageCard() {
@@ -2776,7 +2736,7 @@ async function refreshPOShortageCard() {
   // ✅ initDashboard()는 이 카드와 무관한 화면(재고 수정, NG 등록 등) 수십 곳에서도
   //    "대시보드 숫자 갱신용"으로 호출된다. 그때마다 매번 발주(PO)/BOM을 새로 불러오면
   //    Apps Script 왕복이 그만큼 추가돼서 앱 전체가 느려진다 — 그래서 베트남 시간
-  //    오전 10시가 지난 뒤 아직 그 날짜의 데이터를 불러온 적이 없을 때만 새로 불러온다.
+  //    오전 6시가 지난 뒤 아직 그 날짜의 데이터를 불러온 적이 없을 때만 새로 불러온다.
   const now = Date.now();
   if (_poShortageLastLoad < poShortageVNRefreshBoundary(now)) {
     await Promise.all([loadPO(), loadBOM()]);
@@ -2854,165 +2814,6 @@ async function handlePOExcelUpload(event) {
     }
   };
   reader.readAsArrayBuffer(file);
-}
-
-// ✅ 이메일 내용을 직접 붙여넣으면 브라우저에서 바로 분석한다 (서버 왕복 필요 없음).
-//    HTML로 붙여넣든, 일반 텍스트로 붙여넣든 둘 다 인식하도록 만들었다.
-function openPOPasteModal() {
-  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
-  document.getElementById('po-paste-text').value = '';
-  document.getElementById('po-paste-err').style.display = 'none';
-  document.getElementById('po-paste-ov').classList.add('show');
-}
-
-// HTML로 붙여넣어진 경우: <tr>/<td> 태그를 기준으로 표를 읽는다 (서버 파싱과 동일한 방식)
-function extractTableRowsFromHtmlClient(html) {
-  const rows = [];
-  const trMatches = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
-  trMatches.forEach(trHtml => {
-    const tdMatches = trHtml.match(/<td[^>]*>[\s\S]*?<\/td>/gi) || [];
-    if (!tdMatches.length) return;
-    const cells = tdMatches.map(td => td
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&plusmn;/g, '±')
-      .replace(/&times;/g, '×')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/\s+/g, ' ')
-      .trim());
-    rows.push(cells);
-  });
-  return rows;
-}
-
-// 일반 텍스트로 붙여넣어진 경우: 표를 복사하면 보통 각 줄이 한 행, 셀 사이는
-// 탭(\t)으로 구분된다. 탭이 없으면 2칸 이상 연속된 공백을 구분자로 대신 시도한다.
-function extractTableRowsFromPlainText(text) {
-  return text.split('\n').map(line => {
-    line = line.replace(/\r/g, '');
-    if (!line.trim()) return [];
-    if (line.indexOf('\t') !== -1) return line.split('\t').map(c => c.trim()).filter(c => c !== '');
-    return line.split(/ {2,}/).map(c => c.trim()).filter(c => c !== '');
-  }).filter(cells => cells.length > 0);
-}
-
-// ✅ 세 번째 형식: 표를 복사했는데 칸 하나하나가 전부 따로따로 줄바꿈되어 나오는 경우
-//    (탭도 없고, 한 줄에 값이 하나씩만 있음). 이땐 알려진 헤더 이름들("Purchase Order
-//    Number" 등)이 연속된 줄로 나오는 지점을 찾아서, 그 뒤로는 헤더 개수(6개)만큼씩
-//    끊어서 한 행으로 묶는다. 숫자/날짜처럼 안 생긴 청크가 나오면 데이터가 끝난
-//    것으로 보고 멈춘다 (안내문구가 데이터로 잘못 섞이는 것을 방지).
-function extractTableRowsFromFlatLines(text) {
-  const KNOWN_HEADERS = ['Purchase Order Number', 'Purchase Order Item Number', 'Item Code', 'Item Name', 'Purchase Order Quantity', 'Delivery Date'];
-  const lines = text.split('\n').map(l => l.replace(/\r/g,'').trim()).filter(l => l !== '');
-
-  const itemCodePos = KNOWN_HEADERS.indexOf('Item Code'); // 항목코드가 헤더 중 몇 번째인지
-  const itemCodeLineIdx = lines.findIndex(l => l === 'Item Code');
-  if (itemCodeLineIdx === -1) return null;
-
-  const headerStart = itemCodeLineIdx - itemCodePos;
-  if (headerStart < 0) return null;
-
-  const headerCols = lines.slice(headerStart, headerStart + KNOWN_HEADERS.length);
-  const matchCount = headerCols.filter((h, i) => h === KNOWN_HEADERS[i]).length;
-  if (matchCount < 4) return null; // 확신이 부족하면 이 방식은 포기
-
-  const n = KNOWN_HEADERS.length;
-  const qtyPos = headerCols.indexOf('Purchase Order Quantity');
-  const datePos = headerCols.indexOf('Delivery Date');
-  const rows = [headerCols];
-
-  let i = headerStart + n;
-  while (i + n <= lines.length) {
-    const chunk = lines.slice(i, i + n);
-    const qtyOk = qtyPos < 0 || /^\d[\d,]*\.?\d*$/.test(chunk[qtyPos]);
-    const dateOk = datePos < 0 || /^\d{4}-\d{2}-\d{2}$/.test(chunk[datePos]);
-    if (!qtyOk || !dateOk) break; // 더 이상 데이터 행이 아닌 것으로 판단, 중단
-    rows.push(chunk);
-    i += n;
-  }
-  return rows;
-}
-
-// ✅ 서버 파싱(parsePOFromEmail)과 완전히 같은 규칙으로, 붙여넣은 내용에서
-//    발주 라인 항목들을 찾아낸다. HTML 표 구조, 탭/공백 구분 텍스트, "칸마다 줄바꿈"
-//    형식까지 세 가지를 순서대로 시도한다.
-function parsePORowsFromText(text) {
-  const isHtml = /<table|<tr[\s>]/i.test(text);
-  let rows = isHtml ? extractTableRowsFromHtmlClient(text) : extractTableRowsFromPlainText(text);
-
-  let headerFound = rows.some(cells => cells.indexOf('Item Code') !== -1 && cells.indexOf('Item Name') !== -1);
-  if (!isHtml && !headerFound) {
-    const flatRows = extractTableRowsFromFlatLines(text);
-    if (flatRows) rows = flatRows;
-  }
-
-  let sapPoNumber = '', sapVendorNumber = '';
-  let headerIdx = -1, headerCols = [];
-
-  rows.forEach((cells, i) => {
-    const joined = cells.join(' | ');
-    if (joined.indexOf('SAP Purchase Order Number') !== -1 && cells.length >= 2) {
-      sapPoNumber = cells[cells.length - 1];
-    }
-    if (joined.indexOf('SAP Vendor Number') !== -1 && cells.length >= 2) {
-      sapVendorNumber = cells[cells.length - 1];
-    }
-    if (cells.indexOf('Item Code') !== -1 && cells.indexOf('Item Name') !== -1) {
-      headerIdx = i;
-      headerCols = cells;
-    }
-  });
-
-  const items = [];
-  if (headerIdx >= 0) {
-    const colIdx = {};
-    headerCols.forEach((h, i) => { colIdx[h] = i; });
-    for (let i = headerIdx + 1; i < rows.length; i++) {
-      const cells = rows[i];
-      if (cells.length !== headerCols.length) continue;
-      const itemCode = colIdx['Item Code'] != null ? cells[colIdx['Item Code']] : '';
-      if (!itemCode) continue;
-      items.push({
-        poNumber: (colIdx['Purchase Order Number'] != null ? cells[colIdx['Purchase Order Number']] : '') || sapPoNumber,
-        poItemNumber: colIdx['Purchase Order Item Number'] != null ? cells[colIdx['Purchase Order Item Number']] : '',
-        itemCode: itemCode,
-        itemName: colIdx['Item Name'] != null ? cells[colIdx['Item Name']] : '',
-        poQty: colIdx['Purchase Order Quantity'] != null ? (+String(cells[colIdx['Purchase Order Quantity']]).replace(/,/g,'') || 0) : 0,
-        deliveryDate: colIdx['Delivery Date'] != null ? cells[colIdx['Delivery Date']] : '',
-        sapVendorNumber
-      });
-    }
-  }
-  return { sapPoNumber, sapVendorNumber, items };
-}
-
-async function parsePOPasteText() {
-  const errEl = document.getElementById('po-paste-err');
-  errEl.style.display = 'none';
-  const text = document.getElementById('po-paste-text').value;
-  if (!text.trim()) { errEl.textContent = '내용을 붙여넣어주세요.'; errEl.style.display='block'; return; }
-
-  const parsed = parsePORowsFromText(text);
-  if (!parsed.items.length) {
-    errEl.textContent = '⚠️ 표 형식을 인식하지 못했습니다. "Item Code"와 "Item Name" 항목이 포함된 표 전체를 복사했는지 확인해주세요.';
-    errEl.style.display = 'block';
-    return;
-  }
-
-  // 이미 등록된 것인지 확인 (poNumber+poItemNumber 기준)
-  await loadPO();
-  const existingKeys = new Set(PO.map(r => r.poNumber + '|' + r.poItemNumber));
-  poReviewData = parsed.items.map(it => ({
-    ...it,
-    emailDate: vnDt(),
-    messageId: '',
-    alreadyRegistered: existingKeys.has(it.poNumber + '|' + it.poItemNumber)
-  }));
-
-  closeOv('po-paste-ov');
-  renderPOReview();
 }
 
 function renderPOReview() {
@@ -4835,254 +4636,6 @@ async function deleteBOMItemUI(id) {
   if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
   await loadBOM();
   renderBOMList();
-}
-
-// ══════════════════════════════════════════════════════════
-//  BOM 엑셀 일괄 업로드 — 회사 공식 BOM(자재명세서) 엑셀은 모델(제품)별로 시트가
-//  나뉘어 있고, 시트마다 "NO/품명/규격/업체명/소요량/단위" 표로 자재 목록이 있다.
-//  이 표를 그대로 읽어서, 재고에 이미 등록된 자재와 이름을 맞춰본 뒤 검토 화면을
-//  보여주고, 확인을 누르면 위의 submitBOMBrowse()와 똑같이 addBOMItem을 호출해
-//  등록한다 (여러 모델을 한 번에 처리한다는 점만 다르고, 등록 로직 자체는 재사용).
-//  ✅ 이 회사 BOM 문서는 제품 하나당 필요한 자재 전체를 한 표로 관리하고 있어서
-//    (반제품 권선 단계/완제품 조립 단계로 나누지 않음), 전부 완제품(TP) 소요량으로
-//    등록한다 — "발주 잔량 대비 부족 자재" 계산이 바로 이 완제품 기준 소요량을 쓴다.
-// ══════════════════════════════════════════════════════════
-let bomImportRows = [];
-
-// ✅ 엑셀 시트 한 장(2차원 배열, header:1 형식)에서 "Code No." / "Product Name" /
-//    "Spec." 라벨 셀을 찾아 그 오른쪽에 있는 첫 값을 읽어온다. 회사 양식마다 라벨
-//    위치가 살짝씩 밀려 있어서(예: 50KW 시리즈는 컬럼이 하나 더 있음) 라벨 텍스트로
-//    찾는 방식이 셀 위치를 고정하는 것보다 안전하다.
-const BOM_HEADER_LABELS = new Set(['Code No.', 'Product Name', 'Spec.', '제품분류', 'BOM 상태', '양산이관일', '작성일', '작성자', 'Level']);
-function findBOMLabelValue(rows, label) {
-  for (const row of rows) {
-    const idx = row.findIndex(c => (c || '').toString().trim() === label);
-    if (idx === -1) continue;
-    for (let i = idx + 1; i < row.length; i++) {
-      const v = row[i];
-      if (v === '' || v === null || v === undefined) continue;
-      const vStr = String(v).trim();
-      if (BOM_HEADER_LABELS.has(vStr)) break; // ✅ 값 없이 다음 라벨이 바로 나오면(예: Code No.가 비어있는 시트) 그 행에서는 못 찾은 것으로 처리
-      return vStr;
-    }
-  }
-  return '';
-}
-
-// ✅ 시트 한 장을 파싱해서 {productCode, productName, materials:[...]}로 반환.
-//    표 형식이 아니거나(헤더를 못 찾음) 자재가 하나도 없으면 null.
-function parseBOMSheetRows(rows) {
-  let headerRowIdx = -1, col = {};
-  for (let r = 0; r < rows.length; r++) {
-    const row = rows[r] || [];
-    if (row.includes('NO') && row.includes('품명')) {
-      headerRowIdx = r;
-      row.forEach((v, i) => { if (v !== '' && v !== null && v !== undefined) col[String(v).replace(/\n/g, ' ').trim()] = i; });
-      break;
-    }
-  }
-  if (headerRowIdx === -1) return null;
-
-  const productCode = findBOMLabelValue(rows, 'Code No.') || findBOMLabelValue(rows, 'Product Name');
-  const productName = findBOMLabelValue(rows, 'Spec.') || productCode;
-  if (!productCode) return null;
-
-  const idxNo = col['NO'], idxName = col['품명'], idxSpec = col['규격'], idxVendor = col['업체명'], idxQty = col['소요량'], idxUnit = col['단위'];
-  if (idxName === undefined || idxQty === undefined) return null;
-
-  const rawMaterials = [];
-  for (let r = headerRowIdx + 1; r < rows.length; r++) {
-    const row = rows[r];
-    if (!row) continue;
-    const name = (row[idxName] || '').toString().trim();
-    if (!name) continue; // 자재명이 비어있으면 아직 등록 안 된 빈 템플릿 행
-    const no = row[idxNo];
-    if (no === 0 || no === '0') continue; // NO=0은 완제품 자기 자신 행 — 자재가 아님
-    const qty = parseFloat(row[idxQty]);
-    if (!qty || qty <= 0) continue; // 소요량이 없는 설명/참고 행 또는 미적용(0) 행 제외
-    rawMaterials.push({
-      materialName: name,
-      spec: (row[idxSpec] || '').toString().trim(),
-      vendor: (row[idxVendor] || '').toString().trim(),
-      qtyPerUnit: qty,
-      unit: (row[idxUnit] || '').toString().trim()
-    });
-  }
-
-  // ✅ 같은 자재(품명+규격+단위)가 조립 여러 곳에 쓰여 여러 줄로 나뉜 경우, 하나로
-  //    합쳐서 소요량을 더한다 (예: NOMEX가 부위별로 3줄 등록된 경우).
-  const merged = {};
-  rawMaterials.forEach(m => {
-    const key = m.materialName + '|' + m.spec + '|' + m.unit;
-    if (!merged[key]) merged[key] = { ...m };
-    else merged[key].qtyPerUnit += m.qtyPerUnit;
-  });
-
-  return { productCode, productName, materials: Object.values(merged) };
-}
-
-// ✅ 파싱된 자재 한 줄을, 이미 재고에 등록된 자재(완제품 제외)와 이름/규격 기준으로
-//    맞춰본다. 정확한 등록 코드 체계를 알 수 없으니 "포함 관계" 매칭만 시도하고,
-//    후보가 정확히 하나일 때만 자동 채택 — 애매하면 화면에서 사람이 직접 고른다.
-function normalizeBOMMatchStr(s) {
-  return (s || '').toString().toLowerCase().replace(/[\s\-_./()]/g, '');
-}
-function findBOMInventoryMatches(material) {
-  const specNorm = normalizeBOMMatchStr(material.spec);
-  const nameNorm = normalizeBOMMatchStr(material.materialName);
-  return allRows().filter(r => r.cat !== 'TP').filter(r => {
-    const rNorm = normalizeBOMMatchStr(r.name);
-    if (!rNorm) return false;
-    return (specNorm && (rNorm.includes(specNorm) || specNorm.includes(rNorm))) ||
-           (nameNorm.length > 1 && (rNorm.includes(nameNorm) || nameNorm.includes(rNorm)));
-  });
-}
-
-async function handleBOMImportExcelUpload(event) {
-  const file = event.target.files[0];
-  event.target.value = ''; // 같은 파일 다시 선택 가능하도록 초기화
-  if (!file) return;
-  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
-  if (typeof XLSX === 'undefined') {
-    alert('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침 후 다시 시도해주세요.');
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    try {
-      const wb = XLSX.read(e.target.result, { type: 'array' });
-      const items = [];
-      wb.SheetNames.forEach(sn => {
-        const ws = wb.Sheets[sn];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-        const parsed = parseBOMSheetRows(rows);
-        if (parsed && parsed.materials.length) {
-          parsed.materials.forEach(m => items.push({ productCode: parsed.productCode, productName: parsed.productName, ...m }));
-        }
-      });
-      if (!items.length) {
-        alert('⚠️ BOM 데이터를 찾지 못했습니다.\n\n"NO"와 "품명" 헤더가 있는 표 형식(BOM 자재명세서 양식)의 파일이 맞는지 확인해주세요.');
-        return;
-      }
-
-      bomImportRows = items.map(it => {
-        const candidates = findBOMInventoryMatches(it);
-        const matched = candidates.length === 1 ? candidates[0] : null;
-        const already = matched ? BOM.some(b => b.productCode === it.productCode && effectiveBOMCat(b) === 'TP' && b.materialCode === matched.code && b.materialCat === matched.cat) : false;
-        return {
-          ...it,
-          matchedCode: matched ? matched.code : '',
-          matchedCat: matched ? matched.cat : '',
-          matchedName: matched ? matched.name : '',
-          matchedUnit: matched ? (matched.unit || it.unit) : it.unit,
-          candidateCount: candidates.length,
-          already,
-          skip: already // 이미 등록된 항목은 기본적으로 체크 해제 상태로 시작 (중복 방지)
-        };
-      });
-      renderBOMImportReview();
-      document.getElementById('bom-import-ov').classList.add('show');
-    } catch (err) {
-      alert('엑셀 파일을 읽는 중 오류가 발생했습니다: ' + err.message);
-    }
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-function renderBOMImportReview() {
-  const wrap = document.getElementById('bom-import-body');
-  if (!wrap) return;
-  const pool = allRows().filter(r => r.cat !== 'TP');
-
-  const groups = {};
-  const order = [];
-  bomImportRows.forEach((row, idx) => {
-    const key = row.productCode + '|' + row.productName;
-    if (!groups[key]) { groups[key] = { productCode: row.productCode, productName: row.productName, rows: [] }; order.push(key); }
-    groups[key].rows.push(idx);
-  });
-
-  const optionsHtml = (selectedCode, selectedCat) => {
-    let html = `<option value="">-- 선택 안 함 --</option>`;
-    pool.forEach(r => {
-      const sel = (r.code === selectedCode && r.cat === selectedCat) ? 'selected' : '';
-      html += `<option value="${r.code}|${r.cat}" ${sel}>[${CL[r.cat] || r.cat}] ${r.name} (${r.code})</option>`;
-    });
-    return html;
-  };
-
-  wrap.innerHTML = order.map(key => {
-    const g = groups[key];
-    return `
-    <div style="margin-bottom:14px;border:1px solid #e0e0e8;border-radius:8px;padding:10px">
-      <div style="font-weight:700;font-size:13px;color:#3730a3;margin-bottom:6px">${g.productName} <span style="color:#aaa;font-family:monospace;font-size:11px">${g.productCode}</span></div>
-      ${g.rows.map(idx => {
-        const r = bomImportRows[idx];
-        const badge = r.already ? `<span style="color:#166534">✔ 이미 등록됨</span>`
-          : (r.candidateCount === 1 ? `<span style="color:#166534">자동 매칭됨</span>`
-          : (r.candidateCount > 1 ? `<span style="color:#b45309">후보 ${r.candidateCount}개 — 직접 선택</span>`
-          : `<span style="color:#b91c1c">매칭 안 됨 — 직접 선택</span>`));
-        return `
-        <div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #f0f0f5;font-size:12px;flex-wrap:wrap">
-          <input type="checkbox" ${r.skip ? '' : 'checked'} onchange="bomImportRows[${idx}].skip = !this.checked; renderBOMImportReview()">
-          <div style="min-width:170px;flex:1">
-            <div>${r.materialName}${r.spec ? ` <span style="color:#aaa">· ${r.spec}</span>` : ''}</div>
-            <div style="color:#aaa;font-size:10px">${r.vendor || ''} ${r.vendor ? '·' : ''} <span style="font-size:10px">${badge}</span></div>
-          </div>
-          <select onchange="const v=this.value.split('|'); bomImportRows[${idx}].matchedCode=v[0]||''; bomImportRows[${idx}].matchedCat=v[1]||''; const f=allRows().find(x=>x.code===v[0]&&x.cat===v[1]); bomImportRows[${idx}].matchedName=f?f.name:''; bomImportRows[${idx}].matchedUnit=f?(f.unit||bomImportRows[${idx}].unit):bomImportRows[${idx}].unit; renderBOMImportReview();" style="max-width:220px;font-size:11px">
-            ${optionsHtml(r.matchedCode, r.matchedCat)}
-          </select>
-          <input type="number" value="${r.qtyPerUnit}" oninput="bomImportRows[${idx}].qtyPerUnit = parseFloat(this.value) || 0" style="width:80px;font-size:11px" placeholder="1개당 소요량">
-          <span style="color:#888;font-size:11px;width:36px">${r.unit || ''}</span>
-        </div>`;
-      }).join('')}
-    </div>`;
-  }).join('');
-
-  const cnt = bomImportRows.filter(r => !r.skip && r.matchedCode).length;
-  const cntEl = document.getElementById('bom-import-cnt');
-  if (cntEl) cntEl.textContent = `등록 대상 ${cnt}건`;
-}
-
-async function confirmBOMImportUI() {
-  const errEl = document.getElementById('bom-import-err');
-  if (errEl) errEl.style.display = 'none';
-
-  const targets = bomImportRows.filter(r => !r.skip && r.matchedCode && r.qtyPerUnit > 0);
-  if (!targets.length) {
-    if (errEl) { errEl.textContent = '등록할 항목이 없습니다. 자재를 선택했는지, 체크가 되어 있는지 확인해주세요.'; errEl.style.display = 'block'; }
-    return;
-  }
-
-  let okCount = 0, skipDupCount = 0;
-  const failMsgs = [];
-  for (const r of targets) {
-    // ✅ 이미 등록된 조합은 건너뛴다 (중복 방지 — 같은 엑셀을 다시 올려도 안전)
-    const dup = BOM.some(b => b.productCode === r.productCode && effectiveBOMCat(b) === 'TP' && b.materialCode === r.matchedCode && b.materialCat === r.matchedCat);
-    if (dup) { skipDupCount++; continue; }
-    const body = {
-      productCode: r.productCode, productName: r.productName, productCat: 'TP',
-      materialCode: r.matchedCode, materialName: r.matchedName, materialCat: r.matchedCat, materialUnit: r.matchedUnit,
-      qtyPerUnit: r.qtyPerUnit, token: ADMIN_TOKEN, user: CURRENT_USER || ''
-    };
-    let res = await api('addBOMItem', body);
-    if (!res || !res.ok) res = await api('addBOMItem', body);
-    if (!res || !res.ok) { failMsgs.push(`${r.productName} - ${r.matchedName}: ` + (res && res.error ? res.error : '알 수 없는 오류')); continue; }
-    okCount++;
-  }
-
-  await loadBOM();
-  if (typeof renderBOMList === 'function') renderBOMList();
-  if (typeof refreshPOShortageCard === 'function') refreshPOShortageCard();
-
-  if (failMsgs.length) {
-    if (errEl) { errEl.textContent = `${okCount}건 등록 완료, ${skipDupCount}건은 이미 등록되어 건너뜀, ${failMsgs.length}건 실패:\n` + failMsgs.join('\n'); errEl.style.display = 'block'; }
-  } else {
-    alert(`✅ ${okCount}건 등록 완료되었습니다.` + (skipDupCount ? ` (이미 등록되어 건너뛴 항목 ${skipDupCount}건)` : ''));
-    closeOv('bom-import-ov');
-    bomImportRows = [];
-  }
 }
 
 // ══════════════════════════════════════════════════════════
