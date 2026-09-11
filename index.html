@@ -7321,8 +7321,9 @@ var CURRENT_USER = '';
 var isAdmin      = false;
 var syncTimer    = null;
 var USER_ROLE    = 'viewer';
-// ✅ 베트남 일반(user) 로그인을 "생산"/"품질"/"자재" 비밀번호로 나눠서 부서별로
-//    현장입력 버튼만 보이게 한다. 'production' | 'quality' | 'materials' | ''(구버전/미지정).
+// ✅ (원복됨) 한때 베트남 일반(user) 로그인을 "생산"/"품질"/"자재" 비밀번호로 나눠
+//    부서별로 화면을 제한했었으나, 사용자 확정으로 다시 staff2025 하나로 통합하고
+//    제한을 없앴다. STAFF_DEPT는 구버전 localStorage 복원 하위호환용으로만 남겨둔다.
 var STAFF_DEPT   = '';
 
 // URL 파라미터로 지역 구분
@@ -7355,7 +7356,7 @@ function api(action, body={}) {
       // GitHub Pages / 외부 URL 환경: JSONP fallback
       // ✅ pw 필드 포함 - GAS CORS로 토큰 발급이 안 될 때 비밀번호로 authWrite 통과
       if (!API_URL) { resolve({ok:false, error:'API URL 없음'}); return; }
-      const _pw = USER_ROLE==='admin' ? 'tgvn2025!' : (USER_ROLE==='user' ? (STAFF_DEPT==='quality' ? 'quality2025' : (STAFF_DEPT==='materials' ? 'materials2025' : 'staff2025')) : '');
+      const _pw = USER_ROLE==='admin' ? 'tgvn2025!' : (USER_ROLE==='user' ? 'staff2025' : '');
       const cb = 'cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
       const params = new URLSearchParams({
         action,
@@ -7621,9 +7622,9 @@ function applyRoleUI() {
 
   } else if (USER_ROLE === 'user') {
     // 베트남 일반: 입출고 가능, 수정/삭제 불가
-    // ✅ 부서(생산/품질)가 구분돼 있으면 배지에도 표시 (미지정=구버전 저장분은 그대로 "베트남"만).
-    const deptLabel = STAFF_DEPT === 'production' ? ' (생산)' : (STAFF_DEPT === 'quality' ? ' (품질)' : (STAFF_DEPT === 'materials' ? ' (자재)' : ''));
-    setSyncBadge('ok', '✅ 베트남' + deptLabel);
+    // ✅ (원복됨) 예전엔 부서(생산/품질/자재)를 배지에 표시했지만, 부서 구분 자체를
+    //    없앴으므로 이제 "베트남"만 표시한다.
+    setSyncBadge('ok', '✅ 베트남');
     if (adminBtn) { adminBtn.style.display='inline-block'; adminBtn.textContent='🔐 관리자'; }
 
   } else if (USER_ROLE === 'admin') {
@@ -7669,24 +7670,21 @@ function applyFloorModeUI() {
 //    건드리면 simulate_floor_mode.js 13개 회귀 테스트가 깨진다(현장 전용 기기에서는
 //    두 함수가 같은 결과를 내며 겹쳐 호출돼도 문제 없다).
 
-// 현장입력 화면 안의 버튼(수입검사/출하검사/공정검사=품질, 자재투입/공정별작업일지/
-// 생산실적입력/불량등록=생산)을 부서별로 걸러 보여준다. 부서 미지정(STAFF_DEPT='',
-// 구버전 저장분)은 하위 호환을 위해 제한 없이 전체 허용한다.
+// ✅ (원복됨) 한때 현장입력 화면 안의 버튼(수입검사/출하검사/공정검사=품질, 자재투입/
+//    공정별작업일지/생산실적입력/불량등록=생산)을 부서별로 걸러 보여줬으나, 사용자
+//    확정으로 부서 구분을 없애고 다시 전체 다 보이게 되돌렸다.
 function applyMesButtonDeptUI() {
-  const restrict = (USER_ROLE === 'user' && !isAdmin && !!STAFF_DEPT);
-  document.querySelectorAll('[data-dept]').forEach(el => {
-    el.style.display = restrict ? (el.dataset.dept === STAFF_DEPT ? '' : 'none') : '';
-  });
+  document.querySelectorAll('[data-dept]').forEach(el => { el.style.display = ''; });
 }
 
+// ✅ (원복됨) 한때 베트남 일반직원(staff2025) 로그인 시 "현장입력" 탭만 남기고 나머지
+//    탭(재고/입출고/작업지시/품질검사/발주 등)을 숨겼으나, 사용자 확정으로 다시 로그인
+//    직후 모든 대시보드 화면을 그대로 볼 수 있도록 제한을 없앴다. 관리자 승격/해제 시의
+//    탭 재조정도 더 이상 필요 없다 — 관리자든 일반직원이든 탭 구성이 동일해졌다.
+// ⚠️ 현장 전용 기기(?mode=floor)의 제한은 이 함수와 별개인 applyFloorModeUI()가 그대로
+//    담당한다 — 그 함수는 손대지 않는다(simulate_floor_mode.js 회귀 테스트 대상).
 function applyDeptUI() {
   applyMesButtonDeptUI();
-  if (USER_ROLE !== 'user') return; // 관리자·한국열람(viewer)은 탭 제한 대상 아님
-  const restrict = !isAdmin;
-  document.querySelectorAll('.tb').forEach(b => {
-    if (!b.textContent.includes('현장입력')) b.style.display = restrict ? 'none' : '';
-  });
-  if (restrict) go('mes');
 }
 
 // ── 한국 열람 로그인
@@ -7729,13 +7727,14 @@ async function loginVN() {
   }
 
   // ✅ 직원 비밀번호 체크 - 서버에서 staff 토큰 발급
-  //    ✅ "생산"(staff2025)/"품질"(quality2025)/"자재"(materials2025) 비밀번호를
-  //    구분해서 STAFF_DEPT에 기록한다 — 이 값으로 이후 현장입력 버튼을 부서별로 걸러 보여준다.
-  if (pw === 'staff2025' || pw === 'quality2025' || pw === 'materials2025') {
-    const dept = (pw === 'quality2025') ? 'quality' : (pw === 'materials2025' ? 'materials' : 'production');
+  //    ✅ (원복됨) 한때 "생산"(staff2025)/"품질"(quality2025)/"자재"(materials2025)로
+  //    비밀번호를 나눠 부서별 화면 제한을 뒀으나, 사용자 확정으로 다시 staff2025
+  //    하나로 통합했다 — 이 비밀번호로 로그인하면 부서 구분 없이 모든 대시보드
+  //    화면을 볼 수 있다.
+  if (pw === 'staff2025') {
     CURRENT_USER = name;
     USER_ROLE    = 'user';
-    STAFF_DEPT   = dept;
+    STAFF_DEPT   = '';
     // 서버에서 staff 토큰 발급 받기
     const res = await api('staffLogin', {password: pw});
     if (res.ok && res.token) {
@@ -7747,7 +7746,7 @@ async function loginVN() {
       console.warn('staff 토큰 발급 실패, 로컬 모드로 진행:', res && res.error);
       ADMIN_TOKEN = '';
     }
-    try { safeLSSet('erp_username', name); safeLSSet('erp_role', 'user'); safeLSSet('erp_dept', dept); } catch(e){}
+    try { safeLSSet('erp_username', name); safeLSSet('erp_role', 'user'); safeLSSet('erp_dept', ''); } catch(e){}
     closeLoginModal();
     applyRoleUI();
     startAutoSync();
@@ -8127,9 +8126,9 @@ function initMultiUser() {
             return;
           }
           ADMIN_TOKEN = stfToken;
-          // ✅ 부서(생산/품질) 복원 - 이 값이 없으면(이번 업데이트 이전 저장분) 구버전
-          //    로그인으로 간주해 STAFF_DEPT=''로 두고, applyDeptUI()가 이 경우 전체
-          //    허용으로 처리한다(하위 호환 - 기존 사용자가 갑자기 화면이 사라지지 않게).
+          // ✅ (원복됨) 예전 저장분에 부서값(erp_dept)이 남아있을 수 있어 복원은 해두지만,
+          //    applyDeptUI()가 더 이상 STAFF_DEPT로 화면을 제한하지 않으므로 이 값은
+          //    현재는 배지 표시 등에도 쓰이지 않는 하위호환용 값일 뿐이다.
           STAFF_DEPT = safeLSGet('erp_dept','') || '';
         }
         closeLoginModal();
