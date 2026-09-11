@@ -4040,7 +4040,13 @@ function acKeyQCWO(e) {
 function acPickQCWO(i) {
   const wo = qcWoAcResults[i]; if (!wo) return;
   qcSelectedWorkOrder = wo;
-  qcSelectedItem = { code: wo.code, name: wo.name, cat: (allRows().find(r=>r.code===wo.code && (r.cat==='TP'||r.cat==='BTP'))||{}).cat || 'TP', unit: wo.unit };
+  // ✅ 버그 수정: 작업지시(WO) 자체에 이미 생성 당시 저장된 정확한 cat('TP'/'BTP')이
+  //    있는데도, 지금까지는 이걸 무시하고 현재 재고 마스터(allRows())에서 같은 코드를
+  //    다시 찾아 cat을 추론했다 — 품목이 마스터에서 빠지거나 코드가 살짝 달라지면
+  //    못 찾고 무조건 'TP'로 잘못 떨어져서, BTP 작업지시인데도 출하검사 특성 데이터가
+  //    "필수"로 잘못 표시되는 원인이었다(예: 30KW OUT L3(BTP) 사례). 이제 wo.cat을
+  //    우선 쓰고, 옛날 작업지시라 cat이 비어있는 경우에만 기존 방식으로 보완한다.
+  qcSelectedItem = { code: wo.code, name: wo.name, cat: wo.cat || (allRows().find(r=>r.code===wo.code && (r.cat==='TP'||r.cat==='BTP'))||{}).cat || 'TP', unit: wo.unit };
   document.getElementById('qc-wo-search-q').value = wo.orderNo + ' — ' + wo.name;
   document.getElementById('qc-wo-search-drop').style.display = 'none';
   document.getElementById('qc-code').value = wo.code;
