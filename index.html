@@ -4051,6 +4051,7 @@ function acPickQCWO(i) {
     document.getElementById('qc-lot').placeholder = '⚠️ 이 작업지시엔 LOT이 없습니다 (직접 입력하거나 작업지시 목록에서 재생성)';
   }
   document.getElementById('qc-total-qty').value = wo.producedQty || '';
+  updateQCAttachmentLabel();
   document.getElementById('qc-sample').focus();
 }
 
@@ -4117,18 +4118,23 @@ function onQCTypeChange() {
 }
 
 // ✅ 수입검사는 원자재(KR)일 때만 첨부파일이 필수고, 그 외 카테고리(VN/VTTH 등)는 선택사항이다.
-//    출하검사는 카테고리와 무관하게 항상 필수다. 검사유형이 바뀌거나(onQCTypeChange),
-//    품목이 바뀔 때(acPickQC) 둘 다 호출해서 라벨을 최신 상태로 맞춘다.
+//    출하검사는 완제품(TP)일 때만 필수다 — 반제품(BTP)은 고객사로 나가는 게 아니라
+//    사내에서 다음 공정 자재로 쓰이는 것뿐이라 특성 데이터 첨부를 요구할 대상이 아니다.
+//    검사유형이 바뀌거나(onQCTypeChange), 품목/작업지시가 바뀔 때(acPickQC/acPickQCWO)
+//    모두 호출해서 라벨을 최신 상태로 맞춘다.
 function updateQCAttachmentLabel() {
   const type = document.getElementById('qc-type').value;
   const attachLabel = document.getElementById('qc-attachment-label');
   const isKR = qcSelectedItem && qcSelectedItem.cat === 'KR';
+  const isBTP = qcSelectedItem && qcSelectedItem.cat === 'BTP';
   if (type === '수입검사' && isKR) {
     attachLabel.innerHTML = '첨부파일 * — 검사 성적서 <span style="color:#b91c1c">(필수 · 원자재KR)</span>';
   } else if (type === '수입검사') {
     attachLabel.textContent = '첨부파일 (선택) — 검사 성적서 (원자재KR만 필수)';
+  } else if (type === '출하검사' && isBTP) {
+    attachLabel.textContent = '첨부파일 (선택) — 특성 데이터 (반제품(BTP)은 필수 아님)';
   } else if (type === '출하검사') {
-    attachLabel.innerHTML = '첨부파일 * — 특성 데이터 <span style="color:#b91c1c">(필수)</span>';
+    attachLabel.innerHTML = '첨부파일 * — 특성 데이터 <span style="color:#b91c1c">(필수 · 완제품)</span>';
   } else {
     attachLabel.textContent = '첨부파일 (선택) — 특성 데이터, 검사성적서 등';
   }
@@ -4222,9 +4228,10 @@ async function submitQC() {
   }
 
   // ✅ 수입검사(검사성적서)는 원자재(KR)일 때만 첨부파일이 필수다. 출하검사(특성 데이터)는
-  //    품목 카테고리와 무관하게 항상 필수다. 수정 모드에서 이미 첨부된 파일이 있으면
-  //    (새로 안 골라도) 그대로 인정한다.
-  const isMandatoryAttach = inspType === '출하검사' || (inspType === '수입검사' && qcSelectedItem.cat === 'KR');
+  //    완제품(TP)일 때만 필수다 — 반제품(BTP)은 고객사로 출하되는 게 아니라 사내에서
+  //    다음 공정 자재로 소비되므로 특성 데이터 첨부 대상이 아니다. 수정 모드에서 이미
+  //    첨부된 파일이 있으면(새로 안 골라도) 그대로 인정한다.
+  const isMandatoryAttach = (inspType === '출하검사' && qcSelectedItem.cat !== 'BTP') || (inspType === '수입검사' && qcSelectedItem.cat === 'KR');
   if (isMandatoryAttach) {
     const hasNewFile = document.getElementById('qc-attachment').files.length > 0;
     const hasExistingFile = qcEditTarget && qcEditTarget.attachmentUrl;
