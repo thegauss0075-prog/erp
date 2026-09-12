@@ -4563,6 +4563,16 @@ async function loadWOOutputLots() {
 }
 
 async function openWOTrace(id) {
+  // ✅ "클릭해도 한번에 안 열린다" 원인 대응: 아래에서 서버 조회 6건을 순서대로
+  //    하나씩 기다렸다가(await) 전부 끝나야만 모달을 띄웠던 게 근본 원인이다.
+  //    연결이 느릴 때는 그 6번의 지연이 그대로 더해지고, 안 열린다고 생각한
+  //    사용자가 다시 누르면 이미 진행 중이던 것 위에 또 6건이 겹쳐 쌓여서
+  //    체감상 "여러 번 눌러야 열리는" 현상으로 보인다. 아래 withButtonGuard로
+  //    같은 작업지시를 여는 중에는 중복 클릭을 막는다(다른 제출 버튼들과 동일한
+  //    기존 패턴 재사용).
+  const guard = withButtonGuard(`button[onclick="openWOTrace(${id})"]`, '⏳');
+  if (guard === null) return; // 이미 여는 중 — 조용히 무시
+  try {
   const wo = WO.find(r => r.id === id); if (!wo) return;
   woTraceTarget = wo;
   document.getElementById('wo-trace-info').innerHTML =
@@ -4594,12 +4604,17 @@ async function openWOTrace(id) {
   document.getElementById('routing-required').checked = true;
   document.getElementById('routing-critical-point').value = '';
 
-  await loadWOMaterials();
-  await loadWOOutputLots();
-  await loadBOM();
-  await loadRouting();
-  await loadEquipment();
-  await loadQC(); // ✅ 투입자재 LOT과 수입검사 기록을 매칭해서 첨부파일 링크를 보여주기 위해 필요
+  // ✅ 이 6개 조회는 서로 결과를 참조하지 않는 완전히 독립적인 데이터라서
+  //    순서대로 기다릴 이유가 없다 — 동시에 보내서 "가장 느린 것 1개" 시간만
+  //    기다리면 된다(예전에는 6개 지연 시간이 그대로 다 더해졌음).
+  await Promise.all([
+    loadWOMaterials(),
+    loadWOOutputLots(),
+    loadBOM(),
+    loadRouting(),
+    loadEquipment(),
+    loadQC(), // ✅ 투입자재 LOT과 수입검사 기록을 매칭해서 첨부파일 링크를 보여주기 위해 필요
+  ]);
   renderWOTraceLists();
   renderWOMatBrowse();
   renderBOMList();
@@ -4607,6 +4622,9 @@ async function openWOTrace(id) {
   renderEquipmentList();
   renderRoutingList();
   document.getElementById('wo-trace-ov').classList.add('show');
+  } finally {
+    guard.release();
+  }
 }
 
 // ✅ "🔴 불량으로 인한 추가 출고" 체크박스를 켜면, 최근 등록된 불량 입고(NG-in) 건
