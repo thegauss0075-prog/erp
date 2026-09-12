@@ -2662,6 +2662,29 @@ function computePOMaterialShortage() {
     return item ? (+item.cur || 0) : 0;
   };
 
+  // ✅ [이미 투입된 자재 반영] 이 품목(완제품 또는 반제품)을 만들려고 작업지시를 내서
+  //    자재를 이미 출고(투입)했지만, 아직 품질검사 합격으로 재고에 반영되지 않은
+  //    "진행중(미완료)" 작업지시가 있으면, 그 자재는 이미 이 생산에 쓰이고 있는
+  //    중이다 — 창고 재고에서는 빠졌지만 없어진 게 아니라 작업지시 안에 그대로
+  //    들어있는 상태다. 이걸 반영하지 않으면 작업지시를 정상적으로 진행해서 자재를
+  //    출고할 때마다(=재고가 정상적으로 줄어들 때마다) 오히려 "부족자재" 수량이
+  //    계속 늘어나 보이는 문제가 생긴다. 완제품(TP)뿐 아니라 반제품(BTP) 자체를
+  //    만드는 작업지시(권선 등)에서도 똑같은 문제가 생길 수 있어 공용 함수로 뺐다.
+  const investedMaterialMap = (productCode, productCat) => {
+    const openIds = new Set(
+      WO.filter(w => w.code === productCode && w.cat === productCat && w.status !== '완료').map(w => w.id)
+    );
+    const map = {};
+    if (openIds.size) {
+      WO_MAT.forEach(m => {
+        if (!openIds.has(m.workOrderId)) return;
+        const k = m.code + '|' + m.cat;
+        map[k] = (map[k] || 0) + (+m.qty || 0);
+      });
+    }
+    return map;
+  };
+
   poItems.forEach(g => {
     const boms = BOM.filter(b => b.productCode === g.itemCode && effectiveBOMCat(b) === 'TP');
     if (!boms.length) { noBom.push(g); return; }
@@ -2670,18 +2693,25 @@ function computePOMaterialShortage() {
     const tpCur = findCur(g.itemCode, 'TP');
     const netRemain = Math.max(0, g.totalRemain - tpCur);
     if (netRemain <= 0) return; // 완제품 재고만으로 충분히 커버되면 추가 생산/자재 불필요
+
+    const investedByMaterial = investedMaterialMap(g.itemCode, 'TP');
+
     boms.forEach(b => {
       const key = b.materialCode + '|' + b.materialCat;
-      if (!need[key]) need[key] = { materialCode: b.materialCode, materialName: b.materialName, materialCat: b.materialCat, materialUnit: b.materialUnit, needQty: 0, byProduct: [] };
+      if (!need[key]) need[key] = { materialCode: b.materialCode, materialName: b.materialName, materialCat: b.materialCat, materialUnit: b.materialUnit, needQty: 0, investedQty: 0, byProduct: [] };
       const addQty = (+b.qtyPerUnit || 0) * netRemain;
       need[key].needQty += addQty;
+      need[key].investedQty += investedByMaterial[key] || 0;
       need[key].byProduct.push({ itemCode: g.itemCode, itemName: g.itemName, neededQty: addQty, tpCur, netRemain });
     });
   });
 
   const shortages = Object.values(need).map(m => {
     const cur = findCur(m.materialCode, m.materialCat);
-    return { ...m, cur, shortQty: m.needQty - cur };
+    // ✅ "지금 확보된 자재" = 창고 재고 + 이미 이 생산(미완료 작업지시)에 투입되어
+    //    진행 중인 물량. 투입 전/후 총량이 그대로여야 하므로(창고→작업지시로
+    //    옮겨간 것일 뿐 없어진 게 아님) 이렇게 더해서 비교해야 정확하다.
+    return { ...m, cur, shortQty: m.needQty - (cur + m.investedQty) };
   }).filter(m => m.shortQty > 0.0001);
 
   // ✅ 자재 하나가 여러 완제품에 걸쳐 쓰일 수 있어서, 부족한 자재를 자재 기준이 아니라
@@ -2705,10 +2735,15 @@ function computePOMaterialShortage() {
       if (!btpBoms.length) {
         bomMissing = true;
       } else {
+        // ✅ 반제품(BTP)을 만드는 작업지시(권선 등)에도 완제품과 똑같은 "이미 투입된
+        //    자재 반영"을 적용한다 — 안 그러면 반제품 지시서에서 COIL을 정상 출고할
+        //    때도 부족자재가 늘어나 보이는 동일한 문제가 생긴다.
+        const investedByBtpMaterial = investedMaterialMap(m.materialCode, 'BTP');
         btpMaterials = btpBoms.map(b => {
           const neededQty = (+b.qtyPerUnit || 0) * m.shortQty;
           const cur = findCur(b.materialCode, b.materialCat);
-          return { materialCode: b.materialCode, materialName: b.materialName, materialCat: b.materialCat, materialUnit: b.materialUnit, neededQty, cur, shortQty: neededQty - cur };
+          const invested = investedByBtpMaterial[b.materialCode + '|' + b.materialCat] || 0;
+          return { materialCode: b.materialCode, materialName: b.materialName, materialCat: b.materialCat, materialUnit: b.materialUnit, neededQty, cur, shortQty: neededQty - (cur + invested) };
         }).filter(x => x.shortQty > 0.0001);
       }
       m.byProduct.forEach(p => {
@@ -2815,7 +2850,9 @@ let _poShortageInFlight = null;
 async function refreshPOShortageCard() {
   if (!(API_URL || IS_GAS)) return;
   if (_poShortageInFlight) { await _poShortageInFlight; renderPOShortageCard(); return; }
-  _poShortageInFlight = Promise.all([loadPO(), loadBOM()]);
+  // ✅ "이미 투입된 자재 반영" 계산에 작업지시(WO)/투입자재(WO_MAT)가 필요해서
+  //    PO/BOM과 함께 매번 최신으로 불러온다(위 실시간 조회 원칙과 동일).
+  _poShortageInFlight = Promise.all([loadPO(), loadBOM(), loadWO(), loadWOMaterials()]);
   try { await _poShortageInFlight; }
   finally { _poShortageInFlight = null; }
   renderPOShortageCard();
