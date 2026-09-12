@@ -2847,6 +2847,16 @@ function renderPOShortageCard() {
 //    기다렸다가 같은(가장 최신) 결과로 다시 그리기만 한다. "완전 실시간"은 그대로
 //    유지된다 — 시간 기반 캐시가 아니라 "동시에 겹치는 중복 요청만" 하나로 합치는 것이다.
 let _poShortageInFlight = null;
+// ✅ [서버 왕복 추가 감소] syncNow()가 30초마다 getFullSyncBundle 하나로 PO/BOM/
+//    작업지시/투입자재까지 이미 다 받아오도록 바뀌었다(위 syncNow 히스토리 참고).
+//    그 직후 syncNow()가 initDashboard()를 호출하면 이 함수도 곧바로 실행되는데,
+//    이때 또 getPOShortageBundle을 따로 조회하면 방금 받은 걸 그대로 버리고 같은
+//    데이터를 한 번 더 요청하는 낭비가 된다. _poShortageLastFetch(마지막으로 PO/BOM/
+//    WO/WO_MAT가 채워진 시각)가 아주 최근(2초 이내)이면 "같은 동기화 사이클 안에서
+//    이미 최신값이 채워졌다"는 뜻이므로 재조회 없이 바로 렌더링만 한다. 반대로 다른
+//    화면(예: NG 품목 수정)에서 initDashboard()가 단독으로 호출될 때는 이 조건에
+//    걸리지 않으므로 예전처럼 정상적으로 새로 조회한다 - "매번 최신 값" 원칙은 그대로.
+let _poShortageLastFetch = 0;
 // ✅ [연결 속도 저하 수정 - 서버 왕복 4→1] 이 카드는 대시보드가 그려질 때마다(30초
 //    자동 동기화마다) 매번 최신으로 다시 불러오도록 되어 있어서(완전 실시간 유지가
 //    목적, 위 히스토리 참고), 예전엔 PO/BOM/작업지시/투입자재를 각각 별도 요청
@@ -2860,6 +2870,7 @@ let _poShortageInFlight = null;
 async function refreshPOShortageCard() {
   if (!(API_URL || IS_GAS)) return;
   if (_poShortageInFlight) { await _poShortageInFlight; renderPOShortageCard(); return; }
+  if (Date.now() - _poShortageLastFetch < 2000) { renderPOShortageCard(); return; }
   _poShortageInFlight = (async () => {
     const res = await api('getPOShortageBundle', {});
     if (res && res.ok) {
@@ -2867,6 +2878,7 @@ async function refreshPOShortageCard() {
       BOM = res.bom || [];
       WO = res.wo || [];
       WO_MAT = res.womat || [];
+      _poShortageLastFetch = Date.now();
     }
   })();
   try { await _poShortageInFlight; }
@@ -7748,7 +7760,23 @@ async function syncNow() {
   _syncing = true;
   setSyncBadge('loading');
   try {
-    const [ar, tr, nr] = await Promise.all([api('getAll'), api('getTxLog'), api('getNGAll')]);
+    // ✅ [서버 왕복 감소 - 3(4)번→1번] 예전엔 getAll/getTxLog/getNGAll을 각각 별도
+    //    exec 호출 3개로 나눠 보냈고, 곧이어 initDashboard()가 발주 잔량 부족자재
+    //    카드용으로 또 4개를 따로 요청했다(총 7개). 서버(Code.gs)에 이 7개를 전부
+    //    한 번의 실행 안에서 묶어 반환하는 getFullSyncBundle 액션을 추가하고, 여기서는
+    //    그 하나만 호출한다. 아래의 병합/재분류 로직은 예전과 동일하게 유지하기 위해
+    //    ar/tr/nr을 예전 개별 응답과 같은 모양으로 맞춰준다.
+    const bundle = await api('getFullSyncBundle', {});
+    const ar = bundle && bundle.ok ? { ok: true, data: bundle.all } : { ok: false };
+    const tr = bundle && bundle.ok ? { ok: true, data: bundle.tx } : { ok: false };
+    const nr = bundle && bundle.ok ? { ok: true, items: bundle.ngItems, logs: bundle.ngLogs } : { ok: false };
+    // ✅ PO/BOM/작업지시/투입자재도 이 번들에 함께 들어있으므로 여기서 바로 반영해둔다.
+    //    잠시 후 initDashboard()가 호출될 때 refreshPOShortageCard()가 "방금 막
+    //    받아온 값"임을 알아채고 또 따로 조회하지 않도록(_poShortageLastFetch 참고).
+    if (bundle && bundle.ok) {
+      PO = bundle.po || []; BOM = bundle.bom || []; WO = bundle.wo || []; WO_MAT = bundle.womat || [];
+      _poShortageLastFetch = Date.now();
+    }
     if (ar.ok && ar.data) {
       const d = ar.data;
 
@@ -7892,11 +7920,32 @@ async function syncNow() {
   }
 }
 
+// ✅ [탭이 안 보일 때 동기화 정지] 브라우저 탭을 다른 창 뒤에 두거나 최소화해도
+//    기존엔 30초(GAS는 60초)마다 계속 서버에 동기화 요청을 보냈다 - 보고 있는
+//    사람이 없어도 서버 부담은 그대로 발생했다. document.hidden(Page Visibility API)로
+//    지금 이 탭이 실제로 보이고 있는지 확인해서, 안 보이는 동안은 타이머의 각 tick을
+//    건너뛴다(인터벌 자체를 없앴다 다시 만드는 대신, 매 tick마다 가볍게 확인만 하는
+//    방식이 더 단순하고 안전하다). 탭을 다시 볼 때는 visibilitychange 이벤트로 즉시
+//    한 번 동기화해서 "다시 봤을 때는 최신"이 그대로 유지되도록 한다.
+//    startAutoSync()는 로그인/세션복원 등 여러 곳에서 반복 호출될 수 있으므로,
+//    visibilitychange 리스너는 한 번만 등록한다(중복 등록되면 탭 전환마다 동기화가
+//    여러 번씩 겹쳐 오히려 서버 부담이 늘어나는 역효과가 나기 때문).
+let _visibilityListenerAttached = false;
 function startAutoSync() {
   if (syncTimer) clearInterval(syncTimer);
   syncNow();
-  if (!IS_GAS) syncTimer = setInterval(syncNow, 30000);
-  else syncTimer = setInterval(syncNow, 60000); // GAS는 1분 간격
+  const intervalMs = IS_GAS ? 60000 : 30000; // GAS는 1분 간격
+  syncTimer = setInterval(() => {
+    if (document.hidden) return; // 탭이 안 보이는 동안은 이번 tick은 건너뜀
+    syncNow();
+  }, intervalMs);
+
+  if (!_visibilityListenerAttached) {
+    _visibilityListenerAttached = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) syncNow(); // 탭을 다시 볼 때 바로 한 번 따라잡기 동기화 (이미 진행 중이면 syncNow 내부 _syncing 가드가 조용히 무시함)
+    });
+  }
 }
 
 // ════════════════════════════════════════════════
