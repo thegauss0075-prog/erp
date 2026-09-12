@@ -802,6 +802,11 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <option value="보류">보류</option>
     </select>
   </div>
+  <div style="display:flex;gap:6px;margin-bottom:12px">
+    <button class="period-btn" id="wo-period-7"  onclick="setWOPeriod(7)">최근 1주일</button>
+    <button class="period-btn" id="wo-period-30" onclick="setWOPeriod(30)">최근 1개월</button>
+    <button class="period-btn on" id="wo-period-0"  onclick="setWOPeriod(null)">전체</button>
+  </div>
   <div class="tw"><table style="width:100%">
     <thead><tr>
       <th>지시번호</th><th>품목</th><th>LOT</th><th style="text-align:right">계획수량</th><th style="text-align:right">실적수량</th>
@@ -3130,10 +3135,22 @@ async function loadWO() {
   if (res && res.ok) WO = res.data || [];
 }
 
+let woPeriodDays = null; // ✅ 기본값 "전체" — 오래된 작업지시도 진행중/대기 상태로 남아있을 수 있어 목록에서 갑자기 사라지지 않도록 함
+
+function setWOPeriod(days) {
+  woPeriodDays = days;
+  ['7','30','0'].forEach(k => {
+    const btn = document.getElementById('wo-period-'+k);
+    if (btn) btn.classList.toggle('on', (days===null && k==='0') || (days!==null && String(days)===k));
+  });
+  renderWO();
+}
+
 async function renderWO() {
   await loadWO();
   const q = (document.getElementById('wo-q').value || '').toLowerCase().trim();
   const statusF = document.getElementById('wo-status').value;
+  const cutoffTs = woPeriodDays ? (Date.now() - woPeriodDays*24*3600*1000) : null;
   let rows = WO.slice();
   if (statusF) rows = rows.filter(r => r.status === statusF);
   if (q) rows = rows.filter(r =>
@@ -3141,6 +3158,7 @@ async function renderWO() {
     (r.code||'').toLowerCase().includes(q) ||
     (r.name||'').toLowerCase().includes(q)
   );
+  if (cutoffTs) rows = rows.filter(r => (+r.id || 0) >= cutoffTs); // id가 생성 시각(ms) 타임스탬프라 QC/이력 화면과 동일한 방식으로 기간 비교 가능
 
   const body = document.getElementById('wo-body');
   if (!rows.length) {
