@@ -4344,6 +4344,20 @@ async function submitQC() {
     } else {
       res = await retrySafe(() => submitFn('addQC', body));
     }
+    // ✅ 핵심 수정: addQC 응답이 timeout(애매한 실패 - 서버가 실제로는 저장했는데 응답만
+    //    못 받은 경우일 수 있음)이면, 여기서 그냥 실패로 처리하고 끝내버리면 안 된다.
+    //    실제로 저장이 됐는데도 이 아래의 자동입고(autoInboundFromQC)/BOM 자재 자동차감
+    //    (autoConsumeBOMMaterials)이 전혀 실행되지 않아서, "검사 기록은 있는데 재고는
+    //    하나도 안 늘고 자재도 안 빠지는" 상태로 남는 실제 사고가 있었다
+    //    (BTP 출하검사 827 EA 건 - 검사 기록은 합격으로 남았지만 완제품 재고가 그대로였음).
+    //    그래서 timeout이고 신규 등록일 때는, 서버에서 품질검사 목록을 다시 읽어와
+    //    방금 보낸 내용과 일치하는 최근 기록이 실제로 생겼는지 확인한 뒤, 있으면
+    //    정상 성공으로 간주하고 아래 자동입고/자재차감을 그대로 이어서 진행한다.
+    let wasRecovered = false;
+    if ((!res || !res.ok) && isNew && res && res.error === 'timeout') {
+      const matched = await findRecentMatchingQC(body, inspType, result, totalQty);
+      if (matched) { res = { ok: true, id: matched.id, recovered: true }; wasRecovered = true; }
+    }
     if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
 
     // ✅ 수입검사/출하검사 + 합격 + 신규 등록일 때만 자동 입고 (수정 시엔 중복 반영 방지를 위해 하지 않음)
@@ -4365,6 +4379,9 @@ async function submitQC() {
     if (inboundOk === true) {
       const label = inspType === '출하검사' ? '완제품입고' : '자재입고';
       let msg = `✅ 품질검사 등록 완료 + ${label} ${totalQty.toLocaleString()} ${qcSelectedItem.unit||''} 자동 반영되었습니다.`;
+      if (wasRecovered) {
+        msg = `⏳ 처리 중 응답이 늦게 와서 "서버 처리 실패"로 보였지만, 확인 결과 실제로는 정상 저장됐습니다.\n\n` + msg;
+      }
       if (consumeResult) {
         if (!consumeResult.consumed.length && !consumeResult.shortages.length) {
           msg += `\n\n⚠️ 이 품목에 대한 자재 소요량(BOM) 설정이 없어서 자재는 자동 차감되지 않았습니다. 전공정추적에서 BOM을 설정해두시면 다음부터 자동으로 차감됩니다.`;
@@ -4381,6 +4398,32 @@ async function submitQC() {
   } finally {
     guard.release();
   }
+}
+
+// ✅ addQC가 timeout(애매한 실패)으로 응답했을 때, 서버에 실제로 저장이 됐는지
+//    확인하기 위한 조회. 품질검사 목록을 서버에서 다시 읽어와, 방금 보낸 내용과
+//    핵심 필드가 일치하고 아주 최근(5분 이내)에 생성된 기록이 있으면 그걸 반환한다.
+//    (같은 코드/LOT/작업지시/판정/수량 조합이 우연히 5분 안에 또 나올 가능성은
+//    사실상 없으므로 오탐 걱정 없이 안전하게 "이미 저장됨"으로 판단할 수 있다.)
+async function findRecentMatchingQC(body, inspType, result, totalQty) {
+  try {
+    await loadQC();
+  } catch (e) { return null; }
+  const now = Date.now();
+  return QC.find(q => {
+    if (String(q.inspType||'') !== String(inspType||'')) return false;
+    if (String(q.code||'') !== String(body.code||'')) return false;
+    if (String(q.cat||'') !== String(body.cat||'')) return false;
+    if (String(q.lot||'') !== String(body.lot||'')) return false;
+    if (String(q.workOrderId||'') !== String(body.workOrderId||'')) return false;
+    if (Number(q.sampleQty||0) !== Number(body.sampleQty||0)) return false;
+    if (Number(q.defectQty||0) !== Number(body.defectQty||0)) return false;
+    if (String(q.result||'') !== String(result||'')) return false;
+    if (Number(q.totalQty||0) !== Number(totalQty||0)) return false;
+    const ts = Number(q.id) || 0;
+    if (!ts || now - ts > 5 * 60 * 1000) return false; // 5분 이내 생성된 것만 인정
+    return true;
+  }) || null;
 }
 
 // ✅ 반제품 출하검사 합격 시, 그 품목의 BOM(자재 소요량) 설정을 기준으로
