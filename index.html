@@ -1090,6 +1090,14 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <input id="qc-attachment" type="file">
       <div id="qc-attachment-current" style="font-size:11px;color:#1d4ed8;margin-top:4px"></div>
     </div>
+    <!-- ✅ 출하검사 전용 두 번째 첨부: 특성 데이터(위 qc-attachment)와 별도로
+         출하검사 성적서를 함께 첨부해야 하는 경우를 위한 칸. 수입검사는 여전히
+         첨부 1개 그대로(onQCTypeChange에서 출하검사일 때만 보여줌). -->
+    <div class="ov-fr" id="qc-attachment2-wrap" style="display:none">
+      <label id="qc-attachment2-label">출하검사 성적서 (선택)</label>
+      <input id="qc-attachment2" type="file">
+      <div id="qc-attachment2-current" style="font-size:11px;color:#1d4ed8;margin-top:4px"></div>
+    </div>
     <div class="ov-fr"><label>비고 (선택)</label><input id="qc-note" placeholder="선택사항"></div>
     <div id="qc-add-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div class="ov-actions">
@@ -4051,13 +4059,17 @@ async function renderQC() {
     const attachIcon = r.attachmentUrl
       ? `<a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'} 열기" style="text-decoration:none;color:#16a34a;margin-right:4px">${CLIP_SVG}</a>`
       : `<span title="첨부된 파일 없음" style="color:#cbd5e1;margin-right:4px;cursor:default">${CLIP_SVG}</span>`;
+    // ✅ 출하검사 두 번째 첨부(성적서) - 있을 때만 아이콘 표시(수입검사 등은 애초에 값이 없음).
+    const attachIcon2 = r.attachmentUrl2
+      ? `<a href="${r.attachmentUrl2}" target="_blank" title="${r.attachmentName2||'출하검사 성적서'} 열기" style="text-decoration:none;color:#7c3aed;margin-right:4px">${CLIP_SVG}</a>`
+      : '';
     // ✅ 자동입고가 끝내 실패해서 표시가 남아있는 기록은 눈에 띄게 경고 표시
     //    (실사용 사고: TP 출하검사 합격인데 서버 혼잡으로 자동입고가 조용히 실패했던 건).
     const inboundFailedBadge = r.inboundFailed ? `<div style="color:#b91c1c;font-weight:700;font-size:11px;margin-bottom:2px">⚠️ 재고 미반영</div>` : '';
     return `<tr>
     <td>${r.inspType||'-'}</td>
     <td>${r.name||''} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
-    <td style="font-family:monospace;font-size:11px;color:#1d4ed8">${attachIcon}${r.lot||'-'}</td>
+    <td style="font-family:monospace;font-size:11px;color:#1d4ed8">${attachIcon}${attachIcon2}${r.lot||'-'}</td>
     <td style="font-family:monospace;font-size:11px">${r.workOrderNo||'-'}</td>
     <td style="text-align:right;font-weight:600;color:#1d4ed8">${(r.inspType==='수입검사'||r.inspType==='출하검사') ? (+r.totalQty||0).toLocaleString() : '-'}</td>
     <td style="text-align:right">${(+r.sampleQty||0).toLocaleString()}</td>
@@ -4221,6 +4233,8 @@ async function openAddQC(presetType) {
   document.getElementById('qc-inspector').value = '';
   document.getElementById('qc-attachment').value = '';
   document.getElementById('qc-attachment-current').textContent = '';
+  document.getElementById('qc-attachment2').value = '';
+  document.getElementById('qc-attachment2-current').textContent = '';
   document.getElementById('qc-note').value = '';
   document.getElementById('qc-add-err').style.display = 'none';
   onQCTypeChange();
@@ -4252,6 +4266,9 @@ function onQCTypeChange() {
   document.getElementById('qc-lot').readOnly = isShip;
   document.getElementById('qc-lot').style.background = isShip ? '#f5f6f8' : '#fff';
   document.getElementById('qc-lot-label').firstChild.textContent = isShip ? '작업지시의 LOT (자동 채워짐) ' : 'LOT (선택) ';
+  // ✅ [사용자 요청] 출하검사는 특성 데이터 + 출하검사 성적서, 총 2개까지 첨부 가능.
+  //    수입검사/공정검사는 기존처럼 1개만 유지.
+  document.getElementById('qc-attachment2-wrap').style.display = isShip ? 'block' : 'none';
   updateQCCoreMakerVisibility(); // ✅ CORE 자재면 여기서 다시 제조사란 보여주고 생성버튼 숨김
   updateQCAttachmentLabel();
 }
@@ -4297,6 +4314,10 @@ async function openEditQC(id) {
   document.getElementById('qc-attachment').value = '';
   document.getElementById('qc-attachment-current').innerHTML = r.attachmentUrl
     ? `📎 현재 첨부: <a href="${r.attachmentUrl}" target="_blank" style="color:#1d4ed8">${r.attachmentName||'파일 보기'}</a> (새 파일을 선택하면 교체됩니다)`
+    : '';
+  document.getElementById('qc-attachment2').value = '';
+  document.getElementById('qc-attachment2-current').innerHTML = r.attachmentUrl2
+    ? `📎 현재 첨부: <a href="${r.attachmentUrl2}" target="_blank" style="color:#1d4ed8">${r.attachmentName2||'파일 보기'}</a> (새 파일을 선택하면 교체됩니다)`
     : '';
   document.getElementById('qc-note').value = r.note || '';
   document.getElementById('qc-add-err').style.display = 'none';
@@ -4383,6 +4404,19 @@ async function submitQC() {
       errEl.textContent = e.message; errEl.style.display='block'; return;
     }
   }
+  // ✅ [사용자 요청] 출하검사는 특성 데이터(위 qc-attachment)와 별도로 출하검사
+  //    성적서까지 총 2개 첨부 가능. 서버(Code.gs)엔 이미 이 두 번째 첨부 저장 로직
+  //    (attachmentBase64_2 → attachmentUrl2/attachmentName2 컬럼)이 갖춰져 있었는데
+  //    화면에 입력칸이 없어서 못 쓰고 있었다 — 새로 만들지 않고 그대로 재사용한다.
+  let attachment2 = null;
+  const fileEl2 = document.getElementById('qc-attachment2');
+  if (inspType === '출하검사' && fileEl2 && fileEl2.files && fileEl2.files[0]) {
+    try {
+      attachment2 = await readFileAsBase64(fileEl2.files[0]);
+    } catch (e) {
+      errEl.textContent = e.message; errEl.style.display='block'; return;
+    }
+  }
 
   // ✅ 출하검사는 위에서 고른 완료 작업지시가 곧 연결 대상이고, 그 외 유형은
   //    기존처럼 "연결할 작업지시" 선택란 값을 쓴다.
@@ -4417,11 +4451,16 @@ async function submitQC() {
     body.attachmentMime = attachment.mimeType;
     body.attachmentFileName = attachment.name;
   }
+  if (attachment2) {
+    body.attachmentBase64_2 = attachment2.base64;
+    body.attachmentMime_2 = attachment2.mimeType;
+    body.attachmentFileName_2 = attachment2.name;
+  }
 
   const isNew = !qcEditTarget;
   // ✅ 첨부파일이 있을 땐 데이터가 커서 JSONP(주소창 방식)로는 실패할 수 있으니
   //    실제 POST 요청(apiPost)으로 보낸다. 첨부파일이 없으면 기존 방식 그대로 유지.
-  const submitFn = attachment ? apiPost : api;
+  const submitFn = (attachment || attachment2) ? apiPost : api;
 
   // ✅ 저장 버튼 중복 클릭 방지 + "처리 중" 안내 + 타임아웃 시 무작정 재시도로 인한
   //    중복 저장 방지 (예: 합격 판정 검사가 두 번 등록돼 완제품 재고가 2배로 늘어나는
