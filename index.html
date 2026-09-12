@@ -5276,7 +5276,10 @@ function renderWOTraceLists() {
 
 // ✅ 이 작업지시와 관련된 모든 첨부문서를 한 곳에 모아서 보여준다.
 //    - 수입검사 성적서: 투입자재의 LOT과 코드가 일치하는 수입검사 기록들
-//    - 공정검사/출하검사 특성데이터: 이 작업지시(workOrderId)에 직접 연결된 검사 기록들
+//    - 공정검사 특성데이터 / 출하검사 특성데이터·성적서: 이 작업지시(workOrderId)에
+//      직접 연결된 검사 기록들. 출하검사는 첨부가 최대 2개(특성 데이터 + 성적서)라
+//      있는 것만 각각 별도 항목으로 보여준다(사용자 요청: 전공정추적 한 화면에서
+//      수입검사 성적서 + 특성 데이터 + 출하검사 성적서까지 총 3종 다 볼 수 있어야 함).
 function renderWOTraceDocs(materials) {
   const wo = woTraceTarget;
   const docs = [];
@@ -5291,10 +5294,18 @@ function renderWOTraceDocs(materials) {
   });
 
   // 공정검사·출하검사: 이 작업지시에 직접 연결된 기록
-  QC.filter(q => (q.inspType === '공정검사' || q.inspType === '출하검사') && String(q.workOrderId) === String(wo.id) && q.attachmentUrl)
+  const seenDocKeys = new Set();
+  QC.filter(q => (q.inspType === '공정검사' || q.inspType === '출하검사') && String(q.workOrderId) === String(wo.id))
     .forEach(q => {
-      if (!docs.some(d => d.id === q.id)) {
-        docs.push({ ...q, typeLabel: q.inspType, typeColor: q.inspType === '출하검사' ? '#7c3aed' : '#185FA5', extra: q.name || '' });
+      const typeColor = q.inspType === '출하검사' ? '#7c3aed' : '#185FA5';
+      if (q.attachmentUrl && !seenDocKeys.has(q.id + ':1')) {
+        seenDocKeys.add(q.id + ':1');
+        docs.push({ ...q, typeLabel: q.inspType === '출하검사' ? '출하검사·특성데이터' : q.inspType, typeColor, extra: q.name || '' });
+      }
+      // ✅ 출하검사의 두 번째 첨부(성적서) - 있을 때만 별도 항목으로 추가
+      if (q.inspType === '출하검사' && q.attachmentUrl2 && !seenDocKeys.has(q.id + ':2')) {
+        seenDocKeys.add(q.id + ':2');
+        docs.push({ ...q, attachmentUrl: q.attachmentUrl2, attachmentName: q.attachmentName2, typeLabel: '출하검사·성적서', typeColor, extra: q.name || '' });
       }
     });
 
