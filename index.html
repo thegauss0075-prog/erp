@@ -4252,24 +4252,17 @@ function onQCTypeChange() {
   updateQCAttachmentLabel();
 }
 
-// ✅ 수입검사는 원자재(KR)일 때만 첨부파일이 필수고, 그 외 카테고리(VN/VTTH 등)는 선택사항이다.
-//    출하검사는 완제품(TP)일 때만 필수다 — 반제품(BTP)은 고객사로 나가는 게 아니라
-//    사내에서 다음 공정 자재로 쓰이는 것뿐이라 특성 데이터 첨부를 요구할 대상이 아니다.
-//    검사유형이 바뀌거나(onQCTypeChange), 품목/작업지시가 바뀔 때(acPickQC/acPickQCWO)
-//    모두 호출해서 라벨을 최신 상태로 맞춘다.
+// ✅ [사용자 요청으로 변경] 예전엔 수입검사(원자재KR)/출하검사(완제품)일 때 첨부파일을
+//    반드시 첨부해야만 저장이 가능했는데, 이제는 어떤 경우에도 첨부파일이 필수가 아니다
+//    (선택사항). 검사유형이 바뀌거나(onQCTypeChange), 품목/작업지시가 바뀔 때
+//    (acPickQC/acPickQCWO) 모두 호출해서 라벨을 최신 상태로 맞춘다.
 function updateQCAttachmentLabel() {
   const type = document.getElementById('qc-type').value;
   const attachLabel = document.getElementById('qc-attachment-label');
-  const isKR = qcSelectedItem && qcSelectedItem.cat === 'KR';
-  const isBTP = qcSelectedItem && qcSelectedItem.cat === 'BTP';
-  if (type === '수입검사' && isKR) {
-    attachLabel.innerHTML = '첨부파일 * — 검사 성적서 <span style="color:#b91c1c">(필수 · 원자재KR)</span>';
-  } else if (type === '수입검사') {
-    attachLabel.textContent = '첨부파일 (선택) — 검사 성적서 (원자재KR만 필수)';
-  } else if (type === '출하검사' && isBTP) {
-    attachLabel.textContent = '첨부파일 (선택) — 특성 데이터 (반제품(BTP)은 필수 아님)';
+  if (type === '수입검사') {
+    attachLabel.textContent = '첨부파일 (선택) — 검사 성적서';
   } else if (type === '출하검사') {
-    attachLabel.innerHTML = '첨부파일 * — 특성 데이터 <span style="color:#b91c1c">(필수 · 완제품)</span>';
+    attachLabel.textContent = '첨부파일 (선택) — 특성 데이터';
   } else {
     attachLabel.textContent = '첨부파일 (선택) — 특성 데이터, 검사성적서 등';
   }
@@ -4362,21 +4355,9 @@ async function submitQC() {
     if (!totalQty || totalQty <= 0) { errEl.textContent = '총 입고수량을 입력해주세요.'; errEl.style.display='block'; return; }
   }
 
-  // ✅ 수입검사(검사성적서)는 원자재(KR)일 때만 첨부파일이 필수다. 출하검사(특성 데이터)는
-  //    완제품(TP)일 때만 필수다 — 반제품(BTP)은 고객사로 출하되는 게 아니라 사내에서
-  //    다음 공정 자재로 소비되므로 특성 데이터 첨부 대상이 아니다. 수정 모드에서 이미
-  //    첨부된 파일이 있으면(새로 안 골라도) 그대로 인정한다.
-  const isMandatoryAttach = (inspType === '출하검사' && qcSelectedItem.cat !== 'BTP') || (inspType === '수입검사' && qcSelectedItem.cat === 'KR');
-  if (isMandatoryAttach) {
-    const hasNewFile = document.getElementById('qc-attachment').files.length > 0;
-    const hasExistingFile = qcEditTarget && qcEditTarget.attachmentUrl;
-    if (!hasNewFile && !hasExistingFile) {
-      const label = inspType === '수입검사' ? '검사 성적서' : '특성 데이터';
-      errEl.textContent = `⚠️ ${inspType}는 ${label} 파일을 반드시 첨부해야 합니다.`;
-      errEl.style.display = 'block';
-      return;
-    }
-  }
+  // ✅ [사용자 요청으로 변경] 예전엔 수입검사(원자재KR)/출하검사(완제품)일 때 첨부파일이
+  //    없으면 저장 자체를 막았는데, 이제는 어떤 검사유형·품목이든 첨부파일 없이도
+  //    저장할 수 있다(완전 선택사항). updateQCAttachmentLabel()의 라벨도 동일하게 변경됨.
 
   // ✅ CORE 원자재는 제조사(분류용)를 반드시 고르고, LOT은 제조사가 실제로 보낸 값을
   //    직접 입력해야 한다 (우리가 만드는 게 아니므로).
