@@ -4051,6 +4051,9 @@ async function renderQC() {
     const attachIcon = r.attachmentUrl
       ? `<a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'} 열기" style="text-decoration:none;color:#16a34a;margin-right:4px">${CLIP_SVG}</a>`
       : `<span title="첨부된 파일 없음" style="color:#cbd5e1;margin-right:4px;cursor:default">${CLIP_SVG}</span>`;
+    // ✅ 자동입고가 끝내 실패해서 표시가 남아있는 기록은 눈에 띄게 경고 표시
+    //    (실사용 사고: TP 출하검사 합격인데 서버 혼잡으로 자동입고가 조용히 실패했던 건).
+    const inboundFailedBadge = r.inboundFailed ? `<div style="color:#b91c1c;font-weight:700;font-size:11px;margin-bottom:2px">⚠️ 재고 미반영</div>` : '';
     return `<tr>
     <td>${r.inspType||'-'}</td>
     <td>${r.name||''} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
@@ -4062,9 +4065,10 @@ async function renderQC() {
     <td><span style="color:${resultColor[r.result]||'#555'};font-weight:600">${r.result||'-'}</span></td>
     <td style="font-size:12px;color:#666">${r.inspector||'-'}</td>
     <td style="font-size:12px;color:#666">${fmtDt(r.inspDate)}</td>
-    <td style="font-size:12px;color:#888">${r.note||'-'}</td>
+    <td style="font-size:12px;color:#888">${inboundFailedBadge}${r.note||'-'}</td>
     <td class="no-print" style="white-space:nowrap">
       ${(r.inspType==='수입검사' && r.result==='합격') ? `<button class="edit-btn" onclick="printQCLotQR(${r.id})" title="LOT QR 라벨 인쇄 (창고 보관/자재출고용)">🔖</button>` : ''}
+      ${(isAdmin && r.inboundFailed) ? `<button class="edit-btn" onclick="retryQCInbound(${r.id})" title="재고 반영 재시도" style="color:#b91c1c">🔄</button>` : ''}
       ${isAdmin ? `<button class="edit-btn" onclick="openEditQC(${r.id})" title="수정">✏️</button>` : ''}
       ${isAdmin ? `<button class="edit-btn" onclick="deleteQC(${r.id})" title="삭제">🗑️</button>` : ''}
     </td>
@@ -4459,6 +4463,15 @@ async function submitQC() {
       if (inboundOk && inspType === '출하검사' && qcSelectedItem.cat === 'BTP' && qcSelectedWorkOrder) {
         consumeResult = await autoConsumeBOMMaterials(body, totalQty, qcSelectedWorkOrder.id, qcSelectedWorkOrder.orderNo);
       }
+
+      // ✅ [사고 재발 방지] 재확인해도 서버에 반영이 안 된 게 확인된(끝까지 실패한)
+      //    경우, 경고창을 놓치거나 자리를 비워도 나중에 누구든 알아볼 수 있도록
+      //    이 검사 기록 자체에 "재고 미반영" 표시를 남긴다 (품질검사 목록에서
+      //    🔄 재시도 버튼으로 다시 반영 가능).
+      if (inboundOk === false && res.id) {
+        try { await api('updateQC', { id: res.id, inboundFailed: true, token: ADMIN_TOKEN, user: CURRENT_USER || '' }); }
+        catch (e) { /* 표시 남기기 자체가 실패해도 검사 기록/재시도 가능성은 남아있으니 무시 */ }
+      }
     }
 
     qcEditTarget = null;
@@ -4567,6 +4580,44 @@ async function autoConsumeBOMMaterials(qcBody, totalQty, woId, woNo) {
   return { consumed, shortages };
 }
 
+// ✅ addTx가 (자동입고에서) 실패했을 때, 혹시 첫 시도가 실제로는 서버에 반영됐는데
+//    응답만 못 받은 것일 수 있으니 거래이력을 다시 조회해서 확인한다.
+//    (findRecentMatchingQC와 완전히 같은 패턴 — 타입/코드/LOT/수량이 일치하고
+//    sinceTs 이후에 생성된 기록이 있으면 실제로 반영된 것으로 판단한다.)
+async function findMatchingTxSince(txCheck, sinceTs) {
+  try {
+    const res = await api('getTxLog', {});
+    if (!res || !res.ok || !res.data) return null;
+    return res.data.find(t => {
+      if (String(t.type||'') !== String(txCheck.type||'')) return false;
+      if (String(t.code||'') !== String(txCheck.code||'')) return false;
+      if (String(t.lot||'') !== String(txCheck.lot||'')) return false;
+      if (Number(t.qty||0) !== Number(txCheck.qty||0)) return false;
+      const ts = Number(t.id) || 0;
+      if (!ts || ts < sinceTs) return false;
+      return true;
+    }) || null;
+  } catch (e) { return null; }
+}
+
+// ✅ 검사 기록 자체와 마찬가지로, "방금 실패한" 것으로 보이는 거래도 최근 5분 이내
+//    생성된 일치하는 기록이 있는지로 재확인한다 (addTx 응답 유실 대비).
+function findRecentMatchingTx(txCheck) {
+  return findMatchingTxSince(txCheck, Date.now() - 5 * 60 * 1000);
+}
+
+// ✅ addTx 성공(혹은 재확인 성공) 시 로컬 상태(txLog, DB 재고)에 반영하는 부분을
+//    자동입고/재시도 양쪽에서 그대로 재사용하기 위해 분리.
+function applyInboundTxLocally(txEntry) {
+  txLog.push(txEntry);
+  const arr = {TP:DB.tp, BTP:DB.btp, KR:DB.kr, VN:DB.vn, VTTH:DB.vtth}[txEntry.cat];
+  const item = arr && arr.find(r => r.code === txEntry.code);
+  if (item) {
+    item.cur = (+item.cur||0) + txEntry.qty;
+    item.total = (+item.total||0) + txEntry.qty;
+  }
+}
+
 // ✅ 수입검사/출하검사 합격 시, 실제 입고(재고 증가) 거래를 자동으로 생성한다.
 //    카테고리에 따라 완제품/반제품은 'tp-in', 원자재 등은 'in' 타입으로 정확히 구분해서
 //    기록해야 이후 LOT 잔여 계산·이력 추적이 다른 화면과 일관되게 맞는다.
@@ -4582,17 +4633,56 @@ async function autoInboundFromQC(qcBody, totalQty, unit) {
   let res = await api('addTx', { ...txEntry, token: ADMIN_TOKEN, user: CURRENT_USER || '' });
   if (!res || !res.ok) res = await api('addTx', { ...txEntry, token: ADMIN_TOKEN, user: CURRENT_USER || '' });
   if (!res || !res.ok) {
-    alert(`⚠️ 품질검사는 저장됐지만, 자동 입고 반영에는 실패했습니다: ${res && res.error ? res.error : '알 수 없는 오류'}\n입출고 화면에서 수동으로 입고를 등록해주세요.`);
+    // ✅ [사고 재발 방지] 서버 혼잡 등으로 두 번 다 실패 응답을 받았어도, 실제로는
+    //    한 번은 반영이 됐을 수 있으니 거래이력을 재조회해서 확인한 뒤에만 최종 실패로
+    //    처리한다 (실사용 사고: TP 30KW OUT L3 482EA 출하검사 합격 - 서버 혼잡 중 등록돼
+    //    자동입고 응답을 못 받고 재고가 그대로였던 건).
+    const matched = await findRecentMatchingTx({ type: txEntry.type, code: txEntry.code, lot: txEntry.lot, qty: txEntry.qty });
+    if (matched) { applyInboundTxLocally(txEntry); return true; }
+    alert(`⚠️ 품질검사는 저장됐지만, 자동 입고 반영에는 실패했습니다: ${res && res.error ? res.error : '알 수 없는 오류'}\n입출고 화면에서 수동으로 입고를 등록하시거나, 품질검사 목록에서 "🔄 재시도" 버튼을 눌러주세요.`);
     return false;
   }
-  txLog.push(txEntry);
-  const arr = {TP:DB.tp, BTP:DB.btp, KR:DB.kr, VN:DB.vn, VTTH:DB.vtth}[qcBody.cat];
-  const item = arr && arr.find(r => r.code === qcBody.code);
-  if (item) {
-    item.cur = (+item.cur||0) + totalQty;
-    item.total = (+item.total||0) + totalQty;
-  }
+  applyInboundTxLocally(txEntry);
   return true;
+}
+
+// ✅ 자동입고가 끝내 실패해 "재고 미반영" 표시가 붙은 검사 기록을, 그 기록 자체에
+//    저장된 값 그대로 다시 자동입고 시도한다 (관리자가 입출고 화면에 직접 안 가도 됨).
+//    이미 반영이 됐는데 표시만 안 지워진 상태에서 실수로 또 누르는 경우를 대비해,
+//    이 검사 기록이 등록된 시점(id) 이후로 이미 같은 거래가 있었는지 먼저 확인하고,
+//    있으면 새로 추가하지 않고 표시만 지운다(중복 반영 방지).
+async function retryQCInbound(id) {
+  const r = QC.find(q => +q.id === +id);
+  if (!r) { alert('검사 기록을 찾을 수 없습니다.'); return; }
+  const guard = withButtonGuard(`button[onclick="retryQCInbound(${id})"]`, '⏳');
+  if (guard === null) return;
+  try {
+    const unit = (allRows().find(x => x.code === r.code) || {}).unit || '';
+    const txType = ['TP','BTP'].includes(r.cat) ? 'tp-in' : 'in';
+    const totalQty = +r.totalQty || 0;
+    const already = await findMatchingTxSince({ type: txType, code: r.code, lot: r.lot || '', qty: totalQty }, +r.id || 0);
+    let inboundOk, consumeResult = null;
+    if (already) {
+      inboundOk = true;
+    } else {
+      inboundOk = await autoInboundFromQC({ inspType: r.inspType, code: r.code, name: r.name, cat: r.cat, lot: r.lot }, totalQty, unit);
+      if (inboundOk && r.inspType === '출하검사' && r.cat === 'BTP' && r.workOrderId) {
+        consumeResult = await autoConsumeBOMMaterials({ code: r.code, cat: r.cat }, totalQty, r.workOrderId, r.workOrderNo);
+      }
+    }
+    if (!inboundOk) { alert('⚠️ 다시 시도했지만 여전히 실패했습니다. 잠시 후 다시 시도하거나 입출고 화면에서 수동으로 등록해주세요.'); return; }
+    await retrySafe(() => api('updateQC', { id: r.id, inboundFailed: '', token: ADMIN_TOKEN, user: CURRENT_USER || '' }));
+    await renderQC();
+    let msg = already
+      ? `✅ 확인 결과 이미 재고에 반영되어 있었습니다. "재고 미반영" 표시만 정리했습니다.`
+      : `✅ 재고 반영 재시도 성공: ${totalQty.toLocaleString()} ${unit}`;
+    if (consumeResult && consumeResult.consumed.length) {
+      msg += `\n\n📦 자동 차감된 자재:\n` + consumeResult.consumed.map(c => `- ${c.name} ${c.qty.toLocaleString()} (LOT: ${c.lot})`).join('\n');
+    }
+    alert(msg);
+  } finally {
+    guard.release();
+  }
 }
 
 async function deleteQC(id) {
