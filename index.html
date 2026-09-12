@@ -8010,16 +8010,35 @@ async function loginVN() {
   if (!name) { errEl.textContent='이름을 입력해주세요. / Vui lòng nhập tên.'; errEl.style.display='block'; return; }
   if (!pw)   { errEl.textContent='비밀번호를 입력해주세요. / Vui lòng nhập mật khẩu.'; errEl.style.display='block'; return; }
 
+  // ✅ [로그인 로딩시간 개선] 이 화면은 다른 저장/제출 버튼들과 달리 처리 중
+  //    표시가 전혀 없었다 — 토큰 발급 서버 호출이 느릴 때 버튼을 눌러도 화면에
+  //    아무 변화가 없어 "로딩이 안 되나?" 싶어 다시 누르게 되고, 그러면 이미
+  //    진행 중이던 요청 위에 또 요청이 겹쳐서 오히려 더 느려졌다. 다른 화면들과
+  //    동일한 withButtonGuard(중복 클릭 방지 + ⏳ 표시)로 통일한다.
+
   // ✅ 관리자 비밀번호 체크
   if (pw === 'tgvn2025!') {
+    const guard = withButtonGuard('button[onclick="loginVN()"]', '⏳ 확인 중...');
+    if (guard === null) return; // 이미 처리 중 - 중복 클릭 무시
+    // 서버에서 admin 토큰 발급 (timeout이면 재시도 안 함 - 다른 화면들과 동일한 retrySafe)
+    let res;
+    try {
+      res = await retrySafe(() => api('adminLogin', {password: pw}));
+    } finally {
+      guard.release();
+    }
+    // ✅ 예전엔 토큰 발급에 실패해도 그냥 로그인된 것처럼 넘어가서, 이후 관리자
+    //    기능이 이유 없이 다 막히는 혼란스러운 상황이 생겼다 — 관리자 토큰은
+    //    필수이므로 실패하면 명확히 알리고 로그인을 진행하지 않는다.
+    if (!res || !res.ok) {
+      errEl.textContent = '서버 연결 실패: ' + (res && res.error ? res.error : '알 수 없는 오류') + ' — 잠시 후 다시 시도해주세요. / Kết nối máy chủ thất bại, vui lòng thử lại.';
+      errEl.style.display = 'block';
+      return;
+    }
     CURRENT_USER = name;
     USER_ROLE    = 'admin';
-    // 서버에서 admin 토큰 발급
-    const res = await api('adminLogin', {password: pw});
-    if (res.ok) {
-      ADMIN_TOKEN = res.token;
-      try { safeLSSet('_adm', res.token); } catch(e){}
-    }
+    ADMIN_TOKEN = res.token;
+    try { safeLSSet('_adm', res.token); } catch(e){}
     try { safeLSSet('erp_username', name); safeLSSet('erp_role', 'admin'); } catch(e){}
     closeLoginModal();
     applyRoleUI();
@@ -8033,16 +8052,23 @@ async function loginVN() {
   //    하나로 통합했다 — 이 비밀번호로 로그인하면 부서 구분 없이 모든 대시보드
   //    화면을 볼 수 있다.
   if (pw === 'staff2025') {
+    const guard = withButtonGuard('button[onclick="loginVN()"]', '⏳ 확인 중...');
+    if (guard === null) return; // 이미 처리 중 - 중복 클릭 무시
+    // 서버에서 staff 토큰 발급 받기
+    let res;
+    try {
+      res = await retrySafe(() => api('staffLogin', {password: pw}));
+    } finally {
+      guard.release();
+    }
     CURRENT_USER = name;
     USER_ROLE    = 'user';
     STAFF_DEPT   = '';
-    // 서버에서 staff 토큰 발급 받기
-    const res = await api('staffLogin', {password: pw});
-    if (res.ok && res.token) {
+    if (res && res.ok && res.token) {
       ADMIN_TOKEN = res.token;
       try { safeLSSet('_stf', res.token); } catch(e){}
     } else {
-      // ✅ 서버 연결 실패 시에도 로그인 허용 (GitHub Pages 환경 등)
+      // ✅ 서버 연결 실패 시에도 로그인 허용 (GitHub Pages 환경 등) — 그대로 유지.
       // 비밀번호는 클라이언트에서 이미 검증됨
       console.warn('staff 토큰 발급 실패, 로컬 모드로 진행:', res && res.error);
       ADMIN_TOKEN = '';
@@ -10342,14 +10368,7 @@ if (document.readyState === 'loading') {
         <input id="user-name-input" placeholder="예: 김철수 (구매팀)" maxlength="30"
           onkeydown="if(event.key==='Enter')loginViewer()">
       </div>
-      <button class="ov-save" style="width:100%;padding:11px;margin-top:12px" onclick="
-  var nm=(document.getElementById('user-name-input').value||'').trim();
-  if(!nm){alert('이름을 입력해주세요.');return;}
-  CURRENT_USER=nm; USER_ROLE='viewer';
-  var ov=document.getElementById('user-ov');if(ov){ov.style.display='none';}
-  var lbl=document.getElementById('user-label');if(lbl)lbl.textContent=nm;
-  applyRoleUI(); startAutoSync();
-">👁️ 열람 시작</button>
+      <button class="ov-save" style="width:100%;padding:11px;margin-top:12px" onclick="loginViewer()">👁️ 열람 시작</button>
     </div>
 
     <!-- 베트남 로그인 -->
