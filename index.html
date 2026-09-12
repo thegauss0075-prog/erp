@@ -793,7 +793,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <div class="toolbar">
     <button onclick="openAddWO()" style="padding:7px 16px;border-radius:7px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 작업지시 추가</button>
     <button onclick="syncNow()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 새로고침</button>
-    <div class="sw"><span class="si">🔍</span><input id="wo-q" placeholder="지시번호·코드·품명 검색..." oninput="renderWO()"></div>
+    <div class="sw"><span class="si">🔍</span><input id="wo-q" placeholder="지시번호·코드·품명·LOT 검색..." oninput="renderWO()"></div>
     <select id="wo-status" onchange="renderWO()">
       <option value="">전체 상태</option>
       <option value="대기">대기</option>
@@ -1087,7 +1087,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <div class="ov-fr"><label>검사자 (선택)</label><input id="qc-inspector" placeholder="선택사항"></div>
     <div class="ov-fr">
       <label id="qc-attachment-label">첨부파일 (선택) — 특성 데이터, 검사성적서 등</label>
-      <input id="qc-attachment" type="file">
+      <input id="qc-attachment" type="file" onchange="updateQCAttachCountLabel()">
       <div id="qc-attachment-current" style="font-size:11px;color:#1d4ed8;margin-top:4px"></div>
     </div>
     <!-- ✅ 출하검사 전용 두 번째 첨부: 특성 데이터(위 qc-attachment)와 별도로
@@ -1095,9 +1095,12 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
          첨부 1개 그대로(onQCTypeChange에서 출하검사일 때만 보여줌). -->
     <div class="ov-fr" id="qc-attachment2-wrap" style="display:none">
       <label id="qc-attachment2-label">출하검사 성적서 (선택)</label>
-      <input id="qc-attachment2" type="file">
+      <input id="qc-attachment2" type="file" onchange="updateQCAttachCountLabel()">
       <div id="qc-attachment2-current" style="font-size:11px;color:#1d4ed8;margin-top:4px"></div>
     </div>
+    <!-- ✅ [사용자 요청] 지금 몇 개 첨부됐는지(기존 첨부 + 새로 고른 파일 포함) 모달
+         안에서 바로 확인. updateQCAttachCountLabel()이 갱신한다. -->
+    <div id="qc-attach-count-label" style="font-size:12px;color:#555;font-weight:600;margin:-6px 0 10px 2px"></div>
     <div class="ov-fr"><label>비고 (선택)</label><input id="qc-note" placeholder="선택사항"></div>
     <div id="qc-add-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div class="ov-actions">
@@ -3226,10 +3229,14 @@ async function renderWO() {
   const cutoffTs = woPeriodDays ? (Date.now() - woPeriodDays*24*3600*1000) : null;
   let rows = WO.slice();
   if (statusF) rows = rows.filter(r => r.status === statusF);
+  // ✅ [사용자 요청] LOT 번호로도 작업지시를 바로 찾을 수 있게 검색 대상에 추가.
+  //    고객사 불량 접수 시 LOT 하나만 갖고 있어도, 품질검사 탭에서 지시번호를
+  //    거치지 않고 이 화면에서 바로 그 지시서를 찾아 전공정추적을 열 수 있다.
   if (q) rows = rows.filter(r =>
     (r.orderNo||'').toLowerCase().includes(q) ||
     (r.code||'').toLowerCase().includes(q) ||
-    (r.name||'').toLowerCase().includes(q)
+    (r.name||'').toLowerCase().includes(q) ||
+    (r.lot||'').toLowerCase().includes(q)
   );
   if (cutoffTs) rows = rows.filter(r => (+r.id || 0) >= cutoffTs); // id가 생성 시각(ms) 타임스탬프라 QC/이력 화면과 동일한 방식으로 기간 비교 가능
 
@@ -4271,6 +4278,28 @@ function onQCTypeChange() {
   document.getElementById('qc-attachment2-wrap').style.display = isShip ? 'block' : 'none';
   updateQCCoreMakerVisibility(); // ✅ CORE 자재면 여기서 다시 제조사란 보여주고 생성버튼 숨김
   updateQCAttachmentLabel();
+  updateQCAttachCountLabel(); // ✅ 검사유형이 바뀌면 최대 첨부 개수(1개/2개)도 바뀌므로 표시도 다시 계산
+}
+
+// ✅ [사용자 요청] 지금 몇 개의 파일이 첨부되어 있는지(수정 화면이면 기존 첨부 포함,
+//    새로 고른 파일도 포함) 모달 안에서 바로 확인할 수 있게 한다. 출하검사는 최대
+//    2개(특성 데이터 + 성적서), 그 외(수입검사/공정검사)는 최대 1개.
+function updateQCAttachCountLabel() {
+  const el = document.getElementById('qc-attach-count-label');
+  if (!el) return;
+  const type = document.getElementById('qc-type').value;
+  const isShip = type === '출하검사';
+  const hasAttach1 = document.getElementById('qc-attachment').files.length > 0
+    || !!document.getElementById('qc-attachment-current').textContent.trim();
+  let count = hasAttach1 ? 1 : 0;
+  let max = 1;
+  if (isShip) {
+    max = 2;
+    const hasAttach2 = document.getElementById('qc-attachment2').files.length > 0
+      || !!document.getElementById('qc-attachment2-current').textContent.trim();
+    if (hasAttach2) count++;
+  }
+  el.textContent = count > 0 ? `📎 첨부파일 ${count}/${max}개 첨부됨` : `📎 첨부된 파일 없음 (0/${max}개)`;
 }
 
 // ✅ [사용자 요청으로 변경] 예전엔 수입검사(원자재KR)/출하검사(완제품)일 때 첨부파일을
