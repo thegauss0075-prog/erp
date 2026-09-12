@@ -7509,7 +7509,7 @@ function api(action, body={}) {
         // ✅ delete 대신 빈 함수로 교체 → 늦게 도착해도 ReferenceError 없이 조용히 무시됨
         window[cb] = function(){ try{delete window[cb];}catch(e){} };
         resolve({ok:false,error:'timeout'});
-      }, 20000); // ✅ 8초 → 20초로 연장 (GAS 응답 지연 대비)
+      }, 40000); // ✅ 8초 → 20초 → 40초로 연장 (스프레드시트가 커지면서 GAS 응답이 20초도 자주 넘김 - 실제로 서버에는 저장됐는데 응답만 못 받아 "timeout"으로 잘못 보이는 사고가 반복돼서 더 늘림)
       const s=document.createElement('script');
       s.src=API_URL+'?'+params.toString();
       s.onerror=()=>{
@@ -7524,6 +7524,30 @@ function api(action, body={}) {
       c.appendChild(s);
     } catch(e) { resolve({ok:false, error:e.message}); }
   });
+}
+
+// ✅ "연결이 너무 느리다" 문제 진단용 - API 설정 모달의 버튼에서 호출한다.
+//    구글 시트를 직접 열어서 맨 아래로 스크롤해보지 않아도, 각 시트의 행 수를
+//    바로 확인할 수 있게 해서 어떤 시트가 커져서 느려지는 원인인지 찾기 쉽게 한다.
+async function checkSheetStats() {
+  const resultEl = document.getElementById('sheet-stats-result');
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = '<div style="padding:10px;color:#888">조회 중...</div>';
+  const res = await api('getSheetStats', { token: ADMIN_TOKEN });
+  if (!res || !res.ok) {
+    resultEl.innerHTML = `<div style="padding:10px;color:#b91c1c">조회 실패: ${res && res.error ? res.error : '알 수 없는 오류'}</div>`;
+    return;
+  }
+  const rows = (res.data || []).map(s => {
+    const big = s.rows >= 5000;
+    return `<tr style="${big ? 'color:#b91c1c;font-weight:700' : ''}">
+      <td style="padding:4px 8px;border-bottom:1px solid #f0f0f0">${s.name}${big ? ' ⚠️' : ''}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid #f0f0f0;text-align:right">${(+s.rows||0).toLocaleString()}행</td>
+      <td style="padding:4px 8px;border-bottom:1px solid #f0f0f0;text-align:right;color:#888">${s.cols}열</td>
+    </tr>`;
+  }).join('');
+  resultEl.innerHTML = `<table style="width:100%;border-collapse:collapse">${rows}</table>
+    <div style="padding:6px 8px;color:#888">⚠️ 표시는 5,000행 이상 - 로그성 시트가 여기 해당되면 오래된 데이터를 별도 시트로 옮기는 걸 고려해볼 수 있습니다.</div>`;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -10334,6 +10358,17 @@ if (document.readyState === 'loading') {
       </button>
     </div>
     <p style="font-size:12px;color:#888">저장하면 브라우저에 기억됩니다.</p>
+
+    <!-- ✅ "연결이 너무 느리다" 문제 진단용 - 구글 시트를 직접 열어보지 않아도
+         관리자가 여기서 바로 각 시트의 행 수를 확인할 수 있다. 행이 아주 많은
+         로그성 시트(TXLOG, QC_LOG 등)가 느려짐의 원인인지 확인하는 용도. -->
+    <div style="margin:14px 0;padding-top:12px;border-top:1px solid #eee">
+      <button onclick="checkSheetStats()" style="width:100%;padding:8px;border-radius:7px;border:1px solid #b45309;background:#fffbeb;color:#b45309;font-size:12px;cursor:pointer;font-weight:600">
+        🩺 서버 시트 크기 확인 (연결이 느릴 때 원인 확인용)
+      </button>
+      <div id="sheet-stats-result" style="display:none;margin-top:8px;font-size:11px;max-height:220px;overflow-y:auto;border:1px solid #eee;border-radius:6px"></div>
+    </div>
+
     <div class="ov-actions">
       <button class="cp-back" onclick="var ov=document.getElementById('api-ov');if(ov){ov.classList.remove('show');ov.style.display='none';}">취소</button>
       <button class="ov-save" onclick="
