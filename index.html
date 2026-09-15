@@ -4674,6 +4674,30 @@ function findRecentMatchingTx(txCheck) {
   return findMatchingTxSince(txCheck, Date.now() - 5 * 60 * 1000);
 }
 
+// ✅ addWOMaterialsBatch(작업지시 자재 일괄 출고) 버전의 "재확인" — findMatchingTxSince와
+//    같은 이유(응답 유실 ≠ 서버 처리 실패)로, 배치 전체(모든 행)가 최근 서버 이력에
+//    이미 남아있는지 getTxLog 조회 "한 번"으로 확인한다(행마다 따로 조회하지 않음 —
+//    이 함수도 addWOMaterialsBatch와 마찬가지로 자재 개수에 비례해 느려지면 안 되므로).
+//    전부 일치해야 "이미 처리됨"으로 보고, 하나라도 못 찾으면(진짜 실패 포함) false —
+//    이 경우 호출 쪽에서 원래 배치 그대로 1회 재시도한다.
+async function findMatchingWOBatchSince(rows, sinceTs) {
+  const since = sinceTs != null ? sinceTs : Date.now() - 5 * 60 * 1000;
+  try {
+    const res = await api('getTxLog', {});
+    if (!res || !res.ok || !res.data) return false;
+    return rows.every(r => {
+      const txType = woMatLotTypes(r.cat).outType;
+      return res.data.some(t =>
+        String(t.type||'') === txType &&
+        String(t.code||'') === String(r.code||'') &&
+        String(t.lot||'') === String(r.lot||'') &&
+        Number(t.qty||0) === Number(r.qty||0) &&
+        (Number(t.id) || 0) >= since
+      );
+    });
+  } catch (e) { return false; }
+}
+
 // ✅ addTx 성공(혹은 재확인 성공) 시 로컬 상태(txLog, DB 재고)에 반영하는 부분을
 //    자동입고/재시도 양쪽에서 그대로 재사용하기 위해 분리.
 function applyInboundTxLocally(txEntry) {
@@ -5625,8 +5649,7 @@ async function submitWOMatBrowse() {
   //    자재 개수만큼 느려지던 원인이었다. 이제 전부 한 번의 요청으로 모아서 보낸다
   //    (서버가 한 번의 실행 안에서 전부 처리) — POST 방식(apiPost)을 써서 자재가
   //    많아도 URL 길이 제한 없이 안전하게 보낸다.
-  // ✅ withButtonGuard/retrySafe로 중복 클릭·타임아웃 재시도로 인한 중복 출고를 막는다
-  //    (기존엔 이 함수만 직접 버튼을 껐다 켰는데, 이제 공용 헬퍼로 다른 모달과 통일).
+  // ✅ withButtonGuard로 중복 클릭으로 인한 중복 출고를 막는다.
   const guard = withButtonGuard('button[onclick="submitWOMatBrowse()"]', '⏳ 처리 중...');
   if (guard === null) return; // 이미 처리 중 - 중복 클릭 무시
 
@@ -5634,9 +5657,29 @@ async function submitWOMatBrowse() {
     workOrderId: woTraceTarget.id, orderNo: woTraceTarget.orderNo, productCode: woTraceTarget.code,
     rows: rows.map(r => ({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: r.lot, qty: r.qty, ngRefId, ngRefLabel }))
   };
+  // ✅ [2026-09-15 사고 재발 방지] 예전엔 retrySafe()로 "실패로 보이면 무작정 한 번 더
+  //    같은 요청을 재전송"했다. 그런데 "서버 처리 실패(Failed to fetch)"는 응답만
+  //    유실됐을 뿐 서버는 이미 정상 처리를 끝냈을 수도 있는 경우를 구분하지 못한다 —
+  //    실제로 이 경우 재시도가 자재 전부를 두 번 출고 처리해서 재고가 이중으로
+  //    깎이는 사고가 났다(addTx/QC와 똑같은 원인). 이제 addTx 복구 로직과 동일하게,
+  //    "실패"로 보일 때 바로 재전송하지 않고 서버 이력에서 이 배치가 이미 반영됐는지
+  //    먼저 확인한다 — 이미 반영돼 있으면 재전송 없이 성공으로 처리하고, 정말 반영된
+  //    적이 없을 때만 1회 재시도한다(재시도 후에도 다시 한번 같은 확인을 거친다).
   let res;
   try {
-    res = await retrySafe(() => apiPost('addWOMaterialsBatch', body));
+    res = await apiPost('addWOMaterialsBatch', body);
+    if (!res || !res.ok) {
+      const already = await findMatchingWOBatchSince(rows);
+      if (already) {
+        res = { ok: true, processedCount: rows.length, failures: [] };
+      } else {
+        res = await apiPost('addWOMaterialsBatch', body); // 정말 실패했을 때만 재시도
+        if (!res || !res.ok) {
+          const already2 = await findMatchingWOBatchSince(rows);
+          if (already2) res = { ok: true, processedCount: rows.length, failures: [] };
+        }
+      }
+    }
   } finally {
     guard.release();
   }
