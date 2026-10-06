@@ -418,7 +418,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <button onclick="exportInvExcel()" style="padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">📊 엑셀 다운로드</button>
     <button id="add-item-btn" onclick="openAddItem()" style="display:none;padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 품목 추가</button>
     <button id="month-close-btn" onclick="openMonthClose()" style="display:none;padding:7px 14px;border-radius:7px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(124,58,237,.3)">📅 월말 마감</button>
-    <button id="sync-btn" onclick="syncNow()" style="padding:7px 14px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555;white-space:nowrap">🔄 동기화</button>
+    <button id="sync-btn" onclick="syncNow(true)" style="padding:7px 14px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555;white-space:nowrap">🔄 동기화</button>
     <div class="sw"><span class="si">🔍</span><input id="inv-q" placeholder="코드·품명 검색..." oninput="chkXb('inv-q','inv-xb');renderInv()"><button class="xb" id="inv-xb" onclick="clr('inv-q','inv-xb');renderInv()">✕</button></div>
     <select id="inv-cat" onchange="initMS();initSubFilter();renderInv()">
       <option value="">전체 카테고리</option><option value="TP">완제품</option><option value="BTP">반제품</option><option value="KR">원자재 KR</option><option value="VN">원자재 VN</option><option value="VTTH">소모품</option>
@@ -792,15 +792,15 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 <div id="tab-wo" class="sec">
   <div class="toolbar">
     <button onclick="openAddWO()" style="padding:7px 16px;border-radius:7px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 작업지시 추가</button>
-    <button onclick="syncNow()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 새로고침</button>
-    <div class="sw"><span class="si">🔍</span><input id="wo-q" placeholder="지시번호·코드·품명·LOT 검색..." oninput="renderWO()"></div>
-    <select id="wo-status" onchange="renderWO()">
-      <option value="">전체 상태</option>
-      <option value="대기">대기</option>
-      <option value="진행중">진행중</option>
-      <option value="완료">완료</option>
-      <option value="보류">보류</option>
-    </select>
+    <button onclick="syncNow(true)" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 새로고침</button>
+    <div class="sw"><span class="si">🔍</span><input id="wo-q" placeholder="지시번호·코드·품명·LOT 검색..." oninput="renderWO({local:true})"></div>
+  </div>
+  <div id="wo-status-btns" style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+    <button class="period-btn on" data-status=""        onclick="setWOStatusFilter('')">전체</button>
+    <button class="period-btn"    data-status="대기"    onclick="setWOStatusFilter('대기')">대기</button>
+    <button class="period-btn"    data-status="진행중"  onclick="setWOStatusFilter('진행중')">진행중</button>
+    <button class="period-btn"    data-status="완료"    onclick="setWOStatusFilter('완료')">완료</button>
+    <button class="period-btn"    data-status="보류"    onclick="setWOStatusFilter('보류')">보류</button>
   </div>
   <div style="display:flex;gap:6px;margin-bottom:12px">
     <button class="period-btn" id="wo-period-7"  onclick="setWOPeriod(7)">최근 1주일</button>
@@ -906,8 +906,8 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <button onclick="openStartDT()" style="padding:7px 16px;border-radius:7px;border:1px solid #ef4444;background:#ef4444;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔴 다운타임 시작</button>
     <button onclick="openAddDTManual()" style="padding:7px 16px;border-radius:7px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">✍️ 지난 기록 추가</button>
     <button onclick="renderDT()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 새로고침</button>
-    <div class="sw"><span class="si">🔍</span><input id="dt-q" placeholder="라인·사유·비고 검색..." oninput="renderDT()"></div>
-    <select id="dt-reason-f" onchange="renderDT()">
+    <div class="sw"><span class="si">🔍</span><input id="dt-q" placeholder="라인·사유·비고 검색..." oninput="renderDT({local:true})"></div>
+    <select id="dt-reason-f" onchange="renderDT({local:true})">
       <option value="">전체 사유</option>
       <option value="설비고장">설비고장</option>
       <option value="자재대기">자재대기</option>
@@ -990,14 +990,14 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <div class="toolbar">
     <button onclick="openAddQC()" style="padding:7px 16px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 검사 기록 추가</button>
     <button onclick="renderQC()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 새로고침</button>
-    <div class="sw"><span class="si">🔍</span><input id="qc-q" placeholder="코드·품명·LOT 검색..." oninput="renderQC()"></div>
-    <select id="qc-type-f" onchange="renderQC()">
+    <div class="sw"><span class="si">🔍</span><input id="qc-q" placeholder="코드·품명·LOT 검색..." oninput="renderQC({local:true})"></div>
+    <select id="qc-type-f" onchange="renderQC({local:true})">
       <option value="">전체 유형</option>
       <option value="수입검사">수입검사</option>
       <option value="공정검사">공정검사</option>
       <option value="출하검사">출하검사</option>
     </select>
-    <select id="qc-result-f" onchange="renderQC()">
+    <select id="qc-result-f" onchange="renderQC({local:true})">
       <option value="">전체 판정</option>
       <option value="합격">합격</option>
       <option value="조건부합격">조건부합격</option>
@@ -2242,12 +2242,12 @@ function go(id){
   document.querySelectorAll('.tb')[order[id]].classList.add('on');
   if(id==='inv'){initMS();renderInv();}
   if(id==='io') renderIOTable();
-  if(id==='wo') renderWO();
-  if(id==='dt') renderDT();
-  if(id==='qc') renderQC();
+  if(id==='wo') renderWO({soft:true});
+  if(id==='dt') renderDT({soft:true});
+  if(id==='qc') renderQC({soft:true});
   if(id==='hist') renderHist();
   if(id==='ng'){renderNG();renderNGLog();initNGLogModel();}
-  if(id==='po') renderPO();
+  if(id==='po') renderPO({soft:true});
   if(id==='mes') renderMES();
 }
 function setIC(c){document.getElementById('inv-cat').value=c;initMS();renderInv();}
@@ -2531,15 +2531,34 @@ function exportShipHistExcel() {
 let PO = [];
 let poReviewData = []; // 엑셀 업로드로 방금 읽어온, 아직 등록 안 한 항목들
 
+// ✅ [2026-10 성능 개선] 화면별 "마지막으로 서버에서 받아온 시각". 탭을 열 때마다/검색창에
+//    글자를 칠 때마다 서버에 목록을 새로 요청하던 것(Apps Script 한 번에 20~30초)이 목록이
+//    비어 보이고 연결이 안 되는 것처럼 느껴지는 큰 원인이었다.
+//    - 검색·필터·기간 버튼: 이미 가진 데이터로만 다시 그린다(서버 요청 없음)
+//    - 탭 열기: 가진 데이터로 즉시 먼저 그리고, 20초 넘게 지났을 때만 뒤에서 새로 받아 다시 그린다
+//    - 저장/수정/삭제 직후의 renderXX(): 예전처럼 항상 서버에서 새로 받는다(완전 실시간 유지)
+var _loadedAt = {};
+const _SOFT_FRESH_MS = 20000;
+function _isFresh(keys, ms) {
+  const now = Date.now();
+  return keys.every(k => now - (_loadedAt[k] || 0) < (ms || _SOFT_FRESH_MS));
+}
+
 async function loadPO() {
   if (!(API_URL || IS_GAS)) return;
   const res = await api('getPOLog', {});
-  if (res && res.ok) PO = res.data || [];
+  if (res && res.ok) { PO = res.data || []; _loadedAt.po = Date.now(); }
 }
 
-async function renderPO() {
-  document.getElementById('po-clear-btn').style.display = isAdmin ? 'inline-block' : 'none';
+async function renderPO(opts) {
+  opts = opts || {};
+  if (opts.local) { _renderPOBody(); return; }
+  if (opts.soft) { _renderPOBody(); if (_isFresh(['po'])) return; }
   await loadPO();
+  _renderPOBody();
+}
+function _renderPOBody() {
+  document.getElementById('po-clear-btn').style.display = isAdmin ? 'inline-block' : 'none';
   const body = document.getElementById('po-body');
   const emptyEl = document.getElementById('po-empty');
   if (!PO.length) {
@@ -2890,18 +2909,33 @@ let _poShortageLastFetch = 0;
 //    됐다. 서버(Code.gs)에 4개를 한 번의 실행 안에서 묶어 응답하는 getPOShortageBundle
 //    액션을 추가하고, 여기서는 그 하나만 호출한다 - "매번 최신 값" 원칙은 그대로
 //    유지되면서(캐시를 추가한 게 아니라 왕복 횟수만 줄인 것) 서버 왕복만 4→1로 준다.
+// ✅ [2026-10 성능 개선 - 시작 시 중복 요청 제거] 페이지가 열리면 _onReady()가 initDashboard()를
+//    바로 호출하는데, 그와 동시에 자동 동기화(startAutoSync→syncNow)도 같은 PO/BOM/WO/WO_MAT를
+//    getFullSyncBundle로 받아온다. 그러면 똑같은 데이터를 getPOShortageBundle로 한 번 더
+//    요청하게 되어(둘 다 20~30초) 서버가 두 배로 바빠지고 둘 다 늦게 끝났다.
+//    이제는 (1) 자동 동기화가 아직 시작 전이거나 (2) 동기화가 진행 중일 때는 따로 요청하지
+//    않고 지금 가진 값으로만 그린다 - 동기화가 끝나면 어차피 이 카드를 다시 그린다.
+//    (3) 단독으로 호출되는 경우에도 서버에 마지막으로 받은 데이터 버전(ver)을 보내서,
+//    그 사이 변경이 없으면 서버가 시트를 읽지 않고 즉시 "변경 없음"으로 응답한다.
+var _autoSyncStarted = false;
+var _dataVerPO = null;   // PO/BOM/WO/WO_MAT를 마지막으로 받았을 때의 서버 데이터 버전
 async function refreshPOShortageCard() {
   if (!(API_URL || IS_GAS)) return;
+  if (!_autoSyncStarted || _syncing) { renderPOShortageCard(); return; }
   if (_poShortageInFlight) { await _poShortageInFlight; renderPOShortageCard(); return; }
-  if (Date.now() - _poShortageLastFetch < 2000) { renderPOShortageCard(); return; }
+  if (Date.now() - _poShortageLastFetch < 8000) { renderPOShortageCard(); return; }
   _poShortageInFlight = (async () => {
-    const res = await api('getPOShortageBundle', {});
-    if (res && res.ok) {
+    const res = await api('getPOShortageBundle', _dataVerPO ? { ver: _dataVerPO } : {});
+    if (res && res.ok && res.unchanged) {
+      _poShortageLastFetch = Date.now();
+    } else if (res && res.ok) {
       PO = res.po || [];
       BOM = res.bom || [];
       WO = res.wo || [];
       WO_MAT = res.womat || [];
       _poShortageLastFetch = Date.now();
+      _dataVerPO = res.ver || null;
+      _loadedAt.po = _loadedAt.wo = Date.now();
     }
   })();
   try { await _poShortageInFlight; }
@@ -3220,7 +3254,25 @@ let woProdMatWarningShown = false; // 자재투입 없음 경고를 이미 보�
 async function loadWO() {
   if (!(API_URL || IS_GAS)) return;
   const res = await api('getWorkOrders', {});
-  if (res && res.ok) WO = res.data || [];
+  if (res && res.ok) { WO = res.data || []; _loadedAt.wo = Date.now(); }
+}
+
+// ✅ 작업지시 상태 필터 - 드롭다운 대신 버튼형(전체/대기/진행중/완료/보류) + 건수 표시
+let woStatusFilter = '';
+function setWOStatusFilter(s) {
+  woStatusFilter = s || '';
+  renderWO({local:true}); // 이미 받아둔 목록으로만 다시 그림 (서버 요청 없음)
+}
+function updateWOStatusButtons(counts) {
+  const wrap = document.getElementById('wo-status-btns');
+  if (!wrap) return;
+  wrap.querySelectorAll('button[data-status]').forEach(btn => {
+    const st = btn.getAttribute('data-status');
+    const label = st || '전체';
+    const c = counts ? (st ? (counts[st] || 0) : counts.__all) : null;
+    btn.textContent = (c === null || c === undefined) ? label : `${label} ${c}`;
+    btn.classList.toggle('on', st === woStatusFilter);
+  });
 }
 
 let woPeriodDays = null; // ✅ 기본값 "전체" — 오래된 작업지시도 진행중/대기 상태로 남아있을 수 있어 목록에서 갑자기 사라지지 않도록 함
@@ -3231,16 +3283,21 @@ function setWOPeriod(days) {
     const btn = document.getElementById('wo-period-'+k);
     if (btn) btn.classList.toggle('on', (days===null && k==='0') || (days!==null && String(days)===k));
   });
-  renderWO();
+  renderWO({local:true});
 }
 
-async function renderWO() {
+async function renderWO(opts) {
+  opts = opts || {};
+  if (opts.local) { _renderWOBody(); return; }
+  if (opts.soft) { _renderWOBody(); if (_isFresh(['wo'])) return; }
   await loadWO();
+  _renderWOBody();
+}
+function _renderWOBody() {
   const q = (document.getElementById('wo-q').value || '').toLowerCase().trim();
-  const statusF = document.getElementById('wo-status').value;
+  const statusF = woStatusFilter;
   const cutoffTs = woPeriodDays ? (Date.now() - woPeriodDays*24*3600*1000) : null;
   let rows = WO.slice();
-  if (statusF) rows = rows.filter(r => r.status === statusF);
   // ✅ [사용자 요청] LOT 번호로도 작업지시를 바로 찾을 수 있게 검색 대상에 추가.
   //    고객사 불량 접수 시 LOT 하나만 갖고 있어도, 품질검사 탭에서 지시번호를
   //    거치지 않고 이 화면에서 바로 그 지시서를 찾아 전공정추적을 열 수 있다.
@@ -3251,6 +3308,12 @@ async function renderWO() {
     (r.lot||'').toLowerCase().includes(q)
   );
   if (cutoffTs) rows = rows.filter(r => (+r.id || 0) >= cutoffTs); // id가 생성 시각(ms) 타임스탬프라 QC/이력 화면과 동일한 방식으로 기간 비교 가능
+
+  // 상태 버튼의 건수는 "검색·기간 조건은 적용, 상태 조건은 미적용" 기준으로 센다
+  const statusCounts = { __all: rows.length };
+  rows.forEach(r => { const st = r.status || '대기'; statusCounts[st] = (statusCounts[st] || 0) + 1; });
+  updateWOStatusButtons(statusCounts);
+  if (statusF) rows = rows.filter(r => (r.status || '대기') === statusF);
 
   const body = document.getElementById('wo-body');
   if (!rows.length) {
@@ -3785,7 +3848,7 @@ let dtEditTarget = null;   // 수정 대상
 async function loadDT() {
   if (!(API_URL || IS_GAS)) return;
   const res = await api('getDowntimeLog', {});
-  if (res && res.ok) DT = res.data || [];
+  if (res && res.ok) { DT = res.data || []; _loadedAt.dt = Date.now(); }
 }
 
 function setDTPeriod(days) {
@@ -3794,7 +3857,7 @@ function setDTPeriod(days) {
     const btn = document.getElementById('dt-period-'+k);
     if (btn) btn.classList.toggle('on', (days===null && k==='0') || (days!==null && String(days)===k));
   });
-  renderDT();
+  renderDT({local:true});
 }
 
 function dtDurationLabel(mins) {
@@ -3803,8 +3866,14 @@ function dtDurationLabel(mins) {
   return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
 }
 
-async function renderDT() {
+async function renderDT(opts) {
+  opts = opts || {};
+  if (opts.local) { _renderDTBody(); return; }
+  if (opts.soft) { _renderDTBody(); if (_isFresh(['dt'])) return; }
   await loadDT();
+  _renderDTBody();
+}
+function _renderDTBody() {
 
   // ── 진행 중인 다운타임 배너
   const active = DT.filter(r => r.status === '진행중');
@@ -4010,7 +4079,7 @@ let qcWoAcIdx = -1;
 async function loadQC() {
   if (!(API_URL || IS_GAS)) return;
   const res = await api('getQCLog', {});
-  if (res && res.ok) QC = res.data || [];
+  if (res && res.ok) { QC = res.data || []; _loadedAt.qc = Date.now(); }
 }
 
 function setQCPeriod(days) {
@@ -4019,7 +4088,7 @@ function setQCPeriod(days) {
     const btn = document.getElementById('qc-period-'+k);
     if (btn) btn.classList.toggle('on', (days===null && k==='0') || (days!==null && String(days)===k));
   });
-  renderQC();
+  renderQC({local:true});
 }
 
 function suggestQCResult() {
@@ -4029,9 +4098,15 @@ function suggestQCResult() {
   if (defect === 0 && sel.value === '불합격') sel.value = '합격';
 }
 
-async function renderQC() {
-  await loadQC();
-  await loadWO(); // 작업지시 연결 드롭다운에서 최신 목록을 쓰기 위해 함께 갱신
+async function renderQC(opts) {
+  opts = opts || {};
+  if (opts.local) { _renderQCBody(); return; }
+  if (opts.soft) { _renderQCBody(); if (_isFresh(['qc','wo'])) return; }
+  // 두 목록을 순서대로 기다리던 것을 동시에 요청 (대기 시간이 합이 아니라 긴 쪽 하나로 줄어듦)
+  await Promise.all([loadQC(), loadWO()]); // 작업지시 연결 드롭다운에서 최신 목록을 쓰기 위해 함께 갱신
+  _renderQCBody();
+}
+function _renderQCBody() {
 
   const q = (document.getElementById('qc-q').value || '').toLowerCase().trim();
   const typeF = document.getElementById('qc-type-f').value;
@@ -7992,7 +8067,17 @@ function setSyncBadge(state, msg) {
 
 // ── 전체 동기화
 var _syncing = false;
-async function syncNow() {
+// ✅ [2026-10 성능 개선] 서버 데이터 버전 기반 "변경 없으면 즉시 응답" 동기화.
+//    _syncVer: 마지막으로 전체 데이터를 받았을 때의 서버 버전. 서버(Code.gs)가 이 버전과
+//    같다고 답하면(=그 사이 아무도 데이터를 안 바꿈) 시트 전체를 읽고 내려받는 대신 아주 짧은
+//    응답만 오므로 화면 재그리기도 건너뛴다. 구글 시트를 사람이 직접 고친 경우처럼 서버가
+//    알 수 없는 변경도 결국 반영되도록, _SYNC_FULL_EVERY번에 한 번과 수동 '🔄 동기화'
+//    버튼(syncNow(true))에서는 항상 전체를 받는다.
+var _syncVer = null;
+var _syncUnchangedStreak = 0;
+const _SYNC_FULL_EVERY = 5;
+var _lastSyncMs = 0;
+async function syncNow(force) {
   if (_syncing) return;
   // ✅ 관리자가 수량을 수정 중인 모달이 열려있으면 동기화를 미루어
   //    "화면에 보이는 옛 수량 + 방금 동기화된 실제 수량" 혼선으로 인한 오차 사고를 예방
@@ -8004,6 +8089,7 @@ async function syncNow() {
 
   _syncing = true;
   setSyncBadge('loading');
+  const _syncT0 = Date.now();
   try {
     // ✅ [서버 왕복 감소 - 3(4)번→1번] 예전엔 getAll/getTxLog/getNGAll을 각각 별도
     //    exec 호출 3개로 나눠 보냈고, 곧이어 initDashboard()가 발주 잔량 부족자재
@@ -8011,7 +8097,13 @@ async function syncNow() {
     //    한 번의 실행 안에서 묶어 반환하는 getFullSyncBundle 액션을 추가하고, 여기서는
     //    그 하나만 호출한다. 아래의 병합/재분류 로직은 예전과 동일하게 유지하기 위해
     //    ar/tr/nr을 예전 개별 응답과 같은 모양으로 맞춰준다.
-    const bundle = await api('getFullSyncBundle', {});
+    const sendVer = (force === true || !_syncVer || _syncUnchangedStreak >= _SYNC_FULL_EVERY) ? '' : _syncVer;
+    const bundle = await api('getFullSyncBundle', sendVer ? { ver: sendVer } : {});
+    if (bundle && bundle.ok && bundle.unchanged) {
+      _syncUnchangedStreak++;
+      setSyncBadge('ok','✅ '+vnNow().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 동기화');
+      return; // 바뀐 게 없으므로 병합/재그리기 생략 (finally에서 _syncing 해제)
+    }
     const ar = bundle && bundle.ok ? { ok: true, data: bundle.all } : { ok: false };
     const tr = bundle && bundle.ok ? { ok: true, data: bundle.tx } : { ok: false };
     const nr = bundle && bundle.ok ? { ok: true, items: bundle.ngItems, logs: bundle.ngLogs } : { ok: false };
@@ -8021,6 +8113,7 @@ async function syncNow() {
     if (bundle && bundle.ok) {
       PO = bundle.po || []; BOM = bundle.bom || []; WO = bundle.wo || []; WO_MAT = bundle.womat || [];
       _poShortageLastFetch = Date.now();
+      _loadedAt.po = _loadedAt.wo = Date.now();
     }
     if (ar.ok && ar.data) {
       const d = ar.data;
@@ -8155,12 +8248,16 @@ async function syncNow() {
         }
       }
     }
+    if (bundle && bundle.ok) { _syncVer = bundle.ver || null; _dataVerPO = _syncVer; _syncUnchangedStreak = 0; }
+    else { _syncVer = null; }
     initDashboard(); renderInv(); renderNG(); renderNGLog(); renderHist(); renderIOTable();
     setSyncBadge('ok','✅ '+vnNow().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+' 동기화');
   } catch(e) {
     setSyncBadge('error', '❌ ' + e.message.substring(0,30));
     console.error('Sync error:', e);
+    _syncVer = null; // 오류 후에는 다음 동기화에서 전체를 다시 받는다
   } finally {
+    _lastSyncMs = Date.now() - _syncT0;
     _syncing = false;
   }
 }
@@ -8176,21 +8273,48 @@ async function syncNow() {
 //    visibilitychange 리스너는 한 번만 등록한다(중복 등록되면 탭 전환마다 동기화가
 //    여러 번씩 겹쳐 오히려 서버 부담이 늘어나는 역효과가 나기 때문).
 let _visibilityListenerAttached = false;
+// ✅ [2026-10 성능 개선] 예전엔 고정 간격(setInterval)으로 요청을 쏘았다 - 서버가 20~30초씩
+//    걸리는 상황에서도 간격이 줄지 않아 요청이 쌓였다. 이제는 "이전 동기화가 끝난 뒤" 다음
+//    동기화를 예약하고(겹치지 않음), 서버가 느릴수록(마지막 소요시간의 2배) 간격을 자동으로
+//    늘린다. 화면을 오래(5분 이상) 안 만지면 5분 간격으로 줄이고, 다시 만지는 순간 바로
+//    한 번 동기화한다(상황판 화면처럼 켜두기만 해도 갱신은 계속된다).
+const _SYNC_BASE_MS = IS_GAS ? 60000 : 30000;
+const _SYNC_IDLE_AFTER_MS = 5 * 60 * 1000;
+const _SYNC_IDLE_INTERVAL_MS = 5 * 60 * 1000;
+var _lastActivityAt = Date.now();
+var _activityListenerAttached = false;
+function _nextSyncDelay() {
+  const idle = Date.now() - _lastActivityAt > _SYNC_IDLE_AFTER_MS;
+  if (idle) return _SYNC_IDLE_INTERVAL_MS;
+  return Math.min(Math.max(_SYNC_BASE_MS, _lastSyncMs * 2), 180000);
+}
+function _scheduleNextSync() {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    try { if (!document.hidden) await syncNow(); } finally { _scheduleNextSync(); }
+  }, _nextSyncDelay());
+}
 function startAutoSync() {
   _vnSafetyAlertShownThisSession = false; // ✅ 새로 접속(로그인/새로고침)할 때마다 안전재고 경고를 다시 확인
-  if (syncTimer) clearInterval(syncTimer);
+  _autoSyncStarted = true;
+  if (syncTimer) clearTimeout(syncTimer);
   syncNow();
-  const intervalMs = IS_GAS ? 60000 : 30000; // GAS는 1분 간격
-  syncTimer = setInterval(() => {
-    if (document.hidden) return; // 탭이 안 보이는 동안은 이번 tick은 건너뜀
-    syncNow();
-  }, intervalMs);
+  _scheduleNextSync();
 
   if (!_visibilityListenerAttached) {
     _visibilityListenerAttached = true;
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) syncNow(); // 탭을 다시 볼 때 바로 한 번 따라잡기 동기화 (이미 진행 중이면 syncNow 내부 _syncing 가드가 조용히 무시함)
     });
+  }
+  if (!_activityListenerAttached) {
+    _activityListenerAttached = true;
+    const onActivity = () => {
+      const wasIdle = Date.now() - _lastActivityAt > _SYNC_IDLE_AFTER_MS;
+      _lastActivityAt = Date.now();
+      if (wasIdle) { syncNow(); _scheduleNextSync(); } // 오래 쉬다 다시 만지면 바로 최신으로
+    };
+    ['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach(ev => document.addEventListener(ev, onActivity, { passive: true }));
   }
 }
 
