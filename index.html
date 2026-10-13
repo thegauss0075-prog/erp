@@ -8181,6 +8181,12 @@ async function syncNow(force) {
             model: r.model || item.model,
             sub:   r.sub   || item.sub,
             unit:  r.unit  || item.unit,
+            // ✅ [2026-10 원인 수정] 안전재고(min)는 서버(Sheets)에 정상 저장되는데도 접속(동기화)할
+            //    때마다 0으로 돌아오던 진짜 원인: 이미 화면에 기본으로 들어있는 품목은 위처럼
+            //    "수량/모델/단위"만 서버값으로 덮어쓰고 min은 가져오지 않아서, 항상 코드에 내장된
+            //    기본값(0)이 남았다(서버에만 있던 신규 품목은 {...r}로 통째로 받아서 정상이었음).
+            //    서버에 값이 있으면 그 값을 쓰고, 서버가 비어있으면 로컬 값을 유지한다.
+            min:   (r.min !== undefined && r.min !== null && r.min !== '') ? (+r.min || 0) : item.min,
           };
         });
         // Sheets에만 있는 항목 추가 (다른 기기에서 등록한 신규 품목)
