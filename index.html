@@ -18,6 +18,9 @@ body{font-family:'Malgun Gothic','맑은 고딕',Arial,sans-serif;font-size:14px
 .nav{display:flex;gap:5px;padding:0 1.5rem;margin-bottom:1.25rem;flex-wrap:wrap}
 .tb{padding:7px 16px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:14px;cursor:pointer;color:#555;transition:all .15s}
 .tb.on{background:#185FA5;border-color:#185FA5;color:#fff;font-weight:600}
+/* 한국어 아래에 작게 붙는 베트남어 병기 (메인 화면) */
+.vi{display:block;font-size:10px;font-weight:400;line-height:1.2;opacity:.8;margin-top:1px}
+.tb{line-height:1.2}
 .tb:hover:not(.on){background:#eef2fb}
 .sec{display:none;padding:0 1.5rem}
 .sec.on{display:block}
@@ -326,19 +329,19 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <span class="dt"></span>
 </div>
 <div class="nav">
-  <button class="tb on" onclick="go('dashboard')">📊 대시보드</button>
-  <button class="tb" onclick="go('inv')">📦 재고 현황</button>
-  <button class="tb" onclick="go('io')">🔄 입출고</button>
-  <button class="tb" onclick="go('wo')">📋 작업지시</button>
-  <button class="tb" onclick="go('dt')">⏱️ 가동률</button>
-  <button class="tb" onclick="go('qc')">🔬 품질검사</button>
-  <button class="tb" onclick="go('hist')">📋 이력</button>
-  <button class="tb" onclick="go('ng')">⚠️ 불량(NG)</button>
-  <button class="tb" onclick="go('po')">📧 발주관리</button>
-  <button class="tb" onclick="go('mes')">📷 현장입력</button>
+  <button class="tb on" onclick="go('dashboard')">📊 대시보드<span class="vi">Tổng quan</span></button>
+  <button class="tb" onclick="go('inv')">📦 재고 현황<span class="vi">Tồn kho</span></button>
+  <button class="tb" onclick="go('io')">🔄 입출고<span class="vi">Nhập xuất kho</span></button>
+  <button class="tb" onclick="go('wo')">📋 작업지시<span class="vi">Lệnh sản xuất</span></button>
+  <button class="tb" onclick="go('dt')">⏱️ 가동률<span class="vi">Tỷ lệ vận hành</span></button>
+  <button class="tb" onclick="go('qc')">🔬 품질검사<span class="vi">Kiểm tra chất lượng</span></button>
+  <button class="tb" onclick="go('hist')">📋 이력<span class="vi">Lịch sử</span></button>
+  <button class="tb" onclick="go('ng')">⚠️ 불량(NG)<span class="vi">Hàng lỗi (NG)</span></button>
+  <button class="tb" onclick="go('po')">📧 발주관리<span class="vi">Quản lý đặt hàng</span></button>
+  <button class="tb" onclick="go('mes')">📷 현장입력<span class="vi">Nhập liệu tại xưởng</span></button>
   <div style="flex:1"></div>
   <span id="user-badge" style="font-size:12px;padding:5px 12px;border-radius:7px;background:#f0f4ff;color:#1d4ed8;border:1px solid #c7d7fe">👤 <span id="user-label">-</span></span>
-  <button onclick="logoutUser()" style="padding:6px 12px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555" title="로그아웃">🚪 로그아웃</button>
+  <button onclick="logoutUser()" style="padding:6px 12px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555" title="로그아웃 / Đăng xuất">🚪 로그아웃 / Đăng xuất</button>
   <button id="admin-btn" onclick="openAdminLogin()" style="padding:6px 14px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555">🔐 관리자</button>
   <button onclick="document.getElementById('api-ov').classList.add('show')" style="padding:6px 10px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#888" title="API 설정">⚙️</button>
 </div>
@@ -350,9 +353,9 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <div style="display:flex;justify-content:flex-end;margin-bottom:1rem">
     <table style="border-collapse:collapse;width:300px">
       <tr>
-        <td style="border:1.5px solid #1e3a8a;background:#1e3a8a;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:4px 0;width:100px">작 성</td>
-        <td style="border:1.5px solid #1e3a8a;background:#1e3a8a;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:4px 0;width:100px">검 토</td>
-        <td style="border:1.5px solid #1e3a8a;background:#1e3a8a;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:4px 0;width:100px">승 인</td>
+        <td style="border:1.5px solid #1e3a8a;background:#1e3a8a;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:4px 0;width:100px">작 성<span class="vi">Lập</span></td>
+        <td style="border:1.5px solid #1e3a8a;background:#1e3a8a;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:4px 0;width:100px">검 토<span class="vi">Kiểm tra</span></td>
+        <td style="border:1.5px solid #1e3a8a;background:#1e3a8a;color:#fff;font-size:11px;font-weight:700;text-align:center;padding:4px 0;width:100px">승 인<span class="vi">Phê duyệt</span></td>
       </tr>
       <tr>
         <td style="border:1.5px solid #c7d7fe;height:60px;vertical-align:bottom;padding:4px"></td>
@@ -360,42 +363,42 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
         <td style="border:1.5px solid #c7d7fe;height:60px;vertical-align:bottom;padding:4px"></td>
       </tr>
       <tr>
-        <td style="border:1.5px solid #c7d7fe;font-size:10px;color:#888;text-align:center;padding:3px">담당자</td>
-        <td style="border:1.5px solid #c7d7fe;font-size:10px;color:#888;text-align:center;padding:3px">검토자</td>
-        <td style="border:1.5px solid #c7d7fe;font-size:10px;color:#888;text-align:center;padding:3px">승인자</td>
+        <td style="border:1.5px solid #c7d7fe;font-size:10px;color:#888;text-align:center;padding:3px">담당자 / Người lập</td>
+        <td style="border:1.5px solid #c7d7fe;font-size:10px;color:#888;text-align:center;padding:3px">검토자 / Người kiểm tra</td>
+        <td style="border:1.5px solid #c7d7fe;font-size:10px;color:#888;text-align:center;padding:3px">승인자 / Người phê duyệt</td>
       </tr>
     </table>
   </div>
 
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:1.25rem">
-    <div class="ms-card" onclick="go('inv');setIC('TP')"><div class="ms-name">완제품 (TP)</div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-tp-cnt">-</div><div class="ms-lbl">품목</div></div><div class="ms-stat"><div class="ms-val hi" id="d-tp">-</div><div class="ms-lbl">총합</div></div></div></div>
-    <div class="ms-card" onclick="go('inv');setIC('BTP')"><div class="ms-name">반제품 (BTP)</div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-btp-cnt">-</div><div class="ms-lbl">품목</div></div><div class="ms-stat"><div class="ms-val hi" id="d-btp">-</div><div class="ms-lbl">총합</div></div></div></div>
-    <div class="ms-card" onclick="go('inv');setIC('KR')"><div class="ms-name">원자재 KR</div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-kr-cnt">-</div><div class="ms-lbl">품목</div></div></div></div>
-    <div class="ms-card" onclick="go('inv');setIC('VN')"><div class="ms-name">원자재 VN</div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-vn-cnt">-</div><div class="ms-lbl">품목</div></div></div></div>
-    <div class="ms-card" onclick="go('inv');setIC('VTTH')"><div class="ms-name">소모품</div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-vtth-cnt">-</div><div class="ms-lbl">품목</div></div></div></div>
-    <div class="ms-card" onclick="go('ng')"><div class="ms-name" style="color:#b91c1c">불량 (NG)</div><div class="ms-row"><div class="ms-stat"><div class="ms-val ngc" id="d-ng-cnt">-</div><div class="ms-lbl">품목</div></div></div></div>
+    <div class="ms-card" onclick="go('inv');setIC('TP')"><div class="ms-name">완제품 (TP)<span class="vi">Thành phẩm (TP)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-tp-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div><div class="ms-stat"><div class="ms-val hi" id="d-tp">-</div><div class="ms-lbl">총합 / Tổng</div></div></div></div>
+    <div class="ms-card" onclick="go('inv');setIC('BTP')"><div class="ms-name">반제품 (BTP)<span class="vi">Bán thành phẩm (BTP)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-btp-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div><div class="ms-stat"><div class="ms-val hi" id="d-btp">-</div><div class="ms-lbl">총합 / Tổng</div></div></div></div>
+    <div class="ms-card" onclick="go('inv');setIC('KR')"><div class="ms-name">원자재 KR<span class="vi">NVL Hàn Quốc (KR)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-kr-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div></div></div>
+    <div class="ms-card" onclick="go('inv');setIC('VN')"><div class="ms-name">원자재 VN<span class="vi">NVL Việt Nam (VN)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-vn-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div></div></div>
+    <div class="ms-card" onclick="go('inv');setIC('VTTH')"><div class="ms-name">소모품<span class="vi">Vật tư tiêu hao</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-vtth-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div></div></div>
+    <div class="ms-card" onclick="go('ng')"><div class="ms-name" style="color:#b91c1c">불량 (NG)<span class="vi">Hàng lỗi (NG)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val ngc" id="d-ng-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div></div></div>
   </div>
   <div style="margin-bottom:1.25rem">
     <button onclick="openShipHist()" style="width:100%;padding:14px 18px;border-radius:12px;border:1.5px solid #7c3aed;background:linear-gradient(135deg,#f5f3ff,#ede9fe);color:#5b21b6;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
-      📊 완제품 출고 현황 보기 <span style="font-weight:400;font-size:12px;color:#7c3aed">— 품목별 출고일자·수량·출고처·누계</span>
+      <span style="text-align:center">📊 완제품 출고 현황 보기 / Xem tình hình xuất kho thành phẩm <span style="display:block;font-weight:400;font-size:12px;color:#7c3aed">품목별 출고일자·수량·출고처·누계 / Theo mặt hàng: ngày xuất, số lượng, nơi nhận, lũy kế</span></span>
     </button>
   </div>
   <div id="d-low-stock-wrap" style="display:none;background:#fff;border:1.5px solid #fca5a5;border-radius:12px;padding:1.1rem;margin-bottom:1.25rem">
-    <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:#b91c1c">⚠️ 안전재고 미달 품목 <span id="d-low-stock-cnt" style="font-weight:400;color:#888;font-size:12px"></span></div>
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:#b91c1c">⚠️ 안전재고 미달 품목 / Mặt hàng dưới mức tồn kho an toàn <span id="d-low-stock-cnt" style="font-weight:400;color:#888;font-size:12px"></span></div>
     <div id="d-low-stock"></div>
   </div>
   <div id="d-po-shortage-wrap" style="display:none;background:#fff;border:1.5px solid #fbbf24;border-radius:12px;padding:1.1rem;margin-bottom:1.25rem">
-    <div style="font-size:14px;font-weight:700;margin-bottom:4px;color:#92400e">🧮 발주 잔량 대비 부족 자재 <span id="d-po-shortage-cnt" style="font-weight:400;color:#888;font-size:12px"></span></div>
-    <div style="font-size:11px;color:#aaa;margin-bottom:10px">완제품 발주 잔량 × BOM(자재소요량) 기준으로 계산한 예상 부족 수량입니다</div>
+    <div style="font-size:14px;font-weight:700;margin-bottom:4px;color:#92400e">🧮 발주 잔량 대비 부족 자재 / NVL thiếu so với đơn đặt hàng còn lại <span id="d-po-shortage-cnt" style="font-weight:400;color:#888;font-size:12px"></span></div>
+    <div style="font-size:11px;color:#aaa;margin-bottom:10px">완제품 발주 잔량 × BOM(자재소요량) 기준으로 계산한 예상 부족 수량입니다<br>Số lượng thiếu dự kiến = số lượng đặt thành phẩm còn lại × định mức BOM</div>
     <div id="d-po-shortage"></div>
     <div id="d-po-shortage-nobom" style="margin-top:8px;font-size:11px;color:#aaa"></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem">
-    <div style="background:#fff;border:1px solid #e0e0e8;border-radius:12px;padding:1.1rem"><div style="font-size:14px;font-weight:700;margin-bottom:10px">완제품 현황</div><div id="tp-bars"></div></div>
-    <div style="background:#fff;border:1px solid #e0e0e8;border-radius:12px;padding:1.1rem"><div style="font-size:14px;font-weight:700;margin-bottom:10px">불량(NG) 상위</div><div id="ng-bars"></div></div>
+    <div style="background:#fff;border:1px solid #e0e0e8;border-radius:12px;padding:1.1rem"><div style="font-size:14px;font-weight:700;margin-bottom:10px">완제품 현황 / Tình hình thành phẩm</div><div id="tp-bars"></div></div>
+    <div style="background:#fff;border:1px solid #e0e0e8;border-radius:12px;padding:1.1rem"><div style="font-size:14px;font-weight:700;margin-bottom:10px">불량(NG) 상위 / Hàng lỗi (NG) nhiều nhất</div><div id="ng-bars"></div></div>
   </div>
   <div style="background:#fff;border:1px solid #e0e0e8;border-radius:12px;padding:1.1rem">
-    <div style="font-size:14px;font-weight:700;margin-bottom:10px">최근 입출고</div><div id="d-hist"></div>
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px">최근 입출고 / Nhập xuất kho gần đây</div><div id="d-hist"></div>
   </div>
 </div>
 
@@ -2835,12 +2838,12 @@ function renderPOShortageCard() {
   const cntEl = document.getElementById('d-po-shortage-cnt');
   const totalLines = byProduct.reduce((s, p) => s + p.materials.length + (p.btp ? p.btp.materials.length : 0), 0);
   const btpAffected = byProduct.filter(p => p.btp).length;
-  if (cntEl) cntEl.textContent = `${byProduct.length}개 모델 · 부족자재 ${totalLines}건` + (btpAffected ? ` · 반제품 부족 ${btpAffected}건` : '');
+  if (cntEl) cntEl.textContent = `${byProduct.length}개 모델 · 부족자재 ${totalLines}건` + (btpAffected ? ` · 반제품 부족 ${btpAffected}건` : '') + ` / ${byProduct.length} model · thiếu ${totalLines} dòng NVL` + (btpAffected ? ` · thiếu BTP ${btpAffected}` : '');
   const fmt = v => (typeof v === 'number' && v % 1) ? v.toFixed(2) : v.toLocaleString();
   const matRow = m => `
         <div onclick="go('inv');document.getElementById('inv-q').value='${m.materialCode}';renderInv()" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0 3px 12px">
           <span style="font-size:12px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="badge ${CB[m.materialCat]}" style="margin-right:6px">${CL[m.materialCat]}</span>${m.materialName} <span style="color:#aaa;font-size:10px;font-family:monospace">${m.materialCode}</span></span>
-          <span style="font-size:12px;font-weight:700;color:#92400e;flex-shrink:0">부족 ${fmt(m.shortQty)}${m.materialUnit || ''}</span>
+          <span style="font-size:12px;font-weight:700;color:#92400e;flex-shrink:0">부족 / Thiếu ${fmt(m.shortQty)}${m.materialUnit || ''}</span>
         </div>`;
   // ✅ 반제품(BTP) 부족분 — 완제품 BOM에 등록된 소요량(qtyPerUnit) 비율 그대로 계산된
   //    반제품 부족 수량이다(완제품 1개당 반제품 1개라고 가정하지 않음 — 예: 3.2KW OUT-L은
@@ -2861,7 +2864,7 @@ function renderPOShortageCard() {
   // ✅ 완제품 재고가 있으면 "발주잔량 - 완제품재고 = 생산필요"를 보여줘서, 아래 자재
   //    수량이 발주 잔량 전체가 아니라 실제 생산 필요 수량 기준으로 계산됐음을 알 수 있게 한다.
   const stockNote = p => (p.tpCur > 0)
-    ? `<div style="font-size:11px;color:#888;margin-bottom:4px">발주잔량 ${fmt(p.totalRemain)} - 완제품재고 ${fmt(p.tpCur)} = 생산필요 ${fmt(p.netRemain)}</div>`
+    ? `<div style="font-size:11px;color:#888;margin-bottom:4px">발주잔량 ${fmt(p.totalRemain)} - 완제품재고 ${fmt(p.tpCur)} = 생산필요 ${fmt(p.netRemain)} / Còn lại đặt hàng - Tồn TP = Cần sản xuất</div>`
     : '';
   document.getElementById('d-po-shortage').innerHTML = byProduct.map(p => `
     <div style="padding:8px 0;border-bottom:1px solid #fde68a">
@@ -7827,7 +7830,7 @@ function initDashboard(){
   // 결재란 렌더링
   if(typeof renderApv === 'function') { try { renderApv(); } catch(e){} }
   const rh=document.getElementById('d-hist');
-  if(!txLog.length&&!ngLog.length){rh.innerHTML=`<div style="font-size:14px;color:#aaa;padding:.5rem 0">입출고 탭에서 등록하면 여기에 표시됩니다.</div>`;return;}
+  if(!txLog.length&&!ngLog.length){rh.innerHTML=`<div style="font-size:14px;color:#aaa;padding:.5rem 0">입출고 탭에서 등록하면 여기에 표시됩니다.<br>Đăng ký ở tab Nhập xuất kho sẽ hiển thị tại đây.</div>`;return;}
   const iC={in:'h-in',otp:'h-out-tp',omt:'h-out-mat','tp-in':'h-in','ng-in':'h-out-mat','ng-out':'h-out-tp',adjust:'h-in',deactivate:'h-out-tp',delete:'h-out-tp'};
   const iI={in:'📥',otp:'🚚',omt:'📤','tp-in':'📦','ng-in':'⚠️','ng-out':'🗑️',adjust:'🔧',deactivate:'🔴',delete:'❌'};
   const isInMap={in:true,'tp-in':true,'ng-in':true};
