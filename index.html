@@ -842,8 +842,13 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       </select>
     </div>
     <div class="ov-fr">
-      <label>LOT (지시서 생성일 기준으로 자동 배정됩니다)</label>
-      <input id="wo-lot" readonly style="background:#f5f6f8;color:#1d4ed8;font-weight:700;font-family:monospace">
+      <label>LOT</label>
+      <div style="display:flex;gap:16px;margin-bottom:6px;font-size:13px">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-weight:400;margin:0"><input type="radio" name="wo-lot-mode" value="auto" checked onchange="setWOLotMode('auto')" style="width:auto;margin:0"> 자동 배정</label>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-weight:400;margin:0"><input type="radio" name="wo-lot-mode" value="manual" onchange="setWOLotMode('manual')" style="width:auto;margin:0"> 수동 입력</label>
+      </div>
+      <div id="wo-lot-hint" style="font-size:11px;color:#888;margin-bottom:4px">지시서 생성일 기준으로 자동 배정됩니다</div>
+      <input id="wo-lot" readonly style="background:#f5f6f8;color:#1d4ed8;font-weight:700;font-family:monospace" maxlength="40">
     </div>
     <div class="ov-fr"><label>계획수량 *</label><input id="wo-plan-qty" type="number" placeholder="0"></div>
     <div class="ov-fr"><label>생산 라인 (선택)</label><input id="wo-line" placeholder="예: 1라인, A설비"></div>
@@ -3537,6 +3542,7 @@ function openAddWO() {
   document.getElementById('wo-code').value = '';
   document.getElementById('wo-name').value = '';
   document.getElementById('wo-lot').value = '';
+  setWOLotMode('auto', true); // ✅ 열 때마다 항상 자동 배정 상태로 시작
   document.getElementById('wo-maker-row').style.display = 'none';
   document.getElementById('wo-maker').value = ''; // ✅ 기본값 없이 항상 직접 고르게 한다 (제조사 선택 누락 실수 방지)
   document.getElementById('wo-plan-qty').value = '';
@@ -3584,8 +3590,37 @@ function acPickWO(i) {
 //    개념이 필요 없고, 그냥 원자재처럼 "LOT-YYYYMMDD-NN" 형식의 날짜 기반 LOT으로
 //    만든다 (실제 사용한 COIL 원자재의 LOT은 전공정추적의 "투입 자재" 목록에서
 //    이미 확인 가능하므로, BTP 자체 LOT에 제조사를 억지로 넣을 필요가 없다).
+// ✅ [사용자 요청] LOT 자동 배정 외에 "수동 입력"을 선택할 수 있다.
+//    수동일 때는 CORE 제조사 선택이 필요 없고(LOT을 직접 정하므로), 이미 다른 작업지시에서
+//    쓰는 LOT과 겹치면 등록되지 않는다. 자동으로 되돌리면 예전과 똑같이 계산된 LOT이 채워진다.
+var woLotMode = 'auto';
+function setWOLotMode(mode, silent) {
+  woLotMode = (mode === 'manual') ? 'manual' : 'auto';
+  const lotEl = document.getElementById('wo-lot');
+  const hint = document.getElementById('wo-lot-hint');
+  document.querySelectorAll('input[name="wo-lot-mode"]').forEach(r => { r.checked = (r.value === woLotMode); });
+  if (woLotMode === 'manual') {
+    lotEl.readOnly = false;
+    lotEl.style.background = '#fff';
+    lotEl.style.color = '#1d4ed8';
+    lotEl.placeholder = '예: TG60GPV-0001';
+    lotEl.value = '';
+    hint.textContent = 'LOT 번호를 직접 입력하세요 (이미 등록된 작업지시의 LOT과 중복될 수 없습니다)';
+    document.getElementById('wo-maker-row').style.display = 'none';
+    if (!silent) lotEl.focus();
+  } else {
+    lotEl.readOnly = true;
+    lotEl.style.background = '#f5f6f8';
+    lotEl.placeholder = '';
+    hint.textContent = '지시서 생성일 기준으로 자동 배정됩니다';
+    lotEl.value = '';
+    updateWOLotPreview();
+  }
+}
+
 function updateWOLotPreview() {
   const lotEl = document.getElementById('wo-lot');
+  if (woLotMode === 'manual') { document.getElementById('wo-maker-row').style.display = 'none'; return; } // 수동: 입력값을 건드리지 않는다
   if (!woSelectedItem) { lotEl.value = ''; return; }
   const needsMaker = woSelectedItem.cat === 'TP';
   document.getElementById('wo-maker-row').style.display = needsMaker ? 'block' : 'none';
@@ -3630,9 +3665,18 @@ async function submitWO() {
   const planQty = parseFloat(document.getElementById('wo-plan-qty').value);
   if (!planQty || planQty <= 0) { errEl.textContent = '계획수량을 입력해주세요.'; errEl.style.display='block'; return; }
 
+  // ✅ 수동 LOT: 비어있거나 이미 쓰는 LOT이면 막는다 (LOT은 추적의 기준이라 중복되면 안 된다)
+  let lotValue = document.getElementById('wo-lot').value;
+  if (woLotMode === 'manual') {
+    lotValue = lotValue.trim();
+    if (!lotValue) { errEl.textContent = 'LOT 번호를 입력해주세요.'; errEl.style.display='block'; document.getElementById('wo-lot').focus(); return; }
+    const dup = WO.find(w => String(w.lot || '').trim().toLowerCase() === lotValue.toLowerCase());
+    if (dup) { errEl.textContent = `이미 사용 중인 LOT입니다: ${lotValue} (작업지시 ${dup.orderNo || ''})`; errEl.style.display='block'; document.getElementById('wo-lot').focus(); return; }
+  }
+
   const body = {
     code: woSelectedItem.code, name: woSelectedItem.name, cat: woSelectedItem.cat, unit: woSelectedItem.unit,
-    lot: document.getElementById('wo-lot').value,
+    lot: lotValue,
     planQty, line: document.getElementById('wo-line').value.trim(),
     dueDate: document.getElementById('wo-due').value, note: document.getElementById('wo-note').value.trim(),
     status: '대기', token: ADMIN_TOKEN, user: CURRENT_USER || ''
