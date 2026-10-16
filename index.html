@@ -2222,7 +2222,11 @@ function filterByPeriod(logs, tab) {
   });
 }
 
-function allRows(){return[...DB.tp.map(r=>({...r,cat:'TP',model:getModel(r.code,r.name)})),...DB.btp.map(r=>({...r,cat:'BTP',model:getModel(r.code,r.name)})),...DB.kr.map(r=>({...r,cat:'KR'})),...DB.vn.map(r=>({...r,cat:'VN'})),...DB.vtth.map(r=>({...r,cat:'VTTH',model:'소모품'}))];}
+// ✅ [2026-10 수정] 완제품/반제품은 품목 수정에서 입력한 '모델'을 무시하고 코드/품명으로만
+//    추측(getModel)해서 분류했기 때문에, 새로 등록한 품목(예: CH330125 IND-10T)은 모델을 입력해도
+//    항상 '기타'로 묶였다. 이제 품목에 저장된 모델이 있으면 그것을 우선 사용하고, 비어있을 때만
+//    예전처럼 코드/품명으로 추측한다(기존 품목의 분류는 그대로).
+function allRows(){return[...DB.tp.map(r=>({...r,cat:'TP',model:r.model||getModel(r.code,r.name)})),...DB.btp.map(r=>({...r,cat:'BTP',model:r.model||getModel(r.code,r.name)})),...DB.kr.map(r=>({...r,cat:'KR'})),...DB.vn.map(r=>({...r,cat:'VN'})),...DB.vtth.map(r=>({...r,cat:'VTTH',model:'소모품'}))];}
 function n(v){if(v===0||v===undefined)return '<span class="dim">—</span>';return Number(v).toLocaleString();}
 function hl(t,q){if(!q)return String(t);return String(t).replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');}
 function chkXb(i,x){document.getElementById(x).style.display=document.getElementById(i).value?'block':'none';}
@@ -2280,11 +2284,14 @@ function setDest(d){
 }
 function setED(d){editDest=d;document.getElementById('edit-dest-kr').classList.toggle('on',d==='KR');document.getElementById('edit-dest-sol').classList.toggle('on',d==='Soluem Vina');}
 
+// ✅ 재고 현황의 모델 그룹 순서: 일반 모델(가나다/ABC순) → 기타 → 라벨 및 기타 → 소모품 (맨 아래)
+function modelRank(m){ return m==='소모품' ? 3 : m==='라벨 및 기타' ? 2 : m==='기타' ? 1 : 0; }
+function cmpModel(a,b){ return (modelRank(a)-modelRank(b)) || String(a).localeCompare(String(b)); }
 function initMS(){
   initSubFilter();
   const cat=document.getElementById('inv-cat').value;
   const rows=allRows().filter(r=>!cat||r.cat===cat);
-  const ms=[...new Set(rows.map(r=>r.model).filter(Boolean))].sort();
+  const ms=[...new Set(rows.map(r=>r.model).filter(Boolean))].sort(cmpModel);
   const sel=document.getElementById('inv-model');const cur=sel.value;
   sel.innerHTML='<option value="">전체 모델</option>'+ms.map(m=>`<option value="${m}"${m===cur?' selected':''}>${m}</option>`).join('');
 }
@@ -2312,7 +2319,7 @@ function renderInv(){
   let html='';
   if(showModel){
     const grp={};rows.forEach(r=>{const m=r.model||'기타';(grp[m]=grp[m]||[]).push(r);});
-    Object.entries(grp).sort(([a],[b])=>a.localeCompare(b)).forEach(([m,items])=>{
+    Object.entries(grp).sort(([a],[b])=>cmpModel(a,b)).forEach(([m,items])=>{
       html+=`<tr class="model-hd"><td colspan="9">⚙️ ${m} <span style="font-size:11px;opacity:.7">${items.length}개 품목</span></td></tr>`;
       items.forEach(r=>{html+=rRow(r,q);});
     });
