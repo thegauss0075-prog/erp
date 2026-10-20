@@ -1719,7 +1719,7 @@ function safeLSRemove(k) {
 }
 
 const MODEL_MAP={'ML27A040118A':'3.2KW OUT L','ML27M040145A':'40KW OUT L','ML27A040091A':'30KW OUT L1','ML27A040090A':'30KW OUT L2','ML27A040127A':'30KW OUT L3','ML27A040112A':'30KW PFC INDUCTOR','ML27M020003A':'50KW DM','ML27M040025A':'50KW PFC INDUCTOR','ML27M040143A':'40KW PFC','AIR_COIL#0':'Air Coil','AIR_COIL#1':'Air Coil','AIR_COIL#2':'Air Coil','AIR_COIL#3':'Air Coil','AIR_COIL#4':'Air Coil','CH330125 IND-5T':'CH330125 IND','CH330125 IND-8T':'CH330125 IND'};
-const MODELS=['3.2KW OUT L','30KW OUT L1','30KW OUT L2','30KW OUT L3','30KW PFC INDUCTOR','40KW OUT L','40KW PFC','50KW DM','50KW PFC INDUCTOR','Air Coil','CH330125 IND','기타'];
+const MODELS=['3.2KW OUT L','30KW OUT L1','30KW OUT L2','30KW OUT L3','30KW PFC INDUCTOR','40KW OUT L','40KW PFC','50KW DM','50KW PFC INDUCTOR','PCDU INDUCTOR','Air Coil','CH330125 IND','기타'];
 function getModel(c,nm){if(MODEL_MAP[c])return MODEL_MAP[c];for(const m of MODELS.slice(0,-1))if(nm.toUpperCase().includes(m.toUpperCase()))return m;return '기타';}
 const CL={TP:'완제품',BTP:'반제품',KR:'원자재 KR',VN:'원자재 VN',VTTH:'소모품'};
 const CB={TP:'b-tp',BTP:'b-btp',KR:'b-kr',VN:'b-vn',VTTH:'b-vtth'};
@@ -8696,13 +8696,19 @@ function saveApiUrl() {
 // ── 품목 추가/수정 모달
 const MODEL_LIST=['30KW PFC INDUCTOR','30KW OUT L1','30KW OUT L2','30KW OUT L3',
   '3.2KW OUT L','40KW OUT L','40KW PFC','50KW PFC INDUCTOR','50KW DM',
-  'Air Coil','PM50KW LK','PM50KW IND','CH330125','공용 자재',
+  'PCDU INDUCTOR','Air Coil','PM50KW LK','PM50KW IND','CH330125','공용 자재',
   'Tray','포장재','Kapton Tape','라벨 및 기타'];
 const SUB_BY_CAT={
   kr:['CORE','WIRE','BASE','COVER','NOMEX','ADHESIVE-1714','ADHESIVE-170','ADHESIVE-860','공용'],
   vn:['Tray','포장재','Kapton','라벨','기타'],
   tp:[],btp:[],vtth:[]
 };
+// 고정 목록 + 실제 데이터에 있는 모델을 합쳐서 반환 (신규 모델 누락 방지)
+function getModelOptions(){
+  const out=[...MODEL_LIST];
+  try{ allRows().forEach(r=>{ const m=(r.model||'').trim(); if(m && m!=='기타' && m!=='소모품' && !out.includes(m)) out.push(m); }); }catch(e){}
+  return out;
+}
 let itemEditMode=false, itemEditCode='';
 
 function updateItemSubOpts() {
@@ -8710,7 +8716,7 @@ function updateItemSubOpts() {
   const sub=document.getElementById('item-sub');
   const modDL=document.getElementById('item-model-list');
   if(sub) sub.innerHTML='<option value="">-- 선택 --</option>'+(SUB_BY_CAT[cat]||[]).map(s=>`<option value="${s}">${s}</option>`).join('');
-  if(modDL) modDL.innerHTML=MODEL_LIST.map(m=>`<option value="${m}"></option>`).join('');
+  if(modDL) modDL.innerHTML=getModelOptions().map(m=>`<option value="${m}"></option>`).join('');
   // ✅ 카테고리 선택 시 다음 순번 자동 생성
   if(!itemEditMode) autoNextCode(cat);
 }
@@ -10627,7 +10633,7 @@ function openAddNGItem() {
   const modelSel = document.getElementById('ng-item-model');
   if(modelSel) {
     modelSel.innerHTML = '<option value="">-- 선택 --</option>' +
-      MODEL_LIST.map(m=>`<option value="${m}">${m}</option>`).join('');
+      getModelOptions().map(m=>`<option value="${m}">${m}</option>`).join('');
   }
 
   ['ng-item-name','ng-item-unit'].forEach(id=>{
