@@ -3846,8 +3846,10 @@ async function submitWOProd() {
 async function cycleWOStatus(id, current) {
   // ✅ [사용자 요청 2026-10-21] 베트남 일반 직원도 관리자와 똑같이 모든 상태 변경 가능
   //    (대기 → 진행중 → 완료 → 보류 → 대기). 한국 열람(viewer)만 변경 불가.
-  const isStaff = (USER_ROLE === 'user');
+  //    (관리자로 로그인했다가 "관리자 해제"한 경우 USER_ROLE이 'admin'으로 남아 있어 막히던 문제 수정)
+  const isStaff = (USER_ROLE === 'user' || USER_ROLE === 'admin');
   if (!isAdmin && !isStaff) { alert('로그인이 필요합니다. (열람 전용 계정은 상태를 변경할 수 없습니다)'); return; }
+  if (!isAdmin && !ADMIN_TOKEN) await ensureStaffToken();
   const cycle = {'대기':'진행중', '진행중':'완료', '완료':'보류', '보류':'대기'};
   const next = cycle[current] || '대기';
 
@@ -8613,13 +8615,27 @@ function logoutUser() {
 }
 
 
+// ── 직원 토큰 확보 (관리자 해제 후 등 토큰이 비어 있을 때)
+async function ensureStaffToken() {
+  if (ADMIN_TOKEN) return ADMIN_TOKEN;
+  try { const t = safeLSGet('_stf',''); if (t) { ADMIN_TOKEN = t; return t; } } catch(e){}
+  try {
+    const res = await api('staffLogin', {password:'staff2025'});
+    if (res && res.ok && res.token) { ADMIN_TOKEN = res.token; try{ safeLSSet('_stf', res.token); }catch(e){} }
+  } catch(e){}
+  return ADMIN_TOKEN;
+}
+
 // ── 관리자 로그인
 function openAdminLogin() {
   if (isAdmin) {
     if (confirm('관리자 모드를 해제하시겠습니까?')) {
       isAdmin=false; ADMIN_TOKEN='';
       safeLSRemove('_adm');
+      // ✅ 관리자 해제 후에는 일반 직원 권한으로 계속 사용 (상태변경·실적입력 등)
+      if (USER_ROLE === 'admin') { USER_ROLE = 'user'; try{ safeLSSet('erp_role','user'); }catch(e){} }
       applyAdminUI(false);
+      ensureStaffToken();
     }
     return;
   }
