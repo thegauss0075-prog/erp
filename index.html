@@ -6148,14 +6148,34 @@ function computeActiveLots(code, inType, outType, cat) {
 
   // 잔여량 있는 LOT만 필터 (FIFO 순서: 입고일 오래된 것부터)
   const activeLots = Object.entries(lotMap)
-    .map(([lot, d]) => ({lot, remain: d.inQty - d.outQty, inQty: d.inQty, outQty: d.outQty, dt: d.dt}))
-    .filter(d => d.remain > 0)
+    .map(([lot, d]) => ({lot, remain: Math.round((d.inQty - d.outQty)*1000)/1000, inQty: d.inQty, outQty: d.outQty, dt: d.dt}))
+    .filter(d => d.remain > 0.0005)
     .sort((a,b) => a.dt.localeCompare(b.dt));
 
   // LOT 없이 입고된 잔여 수량
   const noLotIn     = allTx.filter(t=>t.type===inType  && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
   const noLotOut    = allTx.filter(t=>t.type===outType  && !t.lot).reduce((s,t)=>s+(+t.qty||0),0);
-  const noLotRemain = noLotIn - noLotOut;
+  let noLotRemain = noLotIn - noLotOut;
+
+  // ✅ [2026-10-21] 재고조정(adjust)·LOT 없이 출고된 수량은 LOT별 잔여에서 빠지지 않아,
+  //    실제 현재고(예: 1,200)보다 LOT 잔여 합계(예: 12,300)가 훨씬 크게 보이던 문제 수정.
+  //    LOT 잔여 합계가 실제 현재고를 넘으면, 넘는 만큼을 오래된 LOT부터(FIFO) 소진된 것으로 본다.
+  if (inType === 'in' || inType === 'tp-in') {
+    const rows = allRows().filter(r => r.code === code && (!catFilter || String(r.cat).toUpperCase() === String(catFilter).toUpperCase()));
+    if (rows.length) {
+      const actual = rows.reduce((s,r)=>s+(+r.cur||0),0);
+      let excess = activeLots.reduce((s,d)=>s+d.remain,0) + Math.max(noLotRemain,0) - Math.max(actual,0);
+      if (excess > 0) {
+        for (const d of activeLots) {
+          if (excess <= 0) break;
+          const used = Math.min(d.remain, excess);
+          d.remain -= used; d.outQty += used; excess -= used;
+        }
+        if (excess > 0 && noLotRemain > 0) noLotRemain = Math.max(0, noLotRemain - excess);
+        for (let i = activeLots.length - 1; i >= 0; i--) if (activeLots[i].remain <= 0.0005) activeLots.splice(i, 1); else activeLots[i].remain = Math.round(activeLots[i].remain*1000)/1000;
+      }
+    }
+  }
 
   return {activeLots, noLotRemain};
 }
