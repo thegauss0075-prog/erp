@@ -2589,7 +2589,7 @@ function _renderPOBody() {
     // ✅ 잔량 = 발주수량 - deductedQty (완제품이 실제로 출고될 때마다 오래된 발주부터
     //    자동으로 쌓이는 누적 차감값). 같은 품목의 여러 PO에 걸쳐 정확히 순서대로 배분된다.
     const poQty = +r.poQty || 0;
-    const deducted = +r.deductedQty || 0;
+    const deducted = poDeducted(r);
     const remain = Math.max(0, poQty - deducted);
     const status = r.closedYN === 'Y' || remain <= 0 ? '완료' : (deducted > 0 ? '진행중' : '대기');
     return `<tr>
@@ -2608,15 +2608,59 @@ function _renderPOBody() {
   renderPOSummary();
 }
 
+// ✅ [2026-10-23 사용자 요청] CH330125 IND 5T·8T는 서버 차감값 대신 "실제 출고 이력" 기준으로
+//    잔량을 계산한다: 품목 전체 출고(otp) 합계를 오래된 발주부터 채워 나가고(FIFO),
+//    모든 발주를 채우고도 남는 출고는 "초과수량"으로 표시한다. 다른 품목은 기존 방식 그대로.
+const PO_SHIP_BASED_CODES = ['CH330125 IND-5T', 'CH330125 IND-8T'];
+function poShipAlloc() {
+  const deducted = {}, excess = {};
+  // 출고 이력이 아직 안 불러와졌으면 서버 차감값을 그대로 쓴다 (잔량이 잘못 커 보이는 것 방지)
+  if (typeof txLog === 'undefined' || !txLog.length) return {deducted, excess};
+  PO_SHIP_BASED_CODES.forEach(code => {
+    const pos = PO.filter(r => r.itemCode === code)
+      .sort((a,b) => String(a.poDate||a.createdAt||'').localeCompare(String(b.poDate||b.createdAt||'')) || (+a.poItemNumber||0)-(+b.poItemNumber||0));
+    if (!pos.length) return;
+    let left = (typeof txLog !== 'undefined' ? txLog : []).filter(t => t.code === code && t.type === 'otp').reduce((s,t)=>s+(+t.qty||0),0);
+    pos.forEach(r => { const q = +r.poQty || 0; const u = Math.min(q, Math.max(0,left)); deducted[r.id] = u; left -= u; });
+    excess[code] = Math.max(0, left);
+  });
+  return {deducted, excess};
+}
+function poDeducted(r) {
+  if (!PO_SHIP_BASED_CODES.includes(r.itemCode)) return +r.deductedQty || 0;
+  const a = poShipAlloc(); return a.deducted[r.id] != null ? a.deducted[r.id] : (+r.deductedQty || 0);
+}
+// ✅ [2026-10-23 사용자 요청] 그 외 품목: 현재(기준시점) 총 잔량은 맞으므로 그대로 두고,
+//    기준시점 이후 출고가 "기준시점 잔량 + 이후 새로 등록된 발주수량"을 넘으면 그만큼을 초과로 표시한다.
+const PO_EXCESS_BASE_AT = '2026-10-23T06:23:00.000Z'; // 2026-10-23 13:23 (베트남 시간)
+const PO_EXCESS_BASE_REMAIN = {
+  'CH330125 IND-10T': 980, 'ML27A040112A': 2649, 'ML27A040118A': 6281,
+  'ML27A040127A': 627, 'ML27M020003A': 180, 'ML27M040025A': 3964
+};
+function poExcessAfterBase(code) {
+  if (typeof txLog === 'undefined' || !txLog.length) return 0;
+  const pos = PO.filter(r => r.itemCode === code);
+  if (!pos.length) return 0;
+  const isNew = r => String(r.createdAt || '') > PO_EXCESS_BASE_AT;
+  const hasOld = pos.some(r => !isNew(r));
+  // 기준시점 이전 발주가 남아 있으면 기준 잔량부터, 전부 새로 올린 발주면(전체 삭제 후 재업로드 등) 0부터
+  const base = hasOld ? (PO_EXCESS_BASE_REMAIN[code] || 0) : 0;
+  const since = hasOld ? PO_EXCESS_BASE_AT : pos.map(r => String(r.createdAt || '')).sort()[0];
+  const capacity = base + pos.filter(isNew).reduce((s,r)=>s+(+r.poQty||0),0);
+  const shipped = txLog.filter(t => t.code === code && t.type === 'otp' && String(t.dt || '') > since).reduce((s,t)=>s+(+t.qty||0),0);
+  return Math.max(0, shipped - capacity);
+}
+function poExcess(code) { return PO_SHIP_BASED_CODES.includes(code) ? (poShipAlloc().excess[code] || 0) : poExcessAfterBase(code); }
+
 // ✅ 품목코드별로 발주들을 묶어서 "총 발주수량"과 "총 잔량"을 보여준다.
 //    (발주관리 요약 화면과 대시보드 "부족 자재" 카드가 이 그룹핑을 함께 사용한다)
 function groupPOByItem() {
   const grouped = {};
   PO.forEach(r => {
     const key = r.itemCode;
-    if (!grouped[key]) grouped[key] = { itemCode: r.itemCode, itemName: r.itemName, totalQty: 0, totalRemain: 0 };
+    if (!grouped[key]) grouped[key] = { itemCode: r.itemCode, itemName: r.itemName, totalQty: 0, totalRemain: 0, excess: poExcess(r.itemCode) };
     const poQty = +r.poQty || 0;
-    const remain = Math.max(0, poQty - (+r.deductedQty || 0));
+    const remain = Math.max(0, poQty - poDeducted(r));
     grouped[key].totalQty += poQty;
     grouped[key].totalRemain += remain;
   });
@@ -2634,7 +2678,7 @@ function renderPOSummary() {
     <td style="font-family:monospace;font-size:11px">${g.itemCode}</td>
     <td>${g.itemName}</td>
     <td style="text-align:right">${g.totalQty.toLocaleString()}</td>
-    <td style="text-align:right;font-weight:700;color:${g.totalRemain>0?'#b45309':'#166534'}">${g.totalRemain.toLocaleString()}</td>
+    <td style="text-align:right;font-weight:700;color:${g.totalRemain>0?'#b45309':'#166534'}">${g.totalRemain.toLocaleString()}${g.excess>0?` <span style="color:#b91c1c;font-size:11px">(초과 +${g.excess.toLocaleString()})</span>`:''}</td>
   </tr>`).join('');
 }
 
@@ -2650,7 +2694,7 @@ function exportPOExcel() {
 
   const detailData = PO.map(r => {
     const poQty = +r.poQty || 0;
-    const deducted = +r.deductedQty || 0;
+    const deducted = poDeducted(r);
     const remain = Math.max(0, poQty - deducted);
     const status = r.closedYN === 'Y' || remain <= 0 ? '완료' : (deducted > 0 ? '진행중' : '대기');
     return {
@@ -2672,7 +2716,8 @@ function exportPOExcel() {
     '품목코드': g.itemCode,
     '품명': g.itemName,
     '총 발주수량': g.totalQty,
-    '총 잔량': g.totalRemain
+    '총 잔량': g.totalRemain,
+    '초과수량': g.excess || 0
   }));
 
   const wb = XLSX.utils.book_new();
