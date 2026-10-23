@@ -2585,7 +2585,7 @@ function _renderPOBody() {
   emptyEl.style.display = 'none';
 
   const statusColor = {'대기':'#888','출하중':'#185FA5','완료':'#166534'};
-  body.innerHTML = PO.map(r => {
+  const poRowHtml = r => {
     // ✅ 잔량 = 발주수량 - deductedQty (완제품이 실제로 출고될 때마다 오래된 발주부터
     //    자동으로 쌓이는 누적 차감값). 같은 품목의 여러 PO에 걸쳐 정확히 순서대로 배분된다.
     const poQty = +r.poQty || 0;
@@ -2603,6 +2603,26 @@ function _renderPOBody() {
       <td><span style="color:${statusColor[status]};font-weight:600">${status}</span></td>
       <td class="no-print">${isAdmin ? `<button class="edit-btn" onclick="deletePOItemUI(${r.id})" title="삭제">🗑️</button>` : ''}</td>
     </tr>`;
+  };
+
+  // ✅ [2026-10-23 사용자 요청] PO 목록을 모델(품목코드)별로 묶어서 표시
+  //    그룹 머리줄에 모델명·건수·총 발주수량·총 잔량(초과 포함)을 보여주고, 그룹 안은 오래된 발주부터.
+  const modelOf = r => { const m = (typeof getModel === 'function') ? getModel(r.itemCode || '', r.itemName || '') : ''; return (m && m !== '기타') ? m : (r.itemName || r.itemCode || '-'); };
+  const groups = {};
+  PO.forEach(r => { const k = r.itemCode || '-'; (groups[k] = groups[k] || []).push(r); });
+  const modelIdx = m => { const i = (typeof MODELS !== 'undefined') ? MODELS.indexOf(m) : -1; return i < 0 ? 999 : i; };
+  const keys = Object.keys(groups).sort((a,b) => {
+    const ma = modelOf(groups[a][0]), mb = modelOf(groups[b][0]);
+    return (modelIdx(ma) - modelIdx(mb)) || ma.localeCompare(mb) || a.localeCompare(b);
+  });
+  body.innerHTML = keys.map(k => {
+    const rs = groups[k].slice().sort((a,b) => String(a.poDate||a.createdAt||'').localeCompare(String(b.poDate||b.createdAt||'')) || (+a.poItemNumber||0)-(+b.poItemNumber||0));
+    const totQty = rs.reduce((s,r)=>s+(+r.poQty||0),0);
+    const totRemain = rs.reduce((s,r)=>s+Math.max(0,(+r.poQty||0)-poDeducted(r)),0);
+    const ex = poExcess(k);
+    const hd = `<tr class="model-hd"><td colspan="9">📦 ${modelOf(rs[0])} <span style="font-weight:400;color:#64748b;font-size:11px">· ${k} · ${rs.length}건</span>
+      <span style="float:right;font-size:12px">발주 ${totQty.toLocaleString()} / 잔량 <span style="color:${totRemain>0?'#b45309':'#166534'}">${totRemain.toLocaleString()}</span>${ex>0?` <span style="color:#b91c1c">(초과 +${ex.toLocaleString()})</span>`:''}</span></td></tr>`;
+    return hd + rs.map(poRowHtml).join('');
   }).join('');
 
   renderPOSummary();
