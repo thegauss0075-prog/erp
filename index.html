@@ -763,6 +763,8 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
         <option value="omt">자재 출고 / Xuất NVL</option>
         <option value="tp-in">완제품 입고 / Nhập TP</option>
         <option value="otp">완제품 출고 / Xuất TP</option>
+        <option value="btp-in">반제품 입고 / Nhập BTP</option>
+        <option value="btp-out">반제품 출고 / Xuất BTP</option>
         <option value="ng-in">불량 입고 / Nhập NG</option>
         <option value="ng-out">불량 출고 / Xuất NG</option>
       </select>
@@ -2640,7 +2642,7 @@ function poShipAlloc() {
     const pos = PO.filter(r => r.itemCode === code)
       .sort((a,b) => String(a.poDate||a.createdAt||'').localeCompare(String(b.poDate||b.createdAt||'')) || (+a.poItemNumber||0)-(+b.poItemNumber||0));
     if (!pos.length) return;
-    let left = (typeof txLog !== 'undefined' ? txLog : []).filter(t => t.code === code && t.type === 'otp').reduce((s,t)=>s+(+t.qty||0),0);
+    let left = (typeof txLog !== 'undefined' ? txLog : []).filter(t => t.code === code && t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP').reduce((s,t)=>s+(+t.qty||0),0);
     pos.forEach(r => { const q = +r.poQty || 0; const u = Math.min(q, Math.max(0,left)); deducted[r.id] = u; left -= u; });
     excess[code] = Math.max(0, left);
   });
@@ -2667,7 +2669,7 @@ function poExcessAfterBase(code) {
   const base = hasOld ? (PO_EXCESS_BASE_REMAIN[code] || 0) : 0;
   const since = hasOld ? PO_EXCESS_BASE_AT : pos.map(r => String(r.createdAt || '')).sort()[0];
   const capacity = base + pos.filter(isNew).reduce((s,r)=>s+(+r.poQty||0),0);
-  const shipped = txLog.filter(t => t.code === code && t.type === 'otp' && String(t.dt || '') > since).reduce((s,t)=>s+(+t.qty||0),0);
+  const shipped = txLog.filter(t => t.code === code && t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && String(t.dt || '') > since).reduce((s,t)=>s+(+t.qty||0),0);
   return Math.max(0, shipped - capacity);
 }
 function poExcess(code) { return PO_SHIP_BASED_CODES.includes(code) ? (poShipAlloc().excess[code] || 0) : poExcessAfterBase(code); }
@@ -6588,6 +6590,13 @@ document.addEventListener('click',e=>{
 /* ── 등록 확인 패널 ── */
 const TYPE_COLOR={in:'#166534',omt:'#78350f','tp-in':'#3730a3',otp:'#1e3a8a','ng-in':'#991b1b','ng-out':'#92400e'};
 const TYPE_LABEL={in:'자재 입고',omt:'자재 출고','tp-in':'완제품 입고',otp:'완제품 출고','ng-in':'불량 입고','ng-out':'불량 출고'};
+// ✅ [2026-10-23] 반제품(BTP)은 같은 otp/tp-in 타입을 쓰지만 "완제품"으로 표시되던 문제 → 카테고리 보고 반제품으로 표시
+function txTypeLabel(t, base) {
+  const isBTP = String(t && t.cat || '').toUpperCase() === 'BTP';
+  if (isBTP && t.type === 'otp') return '반제품 출고';
+  if (isBTP && t.type === 'tp-in') return '반제품 입고';
+  return (base || TYPE_LABEL)[t.type] || t.type;
+}
 const IS_IN_TYPE={in:true,'tp-in':true,'ng-in':true};
 
 function showCP(dir){
@@ -6881,7 +6890,12 @@ function renderIOTable(){
   const tp=document.getElementById('io-type').value;
   let logs=[...txLog,...ngLog].sort((a,b)=>b.id-a.id);
   if(q)logs=logs.filter(l=>l.code.toLowerCase().includes(q)||l.name.toLowerCase().includes(q));
-  if(tp)logs=logs.filter(l=>l.type===tp);
+  // ✅ [2026-10-23] 반제품(BTP)은 완제품과 분리: 완제품 입고/출고 필터에는 BTP를 빼고, 반제품 필터를 따로 둔다
+  const _isBTP = l => String(l.cat||'').toUpperCase() === 'BTP';
+  if(tp==='btp-in') logs=logs.filter(l=>l.type==='tp-in'&&_isBTP(l));
+  else if(tp==='btp-out') logs=logs.filter(l=>l.type==='otp'&&_isBTP(l));
+  else if(tp==='otp'||tp==='tp-in') logs=logs.filter(l=>l.type===tp&&!_isBTP(l));
+  else if(tp) logs=logs.filter(l=>l.type===tp);
   // ✅ 기간 필터
   logs = filterByPeriod(logs, 'io');
   updatePeriodLabel('io');
@@ -6893,7 +6907,7 @@ function renderIOTable(){
     const qty=t.qty%1?t.qty.toFixed(2):t.qty.toLocaleString();
     return`<tr>
       <td style="font-size:12px;color:#888">${fmtDt(t.dt)}</td>
-      <td><span class="badge ${tB[t.type]||'b-in'}">${TYPE_LABEL[t.type]||t.type}</span></td>
+      <td><span class="badge ${tB[t.type]||'b-in'}">${txTypeLabel(t)}</span></td>
       <td style="font-family:monospace;font-size:12px">${t.code}</td>
       <td>${t.name}</td>
       <td style="color:#666">${t.unit}</td>
@@ -6973,7 +6987,7 @@ function saveEdit(){
 function openDel(id){
   delTargetId=id;const t=txLog.find(x=>x.id===id);if(!t)return;
   const tL={in:'자재 입고',otp:'완제품 출고',omt:'자재 출고'};
-  document.getElementById('del-info').innerHTML=`<strong>${tL[t.type]}</strong> · ${t.code}<br>${t.name} · <strong>${t.type==='in'?'+':'−'}${t.qty.toLocaleString()} ${t.unit}</strong>${t.dest?` · ${destText(t.dest)}`:''}<br><small>${fmtDt(t.dt)}</small>`;
+  document.getElementById('del-info').innerHTML=`<strong>${txTypeLabel(t,tL)}</strong> · ${t.code}<br>${t.name} · <strong>${t.type==='in'?'+':'−'}${t.qty.toLocaleString()} ${t.unit}</strong>${t.dest?` · ${destText(t.dest)}`:''}<br><small>${fmtDt(t.dt)}</small>`;
   document.getElementById('del-ov').classList.add('show');
 }
 function confirmDel(){
@@ -7411,7 +7425,7 @@ function renderHist(){
   const tL={in:'자재 입고',otp:'완제품 출고',omt:'자재 출고','tp-in':'완제품 입고','ng-in':'불량 입고','ng-out':'불량 출고',adjust:'재고 조정',deactivate:'품목 비활성화',delete:'품목 완전삭제'};
   const isInType={in:true,'tp-in':true,'ng-in':true};
   el.innerHTML=logs.map(t=>{
-    const typeName=tL[t.type]||t.type;
+    const typeName=txTypeLabel(t,tL);
     const icon=iI[t.type]||'•';
     const cls=iC[t.type]||'h-in';
     const isIn=!!isInType[t.type];
