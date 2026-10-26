@@ -1597,17 +1597,13 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <th style="text-align:right">총원가</th><th style="text-align:right">개당 원가</th><th style="text-align:right">판매단가</th><th style="text-align:right">이익률</th><th>BOM</th>
     </tr></thead><tbody id="cost-body"></tbody></table></div>
   <div id="cost-check" style="font-size:12px;margin:6px 0 16px"></div>
-  <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:16px">
-    <div style="font-weight:700;color:#92400e;margin-bottom:4px">🧴 접착제 표준 사용량 vs 실제 출고 <span id="cost-adh-month" style="font-weight:400;color:#b45309"></span></div>
-    <div style="font-size:11px;color:#92400e;margin-bottom:6px">표준 = 생산수량 × 1개당 사용량(g) · 실제 = 해당 월 "자재 출고"(통 개봉) 합계 · 차이는 개봉 후 폐기·손실분</div>
-    <div class="tw"><table style="width:100%"><thead><tr><th>접착제</th><th style="text-align:right">표준 사용량</th><th style="text-align:right">실제 출고</th><th style="text-align:right">차이</th><th style="text-align:right">차이 금액</th></tr></thead><tbody id="cost-adh-body"></tbody></table></div>
-  </div>
-
   <div class="cost-edit">
     <details open style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
       <summary style="font-weight:700;cursor:pointer">① 월 비용·환율 <span id="cost-mc-month" style="color:#1d4ed8"></span></summary>
       <div id="cost-mc-form" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:10px"></div>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center"><button onclick="saveCostMonth()" id="cost-mc-save" style="padding:7px 16px;border-radius:8px;border:none;background:#1d4ed8;color:#fff;font-weight:700;cursor:pointer">저장</button>
+      <button onclick="document.getElementById('cost-month-file').click()" id="cost-mc-import" style="padding:7px 14px;border-radius:8px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-weight:700;cursor:pointer">📥 월 비용 엑셀 불러오기</button>
+      <input type="file" id="cost-month-file" accept=".xlsx,.xls" style="display:none" onchange="importCostMonthExcel(event)">
       <span style="font-size:11px;color:#888">금액은 VND · 환율은 1 USD / 1 KRW 당 VND · 노무비 = 생산 인원 급여+보험+수당 합계</span></div>
     </details>
     <details style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
@@ -1636,6 +1632,11 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
         <span style="font-size:11px;color:#888">단가 = 자재 단위(Ea·Kg·Roll 등) 1개당 금액 · 수입 인보이스 기준</span>
       </div>
       <div class="tw"><table style="width:100%"><thead><tr><th>자재코드</th><th>품명</th><th>단위</th><th>모델</th><th>통화</th><th>단가</th><th style="text-align:right">VND 환산</th></tr></thead><tbody id="cost-price-body"></tbody></table></div>
+    </details>
+    <details style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:10px">
+      <summary style="font-weight:700;cursor:pointer;color:#92400e">⑤ 접착제 사용량 점검 <span id="cost-adh-month" style="font-weight:400;color:#b45309"></span></summary>
+      <div style="font-size:11px;color:#92400e;margin:8px 0 6px">관리자 점검용(본사 화면에는 안 보임) · 통 단위로 출고해서 한 달만 보면 들쭉날쭉하므로 <b>최근 3개월 누적</b>으로 비교 · 표준 = 생산수량 × 1개당 사용량(g, ②에서 수정) · 실제 = "자재 출고" 합계 · 원가의 재료비에는 표준 사용량이 이미 들어가 있음</div>
+      <div class="tw"><table style="width:100%"><thead><tr><th>접착제</th><th style="text-align:right">표준 사용량</th><th style="text-align:right">실제 출고</th><th style="text-align:right">차이</th><th style="text-align:right">차이 금액</th></tr></thead><tbody id="cost-adh-body"></tbody></table></div>
     </details>
   </div>
 </div>
@@ -8302,7 +8303,7 @@ const COST_OVERHEAD_KEYS = ['elec','rent','repair','supplies','etc'];   // 감�
 const COST_ADH = [
   {code:'NPL10/VTKR-04', key:'SW170HF', can:4},
   {code:'NPL09/VTKR-03', key:'SE1714',  can:1},
-  {code:'NPL11/VTKR-05', key:'SW860HF', can:0}
+  {code:'NPL11/VTKR-05', key:'SW860HF', can:4}
 ];
 // 본사 원가 BOM 파일 기준 1개당 사용량(g) — ② 모델 설정에서 모델별로 바꿀 수 있음
 const COST_ADH_DEFAULT = {
@@ -8564,12 +8565,19 @@ function renderCostBody(keepEdits){
 }
 
 // 🧴 접착제 표준 vs 실제
+function costPrevMonths(m, n){
+  const out = []; let [y, mo] = m.split('-').map(Number);
+  for (let i = 0; i < n; i++) { out.unshift(`${y}-${String(mo).padStart(2,'0')}`); mo--; if (!mo) { mo = 12; y--; } }
+  return out;
+}
 function renderCostAdhesive(m, c){
-  document.getElementById('cost-adh-month').textContent = '— ' + m;
+  const months = costPrevMonths(m, 3);
+  document.getElementById('cost-adh-month').textContent = `— ${months[0]} ~ ${m} (3개월 누적)`;
   const body = document.getElementById('cost-adh-body');
+  const models = costModels();
   body.innerHTML = COST_ADH.map(a => {
-    const stdKg = c.rows.reduce((s,r)=>s + r.qty * costAdhG(r.code, a.key) / 1000, 0);
-    const actKg = (txLog||[]).filter(t => t.type==='omt' && t.code===a.code && costYM(t.dt)===m).reduce((s,t)=>s+(+t.qty||0),0);
+    const stdKg = months.reduce((s,mm) => s + models.reduce((s2,md) => s2 + costProdQty(md.code, mm) * costAdhG(md.code, a.key) / 1000, 0), 0);
+    const actKg = (txLog||[]).filter(t => t.type==='omt' && t.code===a.code && months.includes(costYM(t.dt))).reduce((s,t)=>s+(+t.qty||0),0);
     if (!stdKg && !actKg) return '';
     const diff = actKg - stdKg;
     const price = costMatPriceVND(a.code, m);
@@ -8580,7 +8588,7 @@ function renderCostAdhesive(m, c){
       <td style="text-align:right">${actKg.toFixed(2)} kg${cans}</td>
       <td style="text-align:right;font-weight:700;color:${diff>0?'#dc2626':'#166534'}">${diff>=0?'+':''}${diff.toFixed(2)} kg${pct}</td>
       <td style="text-align:right">${price?costMoney(diff*price, c.fx):'<span style="color:#94a3b8">단가 없음</span>'}</td></tr>`;
-  }).join('') || `<tr><td colspan="5" style="color:#94a3b8;text-align:center">${m} 접착제 사용 없음</td></tr>`;
+  }).join('') || `<tr><td colspan="5" style="color:#94a3b8;text-align:center">${months[0]} ~ ${m} 접착제 사용 없음</td></tr>`;
 }
 
 // ① 월 비용·환율
@@ -8679,12 +8687,48 @@ function renderCostPrices(){
   }).join('');
 }
 // 엑셀 형식: 첫 시트에 "자재코드 | 통화 | 단가 | (근거)" 열. 빈 칸에만 채우고(덮어쓰기는 확인 후), 저장 버튼을 눌러야 반영
+// 월 비용 엑셀: "월비용" 시트(없으면 첫 시트)에 월(YYYY-MM) | 노무비 | 전기료 | 임차료 | 감가상각비 | 수선비 | 소모품비 | 기타경비 | USD환율 | KRW환율
+//   빈 칸은 기존 값을 유지한다. 여러 달을 한 번에 확인 후 저장.
+async function importCostMonthExcel(ev){
+  const f = ev.target.files && ev.target.files[0]; ev.target.value = '';
+  if (!f) return;
+  if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.'); return; }
+  const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
+  const shName = wb.SheetNames.find(n => n.replace(/\s/g,'').includes('월비용')) || wb.SheetNames[0];
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[shName], {defval:'', raw:true});
+  const map = [['labor',['노무비']],['elec',['전기']],['rent',['임차']],['dep',['감가']],['repair',['수선']],['supplies',['소모품']],['etc',['기타']],['fxUsd',['USD']],['fxKrw',['KRW']]];
+  const plan = [];
+  rows.forEach(o => {
+    const keys = Object.keys(o);
+    const mk = keys.find(k => k.replace(/\s/g,'').startsWith('월'));
+    let m = mk ? String(o[mk]).trim() : '';
+    if (/^\d{4}-\d{1,2}$/.test(m)) m = m.split('-')[0] + '-' + m.split('-')[1].padStart(2,'0'); else return;
+    const v = {...(COST.month[m] || {})}; let n = 0;
+    map.forEach(([field, names]) => {
+      const k = keys.find(kk => names.some(nm => kk.replace(/\s/g,'').toUpperCase().includes(nm.toUpperCase())));
+      if (!k) return; const x = o[k];
+      if (x === '' || x === null || isNaN(+x)) return;
+      v[field] = +x; n++;
+    });
+    if (n) plan.push([m, v, n]);
+  });
+  if (!plan.length) { alert('불러올 월 비용이 없습니다. "월" 열에 2026-07 형식으로 적혀 있는지 확인해주세요.'); return; }
+  const fmtv = x => x ? Math.round(x).toLocaleString() : '-';
+  const lines = plan.map(([m,v]) => `${m}: 노무비 ${fmtv(v.labor)} · 전기 ${fmtv(v.elec)} · 임차 ${fmtv(v.rent)} · 수선 ${fmtv(v.repair)} · 소모품 ${fmtv(v.supplies)} · 기타 ${fmtv(v.etc)}`);
+  if (!confirm(`아래 ${plan.length}개월 비용을 저장할까요?\n(엑셀의 빈 칸은 기존 값 유지)\n\n` + lines.join('\n'))) return;
+  const g = withButtonGuard('#cost-mc-import', '⏳ 저장 중...'); if (g === null) return;
+  let ok = 0;
+  try { for (const [m, v] of plan) { if (await saveCost('month', m, v)) ok++; else break; } } finally { g.release(); }
+  renderCostBody();
+  if (ok) alert(`${ok}개월 비용을 저장했습니다.`);
+}
 async function importCostPriceExcel(ev){
   const f = ev.target.files && ev.target.files[0]; ev.target.value = '';
   if (!f) return;
   if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.'); return; }
   const wb = XLSX.read(await f.arrayBuffer(), {type:'array'});
-  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
+  const shName = wb.SheetNames.find(n => n.replace(/\s/g,'').includes('단가')) || wb.SheetNames[0];
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[shName], {defval:''});
   const known = new Set(costMaterials().map(r => r.code));
   const pick = (o, names) => { for (const k of Object.keys(o)) { const kk = k.replace(/\s/g,''); if (names.some(n => kk.includes(n))) return o[k]; } return ''; };
   let fill = 0, over = 0, unknown = [];
