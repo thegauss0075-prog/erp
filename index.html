@@ -1585,7 +1585,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   </div>
   <div id="cost-notice" style="display:none;background:#fef3c7;border:1px solid #fcd34d;color:#92400e;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:10px"></div>
   <div style="font-size:12px;color:#888;margin-bottom:10px">
-    재료비 = BOM 소요량 × 자재단가 × 생산수량 · 노무비/제조경비 = 월 총액 × (모델 작업시간 ÷ 전체 작업시간) · 외주비 = 모델에 직접 배부 · 금액은 VND, 아래 ₩는 원화 환산(해당 월 환율)
+    재료비 = BOM 소요량 × 자재단가 × 생산수량 · 노무비·제조경비·감가상각비 = 월 총액 × (모델 작업시간 ÷ 전체 작업시간) · 외주비 = 모델에 직접 배부 · 금액은 VND, 아래 ₩는 원화 환산(해당 월 환율)
   </div>
 
   <div id="cost-tiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px"></div>
@@ -1593,10 +1593,15 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <div class="tw"><table style="width:100%" id="cost-table">
     <thead><tr>
       <th>모델</th><th style="text-align:right">생산수량</th><th style="text-align:right">표준시간<br>(분/개)</th>
-      <th style="text-align:right">재료비</th><th style="text-align:right">노무비</th><th style="text-align:right">제조경비</th><th style="text-align:right">외주비</th>
+      <th style="text-align:right">재료비</th><th style="text-align:right">노무비</th><th style="text-align:right">제조경비</th><th style="text-align:right">외주비</th><th style="text-align:right">감가상각비</th>
       <th style="text-align:right">총원가</th><th style="text-align:right">개당 원가</th><th style="text-align:right">판매단가</th><th style="text-align:right">이익률</th><th>BOM</th>
     </tr></thead><tbody id="cost-body"></tbody></table></div>
   <div id="cost-check" style="font-size:12px;margin:6px 0 16px"></div>
+  <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:16px">
+    <div style="font-weight:700;color:#92400e;margin-bottom:4px">🧴 접착제 표준 사용량 vs 실제 출고 <span id="cost-adh-month" style="font-weight:400;color:#b45309"></span></div>
+    <div style="font-size:11px;color:#92400e;margin-bottom:6px">표준 = 생산수량 × 1개당 사용량(g) · 실제 = 해당 월 "자재 출고"(통 개봉) 합계 · 차이는 개봉 후 폐기·손실분</div>
+    <div class="tw"><table style="width:100%"><thead><tr><th>접착제</th><th style="text-align:right">표준 사용량</th><th style="text-align:right">실제 출고</th><th style="text-align:right">차이</th><th style="text-align:right">차이 금액</th></tr></thead><tbody id="cost-adh-body"></tbody></table></div>
+  </div>
 
   <div class="cost-edit">
     <details open style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
@@ -1607,7 +1612,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     </details>
     <details style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
       <summary style="font-weight:700;cursor:pointer">② 모델별 표준작업시간 · 판매단가</summary>
-      <div class="tw" style="margin-top:8px"><table style="width:100%"><thead><tr><th>모델</th><th>표준작업시간 (분/개)</th><th>판매단가</th><th>통화</th><th></th></tr></thead><tbody id="cost-model-body"></tbody></table></div>
+      <div class="tw" style="margin-top:8px"><table style="width:100%"><thead><tr><th>모델</th><th>표준작업시간 (분/개)</th><th>판매단가</th><th>통화</th><th>SW170HF<br>(g/개)</th><th>SE1714<br>(g/개)</th><th>SW860HF<br>(g/개)</th><th></th></tr></thead><tbody id="cost-model-body"></tbody></table></div>
     </details>
     <details style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
       <summary style="font-weight:700;cursor:pointer">③ 외주비 <span id="cost-out-month" style="color:#1d4ed8"></span></summary>
@@ -1625,6 +1630,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <summary style="font-weight:700;cursor:pointer">④ 자재단가 <span id="cost-price-cnt" style="font-weight:400;color:#888;font-size:12px"></span></summary>
       <div style="display:flex;gap:8px;align-items:center;margin:10px 0;flex-wrap:wrap">
         <input id="cost-price-q" placeholder="코드·품명 검색" oninput="renderCostPrices()" style="width:220px">
+        <button onclick="fillCostHQPrices()" style="padding:7px 14px;border-radius:8px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-weight:700;cursor:pointer">📥 본사 단가 불러오기</button>
         <button onclick="saveCostPrices()" id="cost-price-save" style="padding:7px 16px;border-radius:8px;border:none;background:#1d4ed8;color:#fff;font-weight:700;cursor:pointer">변경한 단가 저장</button>
         <span style="font-size:11px;color:#888">단가 = 자재 단위(Ea·Kg·Roll 등) 1개당 금액 · 수입 인보이스 기준</span>
       </div>
@@ -8289,7 +8295,81 @@ const COST_MONTH_FIELDS = [
   ['repair','수선비'],['supplies','소모품비'],['etc','기타 경비'],
   ['fxUsd','환율: 1 USD = ? VND'],['fxKrw','환율: 1 KRW = ? VND']
 ];
-const COST_OVERHEAD_KEYS = ['elec','rent','dep','repair','supplies','etc'];
+const COST_OVERHEAD_KEYS = ['elec','rent','repair','supplies','etc'];   // 감가상각비(dep)는 본사 양식에 맞춰 별도 항목
+// ✅ 접착제: ERP BOM(작업지시 자재불출)에는 넣지 않고 원가 계산에만 반영한다.
+//    현장은 통 단위(SW170HF 4kg, SE1714 1kg)로 개봉 시 "자재 출고"하고, 원가는 1개당 표준 사용량(g)으로 배부.
+const COST_ADH = [
+  {code:'NPL10/VTKR-04', key:'SW170HF', can:4},
+  {code:'NPL09/VTKR-03', key:'SE1714',  can:1},
+  {code:'NPL11/VTKR-05', key:'SW860HF', can:0}
+];
+// 본사 원가 BOM 파일 기준 1개당 사용량(g) — ② 모델 설정에서 모델별로 바꿀 수 있음
+const COST_ADH_DEFAULT = {
+  'ML27A040091A':{SW860HF:2, SW170HF:2}, 'ML27A040090A':{SW860HF:2, SW170HF:2}, 'ML27A040127A':{SW860HF:2, SW170HF:2},
+  'ML27A040112A':{SE1714:0.4, SW170HF:3}, 'ML27M020003A':{SW860HF:1.6}, 'ML27M040025A':{SW860HF:0.8, SE1714:0.8}
+};
+function costAdhG(code, key){
+  const d = (COST.model[code] || {}).adh;
+  if (d && d[key] !== undefined && d[key] !== '') return +d[key] || 0;
+  return +((COST_ADH_DEFAULT[code] || {})[key]) || 0;
+}
+// 본사 원가 BOM 파일(제품마스터)의 고객사 구분
+const COST_CUSTOMER = {'ML27A040118A':'솔루엠','ML27A040091A':'솔루엠','ML27A040090A':'솔루엠','ML27A040127A':'솔루엠','ML27A040112A':'솔루엠',
+  'ML27M040143A':'솔루엠','ML27M040145A':'솔루엠','ML27M020003A':'솔루엠','ML27M040025A':'솔루엠',
+  'AIR_COIL#0':'뉴시스','AIR_COIL#1':'뉴시스','AIR_COIL#2':'뉴시스','AIR_COIL#3':'뉴시스','AIR_COIL#4':'뉴시스',
+  'CH330125 IND-5T':'에이프로','CH330125 IND-8T':'에이프로','CH330125 IND-10T':'에이프로'};
+// ✅ 본사 원가 BOM 파일(자재마스터, 2026 단가)을 ERP 자재코드·단위에 맞춰 옮긴 기본 단가.
+//    g 단가 → Kg(×1000), 테이프 mm 단가 → Roll(30m, ×30000). 1 미만 값은 본사 파일에서 USD로 적힌 것으로 판단.
+//    "④ 자재단가 > 본사 단가 불러오기"로 빈 칸에만 채우고, 확인 후 저장해야 반영된다.
+const COST_HQ_PRICE_SEED = {
+  'NPL13/L1-01':{cur:'KRW',price:1400,src:'CORE-HEQ3222168CEQC (ELECTRO M)'},
+  'NPL03/L1-02':{cur:'KRW',price:18500,src:'RC-1.2x6 HUTONG 18.5원/g (SAMDONG 30원/g 대체)'},
+  'NPL14/L2-01':{cur:'KRW',price:1450,src:'CORE-HEQ3222163CEQC (ELECTRO M)'},
+  'NPL03/L2-02':{cur:'KRW',price:18000,src:'RC-1.6x6 HUTONG 18원/g'},
+  'NPL04/L2-03':{cur:'KRW',price:63,src:'BASE 198/T375HF (MERIGO)'},
+  'NPL14/L3-01':{cur:'KRW',price:1490,src:'CORE-HEQ3222144CEQC (ELECTRO M)'},
+  'NPL03/L3-02':{cur:'USD',price:16,src:'RC-1.8x6 HUTONG 0.016/g'},
+  'NPL04/L3-03':{cur:'USD',price:0.0543,src:'BASE 210/T375HF (MERIGO)'},
+  'NPL02/L3-04':{cur:'KRW',price:49,src:'NOMEX 0.13T×22.5×50 (DUPONT)'},
+  'NPL14/L-03':{cur:'KRW',price:1310,src:'CORE-H3222210CEQC (ELECTRO M)'},
+  'NPL03/L-01':{cur:'USD',price:15.04,src:'RC-0.8x6 HUTONG 0.01504/g'},
+  'NPL23/L-04':{cur:'USD',price:0.024,src:'BASE 208/PM9630 (MERIGO)'},
+  'NPL02/L-05':{cur:'KRW',price:43,src:'NOMEX 0.25T×10×50 (DUPONT)'},
+  'NONE/PFC-07':{cur:'KRW',price:1400,src:'CORE-BK6310-060EG (CHANGSUNG)'},
+  'NPL05/PFC-01':{cur:'USD',price:0.83,src:'CORE-PHD 603010-060 (POCO)'},
+  'NPL12/PFC-02':{cur:'KRW',price:750,src:'CORE-CK2025-060 (CHANGSUNG) · POCO NPF R 2025는 0.353'},
+  'NPL03/PFC-03':{cur:'USD',price:16.78,src:'RC-1.6x4.5 HUTONG 0.01678/g'},
+  'NPL06/PFC-04':{cur:'USD',price:0.09,src:'BOBBIN BASE (YAHUA)'},
+  'NPL07/PFC-05':{cur:'USD',price:0.07,src:'BOBBIN COVER (YAHUA)'},
+  'NPL02/PFC-06':{cur:'KRW',price:82,src:'NOMEX 0.13T×47×70 (DUPONT)'},
+  'NPL13/50DM-01':{cur:'KRW',price:4923,src:'CORE-AHG5032178E-060EQ (ACHROMAT)'},
+  'NPL03/50DM-02':{cur:'USD',price:1.33,src:'COIL-3x9 (YOUHUI) 외주 코일'},
+  'NPL24/50DM-03':{cur:'KRW',price:670,src:'KB-616(X) BASE (SUNGSIM)'},
+  'NPL02/50DM-04':{cur:'KRW',price:216,src:'NOMEX 0.25T×39×80 (DUPONT)'},
+  'NPL05/50PFC-01':{cur:'KRW',price:824,src:'CORE-AGN543010 (ACHROMAT)'},
+  'NPL12/50PFC-02':{cur:'KRW',price:535,src:'CORE-AGN2030 (ACHROMAT)'},
+  'NPL07/50PFC-03':{cur:'KRW',price:350,src:'KB-616(X) TOP (SUNGSIM)'},
+  'NPL07/50PFC-04':{cur:'KRW',price:350,src:'KB-616(X) BOTTOM (SUNGSIM)'},
+  'NPL02/50PFC-05':{cur:'KRW',price:60,src:'NOMEX 0.13T×20×20 (DUPONT)'},
+  'NPL02/50PFC-06':{cur:'KRW',price:88,src:'NOMEX 0.25T×26×30 (DUPONT)'},
+  'NPL02/50PFC-07':{cur:'KRW',price:65,src:'NOMEX 0.13T×28×75 (DUPONT)'},
+  'NPL03/50PFC-08':{cur:'USD',price:0.91,src:'COIL-1.4x6 (YOUHUI) 외주 코일'},
+  'NPL04/50PFC-09':{cur:'USD',price:0.126,src:'BASE-225 (MERIGO)'},
+  'NPL30/CH330125-04':{cur:'KRW',price:995,src:'CORE-H106075A (ELECTRO M) 5T'},
+  'NPL30/CH330125-05':{cur:'KRW',price:995,src:'CORE-H106075A (ELECTRO M) 10T'},
+  'NPL30/CH330125-02':{cur:'KRW',price:1520,src:'CORE-H130127A (ELECTRO M) 8T'},
+  'NPL29/CH-01':{cur:'KRW',price:30978,src:'RC-0.12x380 KUKDONG 30.978원/g'},
+  'NPL31/CH-03':{cur:'KRW',price:7200,src:'A TAPE NO.231 0.24원/mm × 30m'},
+  'NPL28/AC1':{cur:'KRW',price:293,src:'BOBBIN AIR COIL 1 (55Ts) — 턴수 확인 필요'},
+  'NPL28/AC2':{cur:'KRW',price:195,src:'BOBBIN AIR COIL 2 (75Ts)'},
+  'NPL28/AC3':{cur:'KRW',price:195,src:'BOBBIN AIR COIL 3 (45Ts)'},
+  'NPL28/AC4':{cur:'KRW',price:179,src:'BOBBIN AIR COIL 4 (35Ts)'},
+  'NPL03/AC-01':{cur:'KRW',price:21926,src:'RC-1.3 KUKDONG 21.926원/g'},
+  'NPL03/AC-02':{cur:'KRW',price:22286,src:'RC-2.6 KUKDONG 22.286원/g'},
+  'NPL11/VTKR-05':{cur:'KRW',price:31500,src:'ADHESIVE SW860HF 31.5원/g'},
+  'NPL10/VTKR-04':{cur:'KRW',price:26500,src:'ADHESIVE SW170HF 26.5원/g'},
+  'NPL09/VTKR-03':{cur:'KRW',price:145000,src:'ADHESIVE SE1714 145원/g'}
+};
 const COST_MODEL_ORDER = ['ML27A040118A','ML27A040091A','ML27A040090A','ML27A040127A','ML27A040112A','ML27M040143A',
   'ML27M040145A','ML27M020003A','ML27M040025A','AIR_COIL#0','AIR_COIL#1','AIR_COIL#2','AIR_COIL#3','AIR_COIL#4',
   'CH330125 IND-5T','CH330125 IND-8T','CH330125 IND-10T','PCDU INDUCTOR'];
@@ -8381,15 +8461,17 @@ function costCompute(m, basis){
   const mc = COST.month[m] || {};
   const labor = +mc.labor || 0;
   const overhead = COST_OVERHEAD_KEYS.reduce((s,k)=>s+(+mc[k]||0),0);
+  const depTot = +mc.dep || 0;
   const outs = Object.values(COST.out||{}).filter(o => o && o.month === m);
   const rows = costModels().map(md => {
     const st = +((COST.model[md.code]||{}).st) || 0;
     const qty = costProdQty(md.code, m);
     const bom = costFlatBOM(md.code);
     const hasBOM = Object.keys(bom).length > 0;
-    const stdUnit = Object.entries(bom).reduce((s,[mc2,q])=>s+q*costMatPriceVND(mc2,m),0);
+    const adhUnit = COST_ADH.reduce((s,a)=>s + costAdhG(md.code,a.key)/1000 * costMatPriceVND(a.code,m), 0);
+    const stdUnit = Object.entries(bom).reduce((s,[mc2,q])=>s+q*costMatPriceVND(mc2,m),0) + adhUnit;
     const matStd = stdUnit * qty;
-    const matAct = costActualMat(md.code, m);
+    const matAct = costActualMat(md.code, m) + adhUnit * qty;   // 접착제는 작업지시 불출이 없으므로 표준 사용량으로 포함
     const outAmt = outs.filter(o => o.code === md.code).reduce((s,o)=>s+costToVND(o.amount, o.cur||'VND', m),0);
     const sale = (COST.model[md.code]||{});
     return {code:md.code, name:md.name, qty, st, mins: qty*st, hasBOM, stdUnit, matStd, matAct,
@@ -8399,12 +8481,12 @@ function costCompute(m, basis){
   const totMins = rows.reduce((s,r)=>s+r.mins,0);
   rows.forEach(r => {
     const share = totMins ? r.mins/totMins : 0;
-    r.share = share; r.labor = labor*share; r.overhead = overhead*share;
-    r.total = r.mat + r.labor + r.overhead + r.out;
+    r.share = share; r.labor = labor*share; r.overhead = overhead*share; r.dep = depTot*share;
+    r.total = r.mat + r.labor + r.overhead + r.out + r.dep;
     r.unit = r.qty ? r.total/r.qty : 0;
     r.margin = (r.saleVND && r.qty) ? (r.saleVND - r.unit)/r.saleVND : null;
   });
-  return {rows, labor, overhead, totMins, fx: costFx(m)};
+  return {rows, labor, overhead, dep: depTot, totMins, fx: costFx(m)};
 }
 
 // ── 표시
@@ -8447,26 +8529,27 @@ function renderCostBody(keepEdits){
 
   const rows = c.rows.filter(r => r.qty || r.total || (COST.model[r.code]));
   const tot = k => rows.reduce((s,r)=>s+(r[k]||0),0);
-  const T = {qty:tot('qty'), mat:tot('mat'), labor:tot('labor'), overhead:tot('overhead'), out:tot('out'), total:tot('total')};
+  const T = {qty:tot('qty'), mat:tot('mat'), labor:tot('labor'), overhead:tot('overhead'), out:tot('out'), dep:tot('dep'), total:tot('total')};
   const tile = (label, v, color) => `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
       <div style="font-size:11px;color:#64748b">${label}</div><div style="font-size:17px;font-weight:700;color:${color}">${costV(v)} <span style="font-size:11px;font-weight:400">VND</span></div>
       <div style="font-size:12px;color:#475569">${c.fx.krw&&v?'₩'+Math.round(v/c.fx.krw).toLocaleString():''}</div></div>`;
   document.getElementById('cost-tiles').innerHTML =
     tile('총원가', T.total, '#0f172a') + tile('재료비', T.mat, '#1d4ed8') + tile('노무비', T.labor, '#7c3aed') +
-    tile('제조경비', T.overhead, '#b45309') + tile('외주비', T.out, '#0f766e');
+    tile('제조경비', T.overhead, '#b45309') + tile('외주비', T.out, '#0f766e') + tile('감가상각비', T.dep, '#64748b');
 
   const body = document.getElementById('cost-body');
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="12"><div class="empty">${m}에 생산 실적이 없습니다.</div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="13"><div class="empty">${m}에 생산 실적이 없습니다.</div></td></tr>`;
   } else {
     body.innerHTML = rows.map(r => `<tr>
-      <td><div style="font-weight:600">${costEsc(r.name)}</div><div style="font-family:monospace;font-size:10.5px;color:#94a3b8">${costEsc(r.code)}</div></td>
+      <td><div style="font-weight:600">${costEsc(r.name)}</div><div style="font-family:monospace;font-size:10.5px;color:#94a3b8">${costEsc(r.code)}${COST_CUSTOMER[r.code]?' · '+COST_CUSTOMER[r.code]:''}</div></td>
       <td style="text-align:right">${r.qty.toLocaleString()}</td>
       <td style="text-align:right;color:${r.st?'#334155':'#dc2626'}">${r.st||'미입력'}</td>
       <td style="text-align:right">${costMoney(r.mat,c.fx)}</td>
       <td style="text-align:right">${costMoney(r.labor,c.fx)}</td>
       <td style="text-align:right">${costMoney(r.overhead,c.fx)}</td>
       <td style="text-align:right">${costMoney(r.out,c.fx)}</td>
+      <td style="text-align:right">${costMoney(r.dep,c.fx)}</td>
       <td style="text-align:right;font-weight:700">${costMoney(r.total,c.fx)}</td>
       <td style="text-align:right;font-weight:700;color:#1d4ed8">${costMoney(r.unit,c.fx)}</td>
       <td style="text-align:right">${costMoney(r.saleVND,c.fx)}</td>
@@ -8476,16 +8559,37 @@ function renderCostBody(keepEdits){
       <td>합계</td><td style="text-align:right">${T.qty.toLocaleString()}</td><td></td>
       <td style="text-align:right">${costMoney(T.mat,c.fx)}</td><td style="text-align:right">${costMoney(T.labor,c.fx)}</td>
       <td style="text-align:right">${costMoney(T.overhead,c.fx)}</td><td style="text-align:right">${costMoney(T.out,c.fx)}</td>
-      <td style="text-align:right">${costMoney(T.total,c.fx)}</td><td colspan="4"></td></tr>`;
+      <td style="text-align:right">${costMoney(T.dep,c.fx)}</td><td style="text-align:right">${costMoney(T.total,c.fx)}</td><td colspan="4"></td></tr>`;
   }
   const missingST = rows.filter(r => r.qty && !r.st).length;
   const chk = document.getElementById('cost-check');
-  chk.innerHTML = missingST && (c.labor || c.overhead)
+  chk.innerHTML = missingST && (c.labor || c.overhead || c.dep)
     ? `<span style="color:#dc2626">⚠️ 생산수량이 있는데 표준작업시간이 비어 있는 모델이 ${missingST}개 있어, 그 모델에는 노무비·경비가 배분되지 않습니다.</span>`
-    : (c.labor || c.overhead ? '<span style="color:#166534">✅ 노무비·제조경비가 월 총액과 일치하게 배분되었습니다.</span>' : '');
+    : (c.labor || c.overhead || c.dep ? '<span style="color:#166534">✅ 노무비·제조경비·감가상각비가 월 총액과 일치하게 배분되었습니다.</span>' : '');
 
+  renderCostAdhesive(m, c);
   // keepEdits: 저장 직후에는 입력 중인 다른 칸이 지워지지 않도록 편집 영역은 다시 그리지 않는다
   if (edit && !keepEdits) { renderCostMonthForm(m); renderCostModels(); renderCostOut(m); renderCostPrices(); }
+}
+
+// 🧴 접착제 표준 vs 실제
+function renderCostAdhesive(m, c){
+  document.getElementById('cost-adh-month').textContent = '— ' + m;
+  const body = document.getElementById('cost-adh-body');
+  body.innerHTML = COST_ADH.map(a => {
+    const stdKg = c.rows.reduce((s,r)=>s + r.qty * costAdhG(r.code, a.key) / 1000, 0);
+    const actKg = (txLog||[]).filter(t => t.type==='omt' && t.code===a.code && costYM(t.dt)===m).reduce((s,t)=>s+(+t.qty||0),0);
+    if (!stdKg && !actKg) return '';
+    const diff = actKg - stdKg;
+    const price = costMatPriceVND(a.code, m);
+    const cans = a.can ? ` <span style="color:#94a3b8">(${(actKg/a.can).toFixed(1)}통)</span>` : '';
+    const pct = stdKg ? ` <span style="font-size:11px">(${diff>=0?'+':''}${(diff/stdKg*100).toFixed(0)}%)</span>` : '';
+    return `<tr><td>${a.key}${a.can?` <span style="font-size:11px;color:#94a3b8">${a.can}kg/통</span>`:''}</td>
+      <td style="text-align:right">${stdKg.toFixed(2)} kg</td>
+      <td style="text-align:right">${actKg.toFixed(2)} kg${cans}</td>
+      <td style="text-align:right;font-weight:700;color:${diff>0?'#dc2626':'#166534'}">${diff>=0?'+':''}${diff.toFixed(2)} kg${pct}</td>
+      <td style="text-align:right">${price?costMoney(diff*price, c.fx):'<span style="color:#94a3b8">단가 없음</span>'}</td></tr>`;
+  }).join('') || `<tr><td colspan="5" style="color:#94a3b8;text-align:center">${m} 접착제 사용 없음</td></tr>`;
 }
 
 // ① 월 비용·환율
@@ -8515,13 +8619,15 @@ function renderCostModels(){
       <td><input id="cost-md-st-${i}" type="number" step="any" value="${d.st??''}" style="width:110px"></td>
       <td><input id="cost-md-sale-${i}" type="number" step="any" value="${d.sale??''}" style="width:120px"></td>
       <td><select id="cost-md-cur-${i}">${['USD','VND','KRW'].map(cu=>`<option ${ (d.saleCur||'USD')===cu?'selected':''}>${cu}</option>`).join('')}</select></td>
+      ${COST_ADH.map(a=>`<td><input id="cost-md-adh-${a.key}-${i}" type="number" step="any" value="${costAdhG(md.code,a.key)||''}" style="width:70px"></td>`).join('')}
       <td><button class="edit-btn" id="cost-md-btn-${i}" onclick="saveCostModel(${i})">💾</button></td></tr>`;
   }).join('');
 }
 async function saveCostModel(i){
   const md = costModels()[i]; if (!md) return;
   const st = document.getElementById('cost-md-st-'+i).value, sale = document.getElementById('cost-md-sale-'+i).value;
-  const v = {st: st===''?0:+st, sale: sale===''?0:+sale, saleCur: document.getElementById('cost-md-cur-'+i).value};
+  const adh = {}; COST_ADH.forEach(a => { const x = document.getElementById('cost-md-adh-'+a.key+'-'+i).value; adh[a.key] = x===''?0:+x; });
+  const v = {st: st===''?0:+st, sale: sale===''?0:+sale, saleCur: document.getElementById('cost-md-cur-'+i).value, adh};
   const g = withButtonGuard('#cost-md-btn-'+i, '⏳'); if (g === null) return;
   try { if (await saveCost('model', md.code, v)) { renderCostBody(true); const b=document.getElementById('cost-md-btn-'+i); if(b){ b.textContent='✅'; setTimeout(()=>{ b.textContent='💾'; },1500);} } } finally { g.release(); }
 }
@@ -8578,8 +8684,19 @@ function renderCostPrices(){
       <td style="font-size:11px;color:#64748b">${costEsc(r.model||r.src)}</td>
       <td><select data-code="${key}" onchange="costPriceEdit(this.dataset.code,'cur',this.value)">${['USD','VND','KRW'].map(cu=>`<option ${(d.cur||'USD')===cu?'selected':''}>${cu}</option>`).join('')}</select></td>
       <td><input data-code="${key}" type="number" step="any" value="${d.price??''}" style="width:110px" oninput="costPriceEdit(this.dataset.code,'price',this.value)"></td>
-      <td style="text-align:right">${costV(costToVND(d.price, d.cur||'USD', m))}</td></tr>`;
+      <td style="text-align:right">${costV(costToVND(d.price, d.cur||'USD', m))}${_costPriceDirty[r.code]?'<div style="font-size:10px;color:#7c3aed">저장 전</div>':''}${COST_HQ_PRICE_SEED[r.code]?`<div style="font-size:10px;color:#94a3b8" title="본사 BOM 파일 근거">본사: ${costEsc(COST_HQ_PRICE_SEED[r.code].src)}</div>`:''}</td></tr>`;
   }).join('');
+}
+function fillCostHQPrices(){
+  let n = 0;
+  Object.entries(COST_HQ_PRICE_SEED).forEach(([code, v]) => {
+    const cur = COST.price[code];
+    if (cur && +cur.price) return;          // 이미 입력된 단가는 덮어쓰지 않는다
+    _costPriceDirty[code] = {cur: v.cur, price: v.price};
+    n++;
+  });
+  renderCostPrices();
+  alert(n ? `본사 원가 BOM 파일 단가 ${n}건을 빈 칸에 채웠습니다.\n보라색 "저장 전" 표시를 확인한 뒤 [변경한 단가 저장]을 눌러야 반영됩니다.` : '채울 빈 칸이 없습니다 (이미 모두 입력됨).');
 }
 function costPriceEdit(code, field, val){
   const base = _costPriceDirty[code] || {...(COST.price[code]||{cur:'USD'})};
@@ -8614,9 +8731,9 @@ function exportCostExcel(){
   const rows = c.rows.filter(r => r.qty || r.total);
   const sheet1 = rows.map(r => ({
     '모델':r.name,'제품코드':r.code,'생산수량':r.qty,'표준작업시간(분/개)':r.st,
-    '재료비(VND)':Math.round(r.mat),'노무비(VND)':Math.round(r.labor),'제조경비(VND)':Math.round(r.overhead),'외주비(VND)':Math.round(r.out),
+    '재료비(VND)':Math.round(r.mat),'노무비(VND)':Math.round(r.labor),'제조경비(VND)':Math.round(r.overhead),'외주비(VND)':Math.round(r.out),'감가상각비(VND)':Math.round(r.dep),
     '총원가(VND)':Math.round(r.total),'개당원가(VND)':Math.round(r.unit),
-    '재료비(KRW)':krw(r.mat),'노무비(KRW)':krw(r.labor),'제조경비(KRW)':krw(r.overhead),'외주비(KRW)':krw(r.out),
+    '재료비(KRW)':krw(r.mat),'노무비(KRW)':krw(r.labor),'제조경비(KRW)':krw(r.overhead),'외주비(KRW)':krw(r.out),'감가상각비(KRW)':krw(r.dep),
     '총원가(KRW)':krw(r.total),'개당원가(KRW)':krw(r.unit),
     '판매단가(VND)':Math.round(r.saleVND)||'','이익률':r.margin==null?'':Math.round(r.margin*1000)/10+'%','BOM등록':r.hasBOM?'O':'X'
   }));
@@ -8624,7 +8741,16 @@ function exportCostExcel(){
   const sheet2 = COST_MONTH_FIELDS.map(([k,l]) => ({'항목':l,'값':mc[k]??''}));
   sheet2.push({'항목':'재료비 기준','값':basis==='act'?'실제(작업지시 투입)':'표준(BOM)'});
   const sheet3 = costMaterials().filter(r => COST.price[r.code]).map(r => ({'자재코드':r.code,'품명':r.name,'단위':r.unit,'통화':COST.price[r.code].cur,'단가':COST.price[r.code].price,'VND환산':Math.round(costMatPriceVND(r.code,m))}));
+  // 본사 원가 BOM 파일의 "제조원가_연도별" 열 구성과 같은 형식 (개당, 원화)
+  const per = (v, q) => (c.fx.krw && q) ? Math.round(v / q / c.fx.krw) : '';
+  const sheetHQ = rows.map(r => ({
+    '제품 Part No.':r.code,'고객사':COST_CUSTOMER[r.code]||'','제품명':r.name,'기준월':m,'생산수량':r.qty,
+    '직접노무비/개(원)':per(r.labor,r.qty),'제조경비/개(원)':per(r.overhead,r.qty),'외주가공비/개(원)':per(r.out,r.qty),
+    '감가상각비/개(원)':per(r.dep,r.qty),'BOM 재료비/개(원)':per(r.mat,r.qty),'총 제조원가/개(원)':per(r.total,r.qty),
+    '재료비 비중':r.total?Math.round(r.mat/r.total*1000)/10+'%':'','상태':r.hasBOM?(r.st?'완료':'표준시간 미입력'):'BOM 미등록'
+  }));
   const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetHQ.length?sheetHQ:[{'제품 Part No.':'(생산 실적 없음)'}]), '본사양식_개당원가');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet1), '모델별원가');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet2), '월비용_환율');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet3.length?sheet3:[{'자재코드':'(입력된 단가 없음)'}]), '자재단가');
