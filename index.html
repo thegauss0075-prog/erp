@@ -339,6 +339,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <button class="tb" onclick="go('ng')">⚠️ 불량(NG)<span class="vi">Hàng lỗi (NG)</span></button>
   <button class="tb" onclick="go('po')">📧 발주관리<span class="vi">Quản lý đặt hàng</span></button>
   <button class="tb" onclick="go('mes')">📷 현장입력<span class="vi">Nhập liệu tại xưởng</span></button>
+  <button class="tb" id="tb-cost" onclick="go('cost')" style="display:none">💰 원가<span class="vi">Giá thành</span></button>
   <div style="flex:1"></div>
   <span id="user-badge" style="font-size:12px;padding:5px 12px;border-radius:7px;background:#f0f4ff;color:#1d4ed8;border:1px solid #c7d7fe">👤 <span id="user-label">-</span></span>
   <button onclick="logoutUser()" style="padding:6px 12px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555" title="로그아웃 / Đăng xuất">🚪 로그아웃 / Đăng xuất</button>
@@ -1568,6 +1569,70 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 <!-- ✅ MES 현장입력: 태블릿/폰 카메라로 작업지시 QR을 스캔해서 생산실적/불량을
      그 자리에서 바로 등록하는 화면. 큰 버튼·큰 글씨로 현장에서 쓰기 쉽게 만들었고,
      실제 데이터 반영은 기존에 이미 검증된 openWOProd()/addNG()를 그대로 재사용한다. -->
+<div id="tab-cost" class="sec">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;flex-wrap:wrap;gap:8px">
+    <h2 style="margin:0">💰 원가 관리 <span style="font-size:13px;font-weight:400;color:#888">/ Giá thành theo model</span></h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <label style="font-size:12px;color:#555">대상월</label>
+      <select id="cost-month" onchange="renderCostBody()" style="min-width:110px"></select>
+      <label style="font-size:12px;color:#555">재료비 기준</label>
+      <select id="cost-basis" onchange="renderCostBody()">
+        <option value="std">표준 (BOM)</option>
+        <option value="act">실제 (작업지시 투입)</option>
+      </select>
+      <button onclick="exportCostExcel()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:700">📊 엑셀 다운로드</button>
+    </div>
+  </div>
+  <div id="cost-notice" style="display:none;background:#fef3c7;border:1px solid #fcd34d;color:#92400e;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:10px"></div>
+  <div style="font-size:12px;color:#888;margin-bottom:10px">
+    재료비 = BOM 소요량 × 자재단가 × 생산수량 · 노무비/제조경비 = 월 총액 × (모델 작업시간 ÷ 전체 작업시간) · 외주비 = 모델에 직접 배부 · 금액은 VND, 아래 ₩는 원화 환산(해당 월 환율)
+  </div>
+
+  <div id="cost-tiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px"></div>
+
+  <div class="tw"><table style="width:100%" id="cost-table">
+    <thead><tr>
+      <th>모델</th><th style="text-align:right">생산수량</th><th style="text-align:right">표준시간<br>(분/개)</th>
+      <th style="text-align:right">재료비</th><th style="text-align:right">노무비</th><th style="text-align:right">제조경비</th><th style="text-align:right">외주비</th>
+      <th style="text-align:right">총원가</th><th style="text-align:right">개당 원가</th><th style="text-align:right">판매단가</th><th style="text-align:right">이익률</th><th>BOM</th>
+    </tr></thead><tbody id="cost-body"></tbody></table></div>
+  <div id="cost-check" style="font-size:12px;margin:6px 0 16px"></div>
+
+  <div class="cost-edit">
+    <details open style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
+      <summary style="font-weight:700;cursor:pointer">① 월 비용·환율 <span id="cost-mc-month" style="color:#1d4ed8"></span></summary>
+      <div id="cost-mc-form" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:10px"></div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center"><button onclick="saveCostMonth()" id="cost-mc-save" style="padding:7px 16px;border-radius:8px;border:none;background:#1d4ed8;color:#fff;font-weight:700;cursor:pointer">저장</button>
+      <span style="font-size:11px;color:#888">금액은 VND · 환율은 1 USD / 1 KRW 당 VND · 노무비 = 생산 인원 급여+보험+수당 합계</span></div>
+    </details>
+    <details style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
+      <summary style="font-weight:700;cursor:pointer">② 모델별 표준작업시간 · 판매단가</summary>
+      <div class="tw" style="margin-top:8px"><table style="width:100%"><thead><tr><th>모델</th><th>표준작업시간 (분/개)</th><th>판매단가</th><th>통화</th><th></th></tr></thead><tbody id="cost-model-body"></tbody></table></div>
+    </details>
+    <details style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
+      <summary style="font-weight:700;cursor:pointer">③ 외주비 <span id="cost-out-month" style="color:#1d4ed8"></span></summary>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0">
+        <select id="cost-out-model" style="min-width:170px"></select>
+        <input id="cost-out-vendor" placeholder="업체" style="width:140px">
+        <input id="cost-out-desc" placeholder="외주 내용 (예: 권선 외주)" style="width:200px">
+        <input id="cost-out-amount" type="number" placeholder="금액" style="width:130px">
+        <select id="cost-out-cur"><option>VND</option><option>USD</option><option>KRW</option></select>
+        <button onclick="addCostOut()" id="cost-out-add" style="padding:7px 14px;border-radius:8px;border:none;background:#1d4ed8;color:#fff;font-weight:700;cursor:pointer">추가</button>
+      </div>
+      <div class="tw"><table style="width:100%"><thead><tr><th>모델</th><th>업체</th><th>내용</th><th style="text-align:right">금액</th><th style="text-align:right">VND 환산</th><th></th></tr></thead><tbody id="cost-out-body"></tbody></table></div>
+    </details>
+    <details style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
+      <summary style="font-weight:700;cursor:pointer">④ 자재단가 <span id="cost-price-cnt" style="font-weight:400;color:#888;font-size:12px"></span></summary>
+      <div style="display:flex;gap:8px;align-items:center;margin:10px 0;flex-wrap:wrap">
+        <input id="cost-price-q" placeholder="코드·품명 검색" oninput="renderCostPrices()" style="width:220px">
+        <button onclick="saveCostPrices()" id="cost-price-save" style="padding:7px 16px;border-radius:8px;border:none;background:#1d4ed8;color:#fff;font-weight:700;cursor:pointer">변경한 단가 저장</button>
+        <span style="font-size:11px;color:#888">단가 = 자재 단위(Ea·Kg·Roll 등) 1개당 금액 · 수입 인보이스 기준</span>
+      </div>
+      <div class="tw"><table style="width:100%"><thead><tr><th>자재코드</th><th>품명</th><th>단위</th><th>모델</th><th>통화</th><th>단가</th><th style="text-align:right">VND 환산</th></tr></thead><tbody id="cost-price-body"></tbody></table></div>
+    </details>
+  </div>
+</div>
+
 <div id="tab-mes" class="sec">
   <div style="max-width:640px;margin:0 auto">
     <div style="text-align:center;padding:16px 0 14px">
@@ -2252,7 +2317,7 @@ function go(id){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.tb').forEach(b=>b.classList.remove('on'));
   document.getElementById('tab-'+id).classList.add('on');
-  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,qc:5,hist:6,ng:7,po:8,mes:9};
+  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,qc:5,hist:6,ng:7,po:8,mes:9,cost:10};
   document.querySelectorAll('.tb')[order[id]].classList.add('on');
   if(id==='inv'){initMS();renderInv();}
   if(id==='io') renderIOTable();
@@ -2263,6 +2328,7 @@ function go(id){
   if(id==='ng'){renderNG();renderNGLog();initNGLogModel();}
   if(id==='po') renderPO({soft:true});
   if(id==='mes') renderMES();
+  if(id==='cost') renderCost();
 }
 function setIC(c){document.getElementById('inv-cat').value=c;initMS();renderInv();}
 
@@ -8207,6 +8273,374 @@ async function retrySafe(doCall) {
   return res;
 }
 
+// ════════════════════════════════════════════════════════════
+//  💰 원가 관리 (2026-10-26 신규) — 베트남 관리자가 입력, 본사(한국 열람)가 조회
+//  - 서버 저장: COST_DATA 시트 (section | key | value(JSON)) — getCostData / saveCostData
+//    section: price(자재단가) · month(월 비용·환율) · model(표준시간·판매단가) · out(외주비)
+//  - 재료비: BOM(반제품 BTP는 원자재로 펼침) × 단가 × 생산수량, 또는 작업지시 실제 투입
+//  - 노무비·제조경비: 월 총액을 (생산수량 × 표준작업시간) 비율로 배분
+//  - 금액 기준은 VND, 원화(₩)는 해당 월 환율(1 KRW 당 VND)로 환산해 함께 표시
+// ════════════════════════════════════════════════════════════
+let COST = {price:{}, month:{}, model:{}, out:{}};
+let COST_SERVER_OK = null;   // null=아직, true=서버 저장 가능, false=서버에 기능 없음
+let _costPriceDirty = {};
+const COST_MONTH_FIELDS = [
+  ['labor','노무비 총액'],['elec','전기료'],['rent','임차료'],['dep','감가상각비'],
+  ['repair','수선비'],['supplies','소모품비'],['etc','기타 경비'],
+  ['fxUsd','환율: 1 USD = ? VND'],['fxKrw','환율: 1 KRW = ? VND']
+];
+const COST_OVERHEAD_KEYS = ['elec','rent','dep','repair','supplies','etc'];
+const COST_MODEL_ORDER = ['ML27A040118A','ML27A040091A','ML27A040090A','ML27A040127A','ML27A040112A','ML27M040143A',
+  'ML27M040145A','ML27M020003A','ML27M040025A','AIR_COIL#0','AIR_COIL#1','AIR_COIL#2','AIR_COIL#3','AIR_COIL#4',
+  'CH330125 IND-5T','CH330125 IND-8T','CH330125 IND-10T','PCDU INDUCTOR'];
+
+function costEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// 베트남 시간 기준 YYYY-MM
+function costYM(dt){ const d=new Date(dt); if(isNaN(d)) return String(dt||'').slice(0,7); return new Date(d.getTime()+7*3600e3).toISOString().slice(0,7); }
+function costCanEdit(){ return !!isAdmin; }
+
+async function loadCost(){
+  if (!(API_URL || IS_GAS)) return;
+  const r = await api('getCostData', {});
+  if (r && r.ok) {
+    COST_SERVER_OK = true;
+    const c = {price:{}, month:{}, model:{}, out:{}};
+    (r.data||[]).forEach(x => {
+      if (!x || !x.section || x.key===undefined || x.key===null || x.key==='') return;
+      if (!c[x.section]) c[x.section] = {};
+      let v = x.value; try { if (typeof v === 'string') v = JSON.parse(v); } catch(e) {}
+      if (v !== null && v !== undefined && v !== '') c[x.section][String(x.key)] = v;
+    });
+    COST = c;
+  } else {
+    COST_SERVER_OK = false;
+  }
+}
+async function saveCost(section, key, value){
+  if (!costCanEdit()) { alert('관리자 로그인이 필요합니다.'); return false; }
+  const r = await retrySafe(() => api('saveCostData', {section, key:String(key), value: value===null ? '' : JSON.stringify(value), token: ADMIN_TOKEN, user: CURRENT_USER || ''}));
+  if (r && r.ok) {
+    if (!COST[section]) COST[section] = {};
+    if (value === null) delete COST[section][String(key)]; else COST[section][String(key)] = value;
+    return true;
+  }
+  alert('저장 실패: ' + (r && r.error ? r.error : '서버 응답 없음') + (COST_SERVER_OK===false ? '\n(서버에 원가 저장 기능이 아직 추가되지 않았습니다)' : ''));
+  return false;
+}
+
+// ── 계산 도우미
+function costFx(m){ const d = COST.month[m] || {}; return {usd:+d.fxUsd||0, krw:+d.fxKrw||0}; }
+function costToVND(amount, cur, m){
+  amount = +amount || 0; if (!amount) return 0;
+  const fx = costFx(m);
+  if (cur === 'USD') return amount * fx.usd;
+  if (cur === 'KRW') return amount * fx.krw;
+  return amount;
+}
+function costMatPriceVND(code, m){ const p = COST.price[code]; return p ? costToVND(p.price, p.cur||'VND', m) : 0; }
+function costModels(){
+  const tp = (DB.tp||[]).filter(r => r.code);
+  const name = {}; tp.forEach(r => { if (!name[r.code]) name[r.code] = r.name; });
+  const codes = COST_MODEL_ORDER.filter(c => name[c] || true);
+  tp.forEach(r => { if (!codes.includes(r.code)) codes.push(r.code); });
+  return codes.map(c => ({code:c, name: name[c] || c}));
+}
+// BOM 펼치기: 완제품(TP) 행 + 그 안의 반제품(BTP) 행은 BTP의 원자재로 대체
+function costFlatBOM(code){
+  const rows = (BOM||[]).filter(b => b.productCode === code);
+  const tpRows = rows.filter(b => effectiveBOMCat(b) === 'TP');
+  const btpRows = rows.filter(b => effectiveBOMCat(b) === 'BTP');
+  const out = {};
+  const add = (mc, q) => { if (!mc) return; out[mc] = (out[mc]||0) + q; };
+  tpRows.forEach(b => {
+    const q = +b.qtyPerUnit || 0;
+    if (String(b.materialCat||'').toUpperCase() === 'BTP' || b.materialCode === code) {
+      btpRows.forEach(x => add(x.materialCode, q * (+x.qtyPerUnit||0)));
+    } else add(b.materialCode, q);
+  });
+  // 완제품 행이 BTP를 참조하지 않는데 BTP 행만 따로 있는 경우는 중복이라 넣지 않는다
+  if (!tpRows.length) btpRows.forEach(x => add(x.materialCode, +x.qtyPerUnit||0));
+  return out;
+}
+function costProdQty(code, m){
+  return (txLog||[]).filter(t => t.type==='tp-in' && t.code===code && String(t.cat||'').toUpperCase()!=='BTP' && costYM(t.dt)===m)
+    .reduce((s,t)=>s+(+t.qty||0),0);
+}
+function costActualMat(code, m){
+  return (WO_MAT||[]).filter(w => w.productCode===code && w.code!==code && String(w.cat||'').toUpperCase()!=='BTP' && costYM(w.createdAt)===m)
+    .reduce((s,w)=>s+(+w.qty||0)*costMatPriceVND(w.code, m),0);
+}
+function costMonthList(){
+  const set = new Set();
+  (txLog||[]).forEach(t => { if (t.type==='tp-in') set.add(costYM(t.dt)); });
+  Object.keys(COST.month||{}).forEach(m => set.add(m));
+  set.add(costYM(new Date().toISOString()));
+  return [...set].filter(m => /^\d{4}-\d{2}$/.test(m)).sort().reverse();
+}
+function costCompute(m, basis){
+  const mc = COST.month[m] || {};
+  const labor = +mc.labor || 0;
+  const overhead = COST_OVERHEAD_KEYS.reduce((s,k)=>s+(+mc[k]||0),0);
+  const outs = Object.values(COST.out||{}).filter(o => o && o.month === m);
+  const rows = costModels().map(md => {
+    const st = +((COST.model[md.code]||{}).st) || 0;
+    const qty = costProdQty(md.code, m);
+    const bom = costFlatBOM(md.code);
+    const hasBOM = Object.keys(bom).length > 0;
+    const stdUnit = Object.entries(bom).reduce((s,[mc2,q])=>s+q*costMatPriceVND(mc2,m),0);
+    const matStd = stdUnit * qty;
+    const matAct = costActualMat(md.code, m);
+    const outAmt = outs.filter(o => o.code === md.code).reduce((s,o)=>s+costToVND(o.amount, o.cur||'VND', m),0);
+    const sale = (COST.model[md.code]||{});
+    return {code:md.code, name:md.name, qty, st, mins: qty*st, hasBOM, stdUnit, matStd, matAct,
+            mat: basis==='act' ? matAct : matStd, out: outAmt,
+            saleVND: costToVND(sale.sale, sale.saleCur||'VND', m)};
+  });
+  const totMins = rows.reduce((s,r)=>s+r.mins,0);
+  rows.forEach(r => {
+    const share = totMins ? r.mins/totMins : 0;
+    r.share = share; r.labor = labor*share; r.overhead = overhead*share;
+    r.total = r.mat + r.labor + r.overhead + r.out;
+    r.unit = r.qty ? r.total/r.qty : 0;
+    r.margin = (r.saleVND && r.qty) ? (r.saleVND - r.unit)/r.saleVND : null;
+  });
+  return {rows, labor, overhead, totMins, fx: costFx(m)};
+}
+
+// ── 표시
+function costV(v){ return v ? Math.round(v).toLocaleString() : '-'; }
+function costMoney(v, fx){
+  const krw = (fx.krw && v) ? '₩' + Math.round(v/fx.krw).toLocaleString() : (v ? '₩ 환율 없음' : '');
+  return `${costV(v)}${krw?`<div style="font-size:10.5px;color:#64748b">${krw}</div>`:''}`;
+}
+
+async function renderCost(){
+  const nt = document.getElementById('cost-notice');
+  if (nt) { nt.style.display = 'block'; nt.textContent = '⏳ 원가 데이터를 불러오는 중...'; }
+  await Promise.all([loadCost(), (BOM&&BOM.length)?null:loadBOM(), (WO_MAT&&WO_MAT.length)?null:loadWOMaterials()]);
+  const sel = document.getElementById('cost-month');
+  const cur = sel.value;
+  const months = costMonthList();
+  // 기본값: 지난달(이번 달은 아직 진행 중)
+  const def = months[1] || months[0];
+  sel.innerHTML = months.map(m => `<option value="${m}">${m}</option>`).join('');
+  sel.value = (cur && months.includes(cur)) ? cur : def;
+  renderCostBody();
+}
+
+function renderCostBody(keepEdits){
+  const m = document.getElementById('cost-month').value;
+  const basis = document.getElementById('cost-basis').value;
+  const nt = document.getElementById('cost-notice');
+  const edit = costCanEdit();
+  document.querySelectorAll('#tab-cost .cost-edit').forEach(el => el.style.display = edit ? 'block' : 'none');
+
+  const msgs = [];
+  if (COST_SERVER_OK === false) msgs.push('⚠️ 서버(Apps Script)에 원가 저장 기능이 아직 없습니다. 생산수량·BOM은 보이지만 단가·비용은 입력/저장할 수 없습니다.');
+  const c = costCompute(m, basis);
+  if (!c.fx.krw) msgs.push(`⚠️ ${m} 원화 환율이 없어 ₩ 환산이 표시되지 않습니다.` + (edit ? ' ① 월 비용·환율에서 입력하세요.' : ''));
+  if (!COST.month[m]) msgs.push(`ℹ️ ${m} 노무비·제조경비가 아직 입력되지 않았습니다.`);
+  const noPrice = Object.keys(COST.price||{}).length === 0;
+  if (noPrice) msgs.push('ℹ️ 자재단가가 아직 하나도 입력되지 않아 재료비가 0으로 나옵니다.');
+  nt.style.display = msgs.length ? 'block' : 'none';
+  nt.innerHTML = msgs.map(costEsc).join('<br>');
+
+  const rows = c.rows.filter(r => r.qty || r.total || (COST.model[r.code]));
+  const tot = k => rows.reduce((s,r)=>s+(r[k]||0),0);
+  const T = {qty:tot('qty'), mat:tot('mat'), labor:tot('labor'), overhead:tot('overhead'), out:tot('out'), total:tot('total')};
+  const tile = (label, v, color) => `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
+      <div style="font-size:11px;color:#64748b">${label}</div><div style="font-size:17px;font-weight:700;color:${color}">${costV(v)} <span style="font-size:11px;font-weight:400">VND</span></div>
+      <div style="font-size:12px;color:#475569">${c.fx.krw&&v?'₩'+Math.round(v/c.fx.krw).toLocaleString():''}</div></div>`;
+  document.getElementById('cost-tiles').innerHTML =
+    tile('총원가', T.total, '#0f172a') + tile('재료비', T.mat, '#1d4ed8') + tile('노무비', T.labor, '#7c3aed') +
+    tile('제조경비', T.overhead, '#b45309') + tile('외주비', T.out, '#0f766e');
+
+  const body = document.getElementById('cost-body');
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="12"><div class="empty">${m}에 생산 실적이 없습니다.</div></td></tr>`;
+  } else {
+    body.innerHTML = rows.map(r => `<tr>
+      <td><div style="font-weight:600">${costEsc(r.name)}</div><div style="font-family:monospace;font-size:10.5px;color:#94a3b8">${costEsc(r.code)}</div></td>
+      <td style="text-align:right">${r.qty.toLocaleString()}</td>
+      <td style="text-align:right;color:${r.st?'#334155':'#dc2626'}">${r.st||'미입력'}</td>
+      <td style="text-align:right">${costMoney(r.mat,c.fx)}</td>
+      <td style="text-align:right">${costMoney(r.labor,c.fx)}</td>
+      <td style="text-align:right">${costMoney(r.overhead,c.fx)}</td>
+      <td style="text-align:right">${costMoney(r.out,c.fx)}</td>
+      <td style="text-align:right;font-weight:700">${costMoney(r.total,c.fx)}</td>
+      <td style="text-align:right;font-weight:700;color:#1d4ed8">${costMoney(r.unit,c.fx)}</td>
+      <td style="text-align:right">${costMoney(r.saleVND,c.fx)}</td>
+      <td style="text-align:right;font-weight:700;color:${r.margin==null?'#94a3b8':(r.margin<0?'#dc2626':'#166534')}">${r.margin==null?'-':(r.margin*100).toFixed(1)+'%'}</td>
+      <td style="text-align:center">${r.hasBOM?'✅':'<span title="BOM 미등록 — 표준재료비 0" style="color:#dc2626">❌</span>'}</td>
+    </tr>`).join('') + `<tr style="background:#f1f5f9;font-weight:700">
+      <td>합계</td><td style="text-align:right">${T.qty.toLocaleString()}</td><td></td>
+      <td style="text-align:right">${costMoney(T.mat,c.fx)}</td><td style="text-align:right">${costMoney(T.labor,c.fx)}</td>
+      <td style="text-align:right">${costMoney(T.overhead,c.fx)}</td><td style="text-align:right">${costMoney(T.out,c.fx)}</td>
+      <td style="text-align:right">${costMoney(T.total,c.fx)}</td><td colspan="4"></td></tr>`;
+  }
+  const missingST = rows.filter(r => r.qty && !r.st).length;
+  const chk = document.getElementById('cost-check');
+  chk.innerHTML = missingST && (c.labor || c.overhead)
+    ? `<span style="color:#dc2626">⚠️ 생산수량이 있는데 표준작업시간이 비어 있는 모델이 ${missingST}개 있어, 그 모델에는 노무비·경비가 배분되지 않습니다.</span>`
+    : (c.labor || c.overhead ? '<span style="color:#166534">✅ 노무비·제조경비가 월 총액과 일치하게 배분되었습니다.</span>' : '');
+
+  // keepEdits: 저장 직후에는 입력 중인 다른 칸이 지워지지 않도록 편집 영역은 다시 그리지 않는다
+  if (edit && !keepEdits) { renderCostMonthForm(m); renderCostModels(); renderCostOut(m); renderCostPrices(); }
+}
+
+// ① 월 비용·환율
+function renderCostMonthForm(m){
+  document.getElementById('cost-mc-month').textContent = '— ' + m;
+  const d = COST.month[m] || {};
+  // 환율이 비어 있으면 가장 최근 달 환율을 기본값으로 제안
+  const prev = Object.keys(COST.month).filter(x => x < m).sort().reverse().map(x => COST.month[x]).find(x => x && (x.fxUsd||x.fxKrw)) || {};
+  document.getElementById('cost-mc-form').innerHTML = COST_MONTH_FIELDS.map(([k,label]) => {
+    const v = d[k] != null ? d[k] : ((k==='fxUsd'||k==='fxKrw') ? (prev[k]||'') : '');
+    return `<label style="font-size:12px;color:#475569">${label}<input id="cost-mc-${k}" type="number" step="any" value="${v}" style="width:100%;margin-top:3px"></label>`;
+  }).join('');
+}
+async function saveCostMonth(){
+  const m = document.getElementById('cost-month').value;
+  const v = {};
+  COST_MONTH_FIELDS.forEach(([k]) => { const x = document.getElementById('cost-mc-'+k).value; if (x !== '') v[k] = +x; });
+  const g = withButtonGuard('#cost-mc-save', '⏳ 저장 중...'); if (g === null) return;
+  try { if (await saveCost('month', m, v)) { renderCostBody(true); renderCostPrices(); renderCostOut(m); } } finally { g.release(); }
+}
+
+// ② 모델 설정
+function renderCostModels(){
+  document.getElementById('cost-model-body').innerHTML = costModels().map((md,i) => {
+    const d = COST.model[md.code] || {};
+    return `<tr><td><div style="font-weight:600">${costEsc(md.name)}</div><div style="font-family:monospace;font-size:10.5px;color:#94a3b8">${costEsc(md.code)}</div></td>
+      <td><input id="cost-md-st-${i}" type="number" step="any" value="${d.st??''}" style="width:110px"></td>
+      <td><input id="cost-md-sale-${i}" type="number" step="any" value="${d.sale??''}" style="width:120px"></td>
+      <td><select id="cost-md-cur-${i}">${['USD','VND','KRW'].map(cu=>`<option ${ (d.saleCur||'USD')===cu?'selected':''}>${cu}</option>`).join('')}</select></td>
+      <td><button class="edit-btn" id="cost-md-btn-${i}" onclick="saveCostModel(${i})">💾</button></td></tr>`;
+  }).join('');
+}
+async function saveCostModel(i){
+  const md = costModels()[i]; if (!md) return;
+  const st = document.getElementById('cost-md-st-'+i).value, sale = document.getElementById('cost-md-sale-'+i).value;
+  const v = {st: st===''?0:+st, sale: sale===''?0:+sale, saleCur: document.getElementById('cost-md-cur-'+i).value};
+  const g = withButtonGuard('#cost-md-btn-'+i, '⏳'); if (g === null) return;
+  try { if (await saveCost('model', md.code, v)) { renderCostBody(true); const b=document.getElementById('cost-md-btn-'+i); if(b){ b.textContent='✅'; setTimeout(()=>{ b.textContent='💾'; },1500);} } } finally { g.release(); }
+}
+
+// ③ 외주비
+function renderCostOut(m){
+  document.getElementById('cost-out-month').textContent = '— ' + m;
+  const sel = document.getElementById('cost-out-model'); const cur = sel.value;
+  sel.innerHTML = costModels().map(md => `<option value="${costEsc(md.code)}">${costEsc(md.name)}</option>`).join('');
+  if (cur) sel.value = cur;
+  const name = {}; costModels().forEach(md => name[md.code] = md.name);
+  const list = Object.entries(COST.out||{}).filter(([,o]) => o && o.month === m);
+  document.getElementById('cost-out-body').innerHTML = list.length ? list.map(([id,o]) => `<tr>
+      <td>${costEsc(name[o.code]||o.code)}</td><td>${costEsc(o.vendor)}</td><td>${costEsc(o.desc)}</td>
+      <td style="text-align:right">${(+o.amount||0).toLocaleString()} ${costEsc(o.cur||'VND')}</td>
+      <td style="text-align:right">${costV(costToVND(o.amount,o.cur||'VND',m))}</td>
+      <td><button class="edit-btn" onclick="deleteCostOut('${costEsc(id)}')">🗑️</button></td></tr>`).join('')
+    : `<tr><td colspan="6" style="color:#94a3b8;text-align:center">${m} 외주비 없음</td></tr>`;
+}
+async function addCostOut(){
+  const m = document.getElementById('cost-month').value;
+  const o = {month:m, code:document.getElementById('cost-out-model').value,
+    vendor:document.getElementById('cost-out-vendor').value.trim(), desc:document.getElementById('cost-out-desc').value.trim(),
+    amount:+document.getElementById('cost-out-amount').value||0, cur:document.getElementById('cost-out-cur').value};
+  if (!o.code || !o.amount) { alert('모델과 금액을 입력하세요.'); return; }
+  const g = withButtonGuard('#cost-out-add', '⏳'); if (g === null) return;
+  try {
+    if (await saveCost('out', 'OUT' + Date.now(), o)) {
+      ['cost-out-vendor','cost-out-desc','cost-out-amount'].forEach(id => document.getElementById(id).value = '');
+      renderCostBody(true); renderCostOut(m);
+    }
+  } finally { g.release(); }
+}
+async function deleteCostOut(id){
+  if (!confirm('이 외주비 내역을 삭제할까요?')) return;
+  if (await saveCost('out', id, null)) { renderCostBody(true); renderCostOut(document.getElementById('cost-month').value); }
+}
+
+// ④ 자재단가
+function costMaterials(){
+  return [...(DB.kr||[]).map(r=>({...r,src:'KR'})), ...(DB.vn||[]).map(r=>({...r,src:'VN'}))].filter(r => r.code);
+}
+function renderCostPrices(){
+  const m = document.getElementById('cost-month').value;
+  const q = (document.getElementById('cost-price-q').value||'').toLowerCase();
+  const all = costMaterials();
+  const filled = all.filter(r => COST.price[r.code] && +COST.price[r.code].price).length;
+  document.getElementById('cost-price-cnt').textContent = `(${filled}/${all.length} 입력됨)`;
+  const list = all.filter(r => !q || r.code.toLowerCase().includes(q) || String(r.name||'').toLowerCase().includes(q));
+  document.getElementById('cost-price-body').innerHTML = list.map(r => {
+    const d = _costPriceDirty[r.code] || COST.price[r.code] || {};
+    const key = costEsc(r.code);
+    return `<tr><td style="font-family:monospace;font-size:11px">${key}</td><td style="font-size:12px">${costEsc(r.name)}</td><td>${costEsc(r.unit)}</td>
+      <td style="font-size:11px;color:#64748b">${costEsc(r.model||r.src)}</td>
+      <td><select data-code="${key}" onchange="costPriceEdit(this.dataset.code,'cur',this.value)">${['USD','VND','KRW'].map(cu=>`<option ${(d.cur||'USD')===cu?'selected':''}>${cu}</option>`).join('')}</select></td>
+      <td><input data-code="${key}" type="number" step="any" value="${d.price??''}" style="width:110px" oninput="costPriceEdit(this.dataset.code,'price',this.value)"></td>
+      <td style="text-align:right">${costV(costToVND(d.price, d.cur||'USD', m))}</td></tr>`;
+  }).join('');
+}
+function costPriceEdit(code, field, val){
+  const base = _costPriceDirty[code] || {...(COST.price[code]||{cur:'USD'})};
+  if (!base.cur) base.cur = 'USD';
+  base[field] = field === 'price' ? (val===''?'':+val) : val;
+  _costPriceDirty[code] = base;
+}
+async function saveCostPrices(){
+  const entries = Object.entries(_costPriceDirty);
+  if (!entries.length) { alert('변경한 단가가 없습니다.'); return; }
+  const g = withButtonGuard('#cost-price-save', `⏳ 저장 중 (0/${entries.length})`); if (g === null) return;
+  let ok = 0;
+  try {
+    for (const [code, v] of entries) {
+      const val = (v.price === '' || v.price == null) ? null : {cur:v.cur||'USD', price:+v.price};
+      if (await saveCost('price', code, val)) { ok++; delete _costPriceDirty[code]; }
+      else break;
+      const b = document.querySelector('#cost-price-save'); if (b) b.textContent = `⏳ 저장 중 (${ok}/${entries.length})`;
+    }
+  } finally { g.release(); }
+  renderCostBody(true); renderCostPrices();
+  if (ok) alert(`단가 ${ok}건 저장했습니다.`);
+}
+
+// ── 엑셀 (본사 보고용)
+function exportCostExcel(){
+  if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.'); return; }
+  const m = document.getElementById('cost-month').value;
+  const basis = document.getElementById('cost-basis').value;
+  const c = costCompute(m, basis);
+  const krw = v => c.fx.krw ? Math.round(v / c.fx.krw) : '';
+  const rows = c.rows.filter(r => r.qty || r.total);
+  const sheet1 = rows.map(r => ({
+    '모델':r.name,'제품코드':r.code,'생산수량':r.qty,'표준작업시간(분/개)':r.st,
+    '재료비(VND)':Math.round(r.mat),'노무비(VND)':Math.round(r.labor),'제조경비(VND)':Math.round(r.overhead),'외주비(VND)':Math.round(r.out),
+    '총원가(VND)':Math.round(r.total),'개당원가(VND)':Math.round(r.unit),
+    '재료비(KRW)':krw(r.mat),'노무비(KRW)':krw(r.labor),'제조경비(KRW)':krw(r.overhead),'외주비(KRW)':krw(r.out),
+    '총원가(KRW)':krw(r.total),'개당원가(KRW)':krw(r.unit),
+    '판매단가(VND)':Math.round(r.saleVND)||'','이익률':r.margin==null?'':Math.round(r.margin*1000)/10+'%','BOM등록':r.hasBOM?'O':'X'
+  }));
+  const mc = COST.month[m] || {};
+  const sheet2 = COST_MONTH_FIELDS.map(([k,l]) => ({'항목':l,'값':mc[k]??''}));
+  sheet2.push({'항목':'재료비 기준','값':basis==='act'?'실제(작업지시 투입)':'표준(BOM)'});
+  const sheet3 = costMaterials().filter(r => COST.price[r.code]).map(r => ({'자재코드':r.code,'품명':r.name,'단위':r.unit,'통화':COST.price[r.code].cur,'단가':COST.price[r.code].price,'VND환산':Math.round(costMatPriceVND(r.code,m))}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet1), '모델별원가');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet2), '월비용_환율');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet3.length?sheet3:[{'자재코드':'(입력된 단가 없음)'}]), '자재단가');
+  XLSX.writeFile(wb, `모델별원가_${m}.xlsx`);
+}
+
+// 원가 탭은 관리자(입력)와 한국 열람(본사 조회)만 보인다 — 베트남 일반 직원에게는 숨김(급여 등 민감 정보)
+function applyCostTabUI() {
+  const b = document.getElementById('tb-cost'); if (!b) return;
+  const show = isAdmin || USER_ROLE === 'viewer';
+  b.style.display = show ? '' : 'none';
+  const sec = document.getElementById('tab-cost');
+  if (!show && sec && sec.classList.contains('on')) go('dashboard');
+  else if (show && sec && sec.classList.contains('on')) renderCostBody();
+}
+
 // ── 동기화 배지
 function setSyncBadge(state, msg) {
   const b = document.getElementById('sync-badge');
@@ -8585,6 +9019,7 @@ function applyMesButtonDeptUI() {
 //    담당한다 — 그 함수는 손대지 않는다(simulate_floor_mode.js 회귀 테스트 대상).
 function applyDeptUI() {
   applyMesButtonDeptUI();
+  applyCostTabUI();
 }
 
 // ── 한국 열람 로그인
