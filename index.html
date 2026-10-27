@@ -1592,7 +1592,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 
   <div class="tw"><table style="width:100%" id="cost-table">
     <thead><tr>
-      <th>모델</th><th style="text-align:right">생산수량</th><th style="text-align:right">표준시간<br>(분/개)</th>
+      <th>모델</th><th style="text-align:right">생산수량</th><th style="text-align:right">표준시간<br>(초/개)</th>
       <th style="text-align:right">재료비</th><th style="text-align:right">노무비</th><th style="text-align:right">제조경비</th><th style="text-align:right">외주비</th><th style="text-align:right">감가상각비</th>
       <th style="text-align:right">총원가</th><th style="text-align:right">개당 원가</th><th style="text-align:right">판매가</th><th style="text-align:right">이익률<br><span style="font-weight:400;font-size:10px">(그룹)</span></th><th style="text-align:right">가공원가<br>/개</th><th style="text-align:right">가공비</th><th style="text-align:right">가공이익률<br><span style="font-weight:400;font-size:10px">(법인)</span></th><th>BOM</th>
     </tr></thead><tbody id="cost-body"></tbody></table></div>
@@ -1613,7 +1613,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
         <input type="file" id="cost-sale-file" accept=".xlsx,.xls" style="display:none" onchange="importCostSaleExcel(event)">
         <span style="font-size:11px;color:#888">"판매가" 시트: 제품코드 | 판매가 | 가공비 | 통화 · 빈 칸은 기존 값 유지</span>
       </div>
-      <div class="tw" style="margin-top:8px"><table style="width:100%"><thead><tr><th>모델</th><th>표준작업시간 (분/개)</th><th>판매가</th><th>가공비</th><th>통화</th><th>SW170HF<br>(g/개)</th><th>SE1714<br>(g/개)</th><th>SW860HF<br>(g/개)</th><th></th></tr></thead><tbody id="cost-model-body"></tbody></table></div>
+      <div class="tw" style="margin-top:8px"><table style="width:100%"><thead><tr><th>모델</th><th>표준작업시간 (초/개)</th><th>판매가</th><th>가공비</th><th>통화</th><th>SW170HF<br>(g/개)</th><th>SE1714<br>(g/개)</th><th>SW860HF<br>(g/개)</th><th></th></tr></thead><tbody id="cost-model-body"></tbody></table></div>
     </details>
     <details style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
       <summary style="font-weight:700;cursor:pointer">③ 외주비 <span id="cost-out-month" style="color:#1d4ed8"></span></summary>
@@ -8291,7 +8291,7 @@ async function retrySafe(doCall) {
 //  - 서버 저장: COST_DATA 시트 (section | key | value(JSON)) — getCostData / saveCostData
 //    section: price(자재단가) · month(월 비용·환율) · model(표준시간·판매단가) · out(외주비)
 //  - 재료비: BOM(반제품 BTP는 원자재로 펼침) × 단가 × 생산수량, 또는 작업지시 실제 투입
-//  - 노무비·제조경비: 월 총액을 (생산수량 × 표준작업시간) 비율로 배분
+//  - 노무비·제조경비: 월 총액을 (생산수량 × 표준작업시간[초/개]) 비율로 배분
 //  - 금액 기준은 VND, 원화(₩)는 해당 월 환율(1 KRW 당 VND)로 환산해 함께 표시
 // ════════════════════════════════════════════════════════════
 let COST = {price:{}, month:{}, model:{}, out:{}};
@@ -8420,6 +8420,12 @@ function costActualMat(code, m){
   return (WO_MAT||[]).filter(w => w.productCode===code && w.code!==code && String(w.cat||'').toUpperCase()!=='BTP' && !costIsCommonMat(w.code) && costYM(w.createdAt)===m)
     .reduce((s,w)=>s+(+w.qty||0)*costMatPriceVND(w.code, m),0);
 }
+// 표준작업시간은 초/개(stSec). 예전에 분/개(st)로 저장된 값은 ×60 해서 읽는다.
+function costStSec(code){
+  const d = COST.model[code] || {};
+  if (d.stSec !== undefined && d.stSec !== '') return +d.stSec || 0;
+  return (+d.st || 0) * 60;
+}
 function costMonthList(){
   const set = new Set();
   (txLog||[]).forEach(t => { if (t.type==='tp-in') set.add(costYM(t.dt)); });
@@ -8435,7 +8441,7 @@ function costCompute(m, basis){
   const outs = Object.values(COST.out||{}).filter(o => o && o.month === m);
   const commonTot = costCommonMatTotal(m);
   const rows = costModels().map(md => {
-    const st = +((COST.model[md.code]||{}).st) || 0;
+    const st = costStSec(md.code);
     const qty = costProdQty(md.code, m);
     const bom = costFlatBOM(md.code);
     const hasBOM = Object.keys(bom).length > 0;
@@ -8445,7 +8451,7 @@ function costCompute(m, basis){
     const matAct = costActualMat(md.code, m) + adhUnit * qty;   // 접착제는 작업지시 불출이 없으므로 표준 사용량으로 포함
     const outAmt = outs.filter(o => o.code === md.code).reduce((s,o)=>s+costToVND(o.amount, o.cur||'VND', m),0);
     const sale = (COST.model[md.code]||{});
-    return {code:md.code, name:md.name, qty, st, mins: qty*st, hasBOM, stdUnit, matStd, matAct,
+    return {code:md.code, name:md.name, qty, st, mins: qty*st,   // mins = 생산수량 × 초/개 (배분 비율용) hasBOM, stdUnit, matStd, matAct,
             mat: basis==='act' ? matAct : matStd, out: outAmt,
             saleVND: costToVND(sale.sale, sale.saleCur||'VND', m),
             feeVND: costToVND(sale.fee, sale.saleCur||'VND', m)};
@@ -8628,7 +8634,7 @@ function renderCostModels(){
   document.getElementById('cost-model-body').innerHTML = costModels().map((md,i) => {
     const d = COST.model[md.code] || {};
     return `<tr><td><div style="font-weight:600">${costEsc(md.name)}</div><div style="font-family:monospace;font-size:10.5px;color:#94a3b8">${costEsc(md.code)}</div></td>
-      <td><input id="cost-md-st-${i}" type="number" step="any" value="${d.st??''}" style="width:110px"></td>
+      <td><input id="cost-md-st-${i}" type="number" step="any" value="${costStSec(md.code)||''}" style="width:90px" placeholder="초"></td>
       <td><input id="cost-md-sale-${i}" type="number" step="any" value="${d.sale??''}" style="width:90px"></td>
       <td><input id="cost-md-fee-${i}" type="number" step="any" value="${d.fee??''}" style="width:80px"></td>
       <td><select id="cost-md-cur-${i}">${['USD','VND','KRW'].map(cu=>`<option ${ (d.saleCur||'USD')===cu?'selected':''}>${cu}</option>`).join('')}</select></td>
@@ -8641,7 +8647,8 @@ async function saveCostModel(i){
   const st = document.getElementById('cost-md-st-'+i).value, sale = document.getElementById('cost-md-sale-'+i).value;
   const adh = {}; COST_ADH.forEach(a => { const x = document.getElementById('cost-md-adh-'+a.key+'-'+i).value; adh[a.key] = x===''?0:+x; });
   const fee = document.getElementById('cost-md-fee-'+i).value;
-  const v = {...(COST.model[md.code]||{}), st: st===''?0:+st, sale: sale===''?0:+sale, fee: fee===''?0:+fee, saleCur: document.getElementById('cost-md-cur-'+i).value, adh};
+  const v = {...(COST.model[md.code]||{}), stSec: st===''?0:+st, sale: sale===''?0:+sale, fee: fee===''?0:+fee, saleCur: document.getElementById('cost-md-cur-'+i).value, adh};
+  delete v.st;   // 예전 분 단위 값은 지움(초 단위 stSec만 사용)
   const g = withButtonGuard('#cost-md-btn-'+i, '⏳'); if (g === null) return;
   try { if (await saveCost('model', md.code, v)) { renderCostBody(true); const b=document.getElementById('cost-md-btn-'+i); if(b){ b.textContent='✅'; setTimeout(()=>{ b.textContent='💾'; },1500);} } } finally { g.release(); }
 }
@@ -8829,7 +8836,7 @@ function exportCostExcel(){
   const krw = v => c.fx.krw ? Math.round(v / c.fx.krw) : '';
   const rows = c.rows.filter(r => r.qty || r.total);
   const sheet1 = rows.map(r => ({
-    '모델':r.name,'제품코드':r.code,'생산수량':r.qty,'표준작업시간(분/개)':r.st,
+    '모델':r.name,'제품코드':r.code,'생산수량':r.qty,'표준작업시간(초/개)':r.st,
     '재료비(VND)':Math.round(r.mat),'노무비(VND)':Math.round(r.labor),'제조경비(VND)':Math.round(r.overhead),'외주비(VND)':Math.round(r.out),'감가상각비(VND)':Math.round(r.dep),
     '총원가(VND)':Math.round(r.total),'개당원가(VND)':Math.round(r.unit),
     '재료비(KRW)':krw(r.mat),'노무비(KRW)':krw(r.labor),'제조경비(KRW)':krw(r.overhead),'외주비(KRW)':krw(r.out),'감가상각비(KRW)':krw(r.dep),
