@@ -339,7 +339,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <button class="tb" onclick="go('ng')">⚠️ 불량(NG)<span class="vi">Hàng lỗi (NG)</span></button>
   <button class="tb" onclick="go('po')">📧 발주관리<span class="vi">Quản lý đặt hàng</span></button>
   <button class="tb" onclick="go('mes')">📷 현장입력<span class="vi">Nhập liệu tại xưởng</span></button>
-  <button class="tb" id="tb-cost" onclick="go('cost')" style="display:none">💰 원가<span class="vi">Giá thành</span></button>
+  <button class="tb" id="tb-cost" onclick="go('cost')" style="display:none">💰 제조원가<span class="vi">Giá thành SX</span></button>
   <div style="flex:1"></div>
   <span id="user-badge" style="font-size:12px;padding:5px 12px;border-radius:7px;background:#f0f4ff;color:#1d4ed8;border:1px solid #c7d7fe">👤 <span id="user-label">-</span></span>
   <button onclick="logoutUser()" style="padding:6px 12px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555" title="로그아웃 / Đăng xuất">🚪 로그아웃 / Đăng xuất</button>
@@ -1571,7 +1571,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
      실제 데이터 반영은 기존에 이미 검증된 openWOProd()/addNG()를 그대로 재사용한다. -->
 <div id="tab-cost" class="sec">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;flex-wrap:wrap;gap:8px">
-    <h2 style="margin:0">💰 원가 관리 <span style="font-size:13px;font-weight:400;color:#888">/ Giá thành theo model</span></h2>
+    <h2 style="margin:0">💰 제조원가 관리 <span style="font-size:13px;font-weight:400;color:#888">/ Giá thành sản xuất theo model</span></h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <label style="font-size:12px;color:#555">대상월</label>
       <select id="cost-month" onchange="renderCostBody()" style="min-width:110px"></select>
@@ -1586,7 +1586,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   </div>
   <div id="cost-notice" style="display:none;background:#fef3c7;border:1px solid #fcd34d;color:#92400e;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:10px"></div>
   <div style="font-size:12px;color:#888;margin-bottom:10px">
-    재료비 = BOM 소요량 × 자재단가 × 생산수량 · 노무비·제조경비·감가상각비 = 월 총액 × (모델 작업시간 ÷ 전체 작업시간) · 외주비 = 모델에 직접 배부 · 이익률(그룹) = 판매가 대비 총원가 · 가공이익률(법인) = 가공비 대비 가공원가(본사 무상공급 원자재 제외) · 금액은 VND, 아래 ₩는 원화 환산(해당 월 환율)
+    재료비 = BOM 소요량 × 자재단가 × 생산수량 · 노무비·제조경비·감가상각비 = 월 총액 × (모델 작업시간 ÷ 전체 작업시간) · 외주비 = 모델에 직접 배부 · 이익률(그룹) = 판매가 대비 제조원가 · 임가공 이익률(법인) = 임가공비 대비 가공원가(본사 무상공급 원자재 제외) · 금액은 VND, 아래 ₩는 원화 환산(해당 월 환율)
   </div>
 
   <div id="cost-tiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px"></div>
@@ -1598,7 +1598,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <thead><tr>
       <th>모델</th><th style="text-align:right">생산수량</th><th style="text-align:right">표준시간<br>(초/개)</th>
       <th style="text-align:right">재료비</th><th style="text-align:right">노무비</th><th style="text-align:right">제조경비</th><th style="text-align:right">외주비</th><th style="text-align:right">감가상각비</th>
-      <th style="text-align:right">총원가</th><th style="text-align:right">개당 원가</th><th style="text-align:right">판매가</th><th style="text-align:right">이익률<br><span style="font-weight:400;font-size:10px">(그룹)</span></th><th style="text-align:right">가공원가<br>/개</th><th style="text-align:right">가공비</th><th style="text-align:right">가공이익률<br><span style="font-weight:400;font-size:10px">(법인)</span></th><th>재료비<br>근거</th>
+      <th style="text-align:right">제조원가</th><th style="text-align:right">개당 제조원가</th><th style="text-align:right">판매가</th><th style="text-align:right">이익률<br><span style="font-weight:400;font-size:10px">(그룹)</span></th><th style="text-align:right">가공원가<br>/개</th><th style="text-align:right">임가공비</th><th style="text-align:right">임가공 이익률<br><span style="font-weight:400;font-size:10px">(법인)</span></th><th>재료비<br>근거</th>
     </tr></thead><tbody id="cost-body"></tbody></table></div>
   <div id="cost-check" style="font-size:12px;margin:6px 0 16px"></div>
   <div class="cost-edit">
@@ -1611,13 +1611,13 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <span style="font-size:11px;color:#888">금액은 VND · 환율은 1 USD / 1 KRW 당 VND · 노무비 = 생산 인원 급여+보험+수당 합계</span></div>
     </details>
     <details style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
-      <summary style="font-weight:700;cursor:pointer">② 모델별 표준작업시간 · 판매가 · 가공비</summary>
+      <summary style="font-weight:700;cursor:pointer">② 모델별 표준작업시간 · 판매가 · 임가공비</summary>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button onclick="document.getElementById('cost-sale-file').click()" id="cost-sale-import" style="padding:6px 12px;border-radius:8px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-weight:700;cursor:pointer">📥 판매가·가공비 엑셀 불러오기</button>
+        <button onclick="document.getElementById('cost-sale-file').click()" id="cost-sale-import" style="padding:6px 12px;border-radius:8px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-weight:700;cursor:pointer">📥 판매가·임가공비 엑셀 불러오기</button>
         <input type="file" id="cost-sale-file" accept=".xlsx,.xls" style="display:none" onchange="importCostSaleExcel(event)">
-        <span style="font-size:11px;color:#888">"판매가" 시트: 제품코드 | 판매가 | 가공비 | 통화 · 빈 칸은 기존 값 유지</span>
+        <span style="font-size:11px;color:#888">"판매가" 시트: 제품코드 | 판매가 | 임가공비 | 통화 · 빈 칸은 기존 값 유지</span>
       </div>
-      <div class="tw" style="margin-top:8px"><table style="width:100%"><thead><tr><th>모델</th><th>표준작업시간 (초/개)</th><th>판매가</th><th>가공비</th><th>통화</th><th>SW170HF<br>(g/개)</th><th>SE1714<br>(g/개)</th><th>SW860HF<br>(g/개)</th><th></th></tr></thead><tbody id="cost-model-body"></tbody></table></div>
+      <div class="tw" style="margin-top:8px"><table style="width:100%"><thead><tr><th>모델</th><th>표준작업시간 (초/개)</th><th>판매가</th><th>임가공비</th><th>통화</th><th>SW170HF<br>(g/개)</th><th>SE1714<br>(g/개)</th><th>SW860HF<br>(g/개)</th><th></th></tr></thead><tbody id="cost-model-body"></tbody></table></div>
     </details>
     <details style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
       <summary style="font-weight:700;cursor:pointer">③ 외주비 <span id="cost-out-month" style="color:#1d4ed8"></span></summary>
@@ -8555,7 +8555,7 @@ function renderCostBody(keepEdits){
       <div style="font-size:11px;color:#64748b">${label}</div><div style="font-size:17px;font-weight:700;color:${color}">${costV(v)} <span style="font-size:11px;font-weight:400">VND</span></div>
       <div style="font-size:12px;color:#475569">${c.fx.krw&&v?'₩'+Math.round(v/c.fx.krw).toLocaleString():''}</div></div>`;
   document.getElementById('cost-tiles').innerHTML =
-    tile('총원가', T.total, '#0f172a') + tile('재료비', T.mat, '#1d4ed8') + tile('노무비', T.labor, '#7c3aed') +
+    tile('제조원가', T.total, '#0f172a') + tile('재료비', T.mat, '#1d4ed8') + tile('노무비', T.labor, '#7c3aed') +
     tile('제조경비', T.overhead, '#b45309') + tile('외주비', T.out, '#0f766e') + tile('감가상각비', T.dep, '#64748b');
 
   const body = document.getElementById('cost-body');
@@ -8613,7 +8613,7 @@ function costSummary(m, basis){
   const revCost = rows.filter(r=>r.saleVND).reduce((s,r)=>s+r.total,0);
   const feeCost = rows.filter(r=>r.feeVND).reduce((s,r)=>s+r.procCost,0);
   const fixed = c.labor + c.overhead + c.dep;
-  // 손익분기(법인 기준): 고정비 ÷ (평균 가공비 − 평균 현지 원부자재) — 가공비가 있는 모델 구성 기준
+  // 손익분기(법인 기준): 고정비 ÷ (평균 임가공비 − 평균 현지 원부자재) — 임가공비가 있는 모델 구성 기준
   const feeRows = rows.filter(r=>r.feeVND);
   const fq = feeRows.reduce((s,r)=>s+r.qty,0);
   const avgFee = fq ? feeRows.reduce((s,r)=>s+r.feeVND*r.qty,0)/fq : 0;
@@ -8635,15 +8635,15 @@ function renderCostReview(m, basis){
   if (!S.qty) { el.innerHTML = `<div style="font-weight:700">📝 ${m} 검토 의견</div><div style="color:#888;font-size:12px;margin-top:4px">생산 실적이 없습니다.</div>`; window._costReviewItems=[]; return; }
   if (!S.hasInput) add('warn', `${m} 노무비·제조경비가 입력되지 않아 이익률이 실제보다 높게 나옵니다.`);
   const chg = (a,b) => (a!=null && b!=null) ? ` (전월 ${costPct(b)} → ${(a-b>=0?'+':'')}${((a-b)*100).toFixed(1)}%p)` : '';
-  if (S.groupMargin!=null) add(S.groupMargin<0?'bad':'good', `그룹 이익률 ${costPct(S.groupMargin)}${P.qty?chg(S.groupMargin,P.groupMargin):''} — 판매가 대비 총원가(원자재 포함)`);
-  if (S.procMargin!=null) add(S.procMargin<0?'bad':'good', `법인 가공이익률 ${costPct(S.procMargin)}${P.qty?chg(S.procMargin,P.procMargin):''} — 가공비 수입 ${costUSD(S.fee,fx)} vs 가공원가 ${costUSD(S.proc,fx)}`);
+  if (S.groupMargin!=null) add(S.groupMargin<0?'bad':'good', `그룹 이익률 ${costPct(S.groupMargin)}${P.qty?chg(S.groupMargin,P.groupMargin):''} — 판매가 대비 제조원가(원자재 포함)`);
+  if (S.procMargin!=null) add(S.procMargin<0?'bad':'good', `법인 임가공 이익률 ${costPct(S.procMargin)}${P.qty?chg(S.procMargin,P.procMargin):''} — 임가공비 수입 ${costUSD(S.fee,fx)} vs 가공원가 ${costUSD(S.proc,fx)}`);
   if (S.be) {
     const r = S.qty / S.be;
-    add(r>=1?'good':(r>=0.7?'warn':'bad'), `생산 ${S.qty.toLocaleString()}개 / 손익분기 약 ${Math.round(S.be).toLocaleString()}개 (${Math.round(r*100)}%) — 월 고정비 ${(S.fixed/1e6).toFixed(0)}백만 VND, 평균 가공비 ${costUSD(S.avgFee,fx)}/개 기준`);
+    add(r>=1?'good':(r>=0.7?'warn':'bad'), `생산 ${S.qty.toLocaleString()}개 / 손익분기 약 ${Math.round(S.be).toLocaleString()}개 (${Math.round(r*100)}%) — 월 고정비 ${(S.fixed/1e6).toFixed(0)}백만 VND, 평균 임가공비 ${costUSD(S.avgFee,fx)}/개 기준`);
   }
   const mc = COST.month[m] || {};
   const vnCost = S.c.labor + S.c.overhead + S.c.dep;
-  if (vnCost && +mc.rent) add('info', `임차료가 베트남 비용(노무비+경비)의 ${Math.round(+mc.rent/vnCost*100)}% — 생산이 적은 달일수록 개당 원가가 크게 오릅니다.`);
+  if (vnCost && +mc.rent) add('info', `임차료가 베트남 비용(노무비+경비)의 ${Math.round(+mc.rent/vnCost*100)}% — 생산이 적은 달일수록 개당 제조원가가 크게 오릅니다.`);
   const losers = S.rows.filter(r => r.saleVND && r.margin!=null && r.margin<0)
     .map(r => ({r, loss:(r.unit - r.saleVND)*r.qty})).sort((a,b)=>b.loss-a.loss).slice(0,4);
   losers.forEach(({r,loss}) => {
@@ -8664,7 +8664,7 @@ function renderCostReview(m, basis){
   if (noST.length) add('warn', `표준시간 미입력: ${noST.join(', ')} — 노무비·경비가 배분되지 않음`);
   if (noMat.length) add('warn', `재료비 근거 없음(BOM·본사 원자재비 모두 없음): ${noMat.join(', ')}`);
   if (noSale.length) add('info', `판매가 미입력: ${noSale.join(', ')}`);
-  if (noFee.length) add('info', `가공비 미입력: ${noFee.join(', ')} — 법인 이익률에서 제외`);
+  if (noFee.length) add('info', `임가공비 미입력: ${noFee.join(', ')} — 법인 이익률에서 제외`);
   if (!(+mc.dep)) add('info', '감가상각비가 0입니다 — 고정자산 상각액을 입력하면 원가가 올라갑니다.');
   const ic = {good:['✅','#166534','#f0fdf4'], warn:['⚠️','#92400e','#fffbeb'], bad:['⛔','#b91c1c','#fef2f2'], info:['ℹ️','#334155','#f8fafc']};
   const order = {bad:0, warn:1, good:2, info:3};
@@ -8718,7 +8718,7 @@ function renderCostCharts(m, basis){
       if (s.be) g += `<line x1="${cx-bw/2-6}" x2="${cx+bw/2+6}" y1="${y(s.be)}" y2="${y(s.be)}" stroke="${COST_VIZ.ink}" stroke-width="2" stroke-dasharray="4 3" data-tip="${s.m} 손익분기 약 ${Math.round(s.be).toLocaleString()}개"/>`;
       g += `<text x="${cx}" y="${H-8}" font-size="10" text-anchor="middle" fill="${COST_VIZ.ink2}">${s.m.slice(5)}월</text>`;
     });
-    parts.push(costCard('생산량 vs 손익분기', '막대 = 완제품 생산수량 · 점선 = 손익분기 생산량(법인 가공비 기준)',
+    parts.push(costCard('생산량 vs 손익분기', '막대 = 완제품 생산수량 · 점선 = 손익분기 생산량(법인 임가공비 기준)',
       `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="월별 생산량과 손익분기">${g}</svg>`,
       costLegend([[COST_VIZ.bar,'생산수량'],[COST_VIZ.ink,'손익분기',true]])));
   }
@@ -8740,12 +8740,12 @@ function renderCostCharts(m, basis){
       p.forEach(q => g += `<circle cx="${q[0]}" cy="${q[1]}" r="4.5" fill="${col}" stroke="${COST_VIZ.surface}" stroke-width="2" data-tip="${q[2].m} ${lab} 이익률 ${costPct(q[2][k])}"/>`);
     });
     pts.forEach((s,i) => g += `<text x="${x(i)}" y="${H-8}" font-size="10" text-anchor="middle" fill="${COST_VIZ.ink2}">${s.m.slice(5)}월</text>`);
-    parts.push(costCard('이익률 추이', '그룹 = 판매가 대비 총원가 · 법인 = 가공비 대비 가공원가 (−300% 아래는 잘라서 표시)',
+    parts.push(costCard('이익률 추이', '그룹 = 판매가 대비 제조원가 · 법인 = 임가공비 대비 가공원가 (−300% 아래는 잘라서 표시)',
       `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="월별 이익률 추이">${g}</svg>`,
-      costLegend([[COST_VIZ.group,'그룹 이익률'],[COST_VIZ.proc,'법인 가공이익률']])));
+      costLegend([[COST_VIZ.group,'그룹 이익률'],[COST_VIZ.proc,'법인 임가공 이익률']])));
   }
 
-  // ③ 모델별 개당 원가 구성 vs 판매가 (선택 월)
+  // ③ 모델별 개당 제조원가 구성 vs 판매가 (선택 월)
   const cur = S.find(s => s.m === m) || costSummary(m, basis);
   const fx = cur.c.fx, toU = v => fx.usd ? v/fx.usd : v;
   const segs = [['mat','재료비'],['labor','노무비'],['overhead','제조경비'],['out','외주비'],['dep','감가상각비']];
@@ -8767,10 +8767,10 @@ function renderCostCharts(m, basis){
         const x0 = x(acc), w = Math.max(1, x(acc+v) - x0 - (j===lastIdx?0:2)); acc += v;
         g += `<rect x="${x0}" y="${yy}" width="${w}" height="${bh}" rx="${j===lastIdx?3:0}" fill="${COST_VIZ[segs[j][0]]}" data-tip="${costEsc(r.name)} · ${segs[j][1]}\n${fx.usd?'$'+v.toFixed(2):Math.round(v).toLocaleString()+' VND'}/개"/>`;
       });
-      if (r.saleVND) { const sx = x(toU(r.saleVND)); g += `<line x1="${sx}" x2="${sx}" y1="${yy-3}" y2="${yy+bh+3}" stroke="${COST_VIZ.ink}" stroke-width="2.5" data-tip="${costEsc(r.name)} 판매가 ${costUSD(r.saleVND,fx)}/개\n개당 원가 ${costUSD(r.unit,fx)} · 이익률 ${costPct(r.margin)}"/>`; }
+      if (r.saleVND) { const sx = x(toU(r.saleVND)); g += `<line x1="${sx}" x2="${sx}" y1="${yy-3}" y2="${yy+bh+3}" stroke="${COST_VIZ.ink}" stroke-width="2.5" data-tip="${costEsc(r.name)} 판매가 ${costUSD(r.saleVND,fx)}/개\n개당 제조원가 ${costUSD(r.unit,fx)} · 이익률 ${costPct(r.margin)}"/>`; }
     });
-    parts.push(costCard(`모델별 개당 원가 구성 — ${m}`, `생산량 많은 순 · 막대 = 개당 원가(${fx.usd?'USD':'VND'}) · 검은 세로선 = 판매가 (막대가 선을 넘으면 적자)`,
-      `<svg viewBox="0 0 ${W} ${H3}" width="100%" role="img" aria-label="모델별 개당 원가 구성">${g}</svg>`,
+    parts.push(costCard(`모델별 개당 제조원가 구성 — ${m}`, `생산량 많은 순 · 막대 = 개당 제조원가(${fx.usd?'USD':'VND'}) · 검은 세로선 = 판매가 (막대가 선을 넘으면 적자)`,
+      `<svg viewBox="0 0 ${W} ${H3}" width="100%" role="img" aria-label="모델별 개당 제조원가 구성">${g}</svg>`,
       costLegend(segs.map(([k,l]) => [COST_VIZ[k], l]).concat([[COST_VIZ.ink,'판매가']]))));
   }
   box.innerHTML = parts.join('');
@@ -8962,13 +8962,13 @@ async function importCostSaleExcel(ev){
     if (['USD','VND','KRW'].includes(cur)) v.saleCur = cur;
     if (n) plan.push([code, v]);
   });
-  if (!plan.length) { alert('불러올 판매가·가공비가 없습니다.'); return; }
-  if (!confirm(`모델 ${plan.length}개의 판매가·가공비를 저장할까요?` + (unknown.length ? `\n(ERP에 없는 제품코드 ${unknown.length}건 건너뜀: ${unknown.slice(0,4).join(', ')})` : ''))) return;
+  if (!plan.length) { alert('불러올 판매가·임가공비가 없습니다.'); return; }
+  if (!confirm(`모델 ${plan.length}개의 판매가·임가공비를 저장할까요?` + (unknown.length ? `\n(ERP에 없는 제품코드 ${unknown.length}건 건너뜀: ${unknown.slice(0,4).join(', ')})` : ''))) return;
   const g = withButtonGuard('#cost-sale-import', '⏳ 저장 중...'); if (g === null) return;
   let ok = 0;
   try { for (const [code, v] of plan) { if (await saveCost('model', code, v)) ok++; else break; } } finally { g.release(); }
   renderCostBody();
-  if (ok) alert(`${ok}개 모델의 판매가·가공비를 저장했습니다.`);
+  if (ok) alert(`${ok}개 모델의 판매가·임가공비를 저장했습니다.`);
 }
 async function importCostPriceExcel(ev){
   const f = ev.target.files && ev.target.files[0]; ev.target.value = '';
@@ -9034,11 +9034,11 @@ function exportCostExcel(){
   const sheet1 = rows.map(r => ({
     '모델':r.name,'제품코드':r.code,'생산수량':r.qty,'표준작업시간(초/개)':r.st,
     '재료비(VND)':Math.round(r.mat),'노무비(VND)':Math.round(r.labor),'제조경비(VND)':Math.round(r.overhead),'외주비(VND)':Math.round(r.out),'감가상각비(VND)':Math.round(r.dep),
-    '총원가(VND)':Math.round(r.total),'개당원가(VND)':Math.round(r.unit),
+    '제조원가(VND)':Math.round(r.total),'개당원가(VND)':Math.round(r.unit),
     '재료비(KRW)':krw(r.mat),'노무비(KRW)':krw(r.labor),'제조경비(KRW)':krw(r.overhead),'외주비(KRW)':krw(r.out),'감가상각비(KRW)':krw(r.dep),
-    '총원가(KRW)':krw(r.total),'개당원가(KRW)':krw(r.unit),
+    '제조원가(KRW)':krw(r.total),'개당원가(KRW)':krw(r.unit),
     '판매가(VND)':Math.round(r.saleVND)||'','이익률(그룹)':r.margin==null?'':Math.round(r.margin*1000)/10+'%',
-    '가공원가/개(VND)':Math.round(r.procUnit)||'','가공비(VND)':Math.round(r.feeVND)||'','가공이익률(법인)':r.procMargin==null?'':Math.round(r.procMargin*1000)/10+'%','재료비 근거':({HQ:'본사 원자재비',BOM:'BOM 표준',ACT:'실제 투입'})[r.matSrc]||'없음'
+    '가공원가/개(VND)':Math.round(r.procUnit)||'','임가공비(VND)':Math.round(r.feeVND)||'','임가공 이익률(법인)':r.procMargin==null?'':Math.round(r.procMargin*1000)/10+'%','재료비 근거':({HQ:'본사 원자재비',BOM:'BOM 표준',ACT:'실제 투입'})[r.matSrc]||'없음'
   }));
   const mc = COST.month[m] || {};
   const sheet2 = COST_MONTH_FIELDS.map(([k,l]) => ({'항목':l,'값':mc[k]??''}));
@@ -9048,9 +9048,9 @@ function exportCostExcel(){
   const per = (v, q) => (c.fx.krw && q) ? Math.round(v / q / c.fx.krw) : '';
   const sheetHQ = rows.map(r => ({
     '제품 Part No.':r.code,'고객사':COST_CUSTOMER[r.code]||'','제품명':r.name,'기준월':m,'생산수량':r.qty,
-    '직접노무비/개(원)':per(r.labor,r.qty),'제조경비/개(원)':per(r.overhead,r.qty),'외주가공비/개(원)':per(r.out,r.qty),
+    '직접노무비/개(원)':per(r.labor,r.qty),'제조경비/개(원)':per(r.overhead,r.qty),'외주임가공비/개(원)':per(r.out,r.qty),
     '감가상각비/개(원)':per(r.dep,r.qty),'BOM 재료비/개(원)':per(r.mat,r.qty),'총 제조원가/개(원)':per(r.total,r.qty),
-    '판매가/개(원)':c.fx.krw&&r.saleVND?Math.round(r.saleVND/c.fx.krw):'','가공비/개(원)':c.fx.krw&&r.feeVND?Math.round(r.feeVND/c.fx.krw):'',
+    '판매가/개(원)':c.fx.krw&&r.saleVND?Math.round(r.saleVND/c.fx.krw):'','임가공비/개(원)':c.fx.krw&&r.feeVND?Math.round(r.feeVND/c.fx.krw):'',
     '가공원가/개(원)':c.fx.krw&&r.qty?Math.round(r.procUnit/c.fx.krw):'',
     '재료비 비중':r.total?Math.round(r.mat/r.total*1000)/10+'%':'','상태':r.matSrc==='-'?'재료비 근거 없음':(r.st?'완료':'표준시간 미입력')
   }));
