@@ -1582,6 +1582,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
         <option value="act">실제 (작업지시 투입)</option>
       </select>
       <button onclick="exportCostExcel()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:700">📊 엑셀 다운로드</button>
+      <button onclick="exportCostPDF()" style="padding:7px 14px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-size:13px;cursor:pointer;font-weight:700">📄 PDF 보고서</button>
     </div>
   </div>
   <div id="cost-notice" style="display:none;background:#fef3c7;border:1px solid #fcd34d;color:#92400e;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:10px"></div>
@@ -9106,6 +9107,57 @@ async function saveCostPrices(){
 }
 
 // ── 엑셀 (본사 보고용)
+// ✅ [2026-10-28] 본사 보고용 PDF — 보고서 전용 창을 열어 인쇄(“PDF로 저장”)한다.
+//    입력 영역·버튼·메뉴는 빼고: 매출·원가 카드, 검토 의견, 그래프 4종, 모델별 원가표, 월별 매출(최근 6개월)만 담는다.
+function exportCostPDF(){
+  const m = document.getElementById('cost-month').value;
+  const basis = document.getElementById('cost-basis').value;
+  renderCostBody(true);   // 최신 값으로 다시 그린 뒤 복사
+  const clone = id => { const el = document.getElementById(id); return el ? el.innerHTML : ''; };
+  const table = document.getElementById('cost-table');
+  const tableHTML = table ? table.outerHTML : '';
+  const rows = costPrevMonths(m, 6).map(mm => costSummary(mm, basis)).filter(s => s.qty || s.ship);
+  const usd = (v, s) => s.c.fx.usd ? '$' + Math.round(v / s.c.fx.usd).toLocaleString() : Math.round(v).toLocaleString() + ' VND';
+  const revTable = `<table class="rt"><thead><tr><th>월</th><th>생산</th><th>출고</th><th>본사 매출</th><th>임가공비 매출</th><th>그룹 이익률</th><th>법인 임가공 이익률</th></tr></thead><tbody>` +
+    rows.map(s => `<tr${s.m===m?' class="cur"':''}><td>${s.m}</td><td>${s.qty.toLocaleString()}</td><td>${(s.ship||0).toLocaleString()}</td><td>${usd(s.salesRev,s)}</td><td>${usd(s.feeRev,s)}</td><td>${costPct(s.groupMargin)}</td><td>${costPct(s.procMargin)}</td></tr>`).join('') + `</tbody></table>`;
+  const fx = costFx(m);
+  const basisName = ({hq:'본사 원자재비', std:'BOM 표준', act:'실제 투입'})[basis];
+  const now = new Date(Date.now() + 7*3600e3).toISOString().slice(0,16).replace('T',' ');
+  const w = window.open('', '_blank');
+  if (!w) { alert('팝업이 차단되었습니다. 브라우저에서 이 사이트의 팝업을 허용한 뒤 다시 눌러주세요.'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>제조원가 보고서 ${m} - THE GAUSS VINA</title>
+<style>
+  @page { size: A4 landscape; margin: 10mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, 'Malgun Gothic', sans-serif; color: #0b0b0b; margin: 0; padding: 12px; font-size: 11px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  h1 { font-size: 18px; margin: 0 0 2px; } .meta { color: #52514e; font-size: 11px; margin-bottom: 10px; }
+  h2 { font-size: 13px; margin: 14px 0 6px; border-left: 4px solid #1d4ed8; padding-left: 6px; }
+  .tiles > div { margin-bottom: 6px; } .tiles [style*="grid"] { gap: 6px !important; }
+  .review > div { font-size: 11px !important; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .charts > div { break-inside: avoid; page-break-inside: avoid; }
+  .charts svg { max-height: 62mm; width: 100%; } .charts > div { padding: 6px 8px !important; }
+  table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+  th, td { border-bottom: 1px solid #e5e7eb; padding: 3px 4px; text-align: right; vertical-align: top; }
+  th { background: #f1f5f9; } td:first-child, th:first-child { text-align: left; }
+  tr { break-inside: avoid; } .rt tr.cur td { font-weight: 700; background: #eff6ff; }
+  .pb { break-before: page; page-break-before: always; }
+  .noprint { margin: 8px 0; } @media print { .noprint { display: none; } }
+</style></head><body>
+<div class="noprint"><button onclick="window.print()" style="padding:8px 16px;font-size:13px;font-weight:700">🖨️ 인쇄 / PDF로 저장</button>
+  <span style="color:#666;margin-left:8px">인쇄 창에서 대상을 “PDF로 저장”으로 고르세요 (가로 방향)</span></div>
+<h1>제조원가 보고서 — ${m}</h1>
+<div class="meta">THE GAUSS VINA · 재료비 기준: ${basisName} · 환율 1 USD = ${fx.usd?fx.usd.toLocaleString():'-'} VND, 1 KRW = ${fx.krw||'-'} VND · 출력 ${now} (베트남 시간) · 매출·이익률은 출고 기준</div>
+<h2>매출 · 제조원가</h2><div class="tiles">${clone('cost-tiles')}</div>
+<h2>검토 의견</h2><div class="review">${clone('cost-review')}</div>
+<h2 class="pb">그래프</h2><div class="charts">${clone('cost-charts')}</div>
+<h2>월별 매출 (최근 6개월, 출고 기준)</h2>${revTable}
+<h2 class="pb">모델별 제조원가 — ${m}</h2>${tableHTML}
+<div class="meta" style="margin-top:8px">재료비 근거: 본사 = 본사 원자재비(USD/개), BOM = ERP BOM × 자재단가 · 개당 제조원가는 생산수량 기준, 그 달 생산이 없는 모델은 최근 생산월 원가 적용</div>
+</body></html>`);
+  w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch(e){} }, 600);
+}
 function exportCostExcel(){
   if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.'); return; }
   const m = document.getElementById('cost-month').value;
