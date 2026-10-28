@@ -1596,7 +1596,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 
   <div class="tw"><table style="width:100%" id="cost-table">
     <thead><tr>
-      <th>모델</th><th style="text-align:right">생산수량</th><th style="text-align:right">표준시간<br>(초/개)</th>
+      <th>모델</th><th style="text-align:right">생산수량</th><th style="text-align:right">출고수량</th><th style="text-align:right">표준시간<br>(초/개)</th>
       <th style="text-align:right">재료비</th><th style="text-align:right">노무비</th><th style="text-align:right">제조경비</th><th style="text-align:right">외주비</th><th style="text-align:right">감가상각비</th>
       <th style="text-align:right">제조원가</th><th style="text-align:right">개당 제조원가</th><th style="text-align:right">판매가</th><th style="text-align:right">이익률<br><span style="font-weight:400;font-size:10px">(그룹)</span></th><th style="text-align:right">가공원가<br>/개</th><th style="text-align:right">임가공비</th><th style="text-align:right">임가공 이익률<br><span style="font-weight:400;font-size:10px">(법인)</span></th><th>재료비<br>근거</th>
     </tr></thead><tbody id="cost-body"></tbody></table></div>
@@ -8437,7 +8437,7 @@ function costMonthList(){
   set.add(costYM(new Date().toISOString()));
   return [...set].filter(m => /^\d{4}-\d{2}$/.test(m)).sort().reverse();
 }
-function costCompute(m, basis){
+function costComputeBase(m, basis){
   const mc = COST.month[m] || {};
   const labor = +mc.labor || 0;
   const overhead = COST_OVERHEAD_KEYS.reduce((s,k)=>s+(+mc[k]||0),0);
@@ -8491,6 +8491,35 @@ function costCompute(m, basis){
   });
   return {rows, labor, overhead, dep: depTot, common: commonTot, totMins, fx: costFx(m)};
 }
+// ✅ [2026-10-28] 출고 기준: 매출·임가공비 수입은 "완제품 출고 수량"(반제품·NG 창고 출고 제외)으로 잡고,
+//    매출원가 = 출고수량 × 개당 제조원가. 그 달 생산이 없는 모델은 최근 6개월 중 마지막 생산월의 개당 원가를 쓴다.
+let _costMemo = {};
+function costMemoClear(){ _costMemo = {}; }
+function costShipQty(code, m){
+  return (txLog||[]).filter(t => t.type==='otp' && t.code===code && String(t.cat||'').toUpperCase()!=='BTP' && t.dest!=='NG' && costYM(t.dt)===m)
+    .reduce((s,t)=>s+(+t.qty||0),0);
+}
+function costBaseMemo(m, basis){ const k = m+'|'+basis; return _costMemo[k] || (_costMemo[k] = costComputeBase(m, basis)); }
+function costCompute(m, basis){
+  const k = m+'|'+basis+'|ship'; if (_costMemo[k]) return _costMemo[k];
+  const c = costBaseMemo(m, basis);
+  c.rows.forEach(r => {
+    r.ship = costShipQty(r.code, m);
+    r.shipUnit = 0; r.shipProcUnit = 0; r.shipMatUnit = 0; r.unitSrc = null;
+    if (r.qty) { r.shipUnit = r.unit; r.shipProcUnit = r.procUnit; r.shipMatUnit = (r.mat - r.common)/r.qty; r.unitSrc = m; }
+    else if (r.ship) {
+      for (const pm of costPrevMonths(m, 7).slice(0, 6).reverse()) {
+        const pr = costBaseMemo(pm, basis).rows.find(x => x.code === r.code && x.qty);
+        if (pr) { r.shipUnit = pr.unit; r.shipProcUnit = pr.procUnit; r.shipMatUnit = (pr.mat - pr.common)/pr.qty; r.unitSrc = pm; break; }
+      }
+    }
+    r.shipMargin = (r.saleVND && r.shipUnit) ? (r.saleVND - r.shipUnit)/r.saleVND : null;
+    r.shipProcMargin = (r.feeVND && r.shipUnit) ? (r.feeVND - r.shipProcUnit)/r.feeVND : null;
+    if (r.margin == null) r.margin = r.shipMargin;
+    if (r.procMargin == null) r.procMargin = r.shipProcMargin;
+  });
+  return (_costMemo[k] = c);
+}
 
 // ── 표시
 function costV(v){ return v ? Math.round(v).toLocaleString() : '-'; }
@@ -8521,6 +8550,7 @@ async function submitCostKey(){
   if (COST_SERVER_OK === 'auth') alert('원가 조회 비밀번호가 맞지 않습니다.');
 }
 function renderCostBody(keepEdits){
+  costMemoClear();
   const m = document.getElementById('cost-month').value;
   const basis = document.getElementById('cost-basis').value;
   const nt = document.getElementById('cost-notice');
@@ -8548,9 +8578,9 @@ function renderCostBody(keepEdits){
   nt.style.display = msgs.length ? 'block' : 'none';
   nt.innerHTML = msgs.map(costEsc).join('<br>');
 
-  const rows = c.rows.filter(r => r.qty || r.total || (COST.model[r.code]));
+  const rows = c.rows.filter(r => r.qty || r.ship || r.total || (COST.model[r.code]));
   const tot = k => rows.reduce((s,r)=>s+(r[k]||0),0);
-  const T = {qty:tot('qty'), mat:tot('mat'), labor:tot('labor'), overhead:tot('overhead'), out:tot('out'), dep:tot('dep'), total:tot('total')};
+  const T = {qty:tot('qty'), ship:tot('ship'), mat:tot('mat'), labor:tot('labor'), overhead:tot('overhead'), out:tot('out'), dep:tot('dep'), total:tot('total')};
   const tile = (label, v, color) => `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px">
       <div style="font-size:11px;color:#64748b">${label}</div><div style="font-size:17px;font-weight:700;color:${color}">${costV(v)} <span style="font-size:11px;font-weight:400">VND</span></div>
       <div style="font-size:12px;color:#475569">${c.fx.krw&&v?'₩'+Math.round(v/c.fx.krw).toLocaleString():''}</div></div>`;
@@ -8560,11 +8590,12 @@ function renderCostBody(keepEdits){
 
   const body = document.getElementById('cost-body');
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="16"><div class="empty">${m}에 생산 실적이 없습니다.</div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="17"><div class="empty">${m}에 생산·출고 실적이 없습니다.</div></td></tr>`;
   } else {
     body.innerHTML = rows.map(r => `<tr>
       <td><div style="font-weight:600">${costEsc(r.name)}</div><div style="font-family:monospace;font-size:10.5px;color:#94a3b8">${costEsc(r.code)}${COST_CUSTOMER[r.code]?' · '+COST_CUSTOMER[r.code]:''}</div></td>
       <td style="text-align:right">${r.qty.toLocaleString()}</td>
+      <td style="text-align:right">${(r.ship||0).toLocaleString()}</td>
       <td style="text-align:right;color:${r.st?'#334155':'#dc2626'}">${r.st||'미입력'}</td>
       <td style="text-align:right">${costMoney(r.mat,c.fx)}</td>
       <td style="text-align:right">${costMoney(r.labor,c.fx)}</td>
@@ -8572,15 +8603,15 @@ function renderCostBody(keepEdits){
       <td style="text-align:right">${costMoney(r.out,c.fx)}</td>
       <td style="text-align:right">${costMoney(r.dep,c.fx)}</td>
       <td style="text-align:right;font-weight:700">${costMoney(r.total,c.fx)}</td>
-      <td style="text-align:right;font-weight:700;color:#1d4ed8">${costMoney(r.unit,c.fx)}</td>
+      <td style="text-align:right;font-weight:700;color:#1d4ed8">${r.qty?costMoney(r.unit,c.fx):(r.unitSrc?costMoney(r.shipUnit,c.fx)+`<div style="font-size:10px;color:#7c3aed">${r.unitSrc.slice(5)}월 원가</div>`:(r.ship?'<span style="color:#dc2626;font-size:11px">원가 없음</span>':'-'))}</td>
       <td style="text-align:right">${costMoney(r.saleVND,c.fx)}</td>
       <td style="text-align:right;font-weight:700;color:${r.margin==null?'#94a3b8':(r.margin<0?'#dc2626':'#166534')}">${r.margin==null?'-':(r.margin*100).toFixed(1)+'%'}</td>
-      <td style="text-align:right">${costMoney(r.procUnit,c.fx)}</td>
+      <td style="text-align:right">${costMoney(r.qty?r.procUnit:r.shipProcUnit,c.fx)}</td>
       <td style="text-align:right">${costMoney(r.feeVND,c.fx)}</td>
       <td style="text-align:right;font-weight:700;color:${r.procMargin==null?'#94a3b8':(r.procMargin<0?'#dc2626':'#166534')}">${r.procMargin==null?'-':(r.procMargin*100).toFixed(1)+'%'}</td>
       <td style="text-align:center;font-size:11px">${r.matSrc==='HQ'?'<span style="color:#7c3aed" title="본사 원자재비(USD/개) 기준">본사</span>':r.matSrc==='BOM'?'<span style="color:#166534" title="ERP BOM × 자재단가">BOM</span>':r.matSrc==='ACT'?'실제':'<span title="BOM도 본사 원자재비도 없음 — 재료비 0" style="color:#dc2626">없음</span>'}</td>
     </tr>`).join('') + `<tr style="background:#f1f5f9;font-weight:700">
-      <td>합계</td><td style="text-align:right">${T.qty.toLocaleString()}</td><td></td>
+      <td>합계</td><td style="text-align:right">${T.qty.toLocaleString()}</td><td style="text-align:right">${T.ship.toLocaleString()}</td><td></td>
       <td style="text-align:right">${costMoney(T.mat,c.fx)}</td><td style="text-align:right">${costMoney(T.labor,c.fx)}</td>
       <td style="text-align:right">${costMoney(T.overhead,c.fx)}</td><td style="text-align:right">${costMoney(T.out,c.fx)}</td>
       <td style="text-align:right">${costMoney(T.dep,c.fx)}</td><td style="text-align:right">${costMoney(T.total,c.fx)}</td><td colspan="7"></td></tr>`;
@@ -8604,22 +8635,26 @@ const COST_VIZ = {mat:'#2a78d6', labor:'#eb6834', overhead:'#1baf7a', out:'#eda1
   group:'#2a78d6', proc:'#eb6834', bar:'#2a78d6', ink:'#0b0b0b', ink2:'#52514e', muted:'#8a8984', grid:'#e7e6e2', surface:'#fcfcfb'};
 function costSummary(m, basis){
   const c = costCompute(m, basis);
-  const rows = c.rows.filter(r => r.qty);
+  const prodRows = c.rows.filter(r => r.qty);
+  const rows = c.rows.filter(r => r.qty || r.ship);
   const sum = k => rows.reduce((s,r)=>s+(r[k]||0),0);
-  const qty = sum('qty'), total = sum('total');
-  const rev = rows.reduce((s,r)=>s+(r.saleVND||0)*r.qty,0);
-  const fee = rows.reduce((s,r)=>s+(r.feeVND||0)*r.qty,0);
-  const proc = sum('procCost');
-  const revCost = rows.filter(r=>r.saleVND).reduce((s,r)=>s+r.total,0);
-  const feeCost = rows.filter(r=>r.feeVND).reduce((s,r)=>s+r.procCost,0);
+  const qty = sum('qty'), ship = sum('ship'), total = sum('total');
+  // 출고 기준 손익: 원가 이력이 있는 출고분만 (없는 모델은 검토 의견에서 경고)
+  const sr = rows.filter(r => r.ship && r.shipUnit);
+  const rev = sr.reduce((s,r)=>s+(r.saleVND||0)*r.ship,0);
+  const fee = sr.reduce((s,r)=>s+(r.feeVND||0)*r.ship,0);
+  const revCost = sr.filter(r=>r.saleVND).reduce((s,r)=>s+r.shipUnit*r.ship,0);
+  const feeCost = sr.filter(r=>r.feeVND).reduce((s,r)=>s+r.shipProcUnit*r.ship,0);
+  const proc = feeCost;
+  const noCost = rows.filter(r => r.ship && !r.shipUnit);
   const fixed = c.labor + c.overhead + c.dep;
   // 손익분기(법인 기준): 고정비 ÷ (평균 임가공비 − 평균 현지 원부자재) — 임가공비가 있는 모델 구성 기준
-  const feeRows = rows.filter(r=>r.feeVND);
+  const feeRows = prodRows.filter(r=>r.feeVND);
   const fq = feeRows.reduce((s,r)=>s+r.qty,0);
   const avgFee = fq ? feeRows.reduce((s,r)=>s+r.feeVND*r.qty,0)/fq : 0;
   const avgCommon = qty ? c.common/qty : 0;
   const be = (avgFee - avgCommon) > 0 ? fixed / (avgFee - avgCommon) : null;
-  return {m, c, rows, qty, total, rev, fee, proc, fixed, be, avgFee,
+  return {m, c, rows, qty, ship, noCost, total, rev, fee, proc, fixed, be, avgFee,
     groupMargin: rev ? (rev - revCost)/rev : null, procMargin: fee ? (fee - feeCost)/fee : null,
     hasInput: !!COST.month[m]};
 }
@@ -8632,11 +8667,17 @@ function renderCostReview(m, basis){
   const S = costSummary(m, basis), P = costSummary(costPrevMonth(m), basis);
   const fx = S.c.fx, items = [];
   const add = (lv, t) => items.push([lv, t]);
-  if (!S.qty) { el.innerHTML = `<div style="font-weight:700">📝 ${m} 검토 의견</div><div style="color:#888;font-size:12px;margin-top:4px">생산 실적이 없습니다.</div>`; window._costReviewItems=[]; return; }
+  if (!S.qty && !S.ship) { el.innerHTML = `<div style="font-weight:700">📝 ${m} 검토 의견</div><div style="color:#888;font-size:12px;margin-top:4px">생산·출고 실적이 없습니다.</div>`; window._costReviewItems=[]; return; }
   if (!S.hasInput) add('warn', `${m} 노무비·제조경비가 입력되지 않아 이익률이 실제보다 높게 나옵니다.`);
   const chg = (a,b) => (a!=null && b!=null) ? ` (전월 ${costPct(b)} → ${(a-b>=0?'+':'')}${((a-b)*100).toFixed(1)}%p)` : '';
-  if (S.groupMargin!=null) add(S.groupMargin<0?'bad':'good', `그룹 이익률 ${costPct(S.groupMargin)}${P.qty?chg(S.groupMargin,P.groupMargin):''} — 판매가 대비 제조원가(원자재 포함)`);
-  if (S.procMargin!=null) add(S.procMargin<0?'bad':'good', `법인 임가공 이익률 ${costPct(S.procMargin)}${P.qty?chg(S.procMargin,P.procMargin):''} — 임가공비 수입 ${costUSD(S.fee,fx)} vs 가공원가 ${costUSD(S.proc,fx)}`);
+  const hasPrev = P.qty || P.ship;
+  if (S.groupMargin!=null) add(S.groupMargin<0?'bad':'good', `그룹 이익률(출고 기준) ${costPct(S.groupMargin)}${hasPrev?chg(S.groupMargin,P.groupMargin):''} — 매출 ${costUSD(S.rev,fx)} vs 매출원가 ${costUSD(S.rev-(S.groupMargin*S.rev),fx)}`);
+  if (S.procMargin!=null) add(S.procMargin<0?'bad':'good', `법인 임가공 이익률(출고 기준) ${costPct(S.procMargin)}${hasPrev?chg(S.procMargin,P.procMargin):''} — 임가공비 수입 ${costUSD(S.fee,fx)} vs 가공원가 ${costUSD(S.proc,fx)}`);
+  if (S.qty || S.ship) {
+    const d = S.qty - S.ship;
+    add(Math.abs(d) > Math.max(S.qty, S.ship)*0.3 ? 'warn' : 'info', `생산 ${S.qty.toLocaleString()}개 / 출고 ${S.ship.toLocaleString()}개 — ${d>=0?'재고 증가':'재고 감소'} ${Math.abs(d).toLocaleString()}개 (손익은 출고분만 반영)`);
+  }
+  if (S.noCost.length) add('warn', `출고했지만 최근 6개월 생산 원가가 없는 모델: ${S.noCost.map(r=>r.name+' '+r.ship.toLocaleString()+'개').join(', ')} — 이익률에서 제외`);
   if (S.be) {
     const r = S.qty / S.be;
     add(r>=1?'good':(r>=0.7?'warn':'bad'), `생산 ${S.qty.toLocaleString()}개 / 손익분기 약 ${Math.round(S.be).toLocaleString()}개 (${Math.round(r*100)}%) — 월 고정비 ${(S.fixed/1e6).toFixed(0)}백만 VND, 평균 임가공비 ${costUSD(S.avgFee,fx)}/개 기준`);
@@ -8644,13 +8685,15 @@ function renderCostReview(m, basis){
   const mc = COST.month[m] || {};
   const vnCost = S.c.labor + S.c.overhead + S.c.dep;
   if (vnCost && +mc.rent) add('info', `임차료가 베트남 비용(노무비+경비)의 ${Math.round(+mc.rent/vnCost*100)}% — 생산이 적은 달일수록 개당 제조원가가 크게 오릅니다.`);
-  const losers = S.rows.filter(r => r.saleVND && r.margin!=null && r.margin<0)
-    .map(r => ({r, loss:(r.unit - r.saleVND)*r.qty})).sort((a,b)=>b.loss-a.loss).slice(0,4);
+  // 적자 모델: 출고분 기준 손실이 큰 순서
+  const losers = S.rows.filter(r => r.ship && r.saleVND && r.shipMargin!=null && r.shipMargin<0)
+    .map(r => ({r, loss:(r.shipUnit - r.saleVND)*r.ship})).sort((a,b)=>b.loss-a.loss).slice(0,4);
   losers.forEach(({r,loss}) => {
-    const matU = r.qty ? (r.mat - r.common)/r.qty : 0;
+    const matU = r.shipMatUnit || 0;
     const why = matU > r.saleVND ? '원자재비가 판매가보다 큼 — 단가 확인 필요'
-      : (r.procUnit > r.saleVND - matU ? `가공원가 ${costUSD(r.procUnit,fx)}/개가 마진(${costUSD(r.saleVND-matU,fx)})보다 큼` : '원가 상승');
-    add('bad', `${r.name}: 그룹 이익률 ${costPct(r.margin)}, 손실 약 ${costUSD(loss,fx)} — ${why}`);
+      : (r.shipProcUnit > r.saleVND - matU ? `가공원가 ${costUSD(r.shipProcUnit,fx)}/개가 마진(${costUSD(r.saleVND-matU,fx)})보다 큼` : '원가 상승');
+    const src = r.unitSrc && r.unitSrc !== m ? ` [${r.unitSrc.slice(5)}월 원가 적용]` : '';
+    add('bad', `${r.name}: 출고 ${r.ship.toLocaleString()}개, 그룹 이익률 ${costPct(r.shipMargin)}, 손실 약 ${costUSD(loss,fx)} — ${why}${src}`);
   });
   const pm = COST.month[costPrevMonth(m)] || {};
   [['labor','노무비'],['elec','전기료'],['rent','임차료'],['repair','수선비'],['supplies','소모품비'],['etc','기타 경비'],['dep','감가상각비']].forEach(([k,l]) => {
@@ -8700,27 +8743,29 @@ function costNiceMax(v){ if (!(v>0)) return 1; const p = Math.pow(10, Math.floor
 
 function renderCostCharts(m, basis){
   const box = document.getElementById('cost-charts');
-  const months = costPrevMonths(m, 6).filter(mm => COST.month[mm] || costModels().some(md => costProdQty(md.code, mm)));
+  const months = costPrevMonths(m, 6).filter(mm => COST.month[mm] || costModels().some(md => costProdQty(md.code, mm) || costShipQty(md.code, mm)));
   const S = months.map(mm => costSummary(mm, basis));
   const W = 340, H = 190, L = 44, R = 10, T = 12, B = 26, iw = W-L-R, ih = H-T-B;
   const parts = [];
 
   // ① 월별 생산량 vs 손익분기
   if (S.length) {
-    const maxV = costNiceMax(Math.max(...S.map(s=>Math.max(s.qty, s.be||0))));
-    const bw = Math.min(34, iw/S.length*0.6), y = v => T + ih - v/maxV*ih;
+    const maxV = costNiceMax(Math.max(...S.map(s=>Math.max(s.qty, s.ship||0, s.be||0))));
+    const bw = Math.min(18, iw/S.length*0.32), y = v => T + ih - v/maxV*ih;
+    const bar = (x0, v, col, tip) => { const h = (T+ih) - y(v); if (h <= 0) return ''; const r = Math.min(4, bw/2, h);
+      return `<path d="M${x0},${T+ih} V${y(v)+r} q0,-${r} ${r},-${r} H${x0+bw-r} q${r},0 ${r},${r} V${T+ih} Z" fill="${col}" data-tip="${tip}"/>`; };
     let g = '';
     for (let i=0;i<=4;i++){ const v=maxV*i/4; g += `<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="${COST_VIZ.grid}"/><text x="${L-6}" y="${y(v)+3}" font-size="10" text-anchor="end" fill="${COST_VIZ.muted}">${v>=1000?(v/1000)+'k':v}</text>`; }
     S.forEach((s,i) => {
-      const cx = L + iw*(i+0.5)/S.length, h = (T+ih) - y(s.qty);
-      const r = Math.min(4, bw/2, h);
-      if (h > 0) g += `<path d="M${cx-bw/2},${T+ih} V${y(s.qty)+r} q0,-${r} ${r},-${r} H${cx+bw/2-r} q${r},0 ${r},${r} V${T+ih} Z" fill="${s.m===m?COST_VIZ.bar:'#9ec5f4'}" data-tip="${s.m}\n생산 ${s.qty.toLocaleString()}개${s.be?`\n손익분기 약 ${Math.round(s.be).toLocaleString()}개`:''}"/>`;
-      if (s.be) g += `<line x1="${cx-bw/2-6}" x2="${cx+bw/2+6}" y1="${y(s.be)}" y2="${y(s.be)}" stroke="${COST_VIZ.ink}" stroke-width="2" stroke-dasharray="4 3" data-tip="${s.m} 손익분기 약 ${Math.round(s.be).toLocaleString()}개"/>`;
+      const cx = L + iw*(i+0.5)/S.length;
+      const tip = `${s.m}\n생산 ${s.qty.toLocaleString()}개\n출고 ${(s.ship||0).toLocaleString()}개${s.be?`\n손익분기 약 ${Math.round(s.be).toLocaleString()}개`:''}`;
+      g += bar(cx-bw-1, s.qty, COST_VIZ.bar, tip) + bar(cx+1, s.ship||0, COST_VIZ.labor, tip);
+      if (s.be) g += `<line x1="${cx-bw-6}" x2="${cx+bw+6}" y1="${y(s.be)}" y2="${y(s.be)}" stroke="${COST_VIZ.ink}" stroke-width="2" stroke-dasharray="4 3" data-tip="${s.m} 손익분기 약 ${Math.round(s.be).toLocaleString()}개"/>`;
       g += `<text x="${cx}" y="${H-8}" font-size="10" text-anchor="middle" fill="${COST_VIZ.ink2}">${s.m.slice(5)}월</text>`;
     });
-    parts.push(costCard('생산량 vs 손익분기', '막대 = 완제품 생산수량 · 점선 = 손익분기 생산량(법인 임가공비 기준)',
+    parts.push(costCard('생산·출고량 vs 손익분기', '파란 막대 = 생산수량 · 주황 막대 = 출고수량(손익 기준) · 점선 = 손익분기(법인 임가공비 기준)',
       `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="월별 생산량과 손익분기">${g}</svg>`,
-      costLegend([[COST_VIZ.bar,'생산수량'],[COST_VIZ.ink,'손익분기',true]])));
+      costLegend([[COST_VIZ.bar,'생산수량'],[COST_VIZ.labor,'출고수량'],[COST_VIZ.ink,'손익분기',true]])));
   }
 
   // ② 월별 이익률 추이 (그룹 vs 법인) — 같은 단위(%) 한 축
@@ -8740,7 +8785,7 @@ function renderCostCharts(m, basis){
       p.forEach(q => g += `<circle cx="${q[0]}" cy="${q[1]}" r="4.5" fill="${col}" stroke="${COST_VIZ.surface}" stroke-width="2" data-tip="${q[2].m} ${lab} 이익률 ${costPct(q[2][k])}"/>`);
     });
     pts.forEach((s,i) => g += `<text x="${x(i)}" y="${H-8}" font-size="10" text-anchor="middle" fill="${COST_VIZ.ink2}">${s.m.slice(5)}월</text>`);
-    parts.push(costCard('이익률 추이', '그룹 = 판매가 대비 제조원가 · 법인 = 임가공비 대비 가공원가 (−300% 아래는 잘라서 표시)',
+    parts.push(costCard('이익률 추이 (출고 기준)', '그룹 = 매출 대비 매출원가 · 법인 = 임가공비 수입 대비 가공원가 (−300% 아래는 잘라서 표시)',
       `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="월별 이익률 추이">${g}</svg>`,
       costLegend([[COST_VIZ.group,'그룹 이익률'],[COST_VIZ.proc,'법인 임가공 이익률']])));
   }
@@ -8749,7 +8794,7 @@ function renderCostCharts(m, basis){
   const cur = S.find(s => s.m === m) || costSummary(m, basis);
   const fx = cur.c.fx, toU = v => fx.usd ? v/fx.usd : v;
   const segs = [['mat','재료비'],['labor','노무비'],['overhead','제조경비'],['out','외주비'],['dep','감가상각비']];
-  const mr = cur.rows.slice().sort((a,b)=>b.qty-a.qty).slice(0,10);
+  const mr = cur.rows.filter(r => r.qty).sort((a,b)=>b.qty-a.qty).slice(0,10);   // 개당 원가는 생산이 있는 모델만
   if (mr.length) {
     const rowH = 22, H3 = T + mr.length*rowH + 22, L3 = 100, iw3 = W - L3 - R;
     const short = n => String(n).replace(/CH330125 IND \((\w+)\)/,'CH330125 $1').replace(' INDUCTOR',' IND').replace('Air Coil ','AirCoil');
@@ -9030,9 +9075,10 @@ function exportCostExcel(){
   const basis = document.getElementById('cost-basis').value;
   const c = costCompute(m, basis);
   const krw = v => c.fx.krw ? Math.round(v / c.fx.krw) : '';
-  const rows = c.rows.filter(r => r.qty || r.total);
+  const rows = c.rows.filter(r => r.qty || r.ship || r.total);
   const sheet1 = rows.map(r => ({
-    '모델':r.name,'제품코드':r.code,'생산수량':r.qty,'표준작업시간(초/개)':r.st,
+    '모델':r.name,'제품코드':r.code,'생산수량':r.qty,'출고수량':r.ship||0,'표준작업시간(초/개)':r.st,
+    '매출(VND,출고)':Math.round((r.saleVND||0)*(r.ship||0))||'','매출원가(VND,출고)':Math.round((r.shipUnit||0)*(r.ship||0))||'',
     '재료비(VND)':Math.round(r.mat),'노무비(VND)':Math.round(r.labor),'제조경비(VND)':Math.round(r.overhead),'외주비(VND)':Math.round(r.out),'감가상각비(VND)':Math.round(r.dep),
     '제조원가(VND)':Math.round(r.total),'개당원가(VND)':Math.round(r.unit),
     '재료비(KRW)':krw(r.mat),'노무비(KRW)':krw(r.labor),'제조경비(KRW)':krw(r.overhead),'외주비(KRW)':krw(r.out),'감가상각비(KRW)':krw(r.dep),
@@ -9047,7 +9093,7 @@ function exportCostExcel(){
   // 본사 원가 BOM 파일의 "제조원가_연도별" 열 구성과 같은 형식 (개당, 원화)
   const per = (v, q) => (c.fx.krw && q) ? Math.round(v / q / c.fx.krw) : '';
   const sheetHQ = rows.map(r => ({
-    '제품 Part No.':r.code,'고객사':COST_CUSTOMER[r.code]||'','제품명':r.name,'기준월':m,'생산수량':r.qty,
+    '제품 Part No.':r.code,'고객사':COST_CUSTOMER[r.code]||'','제품명':r.name,'기준월':m,'생산수량':r.qty,'출고수량':r.ship||0,
     '직접노무비/개(원)':per(r.labor,r.qty),'제조경비/개(원)':per(r.overhead,r.qty),'외주임가공비/개(원)':per(r.out,r.qty),
     '감가상각비/개(원)':per(r.dep,r.qty),'BOM 재료비/개(원)':per(r.mat,r.qty),'총 제조원가/개(원)':per(r.total,r.qty),
     '판매가/개(원)':c.fx.krw&&r.saleVND?Math.round(r.saleVND/c.fx.krw):'','임가공비/개(원)':c.fx.krw&&r.feeVND?Math.round(r.feeVND/c.fx.krw):'',
