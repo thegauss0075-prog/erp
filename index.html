@@ -13252,14 +13252,17 @@ const INV_CO = {
 };
 // 처음 쓸 때의 기본값(받은 인보이스 기준) — 화면에서 고치면 서버에 저장된 값이 우선
 const INV_ITEM_DEFAULT = {
-  'ML27A040127A': {hs:'85045010', pcsBox:48, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-OUT-L3, 14.4uH, +-2.16uH, 10Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
-  'ML27A040112A': {hs:'85045010', pcsBox:12, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-PFC-US, 108uH, +-16.2uH, 26Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
-  'ML27A040118A': {hs:'85045010', pcsBox:48, vi:'Cuộn cảm cắm 0.84uH 0.126uH, dùng cho bộ sạc của ô tô điện, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
-  'CH330125 IND-5T': {hs:'85045093', pcsBox:315, en:'CH330125-IND-5T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 5T, công suất danh định không quá 2.500KVA'},
+  'ML27A040127A': {hs:'85045010', pcsBox:48, unitKg:0.157, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-OUT-L3, 14.4uH, +-2.16uH, 10Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
+  'ML27A040112A': {hs:'85045010', pcsBox:12, unitKg:0.792, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-PFC-US, 108uH, +-16.2uH, 26Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
+  'ML27A040118A': {hs:'85045010', pcsBox:48, unitKg:0.1063, vi:'Cuộn cảm cắm 0.84uH 0.126uH, dùng cho bộ sạc của ô tô điện, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
+  'CH330125 IND-5T': {hs:'85045093', pcsBox:315, unitKg:0.0534, en:'CH330125-IND-5T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 5T, công suất danh định không quá 2.500KVA'},
   'CH330125 IND-8T': {hs:'85045093', pcsBox:315, en:'CH330125-IND-8T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 8T, công suất danh định không quá 2.500KVA'},
-  'CH330125 IND-10T': {hs:'85045093', pcsBox:315, en:'CH330125-IND-10T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 10T, công suất danh định không quá 2.500KVA'}
+  'CH330125 IND-10T': {hs:'85045093', pcsBox:315, unitKg:0.0534, en:'CH330125-IND-10T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 10T, công suất danh định không quá 2.500KVA'}
 };
 let INV = null;   // 지금 작성 중인 서류
+// ✅ 포장 예상값 기본(받은 패킹리스트 기준): 팔레트 1개 무게(총중량−순중량), 팔레트당 박스 수, 팔레트 규격(m)
+//    솔루엠 10/16: 팔레트당 약 6.8kg·약 56박스·1.1×1.1×0.88 / 본사 10/24: 11kg·9박스·0.95×0.62×0.50
+const INV_PALLET_DEFAULT = {SOL:{tare:6.8, perPallet:56, dims:'1.1*1.1*0.88'}, KR:{tare:11, perPallet:10, dims:'0.95*0.62*0.50'}};
 // ── 도장·서명 이미지: 공개 코드(GitHub)에 두면 누구나 내려받아 위조할 수 있으므로, 관리자만 읽을 수 있는
 //    서버 원가 데이터(COST_DATA)에 나눠 저장한다(시트 한 칸 5만 자 제한 → 4만 자씩).
 const INV_IMG = {seal:'회사 도장·서명', title:'직함 도장'};
@@ -13359,7 +13362,7 @@ function invStartManual(){
 function invLine(code, name, qty, day){
   const m = day.slice(0,7), toUSD = (v, cur) => dsToUSD(v, cur, m);
   const it = invItem(code), md = COST.model[code] || {};
-  return {code, name, qty, hs: it.hs||'', vi: it.vi||'', en: it.en || code, pcsBox: it.pcsBox||'',
+  return {code, name, qty, hs: it.hs||'', vi: it.vi||'', en: it.en || code, pcsBox: it.pcsBox||'', unitKg: it.unitKg||'',
     fee: Math.round(toUSD(md.fee, md.saleCur)*10000)/10000, sale: Math.round(toUSD(md.sale, md.saleCur)*10000)/10000,
     foc: Math.round(toUSD(md.matRef, 'USD')*10000)/10000};
 }
@@ -13403,12 +13406,42 @@ function invStart(kind, day, lines){
     phone: tpl.phone || invDoc().phone || (kind === 'KR' ? '+84-936 733 956' : '+84-038 883 7593'),
     vessel: md.vessel, from: md.from, to: md.to,
     incoterm: kind === 'KR' ? (tpl.incoterm || 'EXW') : (tpl.incoterm || 'DDP'),
-    net:'', gross:'', cbm:'', pallets:'', dims:'',
+    net:'', gross:'', cbm:'', pallets:'',
+    tare: tpl.tare ?? INV_PALLET_DEFAULT[kind].tare, perPallet: tpl.perPallet ?? INV_PALLET_DEFAULT[kind].perPallet, dims: tpl.dims || INV_PALLET_DEFAULT[kind].dims,
+    auto: {net:true, gross:true, cbm:true, pallets:true},
     lines: lines.map(l => invLine(l.code, l.name, l.qty, day))
   };
   renderInvEditor();
 }
-function invSet(path, v){ const p = path.split('.'); let o = INV; while (p.length > 1) o = o[p.shift()]; o[p[0]] = v; invRefreshTotals(); }
+function invSet(path, v){
+  const p = path.split('.'); let o = INV; while (p.length > 1) o = o[p.shift()]; o[p[0]] = v;
+  if (INV.auto && path in INV.auto) INV.auto[path] = (v === '');   // 직접 고치면 그 칸은 자동 계산을 멈춘다(비우면 다시 자동)
+  invEstimate(); invRefreshTotals();
+}
+// 포장 예상값: 팔레트 수 = 박스 ÷ 팔레트당 박스(올림), 순중량 = Σ 수량×개당 무게, 총중량 = 순중량 + 팔레트 수×팔레트 무게, CBM = 팔레트 수×규격
+function invEstimate(){
+  if (!INV) return;
+  INV.auto = INV.auto || {net:false, gross:false, cbm:false, pallets:false};
+  const ctn = INV.lines.reduce((s,l)=>s+invCartons(l).reduce((a,c)=>a+c.n,0),0);
+  const r2 = v => Math.round(v*100)/100;
+  if (INV.auto.pallets) INV.pallets = ctn ? Math.max(1, Math.ceil(ctn / (+INV.perPallet || 56))) : '';
+  const pal = +INV.pallets || 0;
+  const noKg = INV.lines.filter(l => !(+l.unitKg));
+  const net = INV.lines.reduce((s,l)=>s+(+l.qty||0)*(+l.unitKg||0),0);
+  if (INV.auto.net) INV.net = net ? r2(net) : '';
+  if (INV.auto.gross) INV.gross = (+INV.net) ? r2(+INV.net + pal*(+INV.tare||0)) : '';
+  const dv = String(INV.dims||'').replace(/,/g,'.').split(/[*x×X]/).map(Number);
+  const vol = dv.length === 3 && dv.every(n => n > 0) ? dv[0]*dv[1]*dv[2] : 0;
+  if (INV.auto.cbm) INV.cbm = (vol && pal) ? Math.round(vol*pal*10000)/10000 : '';
+  ['net','gross','cbm','pallets'].forEach(k => {
+    const el = document.getElementById('inv-f-'+k); if (el && document.activeElement !== el) el.value = INV[k];
+    const tag = document.getElementById('inv-t-'+k); if (tag) tag.textContent = INV.auto[k] ? '예상' : '실측';
+    if (tag) tag.style.background = INV.auto[k] ? '#FEF3C7' : '#DCFCE7';
+    if (tag) tag.style.color = INV.auto[k] ? '#92400E' : '#166534';
+  });
+  const w = document.getElementById('inv-kg-warn');
+  if (w) w.textContent = noKg.length ? `⚠️ 개당 무게가 없어 순중량에서 빠진 품목: ${noKg.map(l=>l.name||l.code).join(', ')} — 표의 "개당 kg"에 넣어주세요.` : '';
+}
 function invRefreshTotals(){
   const el = document.getElementById('inv-totals'); if (!el || !INV) return;
   const qty = INV.lines.reduce((s,l)=>s+(+l.qty||0),0);
@@ -13441,12 +13474,12 @@ function renderInvEditor(){
         ${f('출발지','from',INV.from)}${f('도착지','to',INV.to)}
         ${f('인도조건','incoterm',INV.incoterm)}${f('담당자(영문)','contact',INV.contact)}${f('연락처','phone',INV.phone)}
       </div>
-      <div class="tw" style="margin-bottom:10px"><table><thead><tr><th>품목</th><th>HS</th><th style="min-width:260px">베트남어 품명</th><th style="text-align:right">수량</th><th style="text-align:right">박스 입수</th>
+      <div class="tw" style="margin-bottom:10px"><table><thead><tr><th>품목</th><th>HS</th><th style="min-width:260px">베트남어 품명</th><th style="text-align:right">수량</th><th style="text-align:right">박스 입수</th><th style="text-align:right">개당 kg</th>
         ${INV.kind==='KR'?'<th style="text-align:right">임가공비 USD</th><th style="text-align:right">무상 자재 USD</th>':'<th style="text-align:right">임가공비 USD</th><th style="text-align:right">판매가(가공비 포함) USD</th>'}</tr></thead><tbody>${
         INV.lines.map((l,i) => `<tr><td><button onclick="invDelLine(${i})" title="빼기" style="float:right;border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>${l.name||''}<div style="font-family:monospace;color:#8A95A3;font-size:11px">${l.code}</div>${INV.kind==='KR'?`<div style="margin-top:3px">${inp(`lines.${i}.en`, l.en, '150px')}</div>`:''}</td>
           <td>${inp(`lines.${i}.hs`, l.hs, '90px')}</td><td style="white-space:normal"><textarea oninput="invSet('lines.${i}.vi', this.value)" rows="2" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12px;font-family:inherit">${l.vi||''}</textarea></td>
-          <td style="text-align:right">${inp(`lines.${i}.qty`, l.qty, '80px', 'number')}</td><td style="text-align:right">${inp(`lines.${i}.pcsBox`, l.pcsBox, '70px', 'number')}</td>
-          <td style="text-align:right">${inp(`lines.${i}.fee`, l.fee, '80px', 'number')}</td><td style="text-align:right">${INV.kind==='KR'?inp(`lines.${i}.foc`, l.foc, '80px', 'number'):inp(`lines.${i}.sale`, l.sale, '80px', 'number')}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">아래 "품목 추가"로 출고할 모델과 수량을 넣어주세요.</td></tr>'}</tbody></table></div>
+          <td style="text-align:right">${inp(`lines.${i}.qty`, l.qty, '80px', 'number')}</td><td style="text-align:right">${inp(`lines.${i}.pcsBox`, l.pcsBox, '70px', 'number')}</td><td style="text-align:right">${inp(`lines.${i}.unitKg`, l.unitKg, '76px', 'number')}</td>
+          <td style="text-align:right">${inp(`lines.${i}.fee`, l.fee, '80px', 'number')}</td><td style="text-align:right">${INV.kind==='KR'?inp(`lines.${i}.foc`, l.foc, '80px', 'number'):inp(`lines.${i}.sale`, l.sale, '80px', 'number')}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">아래 "품목 추가"로 출고할 모델과 수량을 넣어주세요.</td></tr>'}</tbody></table></div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px;font-size:13px">
         <span style="font-weight:600">품목 추가</span>
         <select id="inv-add-code" style="min-width:220px"><option value="">모델 선택</option>${(DB.tp||[]).filter(r=>r.active!==false).map(r=>`<option value="${r.code}">${r.name} (${r.code})</option>`).join('')}</select>
@@ -13454,15 +13487,19 @@ function renderInvEditor(){
         <button onclick="invAddLine()" style="padding:6px 12px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">추가</button>
         <span style="color:#8A95A3;font-size:12px">출고 등록 전이면 여기서 품목·수량을 넣습니다</span>
       </div>
-      <div style="font-size:13px;font-weight:600;margin:6px 0">포장 (실측값 입력)</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px">
-        ${f('총 순중량 kg (Net)','net',INV.net,'number')}${f('총 총중량 kg (Gross)','gross',INV.gross,'number')}${f('총 부피 CBM','cbm',INV.cbm,'number')}${f('팔레트 수','pallets',INV.pallets,'number')}${f('팔레트 규격 (예: 1.1*1.1*0.88)','dims',INV.dims)}
+      <div style="font-size:13px;font-weight:600;margin:6px 0">포장 <span style="font-weight:400;color:#5D6977;font-size:12px">— 수량으로 자동 계산된 <b style="color:#92400E">예상</b>값입니다. 계근 후 실측값으로 고치면 <b style="color:#166534">실측</b>으로 바뀝니다(칸을 비우면 다시 예상값)</span></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:6px">
+        ${[['net','총 순중량 kg (Net)'],['gross','총 총중량 kg (Gross)'],['cbm','총 부피 CBM'],['pallets','팔레트 수']].map(([k,l]) => `<div class="ov-fr" style="margin:0"><label>${l} <span id="inv-t-${k}" style="font-size:10.5px;padding:1px 6px;border-radius:999px;margin-left:2px"></span></label><input id="inv-f-${k}" type="number" value="${INV[k]??''}" oninput="invSet('${k}', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>`).join('')}
       </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:6px">
+        ${f('팔레트 규격 m (예: 1.1*1.1*0.88)','dims',INV.dims)}${f('팔레트 1개 무게 kg','tare',INV.tare,'number')}${f('팔레트당 박스 수','perPallet',INV.perPallet,'number')}
+      </div>
+      <div id="inv-kg-warn" style="font-size:12px;color:#b45309;margin-bottom:6px"></div>
       <div id="inv-totals" style="font-size:13px;color:#18212B;margin-bottom:10px"></div>
       ${(invImg('seal')||invImg('title')) ? `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="inv-stamp" ${INV.stamp!==false?'checked':''} onchange="INV.stamp=this.checked"> 서명란에 도장·서명 넣기</label>` : '<div style="font-size:12px;color:#8A95A3;margin-bottom:8px">도장·서명 이미지를 위에서 올려 두면 서명란에 자동으로 들어갑니다.</div>'}
       <button id="inv-make" onclick="invMakeExcel()" style="padding:9px 18px;border-radius:8px;border:none;background:#166534;color:#fff;font-weight:700;cursor:pointer">📥 인보이스·패킹리스트 엑셀 만들기</button>
     </div>`;
-  invRefreshTotals();
+  invEstimate(); invRefreshTotals();
 }
 async function invLoadExcelJS(){
   if (window.ExcelJS) return window.ExcelJS;
@@ -13473,8 +13510,8 @@ async function invSaveMaster(){
   // 품목별 HS·품명·박스 입수, 양식별 연락처·운송 정보를 저장(다음 서류에 자동으로 채움)
   const d = JSON.parse(JSON.stringify(invDoc()));
   d.items = d.items || {}; d.tpl = d.tpl || {};
-  INV.lines.forEach(l => { d.items[l.code] = {hs:l.hs, vi:l.vi, en:l.en, pcsBox:+l.pcsBox||''}; });
-  d.tpl[INV.kind] = {contact:INV.contact, phone:INV.phone, mode:INV.mode, incoterm:INV.incoterm};
+  INV.lines.forEach(l => { d.items[l.code] = {hs:l.hs, vi:l.vi, en:l.en, pcsBox:+l.pcsBox||'', unitKg:+l.unitKg||''}; });
+  d.tpl[INV.kind] = {contact:INV.contact, phone:INV.phone, mode:INV.mode, incoterm:INV.incoterm, tare:+INV.tare||0, perPallet:+INV.perPallet||0, dims:INV.dims};
   d.tpl[INV.kind + '_' + INV.mode] = {from:INV.from, to:INV.to};
   if (JSON.stringify(d) !== JSON.stringify(invDoc())) await saveCost('model', '_doc', d);
 }
