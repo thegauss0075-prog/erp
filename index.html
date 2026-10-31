@@ -13329,6 +13329,32 @@ function invShipments(kind, from, to){
     .sort((a,b) => a.day.localeCompare(b.day) || (a.id - b.id));
 }
 let _invCostTried = false;
+// 출고 기록 id → 이미 발행한 인보이스 번호 (ERP에서 만들었거나, 밖에서 만든 번호를 연결한 것)
+function invInvoicedMap(){
+  const m = {};
+  invRecords().forEach(r => (r.shipIds||[]).forEach(id => { m[String(id)] = r.invNo; }));
+  return m;
+}
+// ERP 밖에서 이미 발행한 인보이스를 선택한 출고에 연결 — 다시 발행하지 않도록 표시만 해 둔다
+async function invLinkExisting(){
+  const kind = document.getElementById('inv-kind').value;
+  const ids = [...document.querySelectorAll('.inv-pick:checked')].map(c => String(c.value));
+  const picked = (txLog||[]).filter(t => ids.includes(String(t.id)));
+  if (!picked.length) { alert('연결할 출고를 체크해주세요.'); return; }
+  const no = (prompt('이미 발행한 인보이스 번호를 입력하세요 (예: TG20261024)\nNhập số Invoice đã phát hành', '') || '').trim();
+  if (!no) return;
+  const date = (prompt('인보이스 날짜 (YYYY-MM-DD)\nNgày Invoice', picked.map(invVNDate).sort()[0]) || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { alert('날짜 형식은 2026-10-24처럼 넣어주세요.'); return; }
+  const byCode = {};
+  picked.forEach(t => { (byCode[t.code] = byCode[t.code] || {code:t.code, name:t.name, qty:0}).qty += +t.qty||0; });
+  const key = invKey(no), prev = (COST.model||{})[key];
+  if (prev && !confirm(`${no}는 이미 목록에 있습니다. 선택한 출고를 이 인보이스에 추가로 연결할까요?`)) return;
+  const rec = prev ? JSON.parse(JSON.stringify(prev)) : {kind, invNo: no, invDate: date, shipDate: picked.map(invVNDate).sort().pop(), mode: kind === 'KR' ? 'AIR' : 'TRUCK',
+      lines: Object.values(byCode).map(l => invLine(l.code, l.name, l.qty, date)), external: true, rev: 0, revs: []};
+  rec.shipIds = [...new Set([...(rec.shipIds||[]), ...ids])];
+  rec.savedAt = new Date().toISOString(); rec.savedBy = CURRENT_USER || '';
+  if (await saveCost('model', key, rec)) renderInvPanel();
+}
 function renderInvPanel(){
   const box = document.getElementById('inv-panel'); if (!box) return;
   if (!isAdmin) { box.style.display = 'none'; return; }
@@ -13337,16 +13363,23 @@ function renderInvPanel(){
   renderInvImgRow(); renderInvRecords();
   const kindEl = document.getElementById('inv-kind'), fEl = document.getElementById('inv-from'), tEl = document.getElementById('inv-to');
   if (!fEl.value) {
-    const last = (txLog||[]).filter(t => t.type === 'otp' && invKindOf(t.dest) === kindEl.value).map(invVNDate).filter(Boolean).sort().pop() || bdToday();
+    // 아직 인보이스가 없는 가장 최근 출고일 (없으면 가장 최근 출고일)
+    const done = invInvoicedMap();
+    const all = (txLog||[]).filter(t => t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && invKindOf(t.dest) === kindEl.value);
+    const last = all.filter(t => !done[String(t.id)]).map(invVNDate).filter(Boolean).sort().pop() || all.map(invVNDate).filter(Boolean).sort().pop() || bdToday();
     fEl.value = last; tEl.value = last;
   }
   const list = invShipments(kindEl.value, fEl.value, tEl.value || fEl.value);
   const n = v => (+v||0).toLocaleString();
+  const done = invInvoicedMap();
+  const doneCnt = list.filter(t => done[String(t.id)]).length;
   document.getElementById('inv-ship-list').innerHTML = list.length
-    ? `<div class="tw"><table><thead><tr><th style="width:30px"><input type="checkbox" checked onchange="document.querySelectorAll('.inv-pick').forEach(c=>c.checked=this.checked)"></th><th>출고일<span class="vi">Ngày xuất</span></th><th>품목<span class="vi">Mặt hàng</span></th><th>LOT</th><th style="text-align:right">수량<span class="vi">SL</span></th><th>출고처<span class="vi">Nơi nhận</span></th><th>등록자<span class="vi">Người ĐK</span></th></tr></thead><tbody>${
-        list.map(t => `<tr><td><input type="checkbox" class="inv-pick" value="${t.id}" checked></td><td>${t.day}</td><td>${t.name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${t.code}</span></td><td style="font-family:monospace;font-size:12px">${t.lot||'-'}</td><td style="text-align:right;font-weight:600">${n(t.qty)}</td><td>${destNorm(t.dest)||''}</td><td>${t.user||''}</td></tr>`).join('')}</tbody></table></div>
+    ? `<div class="tw"><table><thead><tr><th style="width:30px"><input type="checkbox" checked onchange="document.querySelectorAll('.inv-pick').forEach(c=>c.checked=this.checked)"></th><th>출고일<span class="vi">Ngày xuất</span></th><th>품목<span class="vi">Mặt hàng</span></th><th>LOT</th><th style="text-align:right">수량<span class="vi">SL</span></th><th>출고처<span class="vi">Nơi nhận</span></th><th>등록자<span class="vi">Người ĐK</span></th><th>인보이스<span class="vi">Invoice</span></th></tr></thead><tbody>${
+        list.map(t => `<tr ${done[String(t.id)]?'style="opacity:.6"':''}><td><input type="checkbox" class="inv-pick" value="${t.id}" ${done[String(t.id)]?'':'checked'}></td><td>${t.day}</td><td>${t.name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${t.code}</span></td><td style="font-family:monospace;font-size:12px">${t.lot||'-'}</td><td style="text-align:right;font-weight:600">${n(t.qty)}</td><td>${destNorm(t.dest)||''}</td><td>${t.user||''}</td><td>${done[String(t.id)] ? `<span style="font-family:monospace;font-size:12px;padding:1px 6px;border-radius:999px;background:#DCFCE7;color:#166534">✔ ${done[String(t.id)]}</span>` : '<span style="color:#b45309;font-size:12px">미발행</span>'}</td></tr>`).join('')}</tbody></table></div>
+       ${doneCnt ? `<div style="font-size:12px;color:#5D6977;margin-top:6px">✔ 표시는 이미 인보이스가 있는 출고입니다(체크 해제됨). / Đã có Invoice.</div>` : ''}
        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="invBuild()" style="padding:8px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">선택한 출고로 서류 작성 / Lập chứng từ →</button>
-         <button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성 / Nhập tay trước khi xuất</button></div>`
+         <button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성 / Nhập tay trước khi xuất</button>
+         <button onclick="invLinkExisting()" title="ERP 밖에서 이미 만든 인보이스가 있으면 번호만 연결해 '발행됨'으로 표시" style="padding:8px 16px;border-radius:8px;border:1px solid var(--line,#DCE1E7);background:#fff;color:#18212B;font-weight:600;cursor:pointer">🔗 이미 발행한 인보이스 연결 / Gắn Invoice đã có</button></div>`
     : `<div class="empty" style="padding:1.2rem">이 기간에 ${kindEl.value==='KR'?'본사(한국)':'솔루엠'} 출고 기록이 없습니다.<br>출고가 정해졌지만 아직 출고 등록 전이면 품목·수량을 직접 넣어 작성하세요.<br><span style="font-size:12px">Không có dữ liệu xuất kho trong kỳ này. Nếu chưa đăng ký xuất, hãy nhập tay mặt hàng và số lượng.</span>
          <div style="margin-top:10px"><button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성 / Nhập tay trước khi xuất</button></div></div>`;
   if (!INV) document.getElementById('inv-editor').innerHTML = '';
@@ -13359,7 +13392,10 @@ function invBuild(){
   const byCode = {};
   picked.forEach(t => { (byCode[t.code] = byCode[t.code] || {code:t.code, name:t.name, qty:0}).qty += +t.qty||0; });
   const day = picked.map(invVNDate).sort().pop();
+  const dupe = picked.filter(t => invInvoicedMap()[String(t.id)]);
+  if (dupe.length && !confirm(`선택한 출고 중 ${dupe.length}건은 이미 인보이스(${[...new Set(dupe.map(t => invInvoicedMap()[String(t.id)]))].join(', ')})가 있습니다. 그래도 새로 작성할까요?`)) return;
   invStart(kind, day, Object.values(byCode));
+  INV.shipIds = picked.map(t => String(t.id));
 }
 // 출고 등록 전에(출고가 정해지면) 품목·수량을 직접 넣어 작성
 function invStartManual(){
@@ -13693,7 +13729,7 @@ function renderInvRecords(){
         const amt = r.kind === 'KR' ? (r.lines||[]).reduce((s,l)=>s+(+l.qty||0)*((+l.fee||0)+(+l.foc||0)),0) : (r.lines||[]).reduce((s,l)=>s+(+l.qty||0)*(+l.sale||0),0);
         const needVessel = r.mode && r.mode !== 'TRUCK' && !r.vessel;
         const hist = (r.revs||[]).slice().reverse().map(h => `<div style="margin:3px 0"><b>Rev.${h.rev}</b> <span style="color:#8A95A3">${h.at ? new Date(Date.parse(h.at) + 7*3600e3).toISOString().slice(0,16).replace('T',' ') : ''} ${h.by||''}</span>${h.note?` · ${h.note}`:''}<br><span style="color:#5D6977">${(h.changes||[]).join(' · ')||'변경 내용 없음'}</span> <a href="javascript:void 0" onclick="invOpenRecord('${r.key}#r${h.rev-1}')" style="font-size:11.5px">Rev.${h.rev-1===0?'0(원본)':h.rev-1} 열어보기</a></div>`).join('');
-        return `<tr><td style="font-family:monospace;font-weight:600">${r.invNo||''}${r.rev?` <span style="font-family:inherit;font-size:10.5px;padding:1px 6px;border-radius:999px;background:#EDE9FE;color:#5B21B6">Rev.${r.rev}</span>`:''}${hist?`<details style="font-family:var(--font);font-weight:400;font-size:12px;white-space:normal;max-width:520px"><summary style="cursor:pointer;color:#185FA5">수정 이력 ${r.revs.length}건</summary>${hist}</details>`:''}</td><td>${r.invDate||''}</td><td>${r.kind==='KR'?'본사':'솔루엠'}</td><td>${modeLbl(r.mode)}</td>
+        return `<tr><td style="font-family:monospace;font-weight:600">${r.invNo||''}${r.rev?` <span style="font-family:inherit;font-size:10.5px;padding:1px 6px;border-radius:999px;background:#EDE9FE;color:#5B21B6">Rev.${r.rev}</span>`:''}${r.external?` <span style="font-family:var(--font);font-size:10.5px;padding:1px 6px;border-radius:999px;background:#F1F5F9;color:#5D6977">외부 발행</span>`:''}${hist?`<details style="font-family:var(--font);font-weight:400;font-size:12px;white-space:normal;max-width:520px"><summary style="cursor:pointer;color:#185FA5">수정 이력 ${r.revs.length}건</summary>${hist}</details>`:''}</td><td>${r.invDate||''}</td><td>${r.kind==='KR'?'본사':'솔루엠'}</td><td>${modeLbl(r.mode)}</td>
           <td>${needVessel ? '<span style="color:#b45309">⚠️ 미입력</span>' : (r.vessel||'-')}</td><td style="text-align:right">${qty.toLocaleString()}</td><td style="text-align:right">$${amt.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
           <td style="white-space:nowrap"><button class="edit-btn" title="열기" onclick="invOpenRecord('${r.key}')">✏️</button><button class="edit-btn" title="목록에서 지우기" onclick="invDeleteRecord('${r.key}')">🗑️</button></td></tr>`;
       }).join('')}</tbody></table></div></details>`;
