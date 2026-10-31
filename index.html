@@ -420,6 +420,36 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   @media (max-width:900px){ .ds-body{grid-template-columns:1fr} }
   /* 작업지시 표: 좁은 화면에서도 액션 버튼까지 한 화면에 보이게 */
   .inv-grid label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* ── 전체 줄맞춤 (2026-10-31) ── */
+  /* 메뉴: 좁은 창에서도 숨지 않게 두 줄로 */
+  .nav{flex-wrap:wrap;row-gap:0}
+  @media (max-width:1320px){ .nav .tb{padding:8px 10px 9px;font-size:13px} .nav .tb .vi{font-size:9.5px} .top-bar{padding-top:.55rem;padding-bottom:.35rem} .top-bar .dt{font-size:12px} }
+  /* 표: 머리글은 단어 단위 줄바꿈·아래 맞춤, 내용은 가운데 맞춤 */
+  th{vertical-align:bottom;word-break:keep-all;line-height:1.3}
+  td{vertical-align:middle}
+  /* 긴 품명·비고는 줄바꿈해서 표가 화면 안에 들어오게, 숫자·코드·날짜·배지는 한 줄 유지 */
+  .tw td{white-space:normal;word-break:keep-all;overflow-wrap:anywhere}
+  .tw td:first-child,.tw td[style*="text-align:right"],.tw td[style*="text-align:center"],.tw td[style*="monospace"],.tw td[style*="nowrap"],.tw td.no-print{white-space:nowrap;overflow-wrap:normal}
+  .badge{white-space:nowrap}
+  #io-body td,#io-body~thead th,#tab-io .tw th{padding-left:8px;padding-right:8px}
+  #io-body td:nth-child(4){min-width:160px}
+  #io-body td:nth-child(8){min-width:90px}
+  #io-body td:nth-child(9){min-width:110px;font-size:11px;line-height:1.35}
+  td .vi,th .vi{white-space:normal}
+  td[style*="display:flex"]{display:table-cell!important}
+  /* 대시보드 요약 카드: 높이·숫자 위치 통일 */
+  .ms-card{display:flex;flex-direction:column}
+  .ms-row{flex:1;align-items:flex-start}
+  .ms-stat{flex:1;min-width:0}
+  .ms-lbl{word-break:keep-all;line-height:1.3;font-size:10.5px}
+  /* 툴바: 버튼·입력 높이 통일, 검색칸이 남는 폭을 차지 */
+  .toolbar{align-items:stretch}
+  .toolbar>button,.toolbar>select,.toolbar .sw input{min-height:36px}
+  .toolbar>select{max-width:240px}
+  /* 입출고 종류 탭: 같은 폭·한 줄 높이 */
+  .io-tabs{display:grid;grid-template-columns:repeat(6,1fr);width:100%}
+  .io-tab{padding:8px 6px;font-size:13px;line-height:1.3;word-break:keep-all}
+  @media (max-width:720px){ .io-tabs{grid-template-columns:repeat(3,1fr)} }
   /* 제조원가 표: 줄맞춤·모델 열 고정·핵심(개당) 열 먼저 */
   #cost-table{font-size:12px;border-collapse:separate;border-spacing:0}
   #cost-table th{white-space:normal;word-break:keep-all;min-width:54px;text-align:right;vertical-align:bottom;padding:6px 7px;line-height:1.25;font-size:11.5px}
@@ -7242,7 +7272,7 @@ function renderIOTable(){
       <td style="font-family:monospace;font-size:12px;color:#1d4ed8">${(!t.lot || t.lot === '__nolot__') ? 'LOT 미지정' : t.lot}</td>
       <td>${t.dest?destBadge(t.dest):t.reason||'<span class="dim">—</span>'}</td>
       <td style="font-size:12px;color:#888">${t.note||'—'}</td>
-      <td style="display:flex;gap:5px">
+      <td style="white-space:nowrap">
         ${isAdmin ? `<button class="edit-btn" onclick="openEditUnified(${t.id},'${t.type}')">✏️</button>
         <button class="del-btn" onclick="openDelUnified(${t.id},'${t.type}')">🗑️</button>` : ''}
       </td>
@@ -7811,7 +7841,7 @@ function renderNG(){
         <td style="text-align:right">${r.prev%1?r.prev.toFixed(2):n(r.prev)}</td>
         <td style="text-align:right" class="${r.inng>0?'ngc':''}">${r.inng>0?(r.inng%1?r.inng.toFixed(2):r.inng.toLocaleString()):'<span class="dim">—</span>'}</td>
         <td style="text-align:right;font-weight:700" class="ngc">${r.cur%1?r.cur.toFixed(2):r.cur.toLocaleString()}</td>
-        <td class="no-print" style="display:flex;gap:4px;padding:6px 8px">${adminBtns}</td>
+        <td class="no-print" style="padding:6px 8px;white-space:nowrap"><div style="display:flex;gap:4px">${adminBtns}</div></td>
       </tr>`;
     });
   });
@@ -8206,7 +8236,7 @@ function renderNGLog(){
       <td style="text-align:right;font-weight:700" class="${t.type==='ng-in'?'ngc':''}">${t.type==='ng-in'?'+':'−'}${qty}</td>
       <td style="font-size:12px;color:#888">${t.reason||'—'}</td>
       <td style="font-size:12px;color:#888">${t.note||'—'}${linkedNote}</td>
-      <td style="display:flex;gap:5px;white-space:nowrap">
+      <td style="white-space:nowrap">
         ${isAdmin ? `<button class="edit-btn" onclick="openNGEdit(${t.id})">✏️</button>
         <button class="del-btn" onclick="openNGDel(${t.id})">🗑️</button>` : ''}
       </td>
