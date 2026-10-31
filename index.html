@@ -1178,7 +1178,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     </div>
     <div class="ov-fr" id="qc-lot-wrap">
       <label id="qc-lot-label">LOT (선택) <button type="button" id="qc-lot-gen-btn" onclick="openLotCal('qc')" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #3730a3;background:#eef2ff;color:#3730a3;font-size:11px;cursor:pointer">📅 날짜선택 생성</button></label>
-      <input id="qc-lot" placeholder="예: TGG6QPY-0001">
+      <input id="qc-lot" placeholder="예: TGGOCPV">
     </div>
     <div class="ov-fr" id="qc-wo-link-wrap">
       <label>연결할 작업지시 (선택)</label>
@@ -3941,9 +3941,9 @@ function setWOLotMode(mode, silent) {
     lotEl.readOnly = false;
     lotEl.style.background = '#fff';
     lotEl.style.color = '#1d4ed8';
-    lotEl.placeholder = '예: TG60GPV-0001';
+    lotEl.placeholder = '예: TGGOCPV';
     lotEl.value = '';
-    hint.textContent = 'LOT 번호를 직접 입력하세요 (이미 등록된 작업지시의 LOT과 중복될 수 없습니다)';
+    hint.textContent = 'LOT 번호를 직접 입력하세요 (라벨의 LOT과 같게)';
     document.getElementById('wo-maker-row').style.display = 'none';
     if (!silent) lotEl.focus();
   } else {
@@ -4009,7 +4009,8 @@ async function submitWO() {
     lotValue = lotValue.trim();
     if (!lotValue) { errEl.textContent = 'LOT 번호를 입력해주세요.'; errEl.style.display='block'; document.getElementById('wo-lot').focus(); return; }
     const dup = WO.find(w => String(w.lot || '').trim().toLowerCase() === lotValue.toLowerCase());
-    if (dup) { errEl.textContent = `이미 사용 중인 LOT입니다: ${lotValue} (작업지시 ${dup.orderNo || ''})`; errEl.style.display='block'; document.getElementById('wo-lot').focus(); return; }
+    // ✅ 제품 LOT은 라벨과 같이 "같은 날·같은 제조사면 같은 LOT"이라 중복을 막지 않고 확인만 받는다
+    if (dup && !confirm(`이미 다른 작업지시(${dup.orderNo || ''})에서 쓰는 LOT입니다: ${lotValue}\n같은 LOT으로 등록할까요?`)) { document.getElementById('wo-lot').focus(); return; }
   }
 
   const body = {
@@ -4714,7 +4715,7 @@ async function openAddQC(presetType) {
   document.getElementById('qc-name').value = '';
   document.getElementById('qc-lot').value = '';
   document.getElementById('qc-lot').readOnly = false;
-  document.getElementById('qc-lot').placeholder = '예: TGG6QPY-0001';
+  document.getElementById('qc-lot').placeholder = '예: TGGOCPV';
   document.getElementById('qc-core-maker').value = '';
   document.getElementById('qc-wo').innerHTML = '<option value="">연결 안 함</option>';
   document.getElementById('qc-total-qty').value = '';
@@ -11129,6 +11130,14 @@ function lotEncDay(d)   { return d<=9?String(d):String.fromCharCode(65+(d-10)); 
 
 // LOT 문자열 생성
 // maker: 제조사 코드 (C=CSC, P=POCO, E=ELECTRO M, A=ACHROMAT) - 완제품만 사용
+function nextLotSerial(prefix){
+  const P = prefix.toUpperCase(); let max = 0;
+  const see = v => { const t = String(v||'').trim().toUpperCase(); if (t.startsWith(P)) { const n = parseInt(t.slice(P.length), 10); if (/^\d+$/.test(t.slice(P.length)) && n > max) max = n; } };
+  (typeof WO !== 'undefined' ? WO : []).forEach(w => see(w.lot));
+  (typeof WO_OUT !== 'undefined' ? WO_OUT : []).forEach(o => see(o.lot));
+  (txLog||[]).forEach(t => see(t.lot));
+  return max + 1;
+}
 function buildLot(date, dir, serial, maker) {
   const Y = lotEncYear(date.getFullYear());
   const M = lotEncMonth(date.getMonth()+1);
@@ -11142,13 +11151,16 @@ function buildLot(date, dir, serial, maker) {
     const yyyy = date.getFullYear();
     const mm   = String(date.getMonth()+1).padStart(2,'0');
     const dd   = String(date.getDate()).padStart(2,'0');
-    const s    = String(serial||1).padStart(2,'0');
-    return maker ? `LOT-${yyyy}${mm}${dd}-${maker}-${s}` : `LOT-${yyyy}${mm}${dd}-${s}`;
+    // ✅ [2026-10-31] 일련번호는 같은 접두어로 이미 쓰인 LOT 중 가장 큰 번호 + 1
+    //    (예전엔 날짜 형식이 안 맞아 매번 01이 붙어 같은 날 LOT이 겹쳤다)
+    const pre = maker ? `LOT-${yyyy}${mm}${dd}-${maker}-` : `LOT-${yyyy}${mm}${dd}-`;
+    return pre + String(nextLotSerial(pre)).padStart(2,'0');
   } else {
-    // 완제품: TG[Y][M][D][maker]V-NNNN
-    // 예: TGGF6CV-0001 (2026년6월15일, CHANGSUNG 제조사)
+    // 완제품: TG[Y][M][D][maker]V  (예: TGGF6CV = 2026년6월15일, CHANGSUNG 제조사)
+    // ✅ [2026-10-31 사용자 확정] 제품 라벨에 일련번호가 없으므로 ERP LOT에도 붙이지 않는다
+    //    (같은 날·같은 제조사 작업지시는 같은 LOT = 라벨과 동일)
     const m = maker || 'C'; // 기본값 C(CHANGSUNG)
-    return `TG${Y}${M}${D}${m}V-${seq}`;
+    return `TG${Y}${M}${D}${m}V`;
   }
 }
 
@@ -12053,11 +12065,10 @@ function autoLot(dir) {
     const maker = (typeof lotMakerCode!=='undefined' && lotMakerCode) || 'C'; // 기본값 C(CSC)
     // 오늘 완제품 이력 시리얼
     const seq = txLog.filter(t=>t.dt&&t.dt.startsWith(todayPrefix)&&(t.type==='tp-in'||t.type==='otp')).length + 1;
-    lot = `${prodCode}-TG${Y}${M}${D}${maker}V-${String(seq).padStart(4,'0')}`;
+    lot = `${prodCode}-TG${Y}${M}${D}${maker}V`; // ✅ 라벨과 같게 일련번호 없음
   } else {
     // 자재 LOT: LOT-20250614-01
-    const seq = txLog.filter(t=>t.dt&&t.dt.startsWith(todayPrefix)).length + 1;
-    lot = `LOT-${yyyy}${mm}${dd}-${String(seq).padStart(2,'0')}`;
+    lot = buildLot(now, dir, 0, null);
   }
 
   const el = document.getElementById(dir+'-lot');
@@ -12927,7 +12938,8 @@ function exportSupplyPOExcel(){
 //  - 자재 LOT → 어느 작업지시에 쓰였고, 그 결과 나온 제품 LOT과 출고처(영향 범위)
 //  데이터: 작업지시(WO·LOT), 투입 자재(WO_MAT), 산출 LOT(WO_OUT), 입출고 이력(txLog), 품질검사(QC)
 // ════════════════════════════════════════════════════════════
-const lotNorm = v => String(v || '').trim().toUpperCase();
+// 제품 LOT은 라벨 기준(TG…V)으로 맞춰 비교한다 — 예전 LOT의 "-0001" 일련번호나 앞의 제품코드는 떼고 본다
+const lotNorm = v => { const t = String(v || '').trim().toUpperCase(); const m = t.match(/(?:^|-)(TG[0-9A-Z]{3}[A-Z]V)(?:-\d{4})?$/); return m ? m[1] : t; };
 function lotWOsByOutput(L){
   const ids = new Set((WO_OUT||[]).filter(o => lotNorm(o.lot) === L).map(o => String(o.workOrderId)));
   return (WO||[]).filter(w => lotNorm(w.lot) === L || ids.has(String(w.id)));
