@@ -760,6 +760,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <div id="wrap-otp" style="display:none">
     <div class="io-form type-out-tp">
       <div class="fh out-tp">🚚 완제품 출고 등록 / Xuất kho Thành Phẩm</div>
+      <div style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:8px 12px;font-size:12.5px;margin:-4px 0 12px">솔루엠·본사로 나가는 <b>정식 출고</b>는 <a href="javascript:void 0" onclick="go('ship')" style="font-weight:700">🚚 출고 탭 → 출고 예정</a>에서 등록하세요. 이 화면은 NG 창고 이동·반제품 출고·급한 샘플용입니다 (이중 출고 주의).<br><span style="color:#B45309">Xuất chính thức cho Solum / HQ: dùng tab 🚚 Xuất hàng → Kế hoạch xuất. Màn hình này dùng cho chuyển NG, xuất BTP, mẫu gấp.</span></div>
       <div class="fr ac-wrap" style="margin-bottom:12px">
         <label>품목 검색 (완제품·반제품) / Tìm kiếm TP</label>
         <input id="otp-q" placeholder="코드 또는 품명 입력..." autocomplete="off" oninput="acSearch('otp')" onkeydown="acKey(event,'otp')">
@@ -2638,6 +2639,14 @@ function setIOTab(t){
   });
 }
 
+// ✅ [2026-10-31] 완제품(TP)은 이 화면에서 NG 창고 이동만 — 솔루엠·본사 출고는 출고 탭(출고 예정)에서만
+// ✅ [2026-10-31 사용자 확정] 완제품을 솔루엠·본사로 직접 출고하면 한 번 확인받고 진행 (직원도 가능)
+//    같은 모델·출고처의 확정 전 출고 예정이 있으면 이중 출고 경고를 함께 보여준다.
+function otpDirectShipOK(code, name, dest){
+  const pend = (typeof SPL !== 'undefined' ? SPL : []).filter(p => (p.status === 'wait' || p.status === 'inv') && destNorm(p.dest) === destNorm(dest) && (p.lines||[]).some(l => l.code === code));
+  const dup = pend.length ? `\n\n⚠️ 같은 모델의 출고 예정이 있습니다: ${pend.map(p => p.no + (p.invNo ? ' (' + p.invNo + ')' : '')).join(', ')}\n여기서 등록하면 출고 확정 때 재고가 두 번 빠질 수 있습니다.` : '';
+  return confirm(`정식 출고(솔루엠·본사)는 🚚 출고 탭의 출고 예정에서 등록하는 것이 원칙입니다.\nXuất chính thức nên đăng ký ở tab Xuất hàng → Kế hoạch xuất.${dup}\n\n그래도 여기서 바로 완제품 출고로 등록할까요? / Vẫn đăng ký xuất trực tiếp?`);
+}
 function setDest(d){
   curDest=d;
   document.getElementById('dest-kr').classList.toggle('on',d==='KR');
@@ -6984,6 +6993,8 @@ function showCP(dir){
   const lotEl=document.getElementById(dir+'-lot');
   const lot=lotEl?(lotEl.tagName==='SELECT'?lotEl.value:lotEl.value.trim()):'';
   const dest=dir==='otp'?curDest:null;
+  // ✅ 이중 출고 주의: 완제품을 솔루엠·본사로 직접 출고하면 확인 후 진행
+  if (dir === 'otp' && catKey(catTxt) === 'TP' && dest !== 'NG' && !otpDirectShipOK(code, name, dest)) return;
 
   // ── 기본 유효성 검사
   if(!code){alert('품목을 먼저 검색·선택하세요.\n먼저 위 검색창에서 품목을 선택해주세요.');return;}
