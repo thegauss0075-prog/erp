@@ -1839,6 +1839,17 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 
 <div id="tab-ship" class="sec">
   <div id="d-ship-panel" class="ds-panel"></div>
+  <!-- 📄 인보이스·패킹리스트 (관리자) -->
+  <div id="inv-panel" class="ds-panel" style="display:none">
+    <div class="ds-head"><h3>📄 인보이스·패킹리스트 만들기 <span>/ Lập Invoice · Packing list</span></h3></div>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">① 출고처와 날짜를 고르면 그날 등록된 완제품 출고가 나옵니다. 서류에 넣을 출고를 고른 뒤 작성하세요. 단가는 💰 제조원가 탭 ② 모델 정보에서 가져옵니다.</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <select id="inv-kind" onchange="INV=null;document.getElementById('inv-from').value='';renderInvPanel()"><option value="SOL">솔루엠비나 (DDP)</option><option value="KR">본사 THE GAUSS INC. (EXW 임가공)</option></select>
+      <div class="date-range"><input type="date" id="inv-from" onchange="INV=null;renderInvPanel()"><span>~</span><input type="date" id="inv-to" onchange="INV=null;renderInvPanel()"></div>
+    </div>
+    <div id="inv-ship-list"></div>
+    <div id="inv-editor"></div>
+  </div>
 </div>
 
 <div id="tab-mes" class="sec">
@@ -2537,7 +2548,7 @@ function go(id){
   if(id==='po') { renderPO({soft:true}); _goPO(); }
   if(id==='mes') renderMES();
   if(id==='cost') renderCost();
-  if(id==='ship') renderShipPanel();
+  if(id==='ship') { renderShipPanel(); renderInvPanel(); }
 }
 function setIC(c){document.getElementById('inv-cat').value=c;initMS();renderInv();}
 
@@ -13220,6 +13231,305 @@ function renderShipPanel(){
         <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="최근 12개월 완제품 출고">${g}</svg>${legend}</div>
       <div class="ds-table">${table}${revNote}</div>
     </div>`;
+}
+// ════════════════════════════════════════════════════════════
+//  📄 인보이스·패킹리스트 자동 작성 (2026-10-31) — 출고 등록 내용으로 엑셀 작성
+//  - 솔루엠(국내 DDP·트럭) / 본사(EXW·임가공: 임가공비 + 무상 자재) 두 양식
+//  - 단가는 제조원가 탭 ② 모델 정보(판매가·임가공비·원자재비)에서 가져온다
+//  - HS·베트남어 품명·박스 입수·담당자 연락처는 처음 한 번 입력하면 서버(COST_DATA model/_doc)에 저장
+//  - 서식 있는 엑셀은 ExcelJS로 만든다(누를 때만 불러옴)
+// ════════════════════════════════════════════════════════════
+const INV_CO = {
+  name: 'THE GAUSS VINA CO., LTD.',
+  addr1: 'Factory A1-4, Lot 2, Cam Dien - Luong Dien IP,',
+  addr2: 'Cam Giang Commune, Hai Phong City, Vietnam.',
+  hq: ['THE GAUSS INC.', 'A-707(702-706), HIGGS U-Tower, 184, Jungbu-daero, Giheung-gu, Yongin-si,', 'Gyeonggi-do, Republic of Korea'],
+  solVina: ['SOLUM VINA COMPANY LIMITED', 'Lot B3, Ba Thien II Industrial Park, Binh Xuyen commune,', 'Phu Tho Province, Vietnam.'],
+  solCo: ['SOLUM CO., LTD', 'A-TH FLOOR, 357, GUSEONG-RO, GIHEUNG-GU,', 'YONGIN-SI, GYEONGGI-DO, KOREA'],
+  contract: 'TG-TGV241001'
+};
+// 처음 쓸 때의 기본값(받은 인보이스 기준) — 화면에서 고치면 서버에 저장된 값이 우선
+const INV_ITEM_DEFAULT = {
+  'ML27A040127A': {hs:'85045010', pcsBox:48, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-OUT-L3, 14.4uH, +-2.16uH, 10Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
+  'ML27A040112A': {hs:'85045010', pcsBox:12, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-PFC-US, 108uH, +-16.2uH, 26Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
+  'ML27A040118A': {hs:'85045010', pcsBox:48, vi:'Cuộn cảm cắm 0.84uH 0.126uH, dùng cho bộ sạc của ô tô điện, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
+  'CH330125 IND-5T': {hs:'85045093', pcsBox:315, en:'CH330125-IND-5T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 5T, công suất danh định không quá 2.500KVA'},
+  'CH330125 IND-8T': {hs:'85045093', pcsBox:315, en:'CH330125-IND-8T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 8T, công suất danh định không quá 2.500KVA'},
+  'CH330125 IND-10T': {hs:'85045093', pcsBox:315, en:'CH330125-IND-10T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 10T, công suất danh định không quá 2.500KVA'}
+};
+let INV = null;   // 지금 작성 중인 서류
+function invDoc(){ return (COST.model && COST.model._doc) || {}; }
+function invItem(code){ return {...(INV_ITEM_DEFAULT[code]||{}), ...((invDoc().items||{})[code]||{})}; }
+function invKindOf(dest){ const d = String(dest||'').toUpperCase(); return (d === 'KR' || d.includes('한국') || d.includes('GAUSS INC')) ? 'KR' : (d === 'NG' ? '' : 'SOL'); }
+function invVNDate(t){ const d = Date.parse(t.dt); return isNaN(d) ? '' : new Date(d + 7*3600e3).toISOString().slice(0,10); }
+function invShipments(kind, from, to){
+  return (txLog||[]).filter(t => t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && invKindOf(t.dest) === kind)
+    .map(t => ({...t, day: invVNDate(t)})).filter(t => t.day && t.day >= from && t.day <= to)
+    .sort((a,b) => a.day.localeCompare(b.day) || (a.id - b.id));
+}
+let _invCostTried = false;
+function renderInvPanel(){
+  const box = document.getElementById('inv-panel'); if (!box) return;
+  if (!isAdmin) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  if (COST_SERVER_OK !== true && !_invCostTried && (API_URL || IS_GAS)) { _invCostTried = true; loadCost().then(() => { if (INV) { INV = null; } renderInvPanel(); }); }
+  const kindEl = document.getElementById('inv-kind'), fEl = document.getElementById('inv-from'), tEl = document.getElementById('inv-to');
+  if (!fEl.value) {
+    const last = (txLog||[]).filter(t => t.type === 'otp' && invKindOf(t.dest) === kindEl.value).map(invVNDate).filter(Boolean).sort().pop() || bdToday();
+    fEl.value = last; tEl.value = last;
+  }
+  const list = invShipments(kindEl.value, fEl.value, tEl.value || fEl.value);
+  const n = v => (+v||0).toLocaleString();
+  document.getElementById('inv-ship-list').innerHTML = list.length
+    ? `<div class="tw"><table><thead><tr><th style="width:30px"><input type="checkbox" checked onchange="document.querySelectorAll('.inv-pick').forEach(c=>c.checked=this.checked)"></th><th>출고일</th><th>품목</th><th>LOT</th><th style="text-align:right">수량</th><th>출고처</th><th>등록자</th></tr></thead><tbody>${
+        list.map(t => `<tr><td><input type="checkbox" class="inv-pick" value="${t.id}" checked></td><td>${t.day}</td><td>${t.name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${t.code}</span></td><td style="font-family:monospace;font-size:12px">${t.lot||'-'}</td><td style="text-align:right;font-weight:600">${n(t.qty)}</td><td>${t.dest||''}</td><td>${t.user||''}</td></tr>`).join('')}</tbody></table></div>
+       <div style="margin-top:10px"><button onclick="invBuild()" style="padding:8px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">선택한 출고로 서류 작성 →</button></div>`
+    : `<div class="empty">이 기간에 ${kindEl.value==='KR'?'본사(한국)':'솔루엠'} 출고 기록이 없습니다. 날짜를 바꿔 보세요.</div>`;
+  if (!INV) document.getElementById('inv-editor').innerHTML = '';
+}
+function invBuild(){
+  const kind = document.getElementById('inv-kind').value;
+  const ids = new Set([...document.querySelectorAll('.inv-pick:checked')].map(c => String(c.value)));
+  const picked = (txLog||[]).filter(t => ids.has(String(t.id)));
+  if (!picked.length) { alert('출고 기록을 하나 이상 선택해주세요.'); return; }
+  const byCode = {};
+  picked.forEach(t => { (byCode[t.code] = byCode[t.code] || {code:t.code, name:t.name, qty:0}).qty += +t.qty||0; });
+  const day = picked.map(invVNDate).sort().pop();
+  const m = day.slice(0,7);
+  const toUSD = (v, cur) => dsToUSD(v, cur, m);
+  const tpl = (invDoc().tpl||{})[kind] || {};
+  INV = {
+    kind, invNo: 'TG' + day.replace(/-/g,''), invDate: day, shipDate: day,
+    contact: tpl.contact || invDoc().contact || '', phone: tpl.phone || invDoc().phone || '',
+    vessel: kind === 'KR' ? (tpl.vessel || '') : 'BY TRUCK',
+    from: kind === 'KR' ? (tpl.from || 'Ha Noi, Viet Nam') : (tpl.from || 'HAI PHONG, VIET NAM'),
+    to: kind === 'KR' ? (tpl.to || 'INCHEON AIRPORT') : (tpl.to || 'PHU THO, VIET NAM'),
+    incoterm: kind === 'KR' ? (tpl.incoterm || 'EXW') : (tpl.incoterm || 'DDP'),
+    net:'', gross:'', cbm:'', pallets:'', dims:'',
+    lines: Object.values(byCode).map(l => {
+      const it = invItem(l.code), md = COST.model[l.code] || {};
+      return {code:l.code, name:l.name, qty:l.qty, hs: it.hs||'', vi: it.vi||'', en: it.en || l.code, pcsBox: it.pcsBox||'',
+        fee: Math.round(toUSD(md.fee, md.saleCur)*10000)/10000, sale: Math.round(toUSD(md.sale, md.saleCur)*10000)/10000,
+        foc: Math.round(toUSD(md.matRef, 'USD')*10000)/10000};
+    })
+  };
+  renderInvEditor();
+}
+function invSet(path, v){ const p = path.split('.'); let o = INV; while (p.length > 1) o = o[p.shift()]; o[p[0]] = v; invRefreshTotals(); }
+function invRefreshTotals(){
+  const el = document.getElementById('inv-totals'); if (!el || !INV) return;
+  const qty = INV.lines.reduce((s,l)=>s+(+l.qty||0),0);
+  const amt = INV.kind === 'KR' ? INV.lines.reduce((s,l)=>s+(+l.qty||0)*((+l.fee||0)+(+l.foc||0)),0) : INV.lines.reduce((s,l)=>s+(+l.qty||0)*(+l.sale||0),0);
+  const fee = INV.lines.reduce((s,l)=>s+(+l.qty||0)*(+l.fee||0),0);
+  const ctn = INV.lines.reduce((s,l)=>s+invCartons(l).reduce((a,c)=>a+c.n,0),0);
+  el.innerHTML = `합계 ${qty.toLocaleString()}개 · 박스 ${ctn}개 · 임가공비 $${fee.toLocaleString(undefined,{maximumFractionDigits:2})} · ${INV.kind==='KR'?'인보이스 금액(임가공비+무상자재)':'인보이스 금액(판매가)'} <b>$${amt.toLocaleString(undefined,{maximumFractionDigits:2})}</b>`;
+}
+function invCartons(l){
+  const q = +l.qty||0, b = +l.pcsBox||0;
+  if (!b) return [{per:q, n:1, qty:q}];
+  const full = Math.floor(q/b), rem = q - full*b, out = [];
+  if (full) out.push({per:b, n:full, qty:full*b});
+  if (rem) out.push({per:rem, n:1, qty:rem});
+  return out;
+}
+function renderInvEditor(){
+  const ed = document.getElementById('inv-editor'); if (!INV) { ed.innerHTML=''; return; }
+  const inp = (path, val, w, type) => `<input ${type?`type="${type}"`:''} value="${String(val??'').replace(/"/g,'&quot;')}" oninput="invSet('${path}', this.value)" style="width:${w||'100%'};padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px">`;
+  const f = (lbl, path, val, type) => `<div class="ov-fr" style="margin:0"><label>${lbl}</label>${inp(path, val, '100%', type)}</div>`;
+  const missing = INV.lines.filter(l => !(INV.kind==='KR' ? +l.fee : +l.sale) || !l.hs || !l.pcsBox).map(l => l.name||l.code);
+  ed.innerHTML = `
+    <div style="border-top:1px solid var(--line,#DCE1E7);margin-top:14px;padding-top:14px">
+      <h4 style="font-size:14px;margin:0 0 10px">② 서류 내용 확인 <span style="font-weight:400;color:#5D6977;font-size:12px">— ${INV.kind==='KR'?'본사(THE GAUSS INC.) · EXW 임가공':'솔루엠비나 · DDP'} · 고친 HS·품명·박스 입수·연락처는 저장돼 다음에도 쓰입니다</span></h4>
+      ${missing.length?`<div style="color:#b45309;font-size:12.5px;margin-bottom:8px">⚠️ 단가·HS코드·박스 입수가 비어 있는 품목: ${missing.join(', ')} — 아래 표에서 채워 주세요.</div>`:''}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px">
+        ${f('인보이스 번호','invNo',INV.invNo)}${f('인보이스 일자','invDate',INV.invDate,'date')}${f('출항·출발일','shipDate',INV.shipDate,'date')}
+        ${f(INV.kind==='KR'?'항공편 / Vessel':'운송 / Vessel','vessel',INV.vessel)}${f('출발지','from',INV.from)}${f('도착지','to',INV.to)}
+        ${f('인도조건','incoterm',INV.incoterm)}${f('담당자(영문)','contact',INV.contact)}${f('연락처','phone',INV.phone)}
+      </div>
+      <div class="tw" style="margin-bottom:10px"><table><thead><tr><th>품목</th><th>HS</th><th style="min-width:260px">베트남어 품명</th><th style="text-align:right">수량</th><th style="text-align:right">박스 입수</th>
+        ${INV.kind==='KR'?'<th style="text-align:right">임가공비 USD</th><th style="text-align:right">무상 자재 USD</th>':'<th style="text-align:right">임가공비 USD</th><th style="text-align:right">판매가(가공비 포함) USD</th>'}</tr></thead><tbody>${
+        INV.lines.map((l,i) => `<tr><td>${l.name||''}<div style="font-family:monospace;color:#8A95A3;font-size:11px">${l.code}</div>${INV.kind==='KR'?`<div style="margin-top:3px">${inp(`lines.${i}.en`, l.en, '150px')}</div>`:''}</td>
+          <td>${inp(`lines.${i}.hs`, l.hs, '90px')}</td><td style="white-space:normal"><textarea oninput="invSet('lines.${i}.vi', this.value)" rows="2" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12px;font-family:inherit">${l.vi||''}</textarea></td>
+          <td style="text-align:right">${inp(`lines.${i}.qty`, l.qty, '80px', 'number')}</td><td style="text-align:right">${inp(`lines.${i}.pcsBox`, l.pcsBox, '70px', 'number')}</td>
+          <td style="text-align:right">${inp(`lines.${i}.fee`, l.fee, '80px', 'number')}</td><td style="text-align:right">${INV.kind==='KR'?inp(`lines.${i}.foc`, l.foc, '80px', 'number'):inp(`lines.${i}.sale`, l.sale, '80px', 'number')}</td></tr>`).join('')}</tbody></table></div>
+      <div style="font-size:13px;font-weight:600;margin:6px 0">포장 (실측값 입력)</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px">
+        ${f('총 순중량 kg (Net)','net',INV.net,'number')}${f('총 총중량 kg (Gross)','gross',INV.gross,'number')}${f('총 부피 CBM','cbm',INV.cbm,'number')}${f('팔레트 수','pallets',INV.pallets,'number')}${f('팔레트 규격 (예: 1.1*1.1*0.88)','dims',INV.dims)}
+      </div>
+      <div id="inv-totals" style="font-size:13px;color:#18212B;margin-bottom:10px"></div>
+      <button id="inv-make" onclick="invMakeExcel()" style="padding:9px 18px;border-radius:8px;border:none;background:#166534;color:#fff;font-weight:700;cursor:pointer">📥 인보이스·패킹리스트 엑셀 만들기</button>
+    </div>`;
+  invRefreshTotals();
+}
+async function invLoadExcelJS(){
+  if (window.ExcelJS) return window.ExcelJS;
+  await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'; s.onload = res; s.onerror = () => rej(new Error('엑셀 도구를 불러오지 못했습니다(인터넷 연결 확인).')); document.head.appendChild(s); });
+  return window.ExcelJS;
+}
+async function invSaveMaster(){
+  // 품목별 HS·품명·박스 입수, 양식별 연락처·운송 정보를 저장(다음 서류에 자동으로 채움)
+  const d = JSON.parse(JSON.stringify(invDoc()));
+  d.items = d.items || {}; d.tpl = d.tpl || {};
+  INV.lines.forEach(l => { d.items[l.code] = {hs:l.hs, vi:l.vi, en:l.en, pcsBox:+l.pcsBox||''}; });
+  d.tpl[INV.kind] = {contact:INV.contact, phone:INV.phone, vessel: INV.kind==='KR' ? '' : INV.vessel, from:INV.from, to:INV.to, incoterm:INV.incoterm};
+  if (JSON.stringify(d) !== JSON.stringify(invDoc())) await saveCost('model', '_doc', d);
+}
+async function invMakeExcel(){
+  if (!INV) return;
+  const guard = withButtonGuard('#inv-make', '⏳ 만드는 중...'); if (guard === null) return;
+  try {
+    const EX = await invLoadExcelJS();
+    const wb = new EX.Workbook();
+    invSheetInvoice(wb.addWorksheet('invoice', {pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0}}));
+    invSheetPacking(wb.addWorksheet('pkl', {pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0}}));
+    const buf = await wb.xlsx.writeBuffer();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    a.download = `${INV.invNo}_INV_PK_${INV.kind==='KR'?'THEGAUSS':'SOLUM'}.xlsx`;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    invSaveMaster().catch(() => {});
+  } catch(e) { alert('엑셀 만들기 실패: ' + e.message); }
+  finally { guard.release(); }
+}
+// ── 엑셀 공통 서식
+const INV_FONT = 'Times New Roman';
+// 엑셀 날짜는 UTC 자정으로 넣어야 PC 시간대와 상관없이 같은 날짜로 보인다
+function invXDate(ymd){ if (!ymd) return ''; const [y,m,d] = ymd.split('-').map(Number); return new Date(Date.UTC(y, m-1, d)); }
+function invCell(ws, addr, v, o){
+  const c = ws.getCell(addr); c.value = v;
+  c.font = {name:INV_FONT, size:(o&&o.size)||10, bold:!!(o&&o.bold), italic:!!(o&&o.italic)};
+  c.alignment = {vertical:'middle', horizontal:(o&&o.h)||'left', wrapText: !!(o&&o.wrap)};
+  if (o && o.fmt) c.numFmt = o.fmt;
+  if (o && o.fill) c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:o.fill}};
+  return c;
+}
+function invBox(ws, r1, c1, r2, c2, style){
+  const s = style || 'thin';
+  for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) {
+    const cell = ws.getRow(r).getCell(c); const b = {...(cell.border||{})};
+    if (r === r1) b.top = {style:s}; if (r === r2) b.bottom = {style:s}; if (c === c1) b.left = {style:s}; if (c === c2) b.right = {style:s};
+    cell.border = b;
+  }
+}
+function invGrid(ws, r1, c1, r2, c2){ for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) ws.getRow(r).getCell(c).border = {top:{style:'thin'},left:{style:'thin'},bottom:{style:'thin'},right:{style:'thin'}}; }
+function invHeader(ws, title, lastCol){
+  const L = n => String.fromCharCode(64+n);
+  const mid = Math.ceil(lastCol/2);
+  ws.mergeCells(`A1:${L(lastCol)}1`); invCell(ws, 'A1', title, {size:18, bold:true, h:'center'}); ws.getRow(1).height = 30;
+  const kr = INV.kind === 'KR';
+  const consignee = kr ? INV_CO.hq : INV_CO.solVina;
+  const left = [
+    ['(1) Shipper/Beneficiary:', true], [INV_CO.name, true], [INV_CO.addr1], [INV_CO.addr2], [INV.contact||''], [INV.phone||''],
+    [kr ? '(2) Consignee (Ship to):' : '(2) Consignee:', true], ...consignee.map((t,i)=>[t, i===0]),
+    [kr ? '(3) Buyer (Bill to) / Notify party:' : '(3) Notify party:', true], ...INV_CO.hq.map((t,i)=>[t, i===0])
+  ];
+  left.forEach(([t,b], i) => { const r = 2+i; ws.mergeCells(`A${r}:${L(mid)}${r}`); invCell(ws, `A${r}`, t, {bold:b}); });
+  const right = [['(8) No. & date of invoice', true], [INV.invNo, true], [invXDate(INV.invDate), false, 'dd-mmm-yyyy'], ['(9) Original of goods: Viet Nam', true]];
+  if (!kr) right.push(['(10) BUYER', true], ...INV_CO.solCo.map((t,i)=>[t, i===0]));
+  right.forEach(([t,b,fmt], i) => { const r = 2+i; ws.mergeCells(`${L(mid+1)}${r}:${L(lastCol)}${r}`); invCell(ws, `${L(mid+1)}${r}`, t, {bold:b, fmt}); });
+  const top = 2, bot = 1 + left.length;
+  invBox(ws, top, 1, bot, mid); invBox(ws, top, mid+1, bot, lastCol);
+  let r = bot + 1;
+  const third = Math.max(2, Math.floor(lastCol/3));
+  const rowPair = (labels, values) => {
+    const spans = [[1, third], [third+1, mid], [mid+1, lastCol]];
+    spans.forEach(([a,b], k) => {
+      ws.mergeCells(`${L(a)}${r}:${L(b)}${r}`); invCell(ws, `${L(a)}${r}`, labels[k], {bold:true});
+      ws.mergeCells(`${L(a)}${r+1}:${L(b)}${r+1}`); invCell(ws, `${L(a)}${r+1}`, values[k], {fmt: values[k] instanceof Date ? 'dd-mmm-yyyy' : undefined});
+      invBox(ws, r, a, r+1, b);
+    });
+    r += 2;
+  };
+  rowPair(['(4) Port of Departure', '(5) Port of Destination', kr ? '(11) Remarks:' : '(11) Remarks:'], [INV.from, INV.to, kr ? `${INV.incoterm} / Processing Contract No.: ${INV_CO.contract}` : INV.incoterm]);
+  rowPair(['(6) Vessel / Voyage:', '(7) Sailing on About', '(12) Payment term : TT'], [INV.vessel, invXDate(INV.shipDate), kr ? '' : `PROCESSING CONTRACT NO. ${INV_CO.contract}`]);
+  return r;
+}
+function invSheetInvoice(ws){
+  const kr = INV.kind === 'KR';
+  if (kr) {
+    ws.columns = [{width:10},{width:12},{width:20},{width:10},{width:5},{width:18},{width:12},{width:13},{width:46}];
+    let r = invHeader(ws, 'COMMERCIAL INVOICE', 8) + 1;
+    const hd = ['Item','HS','DESCRIPTION',"Q'ty/EA",'No','Description','UNIT PRICE\n(USD/PCE)','AMOUNT\n(USD)','Mô tả (khai báo hải quan)'];
+    hd.forEach((h,i) => invCell(ws, `${String.fromCharCode(65+i)}${r}`, h, {bold:true, h:'center', wrap:true, fill:'FFF2F2F2'}));
+    ws.getRow(r).height = 30; invGrid(ws, r, 1, r, 9); r++;
+    const start = r;
+    INV.lines.forEach(l => {
+      const q = +l.qty||0;
+      [['PROCESSING FEE', +l.fee||0], ['FREE OF CHARGE', +l.foc||0]].forEach(([d,p], k) => {
+        if (k === 0) { invCell(ws, `A${r}`, 'Inductor', {h:'center'}); invCell(ws, `B${r}`, +l.hs||l.hs, {h:'center'}); invCell(ws, `C${r}`, l.en||l.code, {h:'center'}); invCell(ws, `D${r}`, q, {h:'center', fmt:'#,##0'}); }
+        invCell(ws, `E${r}`, k+1, {h:'center'}); invCell(ws, `F${r}`, d, {h:'center'});
+        invCell(ws, `G${r}`, p, {h:'right', fmt:'#,##0.00##'}); invCell(ws, `H${r}`, {formula:`D${k===0?r:r-1}*G${r}`, result:q*p}, {h:'right', fmt:'#,##0.00'});
+        invCell(ws, `I${r}`, `${l.en||l.code}#&${l.vi||''}#&VN`, {wrap:true, size:8});
+        r++;
+      });
+      ['A','B','C','D'].forEach(c => ws.mergeCells(`${c}${r-2}:${c}${r-1}`));
+    });
+    invGrid(ws, start, 1, r-1, 9);
+    invCell(ws, `A${r}`, 'TOTAL:', {bold:true}); ws.mergeCells(`A${r}:C${r}`);
+    invCell(ws, `D${r}`, {formula:`SUM(D${start}:D${r-1})`, result:INV.lines.reduce((s,l)=>s+(+l.qty||0),0)}, {bold:true, h:'center', fmt:'#,##0'});
+    invCell(ws, `H${r}`, {formula:`SUM(H${start}:H${r-1})`, result:INV.lines.reduce((s,l)=>s+(+l.qty||0)*((+l.fee||0)+(+l.foc||0)),0)}, {bold:true, h:'right', fmt:'#,##0.00'});
+    invGrid(ws, r, 1, r, 8); r += 2;
+    r = invWeights(ws, r, 'C');
+  } else {
+    ws.columns = [{width:5},{width:15},{width:11},{width:46},{width:11},{width:10},{width:14},{width:15},{width:13},{width:15}];
+    let r = invHeader(ws, 'COMMERCIAL INVOICE', 10) + 1;
+    const hd = ['No','Code No','HS','DESCRIPTION (Vietnamese)','DESCRIPTION',"Quantity/\nEA",'UNIT PRICE PROCESSING\n(USD/PCE)','TOTAL UNIT PRICE INCLUDING PROCESSING\n(USD/PCE)','AMOUNT PROCESSING\n(USD)','AMOUNT INCLUDING PROCESSING\n(USD)'];
+    hd.forEach((h,i) => invCell(ws, `${String.fromCharCode(65+i)}${r}`, h, {bold:true, h:'center', wrap:true, fill:'FFF2F2F2', size:9}));
+    ws.getRow(r).height = 54; invGrid(ws, r, 1, r, 10); r++;
+    const start = r;
+    INV.lines.forEach((l,i) => {
+      const q = +l.qty||0;
+      invCell(ws, `A${r}`, i+1, {h:'center'}); invCell(ws, `B${r}`, l.code, {h:'center'}); invCell(ws, `C${r}`, l.hs, {h:'center'});
+      invCell(ws, `D${r}`, `${l.vi||''} VN`, {wrap:true, size:9}); invCell(ws, `E${r}`, 'Inductor', {h:'center'});
+      invCell(ws, `F${r}`, q, {h:'center', fmt:'#,##0'}); invCell(ws, `G${r}`, +l.fee||0, {h:'right', fmt:'#,##0.00'}); invCell(ws, `H${r}`, +l.sale||0, {h:'right', fmt:'#,##0.00'});
+      invCell(ws, `I${r}`, {formula:`F${r}*G${r}`, result:q*(+l.fee||0)}, {h:'right', fmt:'#,##0.00'});
+      invCell(ws, `J${r}`, {formula:`F${r}*H${r}`, result:q*(+l.sale||0)}, {h:'right', fmt:'#,##0.00'});
+      ws.getRow(r).height = 48; r++;
+    });
+    invGrid(ws, start, 1, r-1, 10);
+    ws.mergeCells(`A${r}:E${r}`); invCell(ws, `A${r}`, 'TOTAL:', {bold:true});
+    invCell(ws, `F${r}`, {formula:`SUM(F${start}:F${r-1})`, result:INV.lines.reduce((s,l)=>s+(+l.qty||0),0)}, {bold:true, h:'center', fmt:'#,##0'});
+    invCell(ws, `I${r}`, {formula:`SUM(I${start}:I${r-1})`, result:INV.lines.reduce((s,l)=>s+(+l.qty||0)*(+l.fee||0),0)}, {bold:true, h:'right', fmt:'#,##0.00'});
+    invCell(ws, `J${r}`, {formula:`SUM(J${start}:J${r-1})`, result:INV.lines.reduce((s,l)=>s+(+l.qty||0)*(+l.sale||0),0)}, {bold:true, h:'right', fmt:'#,##0.00'});
+    invGrid(ws, r, 1, r, 10); r += 2;
+    r = invWeights(ws, r, 'D');
+  }
+}
+function invWeights(ws, r, col){
+  const ctn = INV.lines.reduce((s,l)=>s+invCartons(l).reduce((a,c)=>a+c.n,0),0);
+  [['* TOTAL NET WEIGHT :', +INV.net||'', 'KGM'], ['* TOTAL GROSS WEIGHT :', +INV.gross||'', 'KGM'], ['* TOTAL MEASUREMENT :', +INV.cbm||'', 'CBM'], ['* TOTAL PK :', ctn, 'CT'], ['* TOTAL PL :', +INV.pallets||'', 'PP']]
+    .forEach(([a,v,u]) => { invCell(ws, `${col}${r}`, `${a} ${v===''?'':v} ${u}`, {bold:true}); r++; });
+  r++; invCell(ws, `${col}${r}`, 'SIGN BY:', {bold:true});
+  return r + 1;
+}
+function invSheetPacking(ws){
+  ws.columns = [{width:5},{width:18},{width:16},{width:14},{width:9},{width:13},{width:14},{width:14},{width:18}];
+  let r = invHeader(ws, 'PACKING LIST', 9) + 1;
+  const hd = ['No','Code No','Description of goods','Quantity/box\n(PCS)','Carton','Quantity\n(PCS)','Net weight\n(KGS)','Gross Weight\n(KGS)','Measurement\n(CBM)'];
+  hd.forEach((h,i) => invCell(ws, `${String.fromCharCode(65+i)}${r}`, h, {bold:true, h:'center', wrap:true, fill:'FFF2F2F2'}));
+  ws.getRow(r).height = 32; invGrid(ws, r, 1, r, 9); r++;
+  const start = r;
+  INV.lines.forEach((l,i) => {
+    const cs = invCartons(l), r0 = r;
+    cs.forEach((c,k) => {
+      if (k === 0) { invCell(ws, `A${r}`, i+1, {h:'center'}); invCell(ws, `B${r}`, INV.kind==='KR' ? (l.en||l.code) : l.code, {h:'center'}); }
+      invCell(ws, `C${r}`, 'Inductor', {h:'center'}); invCell(ws, `D${r}`, c.per, {h:'center', fmt:'#,##0'}); invCell(ws, `E${r}`, c.n, {h:'center'});
+      invCell(ws, `F${r}`, {formula:`D${r}*E${r}`, result:c.qty}, {h:'center', fmt:'#,##0'});
+      r++;
+    });
+    if (cs.length > 1) { ws.mergeCells(`A${r0}:A${r-1}`); ws.mergeCells(`B${r0}:B${r-1}`); }
+  });
+  if (r > start) { ws.mergeCells(`G${start}:G${r-1}`); ws.mergeCells(`H${start}:H${r-1}`); ws.mergeCells(`I${start}:I${r-1}`);
+    invCell(ws, `G${start}`, +INV.net||'', {h:'center', fmt:'#,##0.00'}); invCell(ws, `H${start}`, +INV.gross||'', {h:'center', fmt:'#,##0.00'});
+    invCell(ws, `I${start}`, [INV.dims, INV.cbm ? `${INV.cbm} CBM` : ''].filter(Boolean).join('\n'), {h:'center', wrap:true}); }
+  invGrid(ws, start, 1, r-1, 9);
+  ws.mergeCells(`A${r}:D${r}`); invCell(ws, `A${r}`, 'TOTAL:', {bold:true});
+  invCell(ws, `E${r}`, {formula:`SUM(E${start}:E${r-1})`, result:INV.lines.reduce((s,l)=>s+invCartons(l).reduce((a,c)=>a+c.n,0),0)}, {bold:true, h:'center'});
+  invCell(ws, `F${r}`, {formula:`SUM(F${start}:F${r-1})`, result:INV.lines.reduce((s,l)=>s+(+l.qty||0),0)}, {bold:true, h:'center', fmt:'#,##0'});
+  invCell(ws, `G${r}`, +INV.net||'', {bold:true, h:'center', fmt:'#,##0.00'}); invCell(ws, `H${r}`, +INV.gross||'', {bold:true, h:'center', fmt:'#,##0.00'}); invCell(ws, `I${r}`, +INV.cbm||'', {bold:true, h:'center'});
+  invGrid(ws, r, 1, r, 9); r += 1;
+  invCell(ws, `A${r}`, `TOTAL: ${+INV.pallets||''} PALLET`, {bold:true}); r += 2;
+  invCell(ws, `G${r}`, 'SHIPPER', {bold:true, h:'center'}); invCell(ws, `G${r+1}`, '(KÝ TÊN, ĐÓNG DẤU)', {italic:true, h:'center', size:9});
 }
 </script>
 </body>
