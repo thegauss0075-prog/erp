@@ -11147,13 +11147,14 @@ function buildLot(date, dir, serial, maker) {
   // ✅ LOT_TP_DIRS 기준으로 판정 (예전엔 dir==='in'||dir==='omt'만 검사해서,
   //    'qc'처럼 새로 추가된 자재 계열 dir이 완제품용 형식으로 잘못 생성되는 문제가 있었다)
   if (!LOT_TP_DIRS.includes(dir)) {
-    // 자재: LOT-YYYYMMDD-NN (CORE 원자재처럼 제조사가 필요하면 LOT-YYYYMMDD-제조사-NN)
+    // 자재: YYYYMMDD-NN (CORE 원자재처럼 제조사가 필요하면 YYYYMMDD-제조사-NN)
     const yyyy = date.getFullYear();
     const mm   = String(date.getMonth()+1).padStart(2,'0');
     const dd   = String(date.getDate()).padStart(2,'0');
     // ✅ [2026-10-31] 일련번호는 같은 접두어로 이미 쓰인 LOT 중 가장 큰 번호 + 1
     //    (예전엔 날짜 형식이 안 맞아 매번 01이 붙어 같은 날 LOT이 겹쳤다)
-    const pre = maker ? `LOT-${yyyy}${mm}${dd}-${maker}-` : `LOT-${yyyy}${mm}${dd}-`;
+    // ✅ [2026-10-31 사용자 요청] 앞의 'LOT-'는 뺀다 (예: 20261027-01, CORE는 20261027-C-01)
+    const pre = maker ? `${yyyy}${mm}${dd}-${maker}-` : `${yyyy}${mm}${dd}-`;
     return pre + String(nextLotSerial(pre)).padStart(2,'0');
   } else {
     // 완제품: TG[Y][M][D][maker]V  (예: TGGF6CV = 2026년6월15일, CHANGSUNG 제조사)
