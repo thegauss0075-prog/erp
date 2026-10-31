@@ -381,7 +381,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   .empty{color:var(--faint)}
 
   /* 행 단위 작은 버튼(수정·삭제 아이콘) — 테두리 없이 조용하게 */
-  .edit-btn{border:1px solid transparent!important;background:transparent!important;border-radius:var(--r-sm)!important;opacity:.7;transition:opacity .12s,background .12s}
+  .edit-btn{padding:3px 4px!important;font-size:13px;border:1px solid transparent!important;background:transparent!important;border-radius:var(--r-sm)!important;opacity:.7;transition:opacity .12s,background .12s}
   .edit-btn:hover{opacity:1;background:var(--primary-soft)!important;border-color:var(--line)!important}
   .del-btn{border-radius:var(--r-sm)}
 
@@ -403,6 +403,11 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   .ov-bg{background:rgba(20,30,40,.5)}
   .ov-box{border-radius:12px;box-shadow:0 16px 48px rgba(15,25,35,.28)}
 
+  /* 작업지시 표: 좁은 화면에서도 액션 버튼까지 한 화면에 보이게 */
+  #tab-wo th,#tab-wo td{padding-left:6px;padding-right:6px}
+  #tab-wo td.wo-actions{white-space:normal;min-width:128px;max-width:132px;line-height:1.9}
+  #tab-wo td.wo-actions .edit-btn{padding:2px 3px!important;margin:0!important}
+  @media (min-width:1360px){ #tab-wo td.wo-actions{white-space:nowrap;max-width:none} }
   @media (max-width:720px){
     .top-bar{padding:.6rem 1rem .4rem}
     .top-bar h1{font-size:15px}
@@ -3590,6 +3595,15 @@ let woEditTarget = null;    // 작업지시 수정 모달에서 편집 중인 �
 let woProdTarget = null;    // 실적 입력 대상 작업지시
 let woProdMatWarningShown = false; // 자재투입 없음 경고를 이미 보여줬는지 (한 번 더 누르면 진행)
 
+// ✅ 날짜를 "2026-11-03"처럼 베트남 날짜(년-월-일)로만 표시 — 시트가 날짜를 UTC 시각
+//    (예: 2026-11-02T17:00:00.000Z = 베트남 11/03 00:00)으로 돌려줘서 하루 전 날짜로 보이던 것도 바로잡는다.
+function woYMD(v){
+  if (!v) return '';
+  const t = String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const d = Date.parse(t); if (isNaN(d)) return t.slice(0,10);
+  return new Date(d + 7*3600e3).toISOString().slice(0,10);
+}
 async function loadWO() {
   if (!(API_URL || IS_GAS)) return;
   const res = await api('getWorkOrders', {});
@@ -3668,16 +3682,16 @@ function _renderWOBody() {
     const barColor = pct >= 100 ? '#166534' : '#185FA5';
     return `<tr>
       <td style="font-family:monospace;font-size:11px">${r.orderNo||''}</td>
-      <td>${r.name||''} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
+      <td>${r.name||''} <span style="display:block;color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
       <td style="font-family:monospace;font-size:11px;color:#1d4ed8">${r.lot||'-'}${isAdmin ? ` <button onclick="regenerateWOLotUI(${r.id})" title="LOT 재생성" style="border:none;background:none;color:#3730a3;cursor:pointer;font-size:11px">🔄</button>` : ''}</td>
       <td style="text-align:right">${plan.toLocaleString()} ${r.unit||''}</td>
       <td style="text-align:right;font-weight:700;color:${barColor}">${produced.toLocaleString()} ${r.unit||''}</td>
       <td><div class="bar-wrap"><div class="bar-fill" style="width:${pct}%;background:${barColor}"></div></div><div style="font-size:11px;color:#888;text-align:center">${pct}%</div></td>
       <td>${r.line||'-'}</td>
       <td><span style="color:${statusColor[r.status]||'#555'};font-weight:600">${r.status||'대기'}</span></td>
-      <td style="font-size:12px;color:#666">${r.dueDate||'-'}</td>
-      <td style="font-size:12px;color:#888">${r.note||'-'}</td>
-      <td class="no-print" style="white-space:nowrap">
+      <td style="font-size:12px;color:#666;white-space:nowrap">${woYMD(r.dueDate)||'-'}</td>
+      <td style="font-size:12px;color:#888;white-space:normal;min-width:60px">${r.note||'-'}</td>
+      <td class="no-print wo-actions">
         ${isAdmin ? `<button class="edit-btn" onclick="openEditWO(${r.id})" title="수정">✏️</button>` : ''}
         <button class="edit-btn" onclick="openWOProd(${r.id})" title="실적 입력">📈</button>
         <button class="edit-btn" onclick="openWOTrace(${r.id})" title="전공정 추적">🔗</button>
@@ -3832,7 +3846,7 @@ async function printWO(id) {
         ${row('LOT', `<span style="font-family:monospace;font-weight:700">${wo.lot||'-'}</span>`)}
         ${row('계획수량', `<strong>${(+wo.planQty||0).toLocaleString()}</strong> ${wo.unit||''}`)}
         ${row('생산 라인', wo.line)}
-        ${row('마감일', wo.dueDate)}
+        ${row('마감일', woYMD(wo.dueDate))}
         ${row('비고', wo.note)}
       </table>
 
@@ -4033,7 +4047,7 @@ function openEditWO(id) {
   document.getElementById('wo-edit-lot').value = wo.lot || '없음';
   document.getElementById('wo-edit-plan-qty').value = wo.planQty || '';
   document.getElementById('wo-edit-line').value = wo.line || '';
-  document.getElementById('wo-edit-due').value = wo.dueDate ? wo.dueDate.slice(0,10) : '';
+  document.getElementById('wo-edit-due').value = woYMD(wo.dueDate);
   document.getElementById('wo-edit-note').value = wo.note || '';
   document.getElementById('wo-edit-err').style.display = 'none';
   document.getElementById('wo-edit-ov').classList.add('show');
@@ -12989,7 +13003,7 @@ function runLotTrace(){
       arr.map(t => `<tr><td>${lotFmtDt(t)}</td><td>${t.name||t.code}</td><td style="text-align:right">${n(t.qty)} ${t.unit||''}</td><td>${t.dest||'-'}</td><td>${t.user||'-'}</td></tr>`).join('')}</tbody></table></div>`
     : '<div style="color:#8A95A3;font-size:12.5px">출고 기록 없음 (아직 공장 재고)</div>';
   const woHead = w => `<div style="font-weight:600">📋 ${w.orderNo||w.id} · ${w.name||''} <span style="font-family:monospace;color:#5D6977;font-size:12px">${w.code||''}</span> <span class="badge ${w.cat==='BTP'?'b-btp':'b-tp'}">${w.cat==='BTP'?'반제품':'완제품'}</span></div>
-      <div style="font-size:12px;color:#5D6977;margin:2px 0 6px">실적 ${n(w.producedQty)} ${w.unit||''} · 라인 ${w.line||'-'} · ${w.status||''} · 시작 ${w.startDate||'-'}</div>`;
+      <div style="font-size:12px;color:#5D6977;margin:2px 0 6px">실적 ${n(w.producedQty)} ${w.unit||''} · 라인 ${w.line||'-'} · ${w.status||''} · 시작 ${woYMD(w.startDate)||'-'}</div>`;
   const lotLink = l => `<a href="javascript:void 0" onclick="document.getElementById('lot-q').value='${String(l||'').replace(/'/g,'')}';runLotTrace()" style="font-family:monospace;color:#185FA5">${l||'(LOT 없음)'}</a>`;
   const matRows = (mats, lvl) => mats.map(m => `<tr>
       <td style="padding:4px 8px 4px ${8+lvl*18}px;white-space:normal"><span class="badge ${CB[String(m.cat||'').toUpperCase()]||''}">${CL[String(m.cat||'').toUpperCase()]||m.cat||''}</span> ${m.name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${m.code||''}</span></td>
