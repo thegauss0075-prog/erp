@@ -1892,6 +1892,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 </div>
 
 <div id="tab-ship" class="sec">
+  <div id="spl-panel" class="ds-panel"></div>
   <div id="d-ship-panel" class="ds-panel"></div>
   <!-- 📄 인보이스·패킹리스트 (관리자) -->
   <div id="inv-panel" class="ds-panel" style="display:none">
@@ -1900,6 +1901,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
       <select id="inv-kind" onchange="INV=null;renderInvPanel()"><option value="SOL">솔루엠비나 / Solum Vina (DDP)</option><option value="KR">본사 / Trụ sở THE GAUSS INC. (EXW gia công)</option></select>
       <button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">➕ 새 인보이스 작성 / Lập Invoice mới</button>
+      <span id="inv-plan-pick"></span>
     </div>
     <div id="inv-img-row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:12px"></div>
     <div id="inv-records"></div>
@@ -2605,7 +2607,7 @@ function go(id){
   if(id==='po') { renderPO({soft:true}); _goPO(); }
   if(id==='mes') renderMES();
   if(id==='cost') renderCost();
-  if(id==='ship') { renderShipPanel(); renderInvPanel(); }
+  if(id==='ship') { renderShipPlans(); loadShipPlans().then(renderShipPlans); renderShipPanel(); renderInvPanel(); }
 }
 function setIC(c){document.getElementById('inv-cat').value=c;initMS();renderInv();}
 
@@ -13427,6 +13429,12 @@ function renderInvPanel(){
   box.style.display = '';
   if (COST_SERVER_OK !== true && !_invCostTried && (API_URL || IS_GAS)) { _invCostTried = true; loadCost().then(() => { if (INV) { INV = null; } renderInvPanel(); }); }
   renderInvImgRow(); renderInvRecords();
+  const pick = document.getElementById('inv-plan-pick');
+  if (pick) {
+    const kind = document.getElementById('inv-kind').value;
+    const ps = (typeof SPL !== 'undefined' ? SPL : []).filter(p => p.status === 'wait' && splKindOf(p.dest) === kind);
+    pick.innerHTML = ps.length ? `<span style="font-size:12.5px;color:#5D6977">또는 출고 예정에서 / Hoặc từ kế hoạch:</span> ${ps.map(p => `<button onclick="invFromPlan('${p.id}')" style="padding:6px 10px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer;font-size:12.5px">📦 ${p.no} (${splLines(p).reduce((s,l)=>s+(+l.qty||0),0).toLocaleString()}개)</button>`).join(' ')}` : '';
+  }
   if (!INV) document.getElementById('inv-editor').innerHTML = '';
 }
 function invBuild(){
@@ -13642,6 +13650,7 @@ function renderInvEditor(){
   ed.innerHTML = `
     <div style="border-top:1px solid var(--line,#DCE1E7);margin-top:14px;padding-top:14px">
       <h4 style="font-size:14px;margin:0 0 10px">② 서류 내용 확인 / Kiểm tra nội dung <span style="font-weight:400;color:#5D6977;font-size:12px">— ${INV.kind==='KR'?'본사(THE GAUSS INC.) · EXW 임가공':'솔루엠비나 · DDP'} · 고친 HS·품명·박스 입수·연락처는 저장돼 다음에도 쓰입니다</span></h4>
+      ${INV.planId ? `<div style="background:#DCFCE7;color:#166534;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:8px">📦 출고 예정 ${((typeof SPL!=='undefined'?SPL:[]).find(p=>p.id===INV.planId)||{}).no||''}에서 불러온 인보이스입니다. 엑셀을 만들면 출고 예정에 인보이스 번호와 최종 수량이 연결됩니다.</div>` : ''}
       ${INV._oldRev ? `<div style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:8px">📜 예전 판(Rev.${INV.rev||0})을 보고 있습니다. 이 상태로 엑셀을 만들면 이 내용이 새 판으로 저장됩니다(되돌리기).</div>` : ''}
       ${(COST.model||{})[invKey(INV.invNo)] ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:8px;background:#F6F8FA;border-radius:8px;padding:8px 10px">
         <span>📝 이미 만든 인보이스입니다 (현재 <b>Rev.${((COST.model||{})[invKey(INV.invNo)].rev)||0}</b>). 내용을 바꿔 다시 만들면 이전 판은 보관되고 판 번호가 올라갑니다.</span>
@@ -13746,7 +13755,7 @@ async function invSaveRecord(){
     rec.revs = (prev.revs || []).concat([{rev: rec.rev, at: rec.savedAt, by: rec.savedBy, note: rec.revNote || '', changes: invDiff(prev, rec).slice(0, 20)}]);
   }
   rec.revNote = '';
-  if (await saveCost('model', key, rec)) { if (INV && INV.invNo === rec.invNo) { INV.revs = rec.revs; INV.revNote = ''; } renderInvRecords(); }
+  if (await saveCost('model', key, rec)) { if (INV && INV.invNo === rec.invNo) { INV.revs = rec.revs; INV.revNote = ''; } renderInvRecords(); splLinkInvoice(rec).catch(() => {}); }
 }
 function invOpenRecord(key){
   const r = (COST.model||{})[key]; if (!r) return;
@@ -13963,6 +13972,196 @@ function invSheetPacking(ws){
   invCell(ws, `A${r}`, `TOTAL: ${+INV.pallets||pals.length} PALLET${(+INV.pallets||pals.length) > 1 ? 'S' : ''}`, {bold:true}); r += 2;
   invCell(ws, `G${r}`, 'SHIPPER', {bold:true, h:'center'}); invCell(ws, `G${r+1}`, '(KÝ TÊN, ĐÓNG DẤU)', {italic:true, h:'center', size:9});
   ws._signAt = {col: 6, row: r + 1};
+}
+// ════════════════════════════════════════════════════════════
+//  📦 출고 예정 → 인보이스 → 출고 확정 (2026-10-31)
+//  ① 창고(직원): 출고 예정 등록 — 재고는 아직 그대로, 다른 예정과 겹치지 않게 수량만 예약
+//  ② 관리자: 출고 예정을 불러와 인보이스 작성 (수정본이 나오면 최종 수량이 예정에 반영됨)
+//  ③ 트럭·비행기가 나갈 때 "출고 확정" — LOT 오래된 순으로 완제품 출고(otp)를 등록하고 '완료'
+//  서버: SHIP_PLAN 시트 (getShipPlans / saveShipPlan / deleteShipPlan)
+// ════════════════════════════════════════════════════════════
+let SPL = [], _splLoaded = false, _splLoading = null, SPL_DRAFT = [], SPL_FORM = {dest:'Solum Vina', date:'', note:''};
+const SPL_DEST = {KR:'🏠 본사(한국) / Trụ sở HQ', 'Solum Vina':'🏭 솔루엠비나 / Solum Vina'};
+const SPL_ST = {wait:['출고 대기','Chờ xuất','#b45309','#FEF3C7'], inv:['인보이스 발행','Đã có Invoice','#185FA5','#E8F0F8'], done:['출고 완료','Đã xuất','#166534','#DCFCE7'], cancel:['취소','Đã hủy','#8A95A3','#F1F5F9']};
+async function loadShipPlans(){
+  if (!(API_URL || IS_GAS)) return;
+  if (_splLoading) return _splLoading;
+  _splLoading = (async () => { const r = await api('getShipPlans', {}); if (r && r.ok) { SPL = r.data || []; _splLoaded = true; } else if (r && /unknown action/i.test(r.error||'')) { _splLoaded = 'noserver'; } })();
+  try { await _splLoading; } finally { _splLoading = null; }
+}
+function splKindOf(dest){ return dest === 'KR' ? 'KR' : 'SOL'; }
+function splLines(p){ return (p.invLines && p.invLines.length) ? p.invLines : (p.lines || []); }   // 인보이스가 있으면 인보이스 최종 수량
+function splReserved(code, exceptId){
+  return SPL.filter(p => (p.status === 'wait' || p.status === 'inv') && p.id !== exceptId)
+    .reduce((s,p) => s + splLines(p).filter(l => l.code === code).reduce((a,l)=>a+(+l.qty||0),0), 0);
+}
+function splStock(code){ const it = (DB.tp||[]).find(r => r.code === code); return it ? (+it.cur||0) : 0; }
+// 완제품 LOT 오래된 순 배정 (LOT 이력 없이 들어온 재고는 'LOT 미지정')
+function splAlloc(code, qty){
+  const {activeLots, noLotRemain} = computeActiveLots(code, 'tp-in', 'otp', 'TP');
+  const lotTotal = activeLots.reduce((s,l)=>s+l.remain,0) + Math.max(0, noLotRemain);
+  const untracked = Math.max(0, splStock(code) - lotTotal);
+  const pool = activeLots.map(d => ({lot:d.lot, remain:d.remain}));
+  if (Math.max(0, noLotRemain) + untracked > 0) pool.push({lot:'__nolot__', remain: Math.max(0, noLotRemain) + untracked});
+  const out = []; let need = qty;
+  for (const p of pool) { if (need <= 0) break; const t = Math.min(need, p.remain); if (t <= 0) continue; out.push({lot:p.lot, qty:t}); need -= t; }
+  return {ok: need <= 0.0005, allocations: out, shortage: Math.max(0, need)};
+}
+function splNextNo(day){
+  const base = 'SP' + day.replace(/-/g,'');
+  const used = new Set(SPL.map(p => p.no));
+  for (let n = 1; n < 100; n++) { const no = `${base}-${n}`; if (!used.has(no)) return no; }
+  return base + '-' + Date.now();
+}
+function splKeepForm(){
+  // 다시 그려도 입력 중인 출고처·날짜·비고가 지워지지 않게
+  const d = document.getElementById('spl-dest'), t = document.getElementById('spl-date'), n = document.getElementById('spl-note');
+  if (d) SPL_FORM.dest = d.value; if (t) SPL_FORM.date = t.value; if (n) SPL_FORM.note = n.value;
+}
+function renderShipPlans(){
+  const box = document.getElementById('spl-panel'); if (!box) return;
+  splKeepForm();
+  if (!_splLoaded && (API_URL || IS_GAS)) { loadShipPlans().then(renderShipPlans); }
+  const canEdit = USER_ROLE !== 'viewer';
+  const n = v => (+v||0).toLocaleString();
+  const showDone = document.getElementById('spl-show-done') ? document.getElementById('spl-show-done').checked : false;
+  const list = SPL.filter(p => showDone || p.status === 'wait' || p.status === 'inv')
+    .sort((a,b) => ({wait:0,inv:1,done:2,cancel:3})[a.status] - ({wait:0,inv:1,done:2,cancel:3})[b.status] || String(a.date||'').localeCompare(String(b.date||'')));
+  const tpOpts = (DB.tp||[]).filter(r => r.active !== false).map(r => `<option value="${r.code}">${r.name} (${r.code}) — 재고 ${n(r.cur)}</option>`).join('');
+  const draft = SPL_DRAFT.map((l,i) => {
+    const free = splStock(l.code) - splReserved(l.code);
+    return `<tr><td>${l.name}<div style="font-family:monospace;color:#8A95A3;font-size:11px">${l.code}</div></td><td style="text-align:right;font-weight:600">${n(l.qty)}</td>
+      <td style="text-align:right;color:${free < l.qty ? '#b91c1c' : '#5D6977'}">${n(free)}${free < l.qty ? ' ⚠️' : ''}</td><td style="text-align:center"><button onclick="SPL_DRAFT.splice(${i},1);renderShipPlans()" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></td></tr>`;
+  }).join('');
+  const form = canEdit ? `
+    <div style="border:1px solid var(--line,#DCE1E7);border-radius:8px;padding:12px;margin-bottom:12px;background:#F8FAFC">
+      <div style="font-weight:600;font-size:13px;margin-bottom:8px">➕ 출고 예정 등록 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Đăng ký kế hoạch xuất — 재고는 출고 확정 때 줄어듭니다 / Tồn kho chỉ giảm khi xác nhận xuất</span></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+        <select id="spl-dest">${Object.entries(SPL_DEST).map(([k,v]) => `<option value="${k}" ${SPL_FORM.dest===k?'selected':''}>${v}</option>`).join('')}</select>
+        <label style="font-size:12.5px;color:#5D6977">출고 예정일 / Ngày dự kiến <input type="date" id="spl-date" value="${SPL_FORM.date || bdToday()}"></label>
+        <input id="spl-note" placeholder="비고 / Ghi chú (예: 항공편 대기)" value="${String(SPL_FORM.note||'').replace(/"/g,'&quot;')}" style="flex:1;min-width:180px;padding:7px 9px;border:1px solid var(--line,#DCE1E7);border-radius:8px">
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+        <select id="spl-code" style="min-width:260px"><option value="">모델 선택 / Chọn model</option>${tpOpts}</select>
+        <input id="spl-qty" type="number" min="1" placeholder="수량 / SL" style="width:110px;padding:7px 9px;border:1px solid var(--line,#DCE1E7);border-radius:8px">
+        <button onclick="splAddLine()" style="padding:7px 12px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">추가 / Thêm</button>
+      </div>
+      ${SPL_DRAFT.length ? `<div class="tw" style="margin-bottom:8px"><table><thead><tr><th>모델<span class="vi">Model</span></th><th style="text-align:right">수량<span class="vi">SL</span></th><th style="text-align:right">출고 가능<span class="vi">Có thể xuất</span></th><th></th></tr></thead><tbody>${draft}</tbody></table></div>
+        <button id="spl-save" onclick="splSave()" style="padding:8px 16px;border-radius:8px;border:none;background:#166534;color:#fff;font-weight:700;cursor:pointer">출고 예정 등록 / Đăng ký</button>` : ''}
+    </div>` : '';
+  const rows = list.map(p => {
+    const st = SPL_ST[p.status] || SPL_ST.wait;
+    const lines = splLines(p);
+    const qty = lines.reduce((s,l)=>s+(+l.qty||0),0);
+    const changed = p.invLines && p.invLines.length && JSON.stringify(p.invLines.map(l=>[l.code,+l.qty])) !== JSON.stringify((p.lines||[]).map(l=>[l.code,+l.qty]));
+    const act = [];
+    if ((p.status === 'wait' || p.status === 'inv') && canEdit) act.push(`<button onclick="splConfirm('${p.id}')" style="padding:4px 10px;border-radius:6px;border:none;background:#166534;color:#fff;font-weight:600;cursor:pointer;font-size:12px">출고 확정 / Xác nhận xuất</button>`);
+    if ((p.status === 'wait' || p.status === 'inv') && isAdmin) act.push(`<button onclick="invFromPlan('${p.id}')" style="padding:4px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer;font-size:12px">${p.invNo ? '인보이스 열기' : '인보이스 작성'}</button>`);
+    if (p.status === 'wait' && canEdit) act.push(`<button onclick="splCancel('${p.id}')" title="취소" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>`);
+    return `<tr>
+      <td style="font-family:monospace;font-size:12px">${p.no||''}</td><td style="white-space:nowrap">${p.date||''}</td><td>${(SPL_DEST[p.dest]||p.dest||'').replace(/^\S+\s/,'')}</td>
+      <td style="white-space:normal">${lines.map(l => `${l.name||l.code} <b>${n(l.qty)}</b>`).join('<br>')}${changed ? '<div style="font-size:11px;color:#185FA5">인보이스 수정본 수량 반영</div>' : ''}</td>
+      <td style="text-align:right;font-weight:600">${n(qty)}</td>
+      <td style="white-space:nowrap"><span style="font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;color:${st[2]};background:${st[3]}">${st[0]}</span>${p.invNo ? `<div style="font-family:monospace;font-size:11.5px;margin-top:2px">${p.invNo}${p.invRev ? ` Rev.${p.invRev}` : ''}</div>` : ''}${p.status === 'done' ? `<div style="font-size:11px;color:#8A95A3">${String(p.doneAt||'').slice(0,10)} ${p.doneBy||''}</div>` : ''}</td>
+      <td>${p.createdBy||''}${p.note ? `<div style="font-size:11.5px;color:#5D6977">${p.note}</div>` : ''}</td>
+      <td style="white-space:nowrap">${act.join(' ')}</td></tr>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="ds-head"><h3>📦 출고 예정 <span>/ Kế hoạch xuất kho</span></h3>
+      <label style="font-size:12.5px;color:#5D6977;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="spl-show-done" ${showDone?'checked':''} onchange="renderShipPlans()"> 완료·취소도 보기 / Hiện cả đã xuất</label></div>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">창고에서 출고 예정을 등록 → 관리자가 인보이스 작성 → 트럭·비행기가 나갈 때 <b>출고 확정</b>을 누르면 LOT 오래된 순으로 완제품 출고가 등록됩니다.<br><span style="color:#8A95A3">Kho đăng ký kế hoạch → quản lý lập Invoice → khi hàng rời kho bấm "Xác nhận xuất" để ghi xuất thành phẩm theo LOT cũ trước.</span></div>
+    ${_splLoaded === 'noserver' ? '<div style="color:#b91c1c;font-size:12.5px;margin-bottom:8px">⚠️ 서버(Code.gs)를 새 버전으로 배포해야 출고 예정을 저장할 수 있습니다.</div>' : ''}
+    ${form}
+    <div class="tw"><table><thead><tr><th>예정번호<span class="vi">Số KH</span></th><th>예정일<span class="vi">Ngày</span></th><th>출고처<span class="vi">Nơi nhận</span></th><th>모델·수량<span class="vi">Model · SL</span></th><th style="text-align:right">합계<span class="vi">Tổng</span></th><th>상태<span class="vi">Trạng thái</span></th><th>등록자<span class="vi">Người ĐK</span></th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="8" class="empty">${showDone ? '출고 예정 기록이 없습니다.' : '대기 중인 출고 예정이 없습니다. / Không có kế hoạch xuất đang chờ.'}</td></tr>`}</tbody></table></div>`;
+}
+function splAddLine(){
+  const code = document.getElementById('spl-code').value, q = +document.getElementById('spl-qty').value;
+  if (!code || !(q > 0)) { alert('모델과 수량을 넣어주세요. / Chọn model và nhập số lượng.'); return; }
+  const it = (DB.tp||[]).find(r => r.code === code) || {code, name:code, unit:'Ea'};
+  const ex = SPL_DRAFT.find(l => l.code === code);
+  if (ex) ex.qty += q; else SPL_DRAFT.push({code, name: it.name, unit: it.unit || 'Ea', qty: q});
+  renderShipPlans();
+}
+async function splSave(){
+  if (!SPL_DRAFT.length) return;
+  const over = SPL_DRAFT.filter(l => l.qty > splStock(l.code) - splReserved(l.code));
+  if (over.length && !confirm(`재고(다른 출고 예정 제외)보다 많은 모델이 있습니다: ${over.map(l=>l.name).join(', ')}\n그래도 등록할까요? (출고 확정 때 재고가 부족하면 확정되지 않습니다)`)) return;
+  const date = document.getElementById('spl-date').value || bdToday();
+  const rec = {id:'P'+Date.now(), no: splNextNo(date), date, dest: document.getElementById('spl-dest').value, lines: SPL_DRAFT.map(l => ({...l})),
+    note: document.getElementById('spl-note').value.trim(), status:'wait', createdBy: CURRENT_USER||'', createdAt: new Date().toISOString()};
+  const guard = withButtonGuard('#spl-save', '⏳'); if (guard === null) return;
+  let r; try { r = await api('saveShipPlan', {rec}); } finally { guard.release(); }
+  if (!r || !r.ok) { alert('저장 실패: ' + (r && r.error || '서버 응답 없음') + (r && /unknown action/i.test(r.error||'') ? '\n서버(Code.gs)를 새 버전으로 배포해야 합니다.' : '')); return; }
+  SPL.push(rec); SPL_DRAFT = []; SPL_FORM.note = ''; document.getElementById('spl-note').value = '';
+  renderShipPlans(); if (typeof renderInvPanel === 'function' && isAdmin) renderInvPanel();
+}
+async function splCancel(id){
+  const p = SPL.find(x => x.id === id); if (!p) return;
+  if (!confirm(`출고 예정 ${p.no}을 취소할까요? / Hủy kế hoạch này?`)) return;
+  const rec = {...p, status:'cancel', cancelBy: CURRENT_USER||'', cancelAt: new Date().toISOString()};
+  const r = await api('saveShipPlan', {rec});
+  if (!r || !r.ok) { alert('저장 실패: ' + (r && r.error || '')); return; }
+  Object.assign(p, rec); renderShipPlans();
+}
+async function splSavePlan(p){ const r = await api('saveShipPlan', {rec:p}); return r && r.ok; }
+// ③ 출고 확정: 모델별로 LOT 오래된 순 배정 → 완제품 출고(otp) 등록 → '완료'
+async function splConfirm(id){
+  const p = SPL.find(x => x.id === id); if (!p) return;
+  const lines = splLines(p);
+  if (!p.invNo && !confirm('아직 인보이스가 없습니다. 그래도 출고 확정할까요?\nChưa có Invoice. Vẫn xác nhận xuất?')) return;
+  // 미리 전부 배정해 보고 하나라도 모자라면 아무것도 등록하지 않는다
+  const plans = [];
+  for (const l of lines) {
+    if (p.posted && p.posted[l.code]) continue;   // 지난번에 일부만 등록되고 멈췄다면 이미 등록된 모델은 건너뜀
+    const a = splAlloc(l.code, +l.qty||0);
+    if (!a.ok) { alert(`⛔ 재고 부족 / Không đủ tồn kho\n${l.name}: 요청 ${(+l.qty).toLocaleString()} · 부족 ${a.shortage.toLocaleString()}\n출고 확정을 하지 않았습니다.`); return; }
+    plans.push({l, a});
+  }
+  const summary = lines.map(l => `· ${l.name} ${(+l.qty).toLocaleString()}개`).join('\n');
+  if (!confirm(`출고 확정 / Xác nhận xuất — ${p.no}${p.invNo ? ' · ' + p.invNo : ''}\n${summary}\n\n완제품 출고로 등록하고 재고를 줄입니다. 계속할까요?`)) return;
+  const note = `[출고예정 ${p.no}]${p.invNo ? ' INV ' + p.invNo + (p.invRev ? ' Rev.' + p.invRev : '') : ''}${p.note ? ' ' + p.note : ''}`;
+  p.posted = p.posted || {};
+  const dt = vnDt();
+  for (const {l, a} of plans) {
+    const it = (DB.tp||[]).find(r => r.code === l.code);
+    for (let i = 0; i < a.allocations.length; i++) {
+      const al = a.allocations[i];
+      const entry = {id: Date.now() + i, type:'otp', code:l.code, name:l.name, cat:'TP', unit:l.unit || (it && it.unit) || 'Ea', qty: al.qty, note, lot: al.lot, dt, dest: p.dest};
+      const res = await retrySafe(() => api('addTx', {...entry, token: ADMIN_TOKEN, user: CURRENT_USER||''}));
+      if (!res || !res.ok) {
+        await splSavePlan(p);   // 여기까지 등록된 모델은 기록해 두고 다시 누르면 나머지만 등록
+        alert(`⚠️ 서버 저장 실패 (${l.name} LOT ${al.lot}): ${res && res.error || '알 수 없는 오류'}\n동기화 후 재고를 확인하고, 다시 '출고 확정'을 누르면 남은 것만 등록됩니다.`);
+        await syncNow(); renderShipPlans(); return;
+      }
+      txLog.push(entry);
+      if (it) { it.cur = Math.max(0, it.cur - al.qty); it.total = Math.max(0, (it.total||0) - al.qty); }
+    }
+    p.posted[l.code] = true;
+  }
+  Object.assign(p, {status:'done', doneAt: new Date().toISOString(), doneBy: CURRENT_USER||''});
+  await splSavePlan(p);
+  renderShipPlans(); try { renderIOTable(); initDashboard(); } catch(e) {}
+  if (API_URL || IS_GAS) await syncNow();
+  alert(`✅ 출고 확정 완료 / Đã xác nhận xuất — ${p.no}`);
+}
+// ② 출고 예정 → 인보이스 (관리자)
+function invFromPlan(id){
+  const p = SPL.find(x => x.id === id); if (!p) return;
+  if (p.invNo && (COST.model||{})[invKey(p.invNo)]) { invOpenRecord(invKey(p.invNo)); INV.planId = p.id; return; }
+  const kind = splKindOf(p.dest);
+  document.getElementById('inv-kind').value = kind;
+  invStart(kind, p.date || bdToday(), (p.lines||[]).map(l => ({code:l.code, name:l.name, qty:+l.qty||0})));
+  INV.planId = p.id;
+  renderInvEditor();
+  document.getElementById('inv-panel').scrollIntoView({behavior:'smooth', block:'start'});
+}
+// 인보이스를 저장할 때 연결된 출고 예정에 번호·최종 수량을 남긴다
+async function splLinkInvoice(rec){
+  if (!rec.planId) return;
+  const p = SPL.find(x => x.id === rec.planId); if (!p || p.status === 'done' || p.status === 'cancel') return;
+  Object.assign(p, {invNo: rec.invNo, invRev: rec.rev || 0, invLines: (rec.lines||[]).map(l => ({code:l.code, name:l.name, unit:'Ea', qty:+l.qty||0})), status:'inv'});
+  if (await splSavePlan(p)) renderShipPlans();
 }
 </script>
 </body>
