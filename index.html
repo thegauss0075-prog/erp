@@ -13332,8 +13332,21 @@ let _invCostTried = false;
 // 출고 기록 id → 이미 발행한 인보이스 번호 (ERP에서 만들었거나, 밖에서 만든 번호를 연결한 것)
 function invInvoicedMap(){
   const m = {};
+  // 기준일(이 날짜까지의 출고는 ERP 밖에서 이미 발행 완료) — 출고처별로 따로
+  const cut = invDoc().cutoff || {};
+  (txLog||[]).forEach(t => { if (t.type !== 'otp') return; const k = invKindOf(t.dest), c = cut[k]; if (c && invVNDate(t) && invVNDate(t) <= c) m[String(t.id)] = '이전 발행'; });
   invRecords().forEach(r => (r.shipIds||[]).forEach(id => { m[String(id)] = r.invNo; }));
   return m;
+}
+// 지금까지의 출고를 한 번에 "발행 완료"로 표시 (ERP 도입 전 엑셀로 발행한 출고 정리용)
+async function invSetCutoff(){
+  const kind = document.getElementById('inv-kind').value;
+  const cur = (invDoc().cutoff || {})[kind] || '';
+  const v = (prompt(`${kind==='KR'?'본사':'솔루엠'} 출고 중 이 날짜까지는 모두 인보이스 발행 완료로 표시합니다 (YYYY-MM-DD).\n비우면 해제합니다.\nĐánh dấu đã có Invoice đến ngày này.`, cur || document.getElementById('inv-to').value || bdToday()) ?? '').trim();
+  if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) { alert('날짜 형식은 2026-10-19처럼 넣어주세요.'); return; }
+  const d = JSON.parse(JSON.stringify(invDoc())); d.cutoff = d.cutoff || {};
+  if (v) d.cutoff[kind] = v; else delete d.cutoff[kind];
+  if (await saveCost('model', '_doc', d)) { document.getElementById('inv-from').value = ''; renderInvPanel(); }
 }
 // ERP 밖에서 이미 발행한 인보이스를 선택한 출고에 연결 — 다시 발행하지 않도록 표시만 해 둔다
 async function invLinkExisting(){
@@ -13375,10 +13388,11 @@ function renderInvPanel(){
   const doneCnt = list.filter(t => done[String(t.id)]).length;
   document.getElementById('inv-ship-list').innerHTML = list.length
     ? `<div class="tw"><table><thead><tr><th style="width:30px"><input type="checkbox" checked onchange="document.querySelectorAll('.inv-pick').forEach(c=>c.checked=this.checked)"></th><th>출고일<span class="vi">Ngày xuất</span></th><th>품목<span class="vi">Mặt hàng</span></th><th>LOT</th><th style="text-align:right">수량<span class="vi">SL</span></th><th>출고처<span class="vi">Nơi nhận</span></th><th>등록자<span class="vi">Người ĐK</span></th><th>인보이스<span class="vi">Invoice</span></th></tr></thead><tbody>${
-        list.map(t => `<tr ${done[String(t.id)]?'style="opacity:.6"':''}><td><input type="checkbox" class="inv-pick" value="${t.id}" ${done[String(t.id)]?'':'checked'}></td><td>${t.day}</td><td>${t.name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${t.code}</span></td><td style="font-family:monospace;font-size:12px">${t.lot||'-'}</td><td style="text-align:right;font-weight:600">${n(t.qty)}</td><td>${destNorm(t.dest)||''}</td><td>${t.user||''}</td><td>${done[String(t.id)] ? `<span style="font-family:monospace;font-size:12px;padding:1px 6px;border-radius:999px;background:#DCFCE7;color:#166534">✔ ${done[String(t.id)]}</span>` : '<span style="color:#b45309;font-size:12px">미발행</span>'}</td></tr>`).join('')}</tbody></table></div>
+        list.map(t => `<tr ${done[String(t.id)]?'style="opacity:.6"':''}><td><input type="checkbox" class="inv-pick" value="${t.id}" ${done[String(t.id)]?'':'checked'}></td><td>${t.day}</td><td>${t.name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${t.code}</span></td><td style="font-family:monospace;font-size:12px">${t.lot||'-'}</td><td style="text-align:right;font-weight:600">${n(t.qty)}</td><td>${destNorm(t.dest)||''}</td><td>${t.user||''}</td><td>${done[String(t.id)] ? `<span style="font-family:${done[String(t.id)]==='이전 발행'?'inherit':'monospace'};font-size:12px;padding:1px 6px;border-radius:999px;background:#DCFCE7;color:#166534">✔ ${done[String(t.id)]}</span>` : '<span style="color:#b45309;font-size:12px">미발행</span>'}</td></tr>`).join('')}</tbody></table></div>
        ${doneCnt ? `<div style="font-size:12px;color:#5D6977;margin-top:6px">✔ 표시는 이미 인보이스가 있는 출고입니다(체크 해제됨). / Đã có Invoice.</div>` : ''}
        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="invBuild()" style="padding:8px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">선택한 출고로 서류 작성 / Lập chứng từ →</button>
          <button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성 / Nhập tay trước khi xuất</button>
+         <button onclick="invSetCutoff()" title="ERP 도입 전에 엑셀로 발행한 출고를 날짜 기준으로 한 번에 정리" style="padding:8px 16px;border-radius:8px;border:1px solid var(--line,#DCE1E7);background:#fff;color:#18212B;font-weight:600;cursor:pointer">📌 이 날짜까지 발행 완료 / Đã có đến ngày</button>
          <button onclick="invLinkExisting()" title="ERP 밖에서 이미 만든 인보이스가 있으면 번호만 연결해 '발행됨'으로 표시" style="padding:8px 16px;border-radius:8px;border:1px solid var(--line,#DCE1E7);background:#fff;color:#18212B;font-weight:600;cursor:pointer">🔗 이미 발행한 인보이스 연결 / Gắn Invoice đã có</button></div>`
     : `<div class="empty" style="padding:1.2rem">이 기간에 ${kindEl.value==='KR'?'본사(한국)':'솔루엠'} 출고 기록이 없습니다.<br>출고가 정해졌지만 아직 출고 등록 전이면 품목·수량을 직접 넣어 작성하세요.<br><span style="font-size:12px">Không có dữ liệu xuất kho trong kỳ này. Nếu chưa đăng ký xuất, hãy nhập tay mặt hàng và số lượng.</span>
          <div style="margin-top:10px"><button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성 / Nhập tay trước khi xuất</button></div></div>`;
