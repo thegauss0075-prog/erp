@@ -524,6 +524,8 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     </select>
     <select id="inv-model" onchange="renderInv()"><option value="">전체 모델</option></select>
     <button onclick="openTraceSearch()" style="padding:7px 14px;border-radius:7px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔍 이력 추적</button>
+    <button onclick="openLotTrace()" style="padding:7px 14px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔗 LOT 추적</button>
+    <button onclick="openBonded()" style="padding:7px 14px;border-radius:7px;border:1px solid #1F2D3B;background:#fff;color:#1F2D3B;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🛃 보세 정산</button>
   </div>
   <div id="inv-sub-filter" style="display:none;flex-wrap:wrap;gap:5px;margin-bottom:8px;padding:8px 0"></div>
   <div class="frow" id="inv-tags"></div>
@@ -895,6 +897,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <button onclick="openAddWO()" style="padding:7px 16px;border-radius:7px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 작업지시 추가</button>
     <button onclick="syncNow(true)" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 새로고침</button>
     <div class="sw"><span class="si">🔍</span><input id="wo-q" placeholder="지시번호·코드·품명·LOT 검색..." oninput="renderWO({local:true})"></div>
+    <button onclick="openLotTrace()" style="padding:7px 14px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔗 LOT 추적</button>
   </div>
   <div id="wo-status-btns" style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
     <button class="period-btn on" data-status=""        onclick="setWOStatusFilter('')">전체</button>
@@ -1479,6 +1482,59 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 </div>
 
 <!-- 완제품 출고 현황 (품목별 일자·수량·누계) -->
+<!-- 🚚 자재 발주 등록/수정 -->
+<div class="ov-bg" id="spo-ov">
+  <div class="ov-box" style="max-width:520px">
+    <h3 id="spo-ov-title">➕ 자재 발주 등록</h3>
+    <div class="ov-fr"><label>자재 * / NVL (코드나 품명으로 검색)</label><input id="spo-mat" list="spo-mat-list" placeholder="예: NPL14/L-03 또는 CORE"><datalist id="spo-mat-list"></datalist></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="ov-fr"><label>발주 수량 * / Số lượng</label><input id="spo-qty" type="number" min="0" step="any"></div>
+      <div class="ov-fr"><label>발주번호 / Số PO</label><input id="spo-poNo" placeholder="선택"></div>
+      <div class="ov-fr"><label>발주일 * / Ngày đặt</label><input id="spo-orderDate" type="date"></div>
+      <div class="ov-fr"><label>입고 예정일 / Ngày dự kiến nhập</label><input id="spo-dueDate" type="date"></div>
+    </div>
+    <div class="ov-fr"><label>공급사 / Nhà cung cấp</label><input id="spo-supplier" list="spo-sup-list" placeholder="예: THE GAUSS (본사)"><datalist id="spo-sup-list"></datalist></div>
+    <div class="ov-fr"><label>비고 / Ghi chú</label><input id="spo-note" placeholder="선택 (인보이스 번호, 선적 정보 등)"></div>
+    <label id="spo-closed-row" style="display:flex;align-items:center;gap:6px;font-size:13px;color:#5D6977;margin-top:4px;cursor:pointer"><input type="checkbox" id="spo-closed"> 남은 수량은 더 받지 않음 (발주 종결)</label>
+    <div id="spo-err" style="display:none;color:#b91c1c;font-size:12px;margin-top:8px"></div>
+    <div class="ov-actions"><button class="ov-cancel" onclick="closeOv('spo-ov')">취소</button><button class="ov-save" id="spo-save" onclick="submitSupplyPO()">저장</button></div>
+  </div>
+</div>
+<!-- 🔗 LOT 추적 (2026-10-31) -->
+<div class="ov-bg" id="lot-ov">
+  <div class="ov-box" style="max-width:980px;width:96%;max-height:92vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px">
+      <h3 style="margin:0">🔗 LOT 추적 <span style="font-size:12px;font-weight:400;color:#5D6977">/ Truy xuất LOT — 제품 LOT은 구성 자재와 출고처를, 자재 LOT은 쓰인 제품과 출고처를 보여줍니다</span></h3>
+      <button class="ov-cancel" onclick="closeOv('lot-ov')" style="padding:6px 14px;border-radius:8px;border:none;cursor:pointer;flex-shrink:0">닫기 / Đóng</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <div class="sw"><span class="si">🔍</span><input id="lot-q" list="lot-list" placeholder="LOT 번호 (제품 또는 자재)" onkeydown="if(event.key==='Enter')runLotTrace()"><datalist id="lot-list"></datalist></div>
+      <button onclick="runLotTrace()" style="padding:8px 18px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">추적 / Tra cứu</button>
+    </div>
+    <div id="lot-body"></div>
+  </div>
+</div>
+<!-- 🛃 보세 자재 정산 (2026-10-31) -->
+<div class="ov-bg" id="bonded-ov">
+  <div class="ov-box" style="max-width:1320px;width:96%;max-height:92vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <h3 style="margin:0">🛃 보세 자재 정산 <span style="font-size:12px;font-weight:400;color:#5D6977">/ Đối chiếu quyết toán NVL nhập khẩu — 세관 정산보고서 준비용 내부 대사표</span></h3>
+      <button class="ov-cancel" onclick="closeOv('bonded-ov')" style="padding:6px 14px;border-radius:8px;border:none;cursor:pointer">닫기 / Đóng</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <div class="period-btns">
+        <button class="period-btn" onclick="bdSetPeriod('ytd')">올해 누계</button>
+        <button class="period-btn" onclick="bdSetPeriod('prevMonth')">지난달</button>
+        <button class="period-btn" onclick="bdSetPeriod('prevYear')">작년</button>
+      </div>
+      <div class="date-range"><input type="date" id="bd-from" onchange="renderBonded()"><span>~</span><input type="date" id="bd-to" onchange="renderBonded()"></div>
+      <label style="font-size:12.5px;color:#5D6977;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="bd-vn" onchange="renderBonded()"> 현지 구매 원자재(VN)도 포함</label>
+      <div style="flex:1"></div>
+      <button onclick="exportBondedExcel()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:600">📊 엑셀 다운로드</button>
+    </div>
+    <div id="bd-body"></div>
+  </div>
+</div>
 <div class="ov-bg" id="ship-hist-ov">
   <div class="ov-box" style="max-width:780px;max-height:85vh;overflow-y:auto">
     <h3>📊 완제품 출고 현황 <span style="font-size:12px;font-weight:400;color:#888">— 전 품목 자동 표시 (품목별로 접었다 펼 수 있음)</span></h3>
@@ -1659,6 +1715,25 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <th style="text-align:right">잔량</th><th>납기일</th><th>상태</th><th class="no-print">액션</th>
     </tr></thead><tbody id="po-body"></tbody></table></div>
   <div id="po-empty" style="display:none;color:#aaa;font-size:13px;padding:20px;text-align:center">등록된 발주가 없습니다. "📊 엑셀 업로드로 등록"으로 시작해보세요.</div>
+
+  <!-- 🚚 공급사 자재 발주 · 입고 예정 (2026-10-31) -->
+  <div style="margin-top:2rem;padding-top:1.25rem;border-top:1px solid var(--line,#DCE1E7)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:8px">
+      <h2 style="margin:0;font-size:18px">🚚 자재 발주 · 입고 예정 <span style="font-size:13px;font-weight:400;color:#5D6977">/ Đơn mua NVL · Dự kiến nhập kho</span> <span id="spo-cnt" style="font-size:12px;font-weight:400;color:#5D6977;margin-left:6px"></span></h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="spo-add-btn" onclick="openSupplyPO()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-size:13px;cursor:pointer;font-weight:700">➕ 자재 발주 등록</button>
+        <button onclick="exportSupplyPOExcel()" style="padding:8px 16px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:700">📊 엑셀 다운로드</button>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#5D6977;margin-bottom:.75rem">본사·현지 공급사에 낸 자재 발주입니다. 입고 수량은 따로 입력하지 않아도 됩니다 — 입출고 탭에서 자재 입고를 등록하면 같은 자재의 오래된 발주부터 자동으로 채워집니다.</div>
+    <div class="toolbar">
+      <div class="sw"><span class="si">🔍</span><input id="spo-q" placeholder="발주번호·공급사·자재 검색" oninput="renderSupplyPO()"></div>
+      <label style="font-size:13px;color:#5D6977;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="spo-open-only" checked onchange="renderSupplyPO()"> 미입고만 보기</label>
+    </div>
+    <div class="tw"><table style="width:100%">
+      <thead><tr><th>발주일</th><th>발주번호</th><th>공급사</th><th>자재코드</th><th>품명</th><th style="text-align:right">발주수량</th><th style="text-align:right">입고</th><th style="text-align:right">미입고</th><th>입고예정일</th><th>상태</th><th>비고</th><th class="no-print"></th></tr></thead>
+      <tbody id="spo-body"></tbody></table></div>
+  </div>
 </div>
 
 <!-- ✅ MES 현장입력: 태블릿/폰 카메라로 작업지시 QR을 스캔해서 생산실적/불량을
@@ -2439,7 +2514,7 @@ function go(id){
   if(id==='qc') renderQC({soft:true});
   if(id==='hist') renderHist();
   if(id==='ng'){renderNG();renderNGLog();initNGLogModel();}
-  if(id==='po') renderPO({soft:true});
+  if(id==='po') { renderPO({soft:true}); _goPO(); }
   if(id==='mes') renderMES();
   if(id==='cost') renderCost();
 }
@@ -2753,6 +2828,8 @@ async function renderPO(opts) {
   await loadPO();
   _renderPOBody();
 }
+// 자재 발주(공급사) 목록은 발주관리 탭을 열 때마다 서버에서 새로 받는다
+const _goPO = () => { renderSupplyPO(); loadSupplyPO().then(renderSupplyPO); };
 function _renderPOBody() {
   document.getElementById('po-clear-btn').style.display = isAdmin ? 'inline-block' : 'none';
   const body = document.getElementById('po-body');
@@ -3085,6 +3162,7 @@ function computePOMaterialShortage() {
 function renderPOShortageCard() {
   const wrap = document.getElementById('d-po-shortage-wrap');
   if (!wrap) return;
+  if (typeof _spoTried !== 'undefined' && !_spoTried) loadSupplyPO().then(() => { if (_spoLoaded && SPO.length) renderPOShortageCard(); });
   const { byProduct, noBom } = computePOMaterialShortage();
   const noBomEl = document.getElementById('d-po-shortage-nobom');
   if (!byProduct.length) {
@@ -3101,7 +3179,7 @@ function renderPOShortageCard() {
   const matRow = m => `
         <div onclick="go('inv');document.getElementById('inv-q').value='${m.materialCode}';renderInv()" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0 3px 12px">
           <span style="font-size:12px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="badge ${CB[m.materialCat]}" style="margin-right:6px">${CL[m.materialCat]}</span>${m.materialName} <span style="color:#aaa;font-size:10px;font-family:monospace">${m.materialCode}</span></span>
-          <span style="font-size:12px;font-weight:700;color:#92400e;flex-shrink:0">부족 / Thiếu ${fmt(m.shortQty)}${m.materialUnit || ''}</span>
+          <span style="font-size:12px;font-weight:700;color:#92400e;flex-shrink:0">부족 / Thiếu ${fmt(m.shortQty)}${m.materialUnit || ''}${(() => { const o = (typeof spoOpenQty === 'function') ? spoOpenQty(m.materialCode) : 0; return o > 0 ? ` <span style="font-weight:600;color:${o >= m.shortQty ? '#166534' : '#185FA5'}">· 입고예정 ${fmt(o)}${o >= m.shortQty ? ' ✔' : ''}</span>` : ''; })()}</span>
         </div>`;
   // ✅ 반제품(BTP) 부족분 — 완제품 BOM에 등록된 소요량(qtyPerUnit) 비율 그대로 계산된
   //    반제품 부족 수량이다(완제품 1개당 반제품 1개라고 가정하지 않음 — 예: 3.2KW OUT-L은
@@ -8242,7 +8320,7 @@ var isAdmin      = false;
 var syncTimer    = null;
 var USER_ROLE    = 'viewer';
 // ✅ (원복됨) 한때 베트남 일반(user) 로그인을 "생산"/"품질"/"자재" 비밀번호로 나눠
-//    부서별로 화면을 제한했었으나, 사용자 확정으로 다시 staff2025 하나로 통합하고
+//    부서별로 화면을 제한했었으나, 사용자 확정으로 다시 직원 비밀번호 하나로 통합하고
 //    제한을 없앴다. STAFF_DEPT는 구버전 localStorage 복원 하위호환용으로만 남겨둔다.
 var STAFF_DEPT   = '';
 
@@ -8262,7 +8340,24 @@ var IS_VN = (_urlMode === 'vn' || _urlMode === 'admin' || IS_FLOOR);
 var IS_GAS = (typeof google !== 'undefined' && google.script && google.script.run);
 
 // ── API 호출
-function api(action, body={}) {
+// ✅ [2026-10-31 보안] 서버가 "인증 실패/세션 만료"로 거절하면 조용히 실패하지 않고
+//    로그인 창을 다시 띄운다 (토큰 기간이 끝났을 때).
+let _authPromptAt = 0;
+function isAuthError(r) { return !!(r && r.ok === false && /인증 실패|세션 만료|토큰 없음|다시 로그인/.test(String(r.error||''))); }
+function promptReLogin() {
+  if (USER_ROLE === 'viewer') return;
+  const now = Date.now(); if (now - _authPromptAt < 5000) return; _authPromptAt = now;
+  try { safeLSRemove('_adm'); safeLSRemove('_stf'); } catch(e){}
+  ADMIN_TOKEN = ''; isAdmin = false; try { applyAdminUI(false); } catch(e){}
+  alert('로그인 시간이 끝났습니다. 다시 로그인해주세요.\nPhiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+  try { showLoginModal(); } catch(e){}
+}
+async function api(action, body={}) {
+  const r = await _apiRaw(action, body);
+  if (action !== 'adminLogin' && action !== 'staffLogin' && isAuthError(r)) promptReLogin();
+  return r;
+}
+function _apiRaw(action, body={}) {
   return new Promise((resolve) => {
     try {
       // Apps Script 환경: google.script.run 사용
@@ -8274,15 +8369,14 @@ function api(action, body={}) {
         return;
       }
       // GitHub Pages / 외부 URL 환경: JSONP fallback
-      // ✅ pw 필드 포함 - GAS CORS로 토큰 발급이 안 될 때 비밀번호로 authWrite 통과
+      // ✅ [2026-10-31 보안] 비밀번호는 더 이상 화면 코드에 없다 — 로그인 때 서버가 발급한 토큰만 보낸다.
       if (!API_URL) { resolve({ok:false, error:'API URL 없음'}); return; }
-      const _pw = USER_ROLE==='admin' ? 'tgvn2025!' : (USER_ROLE==='user' ? 'staff2025' : '');
       const cb = 'cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
       const params = new URLSearchParams({
         action,
         token: ADMIN_TOKEN||'',
         user:  CURRENT_USER||'',
-        data:  JSON.stringify({...body, pw: _pw}),
+        data:  JSON.stringify(body),
         callback: cb
       });
       let settled = false; // ✅ 이미 resolve됐는지 추적 (타임아웃 후 늦게 와도 안전하게 무시)
@@ -9590,8 +9684,7 @@ function startAutoSync() {
 // ════════════════════════════════════════════════
 //  권한 시스템 (한국=열람 / 베트남일반=작성 / 관리자=전체)
 // ════════════════════════════════════════════════
-const VN_STAFF_PW = 'staff2025';   // 베트남 일반직원 비밀번호
-const VN_ADMIN_PW = 'tgvn2025!';   // 베트남 관리자 비밀번호
+// ✅ [2026-10-31 보안] 비밀번호는 서버(Code.gs)에서만 확인한다. 화면 코드에는 두지 않는다.
 
 // 권한별 UI 적용
 function applyRoleUI() {
@@ -9682,7 +9775,7 @@ function applyMesButtonDeptUI() {
   document.querySelectorAll('[data-dept]').forEach(el => { el.style.display = ''; });
 }
 
-// ✅ (원복됨) 한때 베트남 일반직원(staff2025) 로그인 시 "현장입력" 탭만 남기고 나머지
+// ✅ (원복됨) 한때 베트남 일반직원 로그인 시 "현장입력" 탭만 남기고 나머지
 //    탭(재고/입출고/작업지시/품질검사/발주 등)을 숨겼으나, 사용자 확정으로 다시 로그인
 //    직후 모든 대시보드 화면을 그대로 볼 수 있도록 제한을 없앴다. 관리자 승격/해제 시의
 //    탭 재조정도 더 이상 필요 없다 — 관리자든 일반직원이든 탭 구성이 동일해졌다.
@@ -9721,67 +9814,35 @@ async function loginVN() {
   //    진행 중이던 요청 위에 또 요청이 겹쳐서 오히려 더 느려졌다. 다른 화면들과
   //    동일한 withButtonGuard(중복 클릭 방지 + ⏳ 표시)로 통일한다.
 
-  // ✅ 관리자 비밀번호 체크
-  if (pw === 'tgvn2025!') {
-    const guard = withButtonGuard('button[onclick="loginVN()"]', '⏳ 확인 중...');
-    if (guard === null) return; // 이미 처리 중 - 중복 클릭 무시
-    // 서버에서 admin 토큰 발급 (timeout이면 재시도 안 함 - 다른 화면들과 동일한 retrySafe)
-    let res;
-    try {
-      res = await retrySafe(() => api('adminLogin', {password: pw}));
-    } finally {
-      guard.release();
-    }
-    // ✅ 예전엔 토큰 발급에 실패해도 그냥 로그인된 것처럼 넘어가서, 이후 관리자
-    //    기능이 이유 없이 다 막히는 혼란스러운 상황이 생겼다 — 관리자 토큰은
-    //    필수이므로 실패하면 명확히 알리고 로그인을 진행하지 않는다.
-    if (!res || !res.ok) {
-      errEl.textContent = '서버 연결 실패: ' + (res && res.error ? res.error : '알 수 없는 오류') + ' — 잠시 후 다시 시도해주세요. / Kết nối máy chủ thất bại, vui lòng thử lại.';
-      errEl.style.display = 'block';
-      return;
-    }
-    CURRENT_USER = name;
-    USER_ROLE    = 'admin';
-    ADMIN_TOKEN = res.token;
-    try { safeLSSet('_adm', res.token); } catch(e){}
+  // ✅ [2026-10-31 보안] 비밀번호 판단은 서버가 한다: 직원 → 관리자 순서로 확인하고,
+  //    서버가 발급한 토큰이 있어야만 로그인된다.
+  const guard = withButtonGuard('button[onclick="loginVN()"]', '⏳ 확인 중...');
+  if (guard === null) return; // 이미 처리 중 - 중복 클릭 무시
+  let staff, admin;
+  try {
+    // 틀린 비밀번호는 다시 보내지 않는다(서버의 무작위 대입 차단 횟수에 이중으로 잡히지 않게) — 네트워크 오류일 때만 1회 재시도
+    const once = async (act) => { let r = await api(act, {password: pw}); if (r && !r.ok && r.error === '네트워크 오류') r = await api(act, {password: pw}); return r; };
+    staff = await once('staffLogin');
+    if (!(staff && staff.ok && staff.token) && staff && staff.error === '비밀번호 오류') admin = await once('adminLogin');
+  } finally { guard.release(); }
+  if (admin && admin.ok && admin.token) {
+    CURRENT_USER = name; USER_ROLE = 'admin'; ADMIN_TOKEN = admin.token;
+    try { safeLSSet('_adm', admin.token); if (admin.staffToken) safeLSSet('_stf', admin.staffToken); } catch(e){}
     try { safeLSSet('erp_username', name); safeLSSet('erp_role', 'admin'); } catch(e){}
-    closeLoginModal();
-    applyRoleUI();
-    startAutoSync();
+    closeLoginModal(); applyRoleUI(); startAutoSync();
     return;
   }
-
-  // ✅ 직원 비밀번호 체크 - 서버에서 staff 토큰 발급
-  //    ✅ (원복됨) 한때 "생산"(staff2025)/"품질"(quality2025)/"자재"(materials2025)로
-  //    비밀번호를 나눠 부서별 화면 제한을 뒀으나, 사용자 확정으로 다시 staff2025
-  //    하나로 통합했다 — 이 비밀번호로 로그인하면 부서 구분 없이 모든 대시보드
-  //    화면을 볼 수 있다.
-  if (pw === 'staff2025') {
-    const guard = withButtonGuard('button[onclick="loginVN()"]', '⏳ 확인 중...');
-    if (guard === null) return; // 이미 처리 중 - 중복 클릭 무시
-    // 서버에서 staff 토큰 발급 받기
-    let res;
-    try {
-      res = await retrySafe(() => api('staffLogin', {password: pw}));
-    } finally {
-      guard.release();
-    }
-    CURRENT_USER = name;
-    USER_ROLE    = 'user';
-    STAFF_DEPT   = '';
-    if (res && res.ok && res.token) {
-      ADMIN_TOKEN = res.token;
-      try { safeLSSet('_stf', res.token); } catch(e){}
-    } else {
-      // ✅ 서버 연결 실패 시에도 로그인 허용 (GitHub Pages 환경 등) — 그대로 유지.
-      // 비밀번호는 클라이언트에서 이미 검증됨
-      console.warn('staff 토큰 발급 실패, 로컬 모드로 진행:', res && res.error);
-      ADMIN_TOKEN = '';
-    }
+  if (staff && staff.ok && staff.token) {
+    CURRENT_USER = name; USER_ROLE = 'user'; STAFF_DEPT = ''; ADMIN_TOKEN = staff.token;
+    try { safeLSSet('_stf', staff.token); } catch(e){}
     try { safeLSSet('erp_username', name); safeLSSet('erp_role', 'user'); safeLSSet('erp_dept', ''); } catch(e){}
-    closeLoginModal();
-    applyRoleUI();
-    startAutoSync();
+    closeLoginModal(); applyRoleUI(); startAutoSync();
+    return;
+  }
+  const last = admin || staff;
+  if (last && last.error && last.error !== '비밀번호 오류') {
+    errEl.textContent = '서버 연결 실패: ' + last.error + ' — 잠시 후 다시 시도해주세요. / Kết nối máy chủ thất bại, vui lòng thử lại.';
+    errEl.style.display = 'block';
     return;
   }
 
@@ -9824,10 +9885,7 @@ function logoutUser() {
 async function ensureStaffToken() {
   if (ADMIN_TOKEN) return ADMIN_TOKEN;
   try { const t = safeLSGet('_stf',''); if (t) { ADMIN_TOKEN = t; return t; } } catch(e){}
-  try {
-    const res = await api('staffLogin', {password:'staff2025'});
-    if (res && res.ok && res.token) { ADMIN_TOKEN = res.token; try{ safeLSSet('_stf', res.token); }catch(e){} }
-  } catch(e){}
+  // 직원 토큰이 없으면(관리자로만 로그인했던 구버전 등) 다시 로그인해야 한다
   return ADMIN_TOKEN;
 }
 
@@ -9837,6 +9895,7 @@ function openAdminLogin() {
     if (confirm('관리자 모드를 해제하시겠습니까?')) {
       isAdmin=false; ADMIN_TOKEN='';
       safeLSRemove('_adm');
+      try { ADMIN_TOKEN = safeLSGet('_stf','') || ''; } catch(e){}
       // ✅ 관리자 해제 후에는 일반 직원 권한으로 계속 사용 (상태변경·실적입력 등)
       if (USER_ROLE === 'admin') { USER_ROLE = 'user'; try{ safeLSSet('erp_role','user'); }catch(e){} }
       applyAdminUI(false);
@@ -9857,14 +9916,10 @@ async function doAdminLogin() {
   if (!pw) return;
   const errEl = document.getElementById('admin-login-err');
   let ok = false; let token = '';
-  if (API_URL) {
-    const res = await api('adminLogin', {password:pw});
-    if (res.ok) { ok=true; token=res.token; }
-    else { if(errEl){errEl.textContent=res.error||'비밀번호 오류';errEl.style.display='block';} return; }
-  } else {
-    if (pw==='tgvn2025!') ok=true;
-    else { if(errEl){errEl.textContent='비밀번호 오류';errEl.style.display='block';} return; }
-  }
+  if (!API_URL) { if(errEl){errEl.textContent='서버 주소(⚙️ API 설정)가 없어 확인할 수 없습니다.';errEl.style.display='block';} return; }
+  const res = await api('adminLogin', {password:pw});
+  if (res.ok && res.token) { ok=true; token=res.token; if (res.staffToken) { try{ safeLSSet('_stf', res.staffToken); }catch(e){} } }
+  else { if(errEl){errEl.textContent=res.error||'비밀번호 오류';errEl.style.display='block';} return; }
   if (ok) {
     ADMIN_TOKEN = token;
     if (token) sessionStorage.setItem('erp_admin_token', token);
@@ -10178,7 +10233,8 @@ function initMultiUser() {
         CURRENT_USER = savedName;
         USER_ROLE    = savedRole;
         if (savedRole === 'admin') {
-          ADMIN_TOKEN = safeLSGet('_adm','') || 'local-admin';
+          ADMIN_TOKEN = safeLSGet('_adm','') || '';
+          if (!ADMIN_TOKEN) { showLoginModal(); return; }
         } else if (savedRole === 'user') {
           // ✅ staff 토큰 복원 - 없으면 재로그인 유도
           const stfToken = safeLSGet('_stf','') || '';
@@ -12545,5 +12601,432 @@ else location.reload();
 
 
 
+<script>
+// ════════════════════════════════════════════════════════════
+//  🛃 보세 자재 정산 (2026-10-31 신규) — 세관 정산보고서(báo cáo quyết toán) 준비용 내부 대사표
+//  - 기간: 시작일~종료일(베트남 날짜). 재고는 "현재고 − 이후 이력"으로 역산한다.
+//  - 원자재: 기초 + 수입(입고) − 생산투입(자재출고) + 조정 = 기말
+//    · BOM 환산: 생산분 = 완제품 생산입고 × BOM + 반제품 재고 증감 × 반제품 BOM
+//                수출분 = 완제품 출고(불량 출고 제외) × BOM
+//    · 재고 제품 속 원자재 = 기말 완제품·반제품 재고 × BOM (세관이 원자재와 함께 대사하는 값)
+//  - 완제품·반제품: 기초 + 생산입고 − 출고 + 조정 = 기말
+// ════════════════════════════════════════════════════════════
+let _bdLast = null;
+function bdTime(t){ const d = Date.parse(t.dt); return isNaN(d) ? (+t.id || 0) : d; }
+function bdDelta(t){
+  const q = +t.qty || 0;
+  if (t.type === 'in' || t.type === 'tp-in') return q;
+  if (t.type === 'omt' || t.type === 'otp') return -q;
+  if (t.type === 'adjust' || t.type === 'sync-fix') return q;
+  return 0;
+}
+function bdVNStart(ymd){ const [y,m,d] = ymd.split('-').map(Number); return Date.UTC(y, m-1, d) - 7*3600e3; }
+function bdToday(){ return new Date(Date.now() + 7*3600e3).toISOString().slice(0,10); }
+function bdBtpBOM(code){
+  const out = {};
+  (BOM||[]).filter(b => b.productCode === code && effectiveBOMCat(b) === 'BTP')
+    .forEach(b => { if (b.materialCode) out[b.materialCode] = (out[b.materialCode]||0) + (+b.qtyPerUnit||0); });
+  return out;
+}
+function bdLedger(items, cat, t0, t1){
+  // 같은 코드가 다른 카테고리에도 있으면 카테고리까지 맞춰서, 아니면 코드만으로 이력을 모은다
+  const allCodes = {}; ['tp','btp','kr','vn','vtth'].forEach(k => (DB[k]||[]).forEach(r => { allCodes[r.code] = (allCodes[r.code]||0) + 1; }));
+  const byKey = {};
+  (txLog||[]).forEach(t => { (byKey[t.code] = byKey[t.code] || []).push(t); });
+  return items.map(it => {
+    const shared = allCodes[it.code] > 1;
+    const txs = (byKey[it.code]||[]).filter(t => !shared || String(t.cat||'').toUpperCase() === cat);
+    const r = {code: it.code, name: it.name, unit: it.unit || '', cur: +it.cur || 0, inQ:0, outQ:0, outNG:0, adj:0, after:0};
+    txs.forEach(t => {
+      const tm = bdTime(t), d = bdDelta(t);
+      if (tm >= t1) { r.after += d; return; }
+      if (tm < t0) return;
+      if (t.type === 'in' || t.type === 'tp-in') r.inQ += +t.qty||0;
+      else if (t.type === 'omt' || t.type === 'otp') { if (t.dest === 'NG') r.outNG += +t.qty||0; else r.outQ += +t.qty||0; }
+      else if (t.type === 'adjust' || t.type === 'sync-fix') r.adj += +t.qty||0;
+    });
+    r.end = r.cur - r.after;
+    r.begin = r.end - r.inQ + r.outQ + r.outNG - r.adj;
+    return r;
+  });
+}
+function bdCompute(from, to, withVN){
+  const t0 = bdVNStart(from), t1 = bdVNStart(to) + 86400e3;
+  const tp  = bdLedger(DB.tp||[],  'TP',  t0, t1);
+  const btp = bdLedger(DB.btp||[], 'BTP', t0, t1);
+  let mats = bdLedger(DB.kr||[], 'KR', t0, t1).map(r => ({...r, src:'KR'}));
+  if (withVN) mats = mats.concat(bdLedger(DB.vn||[], 'VN', t0, t1).map(r => ({...r, src:'VN'})));
+  const prodN = {}, expN = {}, stockN = {};
+  const add = (o, bom, q) => { if (!q) return; Object.entries(bom).forEach(([m,v]) => { o[m] = (o[m]||0) + v*q; }); };
+  const noBOM = [];
+  tp.forEach(r => {
+    const f = costFlatBOM(r.code);
+    if (!Object.keys(f).length) { if (r.inQ || r.outQ) noBOM.push(r.name || r.code); return; }
+    add(prodN, f, r.inQ); add(expN, f, r.outQ); add(stockN, f, Math.max(0, r.end));
+  });
+  btp.forEach(r => {
+    const f = bdBtpBOM(r.code);
+    if (!Object.keys(f).length) return;
+    add(prodN, f, r.end - r.begin); add(stockN, f, Math.max(0, r.end));
+  });
+  const ngIn = {};
+  (ngLog||[]).forEach(t => { const tm = bdTime(t); if (t.type === 'ng-in' && tm >= t0 && tm < t1) ngIn[t.code] = (ngIn[t.code]||0) + (+t.qty||0); });
+  mats.forEach(r => {
+    r.prodNorm = prodN[r.code] || 0; r.expNorm = expN[r.code] || 0; r.inSP = stockN[r.code] || 0;
+    r.loss = r.outQ - r.prodNorm;
+    r.lossRate = r.prodNorm > 0 ? r.loss / r.prodNorm : null;
+    r.ng = ngIn[r.code] || 0;
+  });
+  const active = r => r.begin || r.inQ || r.outQ || r.outNG || r.adj || r.end || r.prodNorm || r.expNorm;
+  return {from, to, withVN, mats: mats.filter(active), tp: tp.filter(active), btp: btp.filter(active), noBOM};
+}
+function openBonded(){
+  const f = document.getElementById('bd-from'), t = document.getElementById('bd-to');
+  if (!f.value) f.value = bdToday().slice(0,4) + '-01-01';
+  if (!t.value) t.value = bdToday();
+  document.getElementById('bonded-ov').classList.add('show');
+  renderBonded();
+}
+function bdSetPeriod(k){
+  const today = bdToday(), y = +today.slice(0,4), m = +today.slice(5,7);
+  const f = document.getElementById('bd-from'), t = document.getElementById('bd-to');
+  if (k === 'ytd') { f.value = y + '-01-01'; t.value = today; }
+  if (k === 'prevYear') { f.value = (y-1) + '-01-01'; t.value = (y-1) + '-12-31'; }
+  if (k === 'prevMonth') { const pm = m === 1 ? 12 : m-1, py = m === 1 ? y-1 : y; const last = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+    f.value = `${py}-${String(pm).padStart(2,'0')}-01`; t.value = `${py}-${String(pm).padStart(2,'0')}-${last}`; }
+  renderBonded();
+}
+function renderBonded(){
+  const from = document.getElementById('bd-from').value, to = document.getElementById('bd-to').value;
+  const box = document.getElementById('bd-body');
+  if (!from || !to || from > to) { box.innerHTML = '<div class="empty">시작일과 종료일을 확인해주세요.</div>'; return; }
+  const c = bdCompute(from, to, document.getElementById('bd-vn').checked);
+  _bdLast = c;
+  const n = v => { const x = Math.round((+v||0)*1000)/1000; return x ? x.toLocaleString(undefined,{maximumFractionDigits:3}) : '-'; };
+  const pct = v => v == null ? '-' : (Math.round(v*1000)/10) + '%';
+  const warnLoss = r => r.lossRate != null && Math.abs(r.lossRate) > 0.05;
+  const notes = [];
+  const neg = c.mats.concat(c.tp, c.btp).filter(r => r.begin < -1e-9 || r.end < -1e-9);
+  if (neg.length) notes.push(['bad', `재고가 마이너스로 계산되는 품목 ${neg.length}개: ${neg.slice(0,6).map(r=>r.name||r.code).join(', ')}${neg.length>6?' 외':''} — 입출고 누락이나 카테고리 오기록을 먼저 바로잡아야 합니다.`]);
+  const lossy = c.mats.filter(warnLoss);
+  if (lossy.length) notes.push(['warn', `실제 투입이 BOM 소요량과 5% 넘게 차이 나는 자재 ${lossy.length}개 — 세관은 이 차이(손실)의 근거를 요구합니다. 불량·공정 손실 기록이나 BOM을 확인하세요.`]);
+  const noNorm = c.mats.filter(r => r.outQ && !r.prodNorm);
+  if (noNorm.length) notes.push(['warn', `투입은 있는데 BOM에 없는 자재 ${noNorm.length}개: ${noNorm.slice(0,6).map(r=>r.name||r.code).join(', ')}${noNorm.length>6?' 외':''}`]);
+  if (c.noBOM.length) notes.push(['warn', `BOM이 없어 원자재 환산이 빠진 완제품: ${c.noBOM.join(', ')}`]);
+  if (!notes.length) notes.push(['good', '마이너스 재고·BOM 누락·5% 초과 손실이 없습니다.']);
+  notes.push(['info', '완제품 출고는 수출, 반제품 출고는 완제품 공정 투입입니다. 재공품(공정 중 재고)은 이력에 없어서 빠져 있습니다. 연말 실사 때 원자재로 환산해 따로 반영하세요.']);
+  const noteColor = {bad:'#b91c1c', warn:'#92400e', good:'#166534', info:'#5D6977'};
+  const th = (k, v, r) => `<th style="text-align:${r?'right':'left'}">${k}<span class="vi">${v}</span></th>`;
+  const tdN = (v, extra='') => `<td style="text-align:right;${extra}">${n(v)}</td>`;
+  const matRows = c.mats.map(r => `<tr>
+      <td><span class="badge ${r.src==='KR'?'b-kr':'b-vn'}">${r.src}</span></td>
+      <td style="font-family:monospace">${r.code}</td><td style="white-space:normal;min-width:180px">${r.name||''}</td><td>${r.unit}</td>
+      ${tdN(r.begin)}${tdN(r.inQ,'color:#166534')}${tdN(r.outQ,'color:#b91c1c')}${tdN(r.adj)}${tdN(r.end,'font-weight:700'+(r.end<0?';color:#b91c1c':''))}
+      ${tdN(r.prodNorm)}<td style="text-align:right;${warnLoss(r)?'color:#b91c1c;font-weight:700':''}">${n(r.loss)} <span style="color:#8A95A3;font-size:11px">${pct(r.lossRate)}</span></td>
+      ${tdN(r.expNorm)}${tdN(r.inSP)}${tdN(r.ng,'color:#8A95A3')}</tr>`).join('');
+  const spRows = (rows, label) => rows.map(r => `<tr><td>${label}</td><td style="font-family:monospace">${r.code}</td><td>${r.name||''}</td><td>${r.unit}</td>
+      ${tdN(r.begin)}${tdN(r.inQ,'color:#166534')}${tdN(r.outQ,'color:#b91c1c')}${tdN(r.outNG)}${tdN(r.adj)}${tdN(r.end,'font-weight:700'+(r.end<0?';color:#b91c1c':''))}</tr>`).join('');
+  box.innerHTML = `
+    <div style="background:#F6F8FA;border:1px solid var(--line,#DCE1E7);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12.5px;line-height:1.8">
+      ${notes.map(([lv,t]) => `<div style="color:${noteColor[lv]}">${({bad:'⛔',warn:'⚠️',good:'✅',info:'ℹ️'})[lv]} ${t}</div>`).join('')}
+    </div>
+    <h4 style="font-size:14px;margin:4px 0 8px">원자재 수불 <span style="font-weight:400;color:#5D6977">/ Nguyên liệu, vật tư nhập khẩu — ${from} ~ ${to}</span></h4>
+    <div class="tw" style="margin-bottom:18px"><table>
+      <thead><tr>${th('구분','Loại')}${th('자재코드','Mã NVL')}${th('품명','Tên NVL')}${th('단위','ĐVT')}
+        ${th('기초재고','Tồn đầu kỳ',1)}${th('수입(입고)','Nhập trong kỳ',1)}${th('생산 투입','Xuất sản xuất',1)}${th('조정','Điều chỉnh',1)}${th('기말재고','Tồn cuối kỳ',1)}
+        ${th('BOM 소요(생산분)','Định mức × SL sản xuất',1)}${th('차이(손실)','Chênh lệch / hao hụt',1)}${th('BOM 소요(수출분)','NVL trong SP đã xuất',1)}${th('재고 제품 속 원자재','NVL trong SP tồn kho',1)}${th('불량 입고(참고)','NG',1)}</tr></thead>
+      <tbody>${matRows || '<tr><td colspan="14" class="empty">해당 기간 원자재 이력이 없습니다.</td></tr>'}</tbody></table></div>
+    <h4 style="font-size:14px;margin:4px 0 8px">완제품·반제품 수불 <span style="font-weight:400;color:#5D6977">/ Thành phẩm, bán thành phẩm</span></h4>
+    <div class="tw"><table>
+      <thead><tr>${th('구분','Loại')}${th('품목코드','Mã SP')}${th('품명','Tên SP')}${th('단위','ĐVT')}
+        ${th('기초재고','Tồn đầu kỳ',1)}${th('생산 입고','Nhập kho sản xuất',1)}${th('출고','Xuất kho (TP: xuất khẩu)',1)}${th('불량 출고','Xuất NG',1)}${th('조정','Điều chỉnh',1)}${th('기말재고','Tồn cuối kỳ',1)}</tr></thead>
+      <tbody>${spRows(c.tp,'<span class="badge b-tp">완제품</span>') + spRows(c.btp,'<span class="badge b-btp">반제품</span>') || '<tr><td colspan="10" class="empty">해당 기간 제품 이력이 없습니다.</td></tr>'}</tbody></table></div>`;
+}
+function exportBondedExcel(){
+  const c = _bdLast; if (!c) return;
+  const r3 = v => Math.round((+v||0)*1000)/1000;
+  const s1 = c.mats.map((r,i) => ({'STT':i+1,'구분':r.src,'자재코드 / Mã NVL':r.code,'품명 / Tên NVL':r.name,'단위 / ĐVT':r.unit,
+    '기초재고 / Tồn đầu kỳ':r3(r.begin),'수입 / Nhập trong kỳ':r3(r.inQ),'생산투입 / Xuất sản xuất':r3(r.outQ),'조정 / Điều chỉnh':r3(r.adj),'기말재고 / Tồn cuối kỳ':r3(r.end),
+    'BOM 소요(생산분) / Định mức × SL SX':r3(r.prodNorm),'차이(손실) / Hao hụt':r3(r.loss),'손실률 / Tỷ lệ hao hụt':r.lossRate==null?'':Math.round(r.lossRate*10000)/100+'%',
+    'BOM 소요(수출분) / NVL trong SP đã xuất':r3(r.expNorm),'재고 제품 속 원자재 / NVL trong SP tồn':r3(r.inSP),'불량 입고(참고) / NG':r3(r.ng)}));
+  const sp = (rows, lbl) => rows.map(r => ({'구분':lbl,'품목코드 / Mã SP':r.code,'품명 / Tên SP':r.name,'단위 / ĐVT':r.unit,
+    '기초재고 / Tồn đầu kỳ':r3(r.begin),'생산입고 / Nhập kho SX':r3(r.inQ),'출고 / Xuất kho':r3(r.outQ),'불량출고 / Xuất NG':r3(r.outNG),'조정 / Điều chỉnh':r3(r.adj),'기말재고 / Tồn cuối kỳ':r3(r.end)}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(s1.length?s1:[{'STT':'(이력 없음)'}]), '원자재_NVL');
+  const s2 = sp(c.tp,'완제품 TP').concat(sp(c.btp,'반제품 BTP'));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(s2.length?s2:[{'구분':'(이력 없음)'}]), '제품_SP');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
+    {'항목':'기간 / Kỳ báo cáo','내용':c.from+' ~ '+c.to},
+    {'항목':'대상','내용':c.withVN?'원자재 KR + VN':'원자재 KR(본사 수입)'},
+    {'항목':'계산 방법','내용':'기말 = 현재고 − 종료일 이후 이력, 기초 = 기말 − 기간 중 입고 + 출고 − 조정'},
+    {'항목':'BOM 소요(생산분)','내용':'완제품 생산입고 × BOM(반제품 펼침) + 반제품 재고 증감 × 반제품 BOM'},
+    {'항목':'BOM 소요(수출분)','내용':'완제품 출고(불량 출고 제외) × BOM'},
+    {'항목':'주의','내용':'세관 제출 양식(Thông tư 121/2025/TT-BTC)으로 옮기기 전 내부 대사용 자료입니다. 재공품은 포함되지 않습니다.'},
+    {'항목':'작성','내용':(CURRENT_USER||'')+' · '+bdToday()}]), '설명');
+  XLSX.writeFile(wb, `보세정산_${c.from}_${c.to}.xlsx`);
+}
+// ════════════════════════════════════════════════════════════
+//  🚚 공급사 자재 발주 · 입고 예정 (2026-10-31 신규)
+//  - 발주는 서버 SUPPLY_PO 시트에 저장(getSupplyPO/saveSupplyPO/deleteSupplyPO)
+//  - 입고 수량은 따로 입력하지 않는다: 자재 입고 이력('in')을 발주일 이후 것부터 같은 자재의
+//    오래된 발주 순서로 채워서 계산한다(고객 발주 잔량을 완제품 출고로 줄이는 것과 같은 방식).
+// ════════════════════════════════════════════════════════════
+let SPO = [], _spoLoaded = false, _spoLoading = null, _spoTried = false;
+async function loadSupplyPO(force){
+  if (!(API_URL || IS_GAS)) return;
+  if (_spoLoading && !force) return _spoLoading;
+  _spoTried = true;
+  _spoLoading = (async () => { const r = await api('getSupplyPO', {}); if (r && r.ok) { SPO = r.data || []; _spoLoaded = true; } })();
+  try { await _spoLoading; } finally { _spoLoading = null; }
+}
+function spoTime(ymd){ return ymd ? Date.UTC(+ymd.slice(0,4), +ymd.slice(5,7)-1, +ymd.slice(8,10)) - 7*3600e3 : 0; }
+function spoAlloc(){
+  // 같은 자재의 입고를 시간 순으로, "그 입고 시점에 이미 발주돼 있던" 가장 오래된 미충족 발주에 채운다.
+  // 종결(closed) 처리한 발주는 종결 시각 이후 입고를 받지 않는다.
+  const filled = {};
+  const groups = {};
+  SPO.forEach(p => { filled[p.id] = 0; const k = p.code + '|' + String(p.cat||'').toUpperCase(); (groups[k] = groups[k] || []).push(p); });
+  Object.entries(groups).forEach(([k, ps]) => {
+    ps.sort((a,b) => String(a.orderDate||'').localeCompare(String(b.orderDate||'')) || String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
+    const [code, cat] = k.split('|');
+    const t0 = spoTime(ps[0].orderDate);
+    (txLog||[]).filter(t => t.type === 'in' && t.code === code && (!cat || !t.cat || String(t.cat).toUpperCase() === cat) && bdTime(t) >= t0)
+      .sort((a,b) => bdTime(a) - bdTime(b)).forEach(t => {
+        const tm = bdTime(t); let left = +t.qty || 0;
+        for (const p of ps) {
+          if (!left) break;
+          if (spoTime(p.orderDate) > tm) break;
+          if (p.closed && p.closedAt && Date.parse(p.closedAt) <= tm) continue;
+          const cap = (+p.qty||0) - filled[p.id]; if (cap <= 0) continue;
+          const take = Math.min(cap, left); filled[p.id] += take; left -= take;
+        }
+      });
+  });
+  return filled;
+}
+function spoRow(p, alloc){
+  const q = +p.qty || 0, got = alloc[p.id] || 0, remain = Math.max(0, q - got);
+  const today = bdToday();
+  const status = (p.closed || remain <= 0) ? 'done' : (p.dueDate && p.dueDate < today ? 'late' : (got > 0 ? 'part' : 'wait'));
+  return {...p, q, got, remain: (p.closed ? 0 : remain), status};
+}
+function spoOpenQty(code){
+  if (!SPO.length) return 0;
+  const a = spoAlloc();
+  return SPO.filter(p => p.code === code).map(p => spoRow(p, a)).reduce((s,r)=>s + r.remain, 0);
+}
+function renderSupplyPO(){
+  const body = document.getElementById('spo-body'); if (!body) return;
+  const onlyOpen = document.getElementById('spo-open-only').checked;
+  const q = (document.getElementById('spo-q').value || '').trim().toLowerCase();
+  const a = spoAlloc();
+  let rows = SPO.map(p => spoRow(p, a));
+  const cnt = {wait:0, part:0, late:0, done:0}; rows.forEach(r => cnt[r.status]++);
+  document.getElementById('spo-cnt').textContent = `미입고 ${cnt.wait+cnt.part+cnt.late}건${cnt.late?` · 지연 ${cnt.late}건`:''} · 완료 ${cnt.done}건`;
+  if (onlyOpen) rows = rows.filter(r => r.status !== 'done');
+  if (q) rows = rows.filter(r => [r.poNo, r.supplier, r.code, r.name].some(v => String(v||'').toLowerCase().includes(q)));
+  rows.sort((x,y) => ({late:0,part:1,wait:2,done:3})[x.status] - ({late:0,part:1,wait:2,done:3})[y.status] || String(x.dueDate||'9').localeCompare(String(y.dueDate||'9')));
+  const lbl = {wait:['대기','#5D6977'], part:['일부 입고','#185FA5'], late:['입고 지연','#b91c1c'], done:['완료','#166534']};
+  const n = v => (+v||0).toLocaleString(undefined,{maximumFractionDigits:3});
+  body.innerHTML = rows.length ? rows.map(r => `<tr>
+      <td>${r.orderDate||'-'}</td><td style="font-family:monospace">${r.poNo||'-'}</td><td>${r.supplier||'-'}</td>
+      <td style="font-family:monospace">${r.code}</td><td>${r.name||''}</td>
+      <td style="text-align:right">${n(r.q)} <span style="color:#8A95A3;font-size:11px">${r.unit||''}</span></td>
+      <td style="text-align:right;color:#166534">${n(r.got)}</td>
+      <td style="text-align:right;font-weight:700;color:${r.remain>0?'#b45309':'#166534'}">${n(r.remain)}</td>
+      <td>${r.dueDate||'-'}</td>
+      <td><span style="color:${lbl[r.status][1]};font-weight:600">${lbl[r.status][0]}</span>${r.closed&&r.got<r.q?' <span style="color:#8A95A3;font-size:11px">(종결)</span>':''}</td>
+      <td style="white-space:normal;color:#5D6977;font-size:12px">${r.note||''}</td>
+      <td class="no-print">${USER_ROLE!=='viewer'?`<button class="edit-btn" title="수정" onclick="openSupplyPO('${r.id}')">✏️</button>`:''}${isAdmin?`<button class="edit-btn" title="삭제" onclick="deleteSupplyPOUI('${r.id}')">🗑️</button>`:''}</td>
+    </tr>`).join('') : `<tr><td colspan="12" class="empty">${SPO.length ? '조건에 맞는 발주가 없습니다.' : '등록된 자재 발주가 없습니다. "➕ 자재 발주 등록"으로 시작하세요.'}</td></tr>`;
+  document.getElementById('spo-add-btn').style.display = USER_ROLE === 'viewer' ? 'none' : '';
+}
+function spoMatList(){
+  return [['KR',DB.kr],['VN',DB.vn],['VTTH',DB.vtth]].flatMap(([cat,arr]) => (arr||[]).filter(r => r.active !== false).map(r => ({cat, code:r.code, name:r.name, unit:r.unit})));
+}
+let _spoEditId = null;
+function openSupplyPO(id){
+  _spoEditId = id || null;
+  const p = id ? SPO.find(x => x.id === id) : null;
+  const dl = document.getElementById('spo-mat-list');
+  dl.innerHTML = spoMatList().map(m => `<option value="${m.code} | ${m.name} | ${m.cat}"></option>`).join('');
+  const sl = document.getElementById('spo-sup-list');
+  const sups = [...new Set(['THE GAUSS (본사)'].concat(SPO.map(x => x.supplier).filter(Boolean)))];
+  sl.innerHTML = sups.map(s => `<option value="${s}"></option>`).join('');
+  document.getElementById('spo-ov-title').textContent = p ? '✏️ 자재 발주 수정' : '➕ 자재 발주 등록';
+  document.getElementById('spo-poNo').value = p ? (p.poNo||'') : '';
+  document.getElementById('spo-supplier').value = p ? (p.supplier||'') : '';
+  document.getElementById('spo-mat').value = p ? `${p.code} | ${p.name||''} | ${p.cat||''}` : '';
+  document.getElementById('spo-qty').value = p ? p.qty : '';
+  document.getElementById('spo-orderDate').value = p ? (p.orderDate||'') : bdToday();
+  document.getElementById('spo-dueDate').value = p ? (p.dueDate||'') : '';
+  document.getElementById('spo-note').value = p ? (p.note||'') : '';
+  document.getElementById('spo-closed').checked = !!(p && p.closed);
+  document.getElementById('spo-closed-row').style.display = p ? '' : 'none';
+  document.getElementById('spo-err').style.display = 'none';
+  document.getElementById('spo-ov').classList.add('show');
+}
+async function submitSupplyPO(){
+  const err = document.getElementById('spo-err');
+  const show = m => { err.textContent = m; err.style.display = 'block'; };
+  const matTxt = document.getElementById('spo-mat').value.trim();
+  const code = matTxt.split('|')[0].trim(), catTxt = (matTxt.split('|')[2]||'').trim();
+  const m = spoMatList().find(x => x.code === code && (!catTxt || x.cat === catTxt)) || spoMatList().find(x => x.code === code);
+  if (!m) return show('자재를 목록에서 골라주세요 (코드 또는 품명으로 검색).');
+  const qty = +document.getElementById('spo-qty').value;
+  if (!(qty > 0)) return show('발주 수량을 입력해주세요.');
+  const orderDate = document.getElementById('spo-orderDate').value;
+  if (!orderDate) return show('발주일을 입력해주세요.');
+  const old = _spoEditId ? SPO.find(x => x.id === _spoEditId) : null;
+  const rec = {
+    id: old ? old.id : ('S' + Date.now()), poNo: document.getElementById('spo-poNo').value.trim(),
+    supplier: document.getElementById('spo-supplier').value.trim(), code: m.code, name: m.name, cat: m.cat, unit: m.unit,
+    qty, orderDate, dueDate: document.getElementById('spo-dueDate').value, note: document.getElementById('spo-note').value.trim(),
+    closed: old ? document.getElementById('spo-closed').checked : false,
+    closedAt: old && document.getElementById('spo-closed').checked ? (old.closedAt || new Date().toISOString()) : '',
+    createdBy: old ? old.createdBy : (CURRENT_USER||''), createdAt: old ? old.createdAt : new Date().toISOString()
+  };
+  const guard = withButtonGuard('#spo-save', '⏳ 저장 중...'); if (guard === null) return;
+  let r; try { r = await api('saveSupplyPO', {rec}); } finally { guard.release(); }
+  if (!r || !r.ok) return show('저장 실패: ' + (r && r.error || '서버 응답 없음') + (r && /unknown action/i.test(r.error||'') ? ' — 서버(Code.gs)를 새 버전으로 배포해야 합니다.' : ''));
+  const i = SPO.findIndex(x => x.id === rec.id); if (i >= 0) SPO[i] = rec; else SPO.push(rec);
+  closeOv('spo-ov'); renderSupplyPO();
+}
+async function deleteSupplyPOUI(id){
+  const p = SPO.find(x => x.id === id); if (!p) return;
+  if (!confirm(`자재 발주를 삭제할까요?\n${p.poNo||''} ${p.name} ${p.qty}${p.unit||''}`)) return;
+  const r = await api('deleteSupplyPO', {id});
+  if (!r || !r.ok) { alert('삭제 실패: ' + (r && r.error || '')); return; }
+  SPO = SPO.filter(x => x.id !== id); renderSupplyPO();
+}
+function exportSupplyPOExcel(){
+  const a = spoAlloc();
+  const rows = SPO.map(p => spoRow(p, a)).map(r => ({'발주일':r.orderDate,'발주번호':r.poNo,'공급사':r.supplier,'구분':r.cat,'자재코드':r.code,'품명':r.name,'단위':r.unit,
+    '발주수량':r.q,'입고수량':r.got,'미입고':r.remain,'입고예정일':r.dueDate,'상태':({wait:'대기',part:'일부 입고',late:'입고 지연',done:'완료'})[r.status],'비고':r.note}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length?rows:[{'발주일':'(없음)'}]), '자재발주');
+  XLSX.writeFile(wb, `자재발주_${bdToday()}.xlsx`);
+}
+// ════════════════════════════════════════════════════════════
+//  🔗 LOT 추적 (2026-10-31 신규) — 고객 클레임·리콜 범위 확인용
+//  - 제품 LOT → 어떤 작업지시로 만들었고, 어떤 자재 LOT이 들어갔는지(반제품은 한 단계 더 펼침) + 어디로 출고됐는지
+//  - 자재 LOT → 어느 작업지시에 쓰였고, 그 결과 나온 제품 LOT과 출고처(영향 범위)
+//  데이터: 작업지시(WO·LOT), 투입 자재(WO_MAT), 산출 LOT(WO_OUT), 입출고 이력(txLog), 품질검사(QC)
+// ════════════════════════════════════════════════════════════
+const lotNorm = v => String(v || '').trim().toUpperCase();
+function lotWOsByOutput(L){
+  const ids = new Set((WO_OUT||[]).filter(o => lotNorm(o.lot) === L).map(o => String(o.workOrderId)));
+  return (WO||[]).filter(w => lotNorm(w.lot) === L || ids.has(String(w.id)));
+}
+function lotMatsOfWO(w){ return (WO_MAT||[]).filter(m => String(m.workOrderId) === String(w.id)); }
+function lotOutputsOfWO(w){
+  const outs = (WO_OUT||[]).filter(o => String(o.workOrderId) === String(w.id));
+  const lots = {}; outs.forEach(o => { const k = o.lot || w.lot || '(LOT 없음)'; lots[k] = (lots[k]||0) + (+o.qty||0); });
+  if (!outs.length && w.lot) lots[w.lot] = +w.producedQty || 0;
+  return Object.entries(lots).map(([lot, qty]) => ({lot, qty}));
+}
+function lotShipments(L, code){
+  return (txLog||[]).filter(t => t.type === 'otp' && lotNorm(t.lot) === L && (!code || t.code === code));
+}
+function lotFmtDt(t){ const d = Date.parse(t && (t.dt || t.createdAt)); return isNaN(d) ? String((t && (t.dt||t.createdAt)) || '-') : new Date(d + 7*3600e3).toISOString().slice(0,16).replace('T',' '); }
+// 제품 LOT 구성(무엇으로 만들었나) — 반제품 LOT이 투입됐으면 그 반제품 작업지시까지 한 단계 더
+function lotBuildTree(L, depth, seen){
+  seen = seen || new Set(); if (seen.has(L) || depth > 3) return []; seen.add(L);
+  return lotWOsByOutput(L).map(w => ({
+    wo: w,
+    mats: lotMatsOfWO(w).map(m => {
+      const ml = lotNorm(m.lot);
+      const sub = (String(m.cat||'').toUpperCase() === 'BTP' && ml) ? lotBuildTree(ml, depth + 1, seen) : [];
+      return {...m, sub};
+    })
+  }));
+}
+// 자재 LOT 사용처(어디에 쓰였나) — 반제품 LOT으로 쓰였으면 그 반제품 LOT을 쓴 완제품까지
+function lotWhereUsed(L, depth, seen){
+  seen = seen || new Set(); if (seen.has(L) || depth > 3) return []; seen.add(L);
+  const rows = (WO_MAT||[]).filter(m => lotNorm(m.lot) === L);
+  const byWO = {};
+  rows.forEach(m => { (byWO[m.workOrderId] = byWO[m.workOrderId] || {qty:0, code:m.code, name:m.name, unit:m.unit}).qty += +m.qty||0; });
+  return Object.entries(byWO).map(([id, u]) => {
+    const w = (WO||[]).find(x => String(x.id) === String(id)) || {id, orderNo: (rows.find(m=>String(m.workOrderId)===String(id))||{}).orderNo};
+    const outs = w.code ? lotOutputsOfWO(w) : [];
+    return {wo: w, used: u, outs: outs.map(o => ({...o,
+      ship: lotShipments(lotNorm(o.lot), w.code),
+      next: String(w.cat||'').toUpperCase() === 'BTP' ? lotWhereUsed(lotNorm(o.lot), depth + 1, seen) : []}))};
+  });
+}
+function openLotTrace(lot){
+  document.getElementById('lot-ov').classList.add('show');
+  const dl = document.getElementById('lot-list');
+  const lots = new Set();
+  (WO||[]).forEach(w => w.lot && lots.add(w.lot)); (WO_OUT||[]).forEach(o => o.lot && lots.add(o.lot)); (WO_MAT||[]).forEach(m => m.lot && lots.add(m.lot));
+  (txLog||[]).forEach(t => t.lot && t.lot !== '__nolot__' && lots.add(t.lot));
+  dl.innerHTML = [...lots].sort().reverse().slice(0, 800).map(l => `<option value="${l}"></option>`).join('');
+  if (lot) document.getElementById('lot-q').value = lot;
+  const need = [];
+  if (!WO.length) need.push(loadWO());
+  if (typeof loadWOOutputLots === 'function') need.push(loadWOOutputLots());
+  if (!WO_MAT.length && typeof loadWOMaterials === 'function') need.push(loadWOMaterials());
+  if (!QC.length) need.push(loadQC());
+  document.getElementById('lot-body').innerHTML = need.length ? '<div class="empty">⏳ 작업지시·투입 자재 기록을 불러오는 중...</div>' : '';
+  Promise.all(need).then(() => { if (document.getElementById('lot-q').value) runLotTrace(); else document.getElementById('lot-body').innerHTML = '<div class="empty">LOT 번호를 입력하면 그 LOT의 구성 자재와 출고처를 보여줍니다.</div>'; });
+  setTimeout(() => document.getElementById('lot-q').focus(), 50);
+}
+function runLotTrace(){
+  const raw = document.getElementById('lot-q').value.trim();
+  const box = document.getElementById('lot-body');
+  if (!raw) { box.innerHTML = '<div class="empty">LOT 번호를 입력해주세요.</div>'; return; }
+  const L = lotNorm(raw);
+  const n = v => (+v||0).toLocaleString(undefined,{maximumFractionDigits:3});
+  const tree = lotBuildTree(L, 0);
+  const used = lotWhereUsed(L, 0);
+  const ships = lotShipments(L);
+  const inTx = (txLog||[]).filter(t => (t.type === 'in' || t.type === 'tp-in') && lotNorm(t.lot) === L);
+  const qcs = (QC||[]).filter(q => lotNorm(q.lot) === L);
+  const sec = (title, html) => `<div style="margin-bottom:16px"><h4 style="font-size:14px;margin:0 0 8px">${title}</h4>${html}</div>`;
+  const card = inner => `<div style="border:1px solid var(--line,#DCE1E7);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff">${inner}</div>`;
+  const shipTable = arr => arr.length ? `<div class="tw"><table><thead><tr><th>출고일</th><th>품목</th><th style="text-align:right">수량</th><th>출고처</th><th>등록자</th></tr></thead><tbody>${
+      arr.map(t => `<tr><td>${lotFmtDt(t)}</td><td>${t.name||t.code}</td><td style="text-align:right">${n(t.qty)} ${t.unit||''}</td><td>${t.dest||'-'}</td><td>${t.user||'-'}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div style="color:#8A95A3;font-size:12.5px">출고 기록 없음 (아직 공장 재고)</div>';
+  const woHead = w => `<div style="font-weight:600">📋 ${w.orderNo||w.id} · ${w.name||''} <span style="font-family:monospace;color:#5D6977;font-size:12px">${w.code||''}</span> <span class="badge ${w.cat==='BTP'?'b-btp':'b-tp'}">${w.cat==='BTP'?'반제품':'완제품'}</span></div>
+      <div style="font-size:12px;color:#5D6977;margin:2px 0 6px">실적 ${n(w.producedQty)} ${w.unit||''} · 라인 ${w.line||'-'} · ${w.status||''} · 시작 ${w.startDate||'-'}</div>`;
+  const lotLink = l => `<a href="javascript:void 0" onclick="document.getElementById('lot-q').value='${String(l||'').replace(/'/g,'')}';runLotTrace()" style="font-family:monospace;color:#185FA5">${l||'(LOT 없음)'}</a>`;
+  const matRows = (mats, lvl) => mats.map(m => `<tr>
+      <td style="padding:4px 8px 4px ${8+lvl*18}px;white-space:normal"><span class="badge ${CB[String(m.cat||'').toUpperCase()]||''}">${CL[String(m.cat||'').toUpperCase()]||m.cat||''}</span> ${m.name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${m.code||''}</span></td>
+      <td style="padding:4px 8px">${m.lot ? lotLink(m.lot) : '<span style="color:#b45309">(LOT 없음)</span>'}</td>
+      <td style="padding:4px 8px;text-align:right">${n(m.qty)} ${m.unit||''}</td>
+      <td style="padding:4px 8px">${String(m.cat||'').toUpperCase()==='BTP' ? '' : lotQCBadge(m.code, m.lot)}</td></tr>` +
+      (m.sub||[]).map(s => `<tr><td colspan="4" style="padding:2px 8px 2px ${26+lvl*18}px;color:#5D6977;font-size:12px;white-space:normal">↳ 반제품 지시서 ${s.wo.orderNo||''}에 들어간 자재</td></tr>` + matRows(s.mats, lvl+1)).join('')).join('');
+  const matList = mats => mats.length ? `<div class="tw"><table style="font-size:12.5px"><thead><tr><th>투입 자재</th><th>자재 LOT</th><th style="text-align:right">수량</th><th>수입검사</th></tr></thead><tbody>${matRows(mats, 0)}</tbody></table></div>`
+    : '<div style="color:#b45309;font-size:12.5px">⚠️ 이 작업지시에 투입 자재 기록이 없습니다 (작업지시 → 추적 화면에서 자재 출고를 등록해야 추적됩니다).</div>';
+  let html = '';
+  if (tree.length) {
+    html += sec('🧩 이 LOT은 무엇으로 만들었나 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Thành phần của LOT</span>', tree.map(t => card(woHead(t.wo) + matList(t.mats))).join(''));
+    html += sec('🚚 이 LOT의 출고 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Xuất kho</span>', shipTable(ships));
+  }
+  if (used.length) {
+    const affected = [];
+    const walk = (list) => list.forEach(u => u.outs.forEach(o => { if (String(u.wo.cat||'').toUpperCase() !== 'BTP') affected.push({lot:o.lot, name:u.wo.name, code:u.wo.code, qty:o.qty, ship:o.ship}); walk(o.next); }));
+    walk(used);
+    const shippedQty = affected.reduce((s,a)=>s+a.ship.reduce((x,t)=>x+(+t.qty||0),0),0);
+    html += sec(`🎯 이 자재 LOT이 쓰인 곳 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Nơi sử dụng — 완제품 LOT ${affected.length}개 · 출고 ${n(shippedQty)}개</span>`,
+      used.map(u => card(woHead(u.wo) + `<div style="font-size:12.5px;margin-bottom:6px">투입 ${n(u.used.qty)} ${u.used.unit||''}</div>` +
+        u.outs.map(o => `<div style="font-size:12.5px;margin:4px 0">→ 산출 LOT <a href="javascript:void 0" onclick="document.getElementById('lot-q').value='${String(o.lot).replace(/'/g,'')}';runLotTrace()" style="font-family:monospace;color:#185FA5;font-weight:600">${o.lot}</a> ${n(o.qty)}개
+          ${o.next.length ? `<div style="margin-left:18px;color:#5D6977">↳ 이 반제품 LOT을 쓴 완제품: ${o.next.map(x => x.outs.map(oo => `<a href="javascript:void 0" onclick="document.getElementById('lot-q').value='${String(oo.lot).replace(/'/g,'')}';runLotTrace()" style="font-family:monospace;color:#185FA5">${oo.lot}</a> (출고 ${n(oo.ship.reduce((s,t)=>s+(+t.qty||0),0))})`).join(', ')).join(', ')}</div>` : ''}
+          ${String(u.wo.cat||'').toUpperCase() !== 'BTP' ? `<div style="margin-left:18px">${shipTable(o.ship)}</div>` : ''}</div>`).join(''))).join(''));
+  }
+  if (inTx.length && !tree.length) html += sec('📥 입고 기록 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Nhập kho</span>', `<div class="tw"><table><thead><tr><th>입고일</th><th>품목</th><th style="text-align:right">수량</th><th>비고</th></tr></thead><tbody>${inTx.map(t => `<tr><td>${lotFmtDt(t)}</td><td>${t.name||t.code} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${t.code}</span></td><td style="text-align:right">${n(t.qty)} ${t.unit||''}</td><td>${t.note||'-'}</td></tr>`).join('')}</tbody></table></div>`);
+  if (qcs.length) html += sec('🔬 품질검사 기록 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Kiểm tra chất lượng</span>', `<div class="tw"><table><thead><tr><th>검사일</th><th>구분</th><th>품목</th><th style="text-align:right">시료/불량</th><th>판정</th><th>검사자</th><th>첨부</th></tr></thead><tbody>${qcs.map(q => `<tr><td>${q.inspDate||lotFmtDt(q)}</td><td>${q.inspType||''}</td><td>${q.name||q.code||''}</td><td style="text-align:right">${n(q.sampleQty)} / ${n(q.defectQty)}</td><td style="font-weight:600;color:${/불|NG|fail/i.test(q.result||'')?'#b91c1c':'#166534'}">${q.result||'-'}</td><td>${q.inspector||'-'}</td><td>${q.attachmentUrl?`<a href="${q.attachmentUrl}" target="_blank" rel="noopener">보기</a>`:'-'}</td></tr>`).join('')}</tbody></table></div>`);
+  if (!tree.length && ships.length) html = sec('🚚 이 LOT의 출고', shipTable(ships)) + html;
+  box.innerHTML = html || `<div class="empty">"${raw}" LOT 기록을 찾지 못했습니다. 철자를 확인하거나 목록에서 골라주세요.</div>`;
+}
+function lotQCBadge(code, lot){
+  const L = lotNorm(lot); if (!L) return '';
+  const q = (QC||[]).find(x => lotNorm(x.lot) === L && (!x.code || x.code === code));
+  if (!q) return '<span style="color:#8A95A3;font-size:11px">수입검사 기록 없음</span>';
+  const bad = /불|NG|fail/i.test(q.result||'');
+  return `<span style="font-size:11px;font-weight:600;color:${bad?'#b91c1c':'#166534'}">수입검사 ${q.result||''}</span>${q.attachmentUrl?` <a href="${q.attachmentUrl}" target="_blank" rel="noopener" style="font-size:11px">성적서</a>`:''}`;
+}
+</script>
 </body>
 </html>
