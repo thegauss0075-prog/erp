@@ -7,6 +7,9 @@
 <meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>베트남 법인 통합 ERP v11 (멀티유저)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Malgun Gothic','맑은 고딕',Arial,sans-serif;font-size:14px;background:#f5f6f8;color:#1a1a2e;line-height:1.5}
@@ -319,6 +322,97 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 .apv-sum-item{flex:1;min-width:100px;background:#f8faff;border-radius:8px;padding:8px 10px;text-align:center}
 .apv-sum-val{font-size:18px;font-weight:800;color:#185FA5}
 .apv-sum-lbl{font-size:11px;color:#888;margin-top:2px}
+
+/* ════════════════════════════════════════
+   🎨 공통 디자인 (2026-10-31) — 화면 전용, 기능·배치 변경 없음
+   페라이트(코어) 남색 머리띠 + 구리(권선) 포인트, 흰 카드, 읽기 쉬운 표
+   ════════════════════════════════════════ */
+:root{
+  --ferrite:#1F2D3B; --ferrite-2:#2A3B4C; --canvas:#EEF1F4; --surface:#FFFFFF;
+  --line:#DCE1E7; --line-soft:#ECEFF3; --ink:#18212B; --muted:#5D6977; --faint:#8A95A3;
+  --primary:#185FA5; --primary-soft:#E8F0F8; --copper:#C8803E;
+  --r-sm:6px; --r-md:8px; --r-lg:10px;
+  --font:'IBM Plex Sans','IBM Plex Sans KR','Malgun Gothic','맑은 고딕',Arial,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,Consolas,monospace;
+}
+@media screen{
+  body{font-family:var(--font);background:var(--canvas);color:var(--ink);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+  button,input,select,textarea{font-family:inherit}
+  .erp{max-width:1440px}
+
+  /* 머리띠: 상단바 + 메뉴를 한 덩어리 남색 띠로 (화면 끝까지) */
+  .top-bar,.nav{background:var(--ferrite);box-shadow:0 0 0 100vmax var(--ferrite);clip-path:inset(0 -100vmax)}
+  .top-bar{border-bottom:none;margin-bottom:0;padding:.7rem 1.5rem .5rem;gap:16px;flex-wrap:wrap}
+  .top-bar h1{color:#fff;font-size:16px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;flex-wrap:wrap;gap:4px}
+  .top-bar h1>span:not(#sync-badge){color:#9FB0C2}
+  .top-right{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto}
+  .top-bar .dt{color:#B9C6D3;font-size:12.5px;margin-right:6px}
+  .top-right>button,.top-right>#user-badge{background:rgba(255,255,255,.06)!important;border:1px solid rgba(255,255,255,.16)!important;color:#DCE4EC!important;border-radius:var(--r-sm)!important;font-size:12.5px!important;padding:5px 11px!important;line-height:1.35}
+  .top-right>button:hover{background:rgba(255,255,255,.14)!important;color:#fff!important}
+  .top-right>#admin-btn.is-on{background:var(--copper)!important;border-color:var(--copper)!important;color:#fff!important;font-weight:600}
+
+  .nav{gap:2px;padding:0 1.25rem;margin-bottom:1.5rem;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}
+  .nav .tb{background:transparent;border:none;border-radius:0;color:#B9C6D3;padding:9px 13px 10px;font-size:13.5px;font-weight:500;white-space:nowrap;border-bottom:3px solid transparent;flex:0 0 auto}
+  .nav .tb .vi{color:#8396AA;opacity:1}
+  .nav .tb:hover:not(.on){background:rgba(255,255,255,.06);color:#fff}
+  .nav .tb.on{background:transparent;color:#fff;font-weight:600;border-bottom-color:var(--copper)}
+  .nav .tb.on .vi{color:#C9D5E0}
+  .tb:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--copper);outline-offset:1px}
+
+  .sec{padding:0 1.5rem}
+
+  /* 카드·패널 */
+  .tw,.io-form,.apv-wrap,.ms-card{border-color:var(--line);border-radius:var(--r-lg)}
+  .ms-card{padding:1rem 1.1rem}
+  .ms-card:hover{border-color:var(--primary);background:#fff;box-shadow:inset 0 -3px 0 var(--primary)}
+  .ms-name{font-size:13px;font-weight:600}
+  .ms-val{font-size:22px;font-weight:600;letter-spacing:-.02em}
+  .ms-lbl{color:var(--faint)}
+  .bar-wrap{background:var(--line-soft)}
+
+  /* 표 */
+  table{font-size:13px}
+  th{background:#F6F8FA;color:var(--muted);font-weight:600;font-size:12px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:1}
+  td{border-bottom:1px solid var(--line-soft);color:var(--ink)}
+  tbody tr:hover td{background:#F7FAFD}
+  .model-hd td{background:#F1F5F9;color:var(--ferrite);font-weight:600;border-top:1px solid var(--line);box-shadow:inset 3px 0 0 var(--primary)}
+  td[style*="monospace"],.mono{font-family:var(--mono)!important;font-size:12px;color:#3A4654}
+  .hi{color:var(--primary)}
+  .empty{color:var(--faint)}
+
+  /* 행 단위 작은 버튼(수정·삭제 아이콘) — 테두리 없이 조용하게 */
+  .edit-btn{border:1px solid transparent!important;background:transparent!important;border-radius:var(--r-sm)!important;opacity:.7;transition:opacity .12s,background .12s}
+  .edit-btn:hover{opacity:1;background:var(--primary-soft)!important;border-color:var(--line)!important}
+  .del-btn{border-radius:var(--r-sm)}
+
+  /* 입력 */
+  select,.sw input,.fr input,.fr select,.ov-fr input,.date-range input[type=date]{border-color:var(--line);border-radius:var(--r-md);color:var(--ink)}
+  select:hover,.sw input:hover,.fr input:hover,.fr select:hover{border-color:#C3CBD5}
+  .fr input:focus,.fr select:focus,.sw input:focus,.ov-fr input:focus,select:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px rgba(24,95,165,.15)}
+  .fr input[readonly]{background:#F4F6F8;color:var(--muted)}
+  .fr label,.ov-fr label{color:var(--muted)}
+
+  /* 버튼 모양 통일(색은 기존 의미 유지) */
+  .toolbar>button,.form-actions button,.cp-actions button,.ov-actions button{border-radius:var(--r-md)!important;font-weight:600}
+  .toolbar>button{min-height:36px}
+  .period-btn,.ftag,.io-tab,.dest-btn,.ng-cat-btn{border-color:var(--line)}
+  .period-btn.on{background:var(--ferrite);border-color:var(--ferrite)}
+  .io-tabs{border-color:var(--line);border-radius:var(--r-md);background:#fff}
+
+  /* 팝업 */
+  .ov-bg{background:rgba(20,30,40,.5)}
+  .ov-box{border-radius:12px;box-shadow:0 16px 48px rgba(15,25,35,.28)}
+
+  @media (max-width:720px){
+    .top-bar{padding:.6rem 1rem .4rem}
+    .top-bar h1{font-size:15px}
+    .top-bar .dt{width:100%;order:-1;margin:0}
+    .top-right{margin-left:0}
+    .nav{padding:0 .5rem}
+    .sec{padding:0 1rem}
+  }
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
@@ -326,7 +420,13 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 <div class="erp">
 <div class="top-bar">
   <h1>🏭 베트남 법인 통합 ERP <span>/ Hệ thống ERP Tổng hợp</span> <span id="sync-badge" style="font-size:11px;padding:2px 8px;border-radius:999px;background:#fef3c7;color:#92400e;margin-left:8px">⏳ 연결 중...</span></h1>
+  <div class="top-right">
   <span class="dt"></span>
+  <span id="user-badge" style="font-size:12px;padding:5px 12px;border-radius:7px;background:#f0f4ff;color:#1d4ed8;border:1px solid #c7d7fe">👤 <span id="user-label">-</span></span>
+  <button onclick="logoutUser()" style="padding:6px 12px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555" title="로그아웃 / Đăng xuất">🚪 로그아웃 / Đăng xuất</button>
+  <button id="admin-btn" onclick="openAdminLogin()" style="padding:6px 14px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555">🔐 관리자</button>
+  <button onclick="document.getElementById('api-ov').classList.add('show')" style="padding:6px 10px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#888" title="API 설정">⚙️</button>
+  </div>
 </div>
 <div class="nav">
   <button class="tb on" onclick="go('dashboard')">📊 대시보드<span class="vi">Tổng quan</span></button>
@@ -340,11 +440,6 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <button class="tb" onclick="go('po')">📧 발주관리<span class="vi">Quản lý đặt hàng</span></button>
   <button class="tb" onclick="go('mes')">📷 현장입력<span class="vi">Nhập liệu tại xưởng</span></button>
   <button class="tb" id="tb-cost" onclick="go('cost')" style="display:none">💰 제조원가<span class="vi">Giá thành SX</span></button>
-  <div style="flex:1"></div>
-  <span id="user-badge" style="font-size:12px;padding:5px 12px;border-radius:7px;background:#f0f4ff;color:#1d4ed8;border:1px solid #c7d7fe">👤 <span id="user-label">-</span></span>
-  <button onclick="logoutUser()" style="padding:6px 12px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555" title="로그아웃 / Đăng xuất">🚪 로그아웃 / Đăng xuất</button>
-  <button id="admin-btn" onclick="openAdminLogin()" style="padding:6px 14px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555">🔐 관리자</button>
-  <button onclick="document.getElementById('api-ov').classList.add('show')" style="padding:6px 10px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#888" title="API 설정">⚙️</button>
 </div>
 
 <!-- DASHBOARD -->
@@ -9788,6 +9883,7 @@ function applyAdminUI(on) {
     btn.style.background   = on ? '#fef3c7' : '#fff';
     btn.style.color        = on ? '#92400e' : '#555';
     btn.style.borderColor  = on ? '#f59e0b' : '#dde';
+    btn.classList.toggle('is-on', !!on);
   }
   const addBtn = document.getElementById('add-item-btn');
   if (addBtn) addBtn.style.display = on ? 'inline-block' : 'none';
