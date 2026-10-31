@@ -13397,7 +13397,9 @@ function invStart(kind, day, lines){
   const md = invModeDefaults(kind, mode);
   INV = {
     kind, mode, invNo: 'TG' + day.replace(/-/g,''), invDate: day, shipDate: day,
-    contact: tpl.contact || invDoc().contact || '', phone: tpl.phone || invDoc().phone || '',
+    // 기본값: 기존 인보이스에 쓰던 담당자·연락처(본사용/솔루엠용이 달랐음) — 화면에서 고치면 저장된 값이 우선
+    contact: tpl.contact || invDoc().contact || 'Kim Insun',
+    phone: tpl.phone || invDoc().phone || (kind === 'KR' ? '+84-936 733 956' : '+84-038 883 7593'),
     vessel: md.vessel, from: md.from, to: md.to,
     incoterm: kind === 'KR' ? (tpl.incoterm || 'EXW') : (tpl.incoterm || 'DDP'),
     net:'', gross:'', cbm:'', pallets:'', dims:'',
