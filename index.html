@@ -13450,7 +13450,7 @@ function renderInvPanel(){
   const box = document.getElementById('inv-panel'); if (!box) return;
   if (!isAdmin) { box.style.display = 'none'; return; }
   box.style.display = '';
-  if (COST_SERVER_OK !== true && !_invCostTried && (API_URL || IS_GAS)) { _invCostTried = true; loadCost().then(() => { if (INV) { INV = null; } renderInvPanel(); }); }
+  if (COST_SERVER_OK !== true && !_invCostTried && (API_URL || IS_GAS)) { _invCostTried = true; loadCost().then(() => { if (INV) { INV = null; } renderInvPanel(); if (typeof renderShipPlans==='function') renderShipPlans(); }); }
   renderInvImgRow(); renderInvRecords();
   const pick = document.getElementById('inv-plan-pick');
   if (pick) {
