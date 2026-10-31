@@ -419,6 +419,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   .ds-body{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
   @media (max-width:900px){ .ds-body{grid-template-columns:1fr} }
   /* 작업지시 표: 좁은 화면에서도 액션 버튼까지 한 화면에 보이게 */
+  .inv-grid label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #tab-wo th,#tab-wo td{padding-left:6px;padding-right:6px}
   #tab-wo td.wo-actions{white-space:normal;min-width:128px;max-width:132px;line-height:1.9}
   #tab-wo td.wo-actions .edit-btn{padding:2px 3px!important;margin:0!important}
@@ -13617,9 +13618,9 @@ function renderInvEditor(){
         <input value="${String(INV.revNote||'').replace(/"/g,'&quot;')}" oninput="INV.revNote=this.value" placeholder="수정 사유 (예: 통관 시 수량 정정 1,000→980)" style="flex:1;min-width:240px;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12.5px">
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" ${INV.markRevised!==false?'checked':''} onchange="INV.markRevised=this.checked"> 엑셀에 REVISED 표시</label></div>` : ''}
       ${missing.length?`<div style="color:#b45309;font-size:12.5px;margin-bottom:8px">⚠️ 단가·HS코드·박스 입수가 비어 있는 품목: ${missing.join(', ')} — 아래 표에서 채워 주세요.</div>`:''}
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px">
+      <div class="inv-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px;align-items:end">
         ${f('인보이스 번호 / Số Invoice','invNo',INV.invNo)}${f('인보이스 일자 / Ngày Invoice','invDate',INV.invDate,'date')}${f('출항·출발일 / Ngày khởi hành','shipDate',INV.shipDate,'date')}
-        <div class="ov-fr" style="margin:0"><label>운송 방법 / Phương thức vận chuyển</label><select onchange="invSetMode(this.value)" style="width:100%">${Object.entries(INV_MODES).map(([k,v]) => `<option value="${k}" ${INV.mode===k?'selected':''}>${v.lbl}</option>`).join('')}</select></div>
+        <div class="ov-fr" style="margin:0"><label>운송 방법 / Vận chuyển</label><select onchange="invSetMode(this.value)" style="width:100%;padding:6px 8px;font-size:13px">${Object.entries(INV_MODES).map(([k,v]) => `<option value="${k}" ${INV.mode===k?'selected':''}>${v.lbl}</option>`).join('')}</select></div>
         <div class="ov-fr" style="margin:0"><label>${(INV_MODES[INV.mode]||INV_MODES.TRUCK).fieldKo}</label><input value="${String(INV.vessel||'').replace(/"/g,'&quot;')}" placeholder="${(INV_MODES[INV.mode]||INV_MODES.TRUCK).ph}" oninput="invSet('vessel', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>
         ${f('출발지 / Nơi đi','from',INV.from)}${f('도착지 / Nơi đến','to',INV.to)}
         ${f('인도조건 / Điều kiện giao hàng','incoterm',INV.incoterm)}${f('담당자(영문) / Người phụ trách','contact',INV.contact)}${f('연락처 / Điện thoại','phone',INV.phone)}
