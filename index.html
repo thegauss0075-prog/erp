@@ -13402,12 +13402,20 @@ function invSetMode(mode){
   INV.mode = mode; Object.assign(INV, invModeDefaults(INV.kind, mode));
   renderInvEditor();
 }
+// 인보이스 번호: TG+날짜, 같은 날 이미 만든 번호가 있으면 -2, -3 … (같은 번호로 저장하면 이전 기록을 덮어쓰므로)
+function invNextNo(day){
+  const base = 'TG' + day.replace(/-/g,'');
+  const used = new Set(Object.values(COST.model||{}).filter(v => v && v.invNo).map(v => String(v.invNo).toUpperCase()));
+  if (!used.has(base)) return base;
+  for (let n = 2; n < 100; n++) if (!used.has(`${base}-${n}`)) return `${base}-${n}`;
+  return base;
+}
 function invStart(kind, day, lines){
   const tpl = (invDoc().tpl||{})[kind] || {};
   const mode = tpl.mode || (kind === 'KR' ? 'AIR' : 'TRUCK');
   const md = invModeDefaults(kind, mode);
   INV = {
-    kind, mode, invNo: 'TG' + day.replace(/-/g,''), invDate: day, shipDate: day,
+    kind, mode, invNo: invNextNo(day), invDate: day, shipDate: day,
     // 기본값: 기존 인보이스에 쓰던 담당자·연락처(본사용/솔루엠용이 달랐음) — 화면에서 고치면 저장된 값이 우선
     contact: tpl.contact || invDoc().contact || 'Kim Insun',
     phone: tpl.phone || invDoc().phone || (kind === 'KR' ? '+84-936 733 956' : '+84-038 883 7593'),
