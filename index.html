@@ -1848,6 +1848,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <div class="date-range"><input type="date" id="inv-from" onchange="INV=null;renderInvPanel()"><span>~</span><input type="date" id="inv-to" onchange="INV=null;renderInvPanel()"></div>
     </div>
     <div id="inv-img-row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:12px"></div>
+    <div id="inv-records"></div>
     <div id="inv-ship-list"></div>
     <div id="inv-editor"></div>
   </div>
@@ -13323,7 +13324,7 @@ function renderInvPanel(){
   if (!isAdmin) { box.style.display = 'none'; return; }
   box.style.display = '';
   if (COST_SERVER_OK !== true && !_invCostTried && (API_URL || IS_GAS)) { _invCostTried = true; loadCost().then(() => { if (INV) { INV = null; } renderInvPanel(); }); }
-  renderInvImgRow();
+  renderInvImgRow(); renderInvRecords();
   const kindEl = document.getElementById('inv-kind'), fEl = document.getElementById('inv-from'), tEl = document.getElementById('inv-to');
   if (!fEl.value) {
     const last = (txLog||[]).filter(t => t.type === 'otp' && invKindOf(t.dest) === kindEl.value).map(invVNDate).filter(Boolean).sort().pop() || bdToday();
@@ -13477,6 +13478,45 @@ async function invSaveMaster(){
   d.tpl[INV.kind + '_' + INV.mode] = {from:INV.from, to:INV.to};
   if (JSON.stringify(d) !== JSON.stringify(invDoc())) await saveCost('model', '_doc', d);
 }
+// ── 만든 인보이스 보관: 나중에 편명·AWB·C/O 정보를 넣어 같은 번호로 다시 만들 수 있게 (관리자 전용 서버 데이터)
+function invRecords(){
+  return Object.entries(COST.model||{}).filter(([k]) => k.startsWith('_inv_')).map(([k,v]) => ({key:k, ...v}))
+    .sort((a,b) => String(b.savedAt||'').localeCompare(String(a.savedAt||'')));
+}
+async function invSaveRecord(){
+  const rec = JSON.parse(JSON.stringify(INV)); rec.savedAt = new Date().toISOString(); rec.savedBy = CURRENT_USER || '';
+  const key = '_inv_' + String(INV.invNo || '').replace(/[^A-Za-z0-9_-]/g, '');
+  if (key === '_inv_') return;
+  if (await saveCost('model', key, rec)) renderInvRecords();
+}
+function invOpenRecord(key){
+  const r = (COST.model||{})[key]; if (!r) return;
+  INV = JSON.parse(JSON.stringify(r)); delete INV.savedAt; delete INV.savedBy;
+  document.getElementById('inv-kind').value = INV.kind;
+  renderInvEditor();
+  document.getElementById('inv-editor').scrollIntoView({behavior:'smooth', block:'start'});
+}
+async function invDeleteRecord(key){
+  if (!confirm('이 인보이스 기록을 목록에서 지울까요? (이미 내려받은 엑셀 파일은 그대로입니다)')) return;
+  if (await saveCost('model', key, null)) renderInvRecords();
+}
+function renderInvRecords(){
+  const el = document.getElementById('inv-records'); if (!el) return;
+  const list = invRecords();
+  if (!list.length) { el.innerHTML = ''; return; }
+  const modeLbl = m => (INV_MODES[m] || {}).lbl || '';
+  el.innerHTML = `<details ${list.some(r => r.mode && r.mode !== 'TRUCK' && !r.vessel) ? 'open' : ''} style="margin-bottom:12px">
+    <summary style="cursor:pointer;font-weight:600;font-size:13px">📁 만든 인보이스 ${list.length}건 <span style="font-weight:400;color:#5D6977;font-size:12px">— 열어서 편명·AWB 번호 등을 넣고 같은 번호로 다시 만들 수 있습니다</span></summary>
+    <div class="tw" style="margin-top:8px"><table><thead><tr><th>인보이스 번호</th><th>일자</th><th>출고처</th><th>운송</th><th>편명·선박·AWB</th><th style="text-align:right">수량</th><th style="text-align:right">금액 USD</th><th></th></tr></thead><tbody>${
+      list.slice(0, 30).map(r => {
+        const qty = (r.lines||[]).reduce((s,l)=>s+(+l.qty||0),0);
+        const amt = r.kind === 'KR' ? (r.lines||[]).reduce((s,l)=>s+(+l.qty||0)*((+l.fee||0)+(+l.foc||0)),0) : (r.lines||[]).reduce((s,l)=>s+(+l.qty||0)*(+l.sale||0),0);
+        const needVessel = r.mode && r.mode !== 'TRUCK' && !r.vessel;
+        return `<tr><td style="font-family:monospace;font-weight:600">${r.invNo||''}</td><td>${r.invDate||''}</td><td>${r.kind==='KR'?'본사':'솔루엠'}</td><td>${modeLbl(r.mode)}</td>
+          <td>${needVessel ? '<span style="color:#b45309">⚠️ 미입력</span>' : (r.vessel||'-')}</td><td style="text-align:right">${qty.toLocaleString()}</td><td style="text-align:right">$${amt.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+          <td style="white-space:nowrap"><button class="edit-btn" title="열기" onclick="invOpenRecord('${r.key}')">✏️</button><button class="edit-btn" title="목록에서 지우기" onclick="invDeleteRecord('${r.key}')">🗑️</button></td></tr>`;
+      }).join('')}</tbody></table></div></details>`;
+}
 async function invMakeExcel(){
   if (!INV) return;
   if (!INV.lines.length) { alert('품목을 하나 이상 넣어주세요.'); return; }
@@ -13503,6 +13543,7 @@ async function invMakeExcel(){
     a.download = `${INV.invNo}_INV_PK_${INV.kind==='KR'?'THEGAUSS':'SOLUM'}.xlsx`;
     document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     invSaveMaster().catch(() => {});
+    invSaveRecord().catch(() => {});
   } catch(e) { alert('엑셀 만들기 실패: ' + e.message); }
   finally { guard.release(); }
 }
