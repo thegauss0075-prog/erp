@@ -459,6 +459,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <button class="tb" onclick="go('ng')">⚠️ 불량(NG)<span class="vi">Hàng lỗi (NG)</span></button>
   <button class="tb" onclick="go('po')">📧 발주관리<span class="vi">Quản lý đặt hàng</span></button>
   <button class="tb" onclick="go('mes')">📷 현장입력<span class="vi">Nhập liệu tại xưởng</span></button>
+  <button class="tb" id="tb-ship" onclick="go('ship')">🚚 출고 현황<span class="vi">Tình hình xuất kho</span></button>
   <button class="tb" id="tb-cost" onclick="go('cost')" style="display:none">💰 제조원가<span class="vi">Giá thành SX</span></button>
 </div>
 
@@ -486,8 +487,6 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     </table>
   </div>
 
-  <div id="d-ship-panel" class="ds-panel"></div>
-
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:1.25rem">
     <div class="ms-card" onclick="go('inv');setIC('TP')"><div class="ms-name">완제품 (TP)<span class="vi">Thành phẩm (TP)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-tp-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div><div class="ms-stat"><div class="ms-val hi" id="d-tp">-</div><div class="ms-lbl">총합 / Tổng</div></div></div></div>
     <div class="ms-card" onclick="go('inv');setIC('BTP')"><div class="ms-name">반제품 (BTP)<span class="vi">Bán thành phẩm (BTP)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-btp-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div><div class="ms-stat"><div class="ms-val hi" id="d-btp">-</div><div class="ms-lbl">총합 / Tổng</div></div></div></div>
@@ -495,6 +494,9 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <div class="ms-card" onclick="go('inv');setIC('VN')"><div class="ms-name">원자재 VN<span class="vi">NVL Việt Nam (VN)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-vn-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div></div></div>
     <div class="ms-card" onclick="go('inv');setIC('VTTH')"><div class="ms-name">소모품<span class="vi">Vật tư tiêu hao</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-vtth-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div></div></div>
     <div class="ms-card" onclick="go('ng')"><div class="ms-name" style="color:#b91c1c">불량 (NG)<span class="vi">Hàng lỗi (NG)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val ngc" id="d-ng-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div></div></div>
+  </div>
+  <div style="margin-bottom:1.25rem">
+    <button onclick="go('ship')" style="width:100%;padding:12px 18px;border-radius:12px;border:1.5px solid #7c3aed;background:#f5f3ff;color:#5b21b6;font-size:15px;font-weight:700;cursor:pointer">🚚 완제품 출고 현황 보기 / Xem tình hình xuất kho thành phẩm</button>
   </div>
   <div id="d-low-stock-wrap" style="display:none;background:#fff;border:1.5px solid #fca5a5;border-radius:12px;padding:1.1rem;margin-bottom:1.25rem">
     <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:#b91c1c">⚠️ 안전재고 미달 품목 / Mặt hàng dưới mức tồn kho an toàn <span id="d-low-stock-cnt" style="font-weight:400;color:#888;font-size:12px"></span></div>
@@ -1838,6 +1840,10 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   </div>
 </div>
 
+<div id="tab-ship" class="sec">
+  <div id="d-ship-panel" class="ds-panel"></div>
+</div>
+
 <div id="tab-mes" class="sec">
   <div style="max-width:640px;margin:0 auto">
     <div style="text-align:center;padding:16px 0 14px">
@@ -2522,7 +2528,7 @@ function go(id){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.tb').forEach(b=>b.classList.remove('on'));
   document.getElementById('tab-'+id).classList.add('on');
-  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,qc:5,hist:6,ng:7,po:8,mes:9,cost:10};
+  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,qc:5,hist:6,ng:7,po:8,mes:9,ship:10,cost:11};
   document.querySelectorAll('.tb')[order[id]].classList.add('on');
   if(id==='inv'){initMS();renderInv();}
   if(id==='io') renderIOTable();
@@ -2534,6 +2540,7 @@ function go(id){
   if(id==='po') { renderPO({soft:true}); _goPO(); }
   if(id==='mes') renderMES();
   if(id==='cost') renderCost();
+  if(id==='ship') renderShipPanel();
 }
 function setIC(c){document.getElementById('inv-cat').value=c;initMS();renderInv();}
 
@@ -8212,7 +8219,7 @@ function initDashboard(){
   if(el('d-ng-cnt'))   el('d-ng-cnt').textContent   = DB.ng.length;
 
   el('d-tp').textContent=DB.tp.reduce((s,r)=>s+r.total,0).toLocaleString();
-  try { if (typeof renderShipPanel === 'function') renderShipPanel(); } catch(e) { console.warn('출고 현황 패널', e); }
+  try { const sp = document.getElementById('tab-ship'); if (sp && sp.classList.contains('on') && typeof renderShipPanel === 'function') renderShipPanel(); } catch(e) { console.warn('출고 현황 패널', e); }
   el('d-btp').textContent=DB.btp.reduce((s,r)=>s+r.total,0).toLocaleString();
 
   // ✅ 안전재고 미달 품목 (min이 설정되어 있고, 현재고가 그 아래인 품목만)
