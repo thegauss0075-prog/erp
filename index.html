@@ -13375,7 +13375,7 @@ function invDelLine(i){ INV.lines.splice(i, 1); renderInvEditor(); }
 //    마지막으로 쓴 출발지·도착지는 출고처+운송방법별로 저장돼 다음에 그대로 채워진다.
 const INV_MODES = {
   TRUCK:   {lbl:'트럭', field:'(6) Vessel / Voyage:', ph:'BY TRUCK', from:'HAI PHONG, VIET NAM', to:'PHU THO, VIET NAM', fieldKo:'운송 / 차량'},
-  SEA:     {lbl:'해상', field:'(6) Vessel / Voyage:', ph:'선박명 / 항차 (예: SITC HAIPHONG V.2610N)', from:'HAI PHONG PORT, VIET NAM', to:'BUSAN PORT, KOREA', fieldKo:'선박명 / 항차'},
+  SEA:     {lbl:'해상', field:'(6) Vessel / Voyage:', ph:'선박명 / 항차 (예: SITC HAIPHONG V.2610N)', from:'HAI PHONG PORT, VIET NAM', to:'INCHEON PORT, KOREA', fieldKo:'선박명 / 항차'},
   AIR:     {lbl:'항공', field:'(6) Flight No.:', ph:'항공편 (예: WE272/26OCT)', from:'Ha Noi, Viet Nam', to:'INCHEON AIRPORT', fieldKo:'항공편'},
   EXPRESS: {lbl:'특송', field:'(6) Courier / AWB No.:', ph:'특송사 / AWB 번호 (예: DHL 1234567890)', from:'Ha Noi, Viet Nam', to:'Republic of Korea', fieldKo:'특송사 / AWB 번호'}
 };
