@@ -13721,13 +13721,13 @@ function renderInvRecords(){
   const list = invRecords();
   if (!list.length) { el.innerHTML = ''; return; }
   const modeLbl = m => (INV_MODES[m] || {}).lbl || '';
-  el.innerHTML = `<details ${list.some(r => r.mode && r.mode !== 'TRUCK' && !r.vessel) ? 'open' : ''} style="margin-bottom:12px">
+  el.innerHTML = `<details ${list.some(r => !r.external && r.mode && r.mode !== 'TRUCK' && !r.vessel) ? 'open' : ''} style="margin-bottom:12px">
     <summary style="cursor:pointer;font-weight:600;font-size:13px">📁 만든 인보이스 / Invoice đã lập ${list.length}건 <span style="font-weight:400;color:#5D6977;font-size:12px">— 열어서 편명·AWB 번호 등을 넣고 같은 번호로 다시 만들 수 있습니다</span></summary>
     <div class="tw" style="margin-top:8px"><table><thead><tr><th>인보이스 번호<span class="vi">Số Invoice</span></th><th>일자<span class="vi">Ngày</span></th><th>출고처<span class="vi">Nơi nhận</span></th><th>운송<span class="vi">Vận chuyển</span></th><th>편명·선박·AWB<span class="vi">Chuyến / AWB</span></th><th style="text-align:right">수량<span class="vi">SL</span></th><th style="text-align:right">금액 USD<span class="vi">Trị giá</span></th><th></th></tr></thead><tbody>${
       list.slice(0, 30).map(r => {
         const qty = (r.lines||[]).reduce((s,l)=>s+(+l.qty||0),0);
         const amt = r.kind === 'KR' ? (r.lines||[]).reduce((s,l)=>s+(+l.qty||0)*((+l.fee||0)+(+l.foc||0)),0) : (r.lines||[]).reduce((s,l)=>s+(+l.qty||0)*(+l.sale||0),0);
-        const needVessel = r.mode && r.mode !== 'TRUCK' && !r.vessel;
+        const needVessel = !r.external && r.mode && r.mode !== 'TRUCK' && !r.vessel;
         const hist = (r.revs||[]).slice().reverse().map(h => `<div style="margin:3px 0"><b>Rev.${h.rev}</b> <span style="color:#8A95A3">${h.at ? new Date(Date.parse(h.at) + 7*3600e3).toISOString().slice(0,16).replace('T',' ') : ''} ${h.by||''}</span>${h.note?` · ${h.note}`:''}<br><span style="color:#5D6977">${(h.changes||[]).join(' · ')||'변경 내용 없음'}</span> <a href="javascript:void 0" onclick="invOpenRecord('${r.key}#r${h.rev-1}')" style="font-size:11.5px">Rev.${h.rev-1===0?'0(원본)':h.rev-1} 열어보기</a></div>`).join('');
         return `<tr><td style="font-family:monospace;font-weight:600">${r.invNo||''}${r.rev?` <span style="font-family:inherit;font-size:10.5px;padding:1px 6px;border-radius:999px;background:#EDE9FE;color:#5B21B6">Rev.${r.rev}</span>`:''}${r.external?` <span style="font-family:var(--font);font-size:10.5px;padding:1px 6px;border-radius:999px;background:#F1F5F9;color:#5D6977">외부 발행</span>`:''}${hist?`<details style="font-family:var(--font);font-weight:400;font-size:12px;white-space:normal;max-width:520px"><summary style="cursor:pointer;color:#185FA5">수정 이력 ${r.revs.length}건</summary>${hist}</details>`:''}</td><td>${r.invDate||''}</td><td>${r.kind==='KR'?'본사':'솔루엠'}</td><td>${modeLbl(r.mode)}</td>
           <td>${needVessel ? '<span style="color:#b45309">⚠️ 미입력</span>' : (r.vessel||'-')}</td><td style="text-align:right">${qty.toLocaleString()}</td><td style="text-align:right">$${amt.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
