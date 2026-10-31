@@ -507,7 +507,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <button class="tb" onclick="go('ng')">⚠️ 불량(NG)<span class="vi">Hàng lỗi (NG)</span></button>
   <button class="tb" onclick="go('po')">📧 발주관리<span class="vi">Quản lý đặt hàng</span></button>
   <button class="tb" onclick="go('mes')">📷 현장입력<span class="vi">Nhập liệu tại xưởng</span></button>
-  <button class="tb" id="tb-ship" onclick="go('ship')">🚚 출고 현황<span class="vi">Tình hình xuất kho</span></button>
+  <button class="tb" id="tb-ship" onclick="go('ship')">🚚 출고<span class="vi">Xuất hàng</span></button>
   <button class="tb" id="tb-cost" onclick="go('cost')" style="display:none">💰 제조원가<span class="vi">Giá thành SX</span></button>
 </div>
 
@@ -1897,8 +1897,13 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 </div>
 
 <div id="tab-ship" class="sec">
+  <!-- 출고 탭 안의 두 화면: 업무(예정→인보이스→확정) / 현황(실적·매출) -->
+  <div class="io-tabs ship-sub" style="grid-template-columns:repeat(2,1fr);max-width:640px;margin-bottom:1rem">
+    <button class="io-tab on-otp" id="ship-sub-work" onclick="setShipSub('work')">📦 출고 업무 / Nghiệp vụ xuất<br><small style="font-weight:400;opacity:.8">출고 예정 → 인보이스 → 출고 확정</small></button>
+    <button class="io-tab" id="ship-sub-stat" onclick="setShipSub('stat')">📊 출고 실적 / Kết quả xuất<br><small style="font-weight:400;opacity:.8">월별 출고·매출</small></button>
+  </div>
+  <div id="ship-sub-work-box">
   <div id="spl-panel" class="ds-panel"></div>
-  <div id="d-ship-panel" class="ds-panel"></div>
   <!-- 📄 인보이스·패킹리스트 (관리자) -->
   <div id="inv-panel" class="ds-panel" style="display:none">
     <div class="ds-head"><h3>📄 인보이스·패킹리스트 만들기 <span>/ Lập Invoice · Packing list</span></h3></div>
@@ -1911,6 +1916,10 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <div id="inv-img-row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:12px"></div>
     <div id="inv-records"></div>
     <div id="inv-editor"></div>
+  </div>
+  </div>
+  <div id="ship-sub-stat-box" style="display:none">
+    <div id="d-ship-panel" class="ds-panel"></div>
   </div>
 </div>
 
@@ -2612,7 +2621,7 @@ function go(id){
   if(id==='po') { renderPO({soft:true}); _goPO(); }
   if(id==='mes') renderMES();
   if(id==='cost') renderCost();
-  if(id==='ship') { renderShipPlans(); loadShipPlans().then(renderShipPlans); renderShipPanel(); renderInvPanel(); }
+  if(id==='ship') { setShipSub(window._shipSub || 'work'); }
 }
 function setIC(c){document.getElementById('inv-cat').value=c;initMS();renderInv();}
 
@@ -14243,6 +14252,16 @@ async function splLinkInvoice(rec){
   const p = SPL.find(x => x.id === rec.planId); if (!p || p.status === 'done' || p.status === 'cancel') return;
   Object.assign(p, {invNo: rec.invNo, invRev: rec.rev || 0, invLines: (rec.lines||[]).map(l => ({code:l.code, name:l.name, unit:'Ea', qty:+l.qty||0})), status:'inv'});
   if (await splSavePlan(p)) renderShipPlans();
+}
+// 출고 탭 하위 화면 전환
+function setShipSub(k){
+  window._shipSub = k;
+  document.getElementById('ship-sub-work-box').style.display = k === 'work' ? '' : 'none';
+  document.getElementById('ship-sub-stat-box').style.display = k === 'stat' ? '' : 'none';
+  document.getElementById('ship-sub-work').className = 'io-tab' + (k === 'work' ? ' on-otp' : '');
+  document.getElementById('ship-sub-stat').className = 'io-tab' + (k === 'stat' ? ' on-otp' : '');
+  if (k === 'work') { renderShipPlans(); loadShipPlans().then(renderShipPlans); renderInvPanel(); }
+  else renderShipPanel();
 }
 </script>
 </body>
