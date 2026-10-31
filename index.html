@@ -2617,7 +2617,7 @@ function go(id){
   if(id==='po') { renderPO({soft:true}); _goPO(); }
   if(id==='mes') renderMES();
   if(id==='cost') renderCost();
-  if(id==='ship') { renderShipPlans(); loadShipPlans().then(renderShipPlans); renderInvPanel(); }
+  if(id==='ship') { renderShipPlans(); renderInvPanel(); loadShipPlans().then(() => { renderShipPlans(); renderInvPanel(); }); }
   if(id==='shipstat') renderShipPanel();
 }
 function setIC(c){document.getElementById('inv-cat').value=c;initMS();renderInv();}
@@ -10069,6 +10069,8 @@ function applyAdminUI(on) {
   if (mcBtn) mcBtn.style.display = on ? 'inline-block' : 'none';
   const cleanupBtn = document.getElementById('ng-cleanup-btn');
   if (cleanupBtn) cleanupBtn.style.display = on ? 'inline-block' : 'none';
+  // 출고 탭이 열려 있으면 관리자 전용 버튼(인보이스 작성 등)이 바로 보이도록 다시 그린다
+  try { const t = document.getElementById('tab-ship'); if (t && t.classList.contains('on')) { renderShipPlans(); renderInvPanel(); } } catch(e) {}
   // ✅ 현장 전용 기기에서 "🔐 관리자"로 즉석 승격/해제할 때도 탭 제한이 즉시
   //    반영되도록 (관리자 로그인의 applyRoleUI() 경로가 아닌, 이 즉석 버튼 경로).
   applyFloorModeUI();
