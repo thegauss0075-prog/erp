@@ -13977,10 +13977,10 @@ function invSheetPacking(ws){
 //  📦 출고 예정 → 인보이스 → 출고 확정 (2026-10-31)
 //  ① 창고(직원): 출고 예정 등록 — 재고는 아직 그대로, 다른 예정과 겹치지 않게 수량만 예약
 //  ② 관리자: 출고 예정을 불러와 인보이스 작성 (수정본이 나오면 최종 수량이 예정에 반영됨)
-//  ③ 트럭·비행기가 나갈 때 "출고 확정" — LOT 오래된 순으로 완제품 출고(otp)를 등록하고 '완료'
+//  ③ 트럭·비행기가 나갈 때 "출고 확정" — 등록 때 지정한 LOT 그대로 완제품 출고(otp)를 등록하고 '완료'
 //  서버: SHIP_PLAN 시트 (getShipPlans / saveShipPlan / deleteShipPlan)
 // ════════════════════════════════════════════════════════════
-let SPL = [], _splLoaded = false, _splLoading = null, SPL_DRAFT = [], SPL_FORM = {dest:'Solum Vina', date:'', note:''};
+let SPL = [], _splLoaded = false, _splLoading = null, SPL_DRAFT = [], SPL_FORM = {dest:'Solum Vina', date:'', note:''}, SPL_PICK = null, SPL_EDIT = null;
 const SPL_DEST = {KR:'🏠 본사(한국) / Trụ sở HQ', 'Solum Vina':'🏭 솔루엠비나 / Solum Vina'};
 const SPL_ST = {wait:['출고 대기','Chờ xuất','#b45309','#FEF3C7'], inv:['인보이스 발행','Đã có Invoice','#185FA5','#E8F0F8'], done:['출고 완료','Đã xuất','#166534','#DCFCE7'], cancel:['취소','Đã hủy','#8A95A3','#F1F5F9']};
 async function loadShipPlans(){
@@ -13994,6 +13994,35 @@ function splLines(p){ return (p.invLines && p.invLines.length) ? p.invLines : (p
 function splReserved(code, exceptId){
   return SPL.filter(p => (p.status === 'wait' || p.status === 'inv') && p.id !== exceptId)
     .reduce((s,p) => s + splLines(p).filter(l => l.code === code).reduce((a,l)=>a+(+l.qty||0),0), 0);
+}
+// LOT별로 다른 출고 예정이 잡아 둔 수량
+function splReservedLot(code, lot, exceptId){
+  return SPL.filter(p => (p.status === 'wait' || p.status === 'inv') && p.id !== exceptId)
+    .reduce((s,p) => s + (p.lines||[]).filter(l => l.code === code).reduce((a,l)=>a+(l.lots||[]).filter(x => x.lot === lot).reduce((b,x)=>b+(+x.qty||0),0),0), 0);
+}
+// 이 모델의 출고 가능한 LOT 목록 (오래된 순): 잔여 − 다른 예정 = 지정 가능
+function splLotList(code, exceptId){
+  const {activeLots, noLotRemain} = computeActiveLots(code, 'tp-in', 'otp', 'TP');
+  const lotTotal = activeLots.reduce((s,l)=>s+l.remain,0) + Math.max(0, noLotRemain);
+  const untracked = Math.max(0, splStock(code) - lotTotal);
+  const list = activeLots.map(d => ({lot:d.lot, dt:d.dt, remain:d.remain}));
+  if (Math.max(0, noLotRemain) + untracked > 0) list.push({lot:'__nolot__', dt:'', remain: Math.max(0, noLotRemain) + untracked});
+  list.forEach(x => { x.reserved = splReservedLot(code, x.lot, exceptId); x.free = Math.max(0, Math.round((x.remain - x.reserved)*1000)/1000); });
+  return list;
+}
+const splLotName = l => l === '__nolot__' ? 'LOT 미지정' : l;
+function splPickModel(code){
+  SPL_PICK = code ? {code, lots: splLotList(code, SPL_EDIT).map(x => ({...x, qty:0}))} : null;
+  // 이미 초안에 있는 모델이면 그 LOT 수량을 다시 보여준다
+  const ex = code && SPL_DRAFT.find(l => l.code === code);
+  if (ex && ex.lots) ex.lots.forEach(a => { const t = SPL_PICK.lots.find(x => x.lot === a.lot); if (t) t.qty = +a.qty||0; });
+  renderShipPlans();
+}
+function splPickFill(){
+  const q = +document.getElementById('spl-qty').value; if (!SPL_PICK || !(q > 0)) return;
+  let need = q; SPL_PICK.lots.forEach(x => { const t = Math.min(need, x.free); x.qty = t > 0 ? t : 0; need -= x.qty; });
+  if (need > 0) alert(`출고 가능 수량이 ${need.toLocaleString()}개 모자랍니다. / Thiếu ${need.toLocaleString()}`);
+  renderShipPlans();
 }
 function splStock(code){ const it = (DB.tp||[]).find(r => r.code === code); return it ? (+it.cur||0) : 0; }
 // 완제품 LOT 오래된 순 배정 (LOT 이력 없이 들어온 재고는 'LOT 미지정')
@@ -14027,27 +14056,34 @@ function renderShipPlans(){
   const showDone = document.getElementById('spl-show-done') ? document.getElementById('spl-show-done').checked : false;
   const list = SPL.filter(p => showDone || p.status === 'wait' || p.status === 'inv')
     .sort((a,b) => ({wait:0,inv:1,done:2,cancel:3})[a.status] - ({wait:0,inv:1,done:2,cancel:3})[b.status] || String(a.date||'').localeCompare(String(b.date||'')));
-  const tpOpts = (DB.tp||[]).filter(r => r.active !== false).map(r => `<option value="${r.code}">${r.name} (${r.code}) — 재고 ${n(r.cur)}</option>`).join('');
+  const tpOpts = (DB.tp||[]).filter(r => r.active !== false).map(r => `<option value="${r.code}" ${SPL_PICK && SPL_PICK.code===r.code?'selected':''}>${r.name} (${r.code}) — 재고 ${n(r.cur)}</option>`).join('');
   const draft = SPL_DRAFT.map((l,i) => {
-    const free = splStock(l.code) - splReserved(l.code);
-    return `<tr><td>${l.name}<div style="font-family:monospace;color:#8A95A3;font-size:11px">${l.code}</div></td><td style="text-align:right;font-weight:600">${n(l.qty)}</td>
+    const free = splStock(l.code) - splReserved(l.code, SPL_EDIT);
+    return `<tr><td>${l.name}<div style="font-family:monospace;color:#8A95A3;font-size:11px">${l.code}</div><div style="font-size:11.5px;color:#185FA5">${(l.lots||[]).map(x => `${splLotName(x.lot)} ${n(x.qty)}`).join(' · ')} <a href="javascript:void 0" onclick="splPickModel('${l.code}')">LOT 바꾸기</a></div></td><td style="text-align:right;font-weight:600">${n(l.qty)}</td>
       <td style="text-align:right;color:${free < l.qty ? '#b91c1c' : '#5D6977'}">${n(free)}${free < l.qty ? ' ⚠️' : ''}</td><td style="text-align:center"><button onclick="SPL_DRAFT.splice(${i},1);renderShipPlans()" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></td></tr>`;
   }).join('');
   const form = canEdit ? `
     <div style="border:1px solid var(--line,#DCE1E7);border-radius:8px;padding:12px;margin-bottom:12px;background:#F8FAFC">
-      <div style="font-weight:600;font-size:13px;margin-bottom:8px">➕ 출고 예정 등록 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Đăng ký kế hoạch xuất — 재고는 출고 확정 때 줄어듭니다 / Tồn kho chỉ giảm khi xác nhận xuất</span></div>
+      <div style="font-weight:600;font-size:13px;margin-bottom:8px">${SPL_EDIT ? `✏️ 출고 예정 수정 — ${(SPL.find(x=>x.id===SPL_EDIT)||{}).no||''} <a href="javascript:void 0" onclick="SPL_EDIT=null;SPL_DRAFT=[];SPL_PICK=null;renderShipPlans()" style="font-weight:400;font-size:12px">수정 취소</a>` : '➕ 출고 예정 등록'} <span style="font-weight:400;color:#5D6977;font-size:12px">/ Đăng ký kế hoạch xuất — 재고는 출고 확정 때 줄어듭니다 / Tồn kho chỉ giảm khi xác nhận xuất</span></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
         <select id="spl-dest">${Object.entries(SPL_DEST).map(([k,v]) => `<option value="${k}" ${SPL_FORM.dest===k?'selected':''}>${v}</option>`).join('')}</select>
         <label style="font-size:12.5px;color:#5D6977">출고 예정일 / Ngày dự kiến <input type="date" id="spl-date" value="${SPL_FORM.date || bdToday()}"></label>
         <input id="spl-note" placeholder="비고 / Ghi chú (예: 항공편 대기)" value="${String(SPL_FORM.note||'').replace(/"/g,'&quot;')}" style="flex:1;min-width:180px;padding:7px 9px;border:1px solid var(--line,#DCE1E7);border-radius:8px">
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-        <select id="spl-code" style="min-width:260px"><option value="">모델 선택 / Chọn model</option>${tpOpts}</select>
-        <input id="spl-qty" type="number" min="1" placeholder="수량 / SL" style="width:110px;padding:7px 9px;border:1px solid var(--line,#DCE1E7);border-radius:8px">
-        <button onclick="splAddLine()" style="padding:7px 12px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">추가 / Thêm</button>
+        <select id="spl-code" style="min-width:260px" onchange="splPickModel(this.value)"><option value="">모델 선택 / Chọn model</option>${tpOpts}</select>
+        ${SPL_PICK ? `<input id="spl-qty" type="number" min="1" placeholder="수량 / SL" style="width:110px;padding:7px 9px;border:1px solid var(--line,#DCE1E7);border-radius:8px">
+        <button onclick="splPickFill()" title="입력한 수량을 오래된 LOT부터 채움" style="padding:7px 12px;border-radius:8px;border:1px solid var(--line,#DCE1E7);background:#fff;cursor:pointer;font-size:12.5px">오래된 LOT부터 채우기 / Tự điền</button>` : ''}
       </div>
+      ${SPL_PICK ? (SPL_PICK.lots.length ? `<div style="font-size:12.5px;font-weight:600;margin:4px 0 6px">실제로 내보낼 LOT과 수량을 지정하세요 / Chọn LOT và số lượng thực xuất</div>
+        <div class="tw" style="margin-bottom:8px"><table><thead><tr><th>LOT</th><th>입고일<span class="vi">Ngày nhập</span></th><th style="text-align:right">잔여<span class="vi">Còn lại</span></th><th style="text-align:right">다른 예정<span class="vi">Đã giữ</span></th><th style="text-align:right">지정 가능<span class="vi">Có thể chọn</span></th><th style="text-align:right">출고 수량<span class="vi">SL xuất</span></th></tr></thead><tbody>${
+          SPL_PICK.lots.map((x,i) => `<tr><td style="font-family:monospace">${splLotName(x.lot)}</td><td style="white-space:nowrap">${x.dt ? invVNDate({dt:x.dt}) || String(x.dt).slice(0,10) : '-'}</td><td style="text-align:right">${n(x.remain)}</td><td style="text-align:right;color:#8A95A3">${x.reserved?n(x.reserved):'-'}</td><td style="text-align:right;font-weight:600">${n(x.free)}</td>
+            <td style="text-align:right"><input type="number" min="0" max="${x.free}" value="${x.qty||''}" oninput="SPL_PICK.lots[${i}].qty=+this.value||0;document.getElementById('spl-pick-sum').textContent=SPL_PICK.lots.reduce((s,y)=>s+(+y.qty||0),0).toLocaleString()" style="width:100px;padding:5px 7px;border:1px solid var(--line,#DCE1E7);border-radius:6px;text-align:right"></td></tr>`).join('')}
+          <tr style="background:#F6F8FA;font-weight:600"><td colspan="5">합계 / Tổng</td><td style="text-align:right" id="spl-pick-sum">${SPL_PICK.lots.reduce((s,y)=>s+(+y.qty||0),0).toLocaleString()}</td></tr></tbody></table></div>
+        <button onclick="splAddLine()" style="padding:7px 12px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer;margin-bottom:8px">이 LOT으로 추가 / Thêm</button>`
+        : '<div style="color:#b91c1c;font-size:12.5px;margin-bottom:8px">이 모델은 출고할 재고가 없습니다. / Không có tồn kho.</div>') : ''}
       ${SPL_DRAFT.length ? `<div class="tw" style="margin-bottom:8px"><table><thead><tr><th>모델<span class="vi">Model</span></th><th style="text-align:right">수량<span class="vi">SL</span></th><th style="text-align:right">출고 가능<span class="vi">Có thể xuất</span></th><th></th></tr></thead><tbody>${draft}</tbody></table></div>
-        <button id="spl-save" onclick="splSave()" style="padding:8px 16px;border-radius:8px;border:none;background:#166534;color:#fff;font-weight:700;cursor:pointer">출고 예정 등록 / Đăng ký</button>` : ''}
+        <button id="spl-save" onclick="splSave()" style="padding:8px 16px;border-radius:8px;border:none;background:#166534;color:#fff;font-weight:700;cursor:pointer">${SPL_EDIT ? '수정 저장 / Lưu' : '출고 예정 등록 / Đăng ký'}</button>` : ''}
     </div>` : '';
   const rows = list.map(p => {
     const st = SPL_ST[p.status] || SPL_ST.wait;
@@ -14057,10 +14093,11 @@ function renderShipPlans(){
     const act = [];
     if ((p.status === 'wait' || p.status === 'inv') && canEdit) act.push(`<button onclick="splConfirm('${p.id}')" style="padding:4px 10px;border-radius:6px;border:none;background:#166534;color:#fff;font-weight:600;cursor:pointer;font-size:12px">출고 확정 / Xác nhận xuất</button>`);
     if ((p.status === 'wait' || p.status === 'inv') && isAdmin) act.push(`<button onclick="invFromPlan('${p.id}')" style="padding:4px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer;font-size:12px">${p.invNo ? '인보이스 열기' : '인보이스 작성'}</button>`);
+    if ((p.status === 'wait' || p.status === 'inv') && canEdit) act.push(`<button onclick="splEdit('${p.id}')" title="LOT·수량 수정" class="edit-btn">✏️</button>`);
     if (p.status === 'wait' && canEdit) act.push(`<button onclick="splCancel('${p.id}')" title="취소" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>`);
     return `<tr>
       <td style="font-family:monospace;font-size:12px">${p.no||''}</td><td style="white-space:nowrap">${p.date||''}</td><td>${(SPL_DEST[p.dest]||p.dest||'').replace(/^\S+\s/,'')}</td>
-      <td style="white-space:normal">${lines.map(l => `${l.name||l.code} <b>${n(l.qty)}</b>`).join('<br>')}${changed ? '<div style="font-size:11px;color:#185FA5">인보이스 수정본 수량 반영</div>' : ''}</td>
+      <td style="white-space:normal">${(p.lines||[]).map(l => `${l.name||l.code} <b>${n(l.qty)}</b><div style="font-size:11px;color:#185FA5">${(l.lots||[]).map(x => `${splLotName(x.lot)} ${n(x.qty)}`).join(' · ')}</div>`).join('')}${splMismatch(p).length ? `<div style="font-size:11.5px;color:#b91c1c;font-weight:600">⚠️ 인보이스 수량과 다름: ${splMismatch(p).join(', ')} — ✏️로 LOT 수량을 맞춰주세요</div>` : ''}</td>
       <td style="text-align:right;font-weight:600">${n(qty)}</td>
       <td style="white-space:nowrap"><span style="font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;color:${st[2]};background:${st[3]}">${st[0]}</span>${p.invNo ? `<div style="font-family:monospace;font-size:11.5px;margin-top:2px">${p.invNo}${p.invRev ? ` Rev.${p.invRev}` : ''}</div>` : ''}${p.status === 'done' ? `<div style="font-size:11px;color:#8A95A3">${String(p.doneAt||'').slice(0,10)} ${p.doneBy||''}</div>` : ''}</td>
       <td>${p.createdBy||''}${p.note ? `<div style="font-size:11.5px;color:#5D6977">${p.note}</div>` : ''}</td>
@@ -14069,32 +14106,59 @@ function renderShipPlans(){
   box.innerHTML = `
     <div class="ds-head"><h3>📦 출고 예정 <span>/ Kế hoạch xuất kho</span></h3>
       <label style="font-size:12.5px;color:#5D6977;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="spl-show-done" ${showDone?'checked':''} onchange="renderShipPlans()"> 완료·취소도 보기 / Hiện cả đã xuất</label></div>
-    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">창고에서 출고 예정을 등록 → 관리자가 인보이스 작성 → 트럭·비행기가 나갈 때 <b>출고 확정</b>을 누르면 LOT 오래된 순으로 완제품 출고가 등록됩니다.<br><span style="color:#8A95A3">Kho đăng ký kế hoạch → quản lý lập Invoice → khi hàng rời kho bấm "Xác nhận xuất" để ghi xuất thành phẩm theo LOT cũ trước.</span></div>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">창고에서 출고할 <b>LOT과 수량</b>을 지정해 출고 예정을 등록 → 관리자가 인보이스 작성 → 트럭·비행기가 나갈 때 <b>출고 확정</b>을 누르면 지정한 LOT 그대로 완제품 출고가 등록됩니다.<br><span style="color:#8A95A3">Kho chọn LOT và số lượng → quản lý lập Invoice → khi hàng rời kho bấm "Xác nhận xuất" để ghi xuất đúng LOT đã chọn.</span></div>
     ${_splLoaded === 'noserver' ? '<div style="color:#b91c1c;font-size:12.5px;margin-bottom:8px">⚠️ 서버(Code.gs)를 새 버전으로 배포해야 출고 예정을 저장할 수 있습니다.</div>' : ''}
     ${form}
     <div class="tw"><table><thead><tr><th>예정번호<span class="vi">Số KH</span></th><th>예정일<span class="vi">Ngày</span></th><th>출고처<span class="vi">Nơi nhận</span></th><th>모델·수량<span class="vi">Model · SL</span></th><th style="text-align:right">합계<span class="vi">Tổng</span></th><th>상태<span class="vi">Trạng thái</span></th><th>등록자<span class="vi">Người ĐK</span></th><th></th></tr></thead>
       <tbody>${rows || `<tr><td colspan="8" class="empty">${showDone ? '출고 예정 기록이 없습니다.' : '대기 중인 출고 예정이 없습니다. / Không có kế hoạch xuất đang chờ.'}</td></tr>`}</tbody></table></div>`;
 }
 function splAddLine(){
-  const code = document.getElementById('spl-code').value, q = +document.getElementById('spl-qty').value;
-  if (!code || !(q > 0)) { alert('모델과 수량을 넣어주세요. / Chọn model và nhập số lượng.'); return; }
-  const it = (DB.tp||[]).find(r => r.code === code) || {code, name:code, unit:'Ea'};
+  if (!SPL_PICK) { alert('모델을 선택해주세요. / Chọn model.'); return; }
+  const lots = SPL_PICK.lots.filter(x => +x.qty > 0).map(x => ({lot:x.lot, qty:+x.qty}));
+  const over = SPL_PICK.lots.find(x => +x.qty > x.free + 0.0005);
+  if (!lots.length) { alert('LOT별 출고 수량을 넣어주세요. / Nhập số lượng theo LOT.'); return; }
+  if (over) { alert(`${splLotName(over.lot)}: 지정 가능 수량(${over.free.toLocaleString()})보다 많습니다.`); return; }
+  const code = SPL_PICK.code, it = (DB.tp||[]).find(r => r.code === code) || {code, name:code, unit:'Ea'};
+  const qty = lots.reduce((s,x)=>s+x.qty,0);
   const ex = SPL_DRAFT.find(l => l.code === code);
-  if (ex) ex.qty += q; else SPL_DRAFT.push({code, name: it.name, unit: it.unit || 'Ea', qty: q});
-  renderShipPlans();
+  if (ex) Object.assign(ex, {qty, lots}); else SPL_DRAFT.push({code, name: it.name, unit: it.unit || 'Ea', qty, lots});
+  SPL_PICK = null; renderShipPlans();
 }
 async function splSave(){
   if (!SPL_DRAFT.length) return;
-  const over = SPL_DRAFT.filter(l => l.qty > splStock(l.code) - splReserved(l.code));
+  const over = SPL_DRAFT.filter(l => l.qty > splStock(l.code) - splReserved(l.code, SPL_EDIT));
   if (over.length && !confirm(`재고(다른 출고 예정 제외)보다 많은 모델이 있습니다: ${over.map(l=>l.name).join(', ')}\n그래도 등록할까요? (출고 확정 때 재고가 부족하면 확정되지 않습니다)`)) return;
+  if (SPL_DRAFT.some(l => !(l.lots && l.lots.length))) { alert('모든 모델에 LOT을 지정해주세요. / Chọn LOT cho tất cả model.'); return; }
   const date = document.getElementById('spl-date').value || bdToday();
-  const rec = {id:'P'+Date.now(), no: splNextNo(date), date, dest: document.getElementById('spl-dest').value, lines: SPL_DRAFT.map(l => ({...l})),
+  const old = SPL_EDIT ? SPL.find(x => x.id === SPL_EDIT) : null;
+  const rec = old ? {...old, date, dest: document.getElementById('spl-dest').value, lines: SPL_DRAFT.map(l => JSON.parse(JSON.stringify(l))), note: document.getElementById('spl-note').value.trim(), editedBy: CURRENT_USER||'', editedAt: new Date().toISOString()}
+    : {id:'P'+Date.now(), no: splNextNo(date), date, dest: document.getElementById('spl-dest').value, lines: SPL_DRAFT.map(l => JSON.parse(JSON.stringify(l))),
     note: document.getElementById('spl-note').value.trim(), status:'wait', createdBy: CURRENT_USER||'', createdAt: new Date().toISOString()};
   const guard = withButtonGuard('#spl-save', '⏳'); if (guard === null) return;
   let r; try { r = await api('saveShipPlan', {rec}); } finally { guard.release(); }
   if (!r || !r.ok) { alert('저장 실패: ' + (r && r.error || '서버 응답 없음') + (r && /unknown action/i.test(r.error||'') ? '\n서버(Code.gs)를 새 버전으로 배포해야 합니다.' : '')); return; }
-  SPL.push(rec); SPL_DRAFT = []; SPL_FORM.note = ''; document.getElementById('spl-note').value = '';
+  if (old) Object.assign(old, rec); else SPL.push(rec);
+  SPL_DRAFT = []; SPL_EDIT = null; SPL_PICK = null; SPL_FORM.note = ''; document.getElementById('spl-note').value = '';
   renderShipPlans(); if (typeof renderInvPanel === 'function' && isAdmin) renderInvPanel();
+}
+// 인보이스(수정본) 수량과 LOT 지정 수량이 다른 모델
+function splMismatch(p){
+  if (!(p.invLines && p.invLines.length)) return [];
+  const out = [], codes = new Set([...p.invLines.map(l=>l.code), ...(p.lines||[]).map(l=>l.code)]);
+  codes.forEach(c => {
+    const iv = p.invLines.filter(l => l.code === c).reduce((s,l)=>s+(+l.qty||0),0);
+    const pl = (p.lines||[]).filter(l => l.code === c).reduce((s,l)=>s+(+l.qty||0),0);
+    if (Math.abs(iv - pl) > 0.0005) { const nm = ((p.lines||[]).concat(p.invLines).find(l=>l.code===c)||{}).name || c; out.push(`${nm} 인보이스 ${iv.toLocaleString()} / LOT ${pl.toLocaleString()}`); }
+  });
+  return out;
+}
+function splEdit(id){
+  const p = SPL.find(x => x.id === id); if (!p) return;
+  SPL_EDIT = id; SPL_DRAFT = JSON.parse(JSON.stringify(p.lines||[])); SPL_PICK = null;
+  Object.assign(SPL_FORM, {dest:p.dest, date:p.date, note:p.note||''});
+  const d = document.getElementById('spl-dest'); if (d) d.value = p.dest; const t = document.getElementById('spl-date'); if (t) t.value = p.date; const nn = document.getElementById('spl-note'); if (nn) nn.value = p.note||'';
+  renderShipPlans();
+  document.getElementById('spl-panel').scrollIntoView({behavior:'smooth', block:'start'});
 }
 async function splCancel(id){
   const p = SPL.find(x => x.id === id); if (!p) return;
@@ -14111,14 +14175,26 @@ async function splConfirm(id){
   const lines = splLines(p);
   if (!p.invNo && !confirm('아직 인보이스가 없습니다. 그래도 출고 확정할까요?\nChưa có Invoice. Vẫn xác nhận xuất?')) return;
   // 미리 전부 배정해 보고 하나라도 모자라면 아무것도 등록하지 않는다
+  const mm = splMismatch(p);
+  if (mm.length) { alert(`⛔ 인보이스 수량과 지정한 LOT 수량이 다릅니다.\n${mm.join('\n')}\n\n✏️(수정)로 LOT 수량을 인보이스와 맞춘 뒤 확정해주세요.`); return; }
   const plans = [];
-  for (const l of lines) {
+  for (const l of (p.lines||[])) {
     if (p.posted && p.posted[l.code]) continue;   // 지난번에 일부만 등록되고 멈췄다면 이미 등록된 모델은 건너뜀
-    const a = splAlloc(l.code, +l.qty||0);
-    if (!a.ok) { alert(`⛔ 재고 부족 / Không đủ tồn kho\n${l.name}: 요청 ${(+l.qty).toLocaleString()} · 부족 ${a.shortage.toLocaleString()}\n출고 확정을 하지 않았습니다.`); return; }
-    plans.push({l, a});
+    if (l.lots && l.lots.length) {
+      // 지정한 LOT 그대로 — 그 사이 다른 출고로 LOT 잔여가 줄었으면 멈춘다
+      const avail = splLotList(l.code, p.id);
+      for (const x of l.lots) {
+        const a = avail.find(y => y.lot === x.lot);
+        if (!a || a.remain + 0.0005 < x.qty) { alert(`⛔ ${l.name} ${splLotName(x.lot)}: 잔여 ${(a ? a.remain : 0).toLocaleString()} < 지정 ${x.qty.toLocaleString()}\n그 사이 다른 출고가 있었습니다. ✏️로 LOT을 다시 지정해주세요.`); return; }
+      }
+      plans.push({l, a:{allocations: l.lots.map(x => ({lot:x.lot, qty:+x.qty}))}});
+    } else {
+      const a = splAlloc(l.code, +l.qty||0);   // 예전에 LOT 없이 등록된 예정만 오래된 순
+      if (!a.ok) { alert(`⛔ 재고 부족 / Không đủ tồn kho\n${l.name}: 요청 ${(+l.qty).toLocaleString()} · 부족 ${a.shortage.toLocaleString()}\n출고 확정을 하지 않았습니다.`); return; }
+      plans.push({l, a});
+    }
   }
-  const summary = lines.map(l => `· ${l.name} ${(+l.qty).toLocaleString()}개`).join('\n');
+  const summary = (p.lines||[]).map(l => `· ${l.name} ${(+l.qty).toLocaleString()}개  (${(l.lots||[]).map(x => `${splLotName(x.lot)} ${(+x.qty).toLocaleString()}`).join(', ') || 'LOT 오래된 순'})`).join('\n');
   if (!confirm(`출고 확정 / Xác nhận xuất — ${p.no}${p.invNo ? ' · ' + p.invNo : ''}\n${summary}\n\n완제품 출고로 등록하고 재고를 줄입니다. 계속할까요?`)) return;
   const note = `[출고예정 ${p.no}]${p.invNo ? ' INV ' + p.invNo + (p.invRev ? ' Rev.' + p.invRev : '') : ''}${p.note ? ' ' + p.note : ''}`;
   p.posted = p.posted || {};
