@@ -1896,14 +1896,13 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <!-- 📄 인보이스·패킹리스트 (관리자) -->
   <div id="inv-panel" class="ds-panel" style="display:none">
     <div class="ds-head"><h3>📄 인보이스·패킹리스트 만들기 <span>/ Lập Invoice · Packing list</span></h3></div>
-    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">① 출고처와 날짜를 고르면 그날 등록된 완제품 출고가 나옵니다. 서류에 넣을 출고를 고른 뒤 작성하세요. 단가는 💰 제조원가 탭 ② 모델 정보에서 가져옵니다.<br><span style="color:#8A95A3">Chọn nơi nhận và ngày để xem các lần xuất thành phẩm đã đăng ký, chọn các dòng cần đưa vào chứng từ. Đơn giá lấy từ tab Giá thành SX.</span></div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-      <select id="inv-kind" onchange="INV=null;document.getElementById('inv-from').value='';renderInvPanel()"><option value="SOL">솔루엠비나 / Solum Vina (DDP)</option><option value="KR">본사 / Trụ sở THE GAUSS INC. (EXW gia công)</option></select>
-      <div class="date-range"><input type="date" id="inv-from" onchange="INV=null;renderInvPanel()"><span>~</span><input type="date" id="inv-to" onchange="INV=null;renderInvPanel()"></div>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">출고가 정해지면 출고처를 고르고 <b>새 인보이스 작성</b>을 눌러 모델·수량을 넣습니다. 단가·HS코드·품명·포장값은 자동으로 채워집니다.<br><span style="color:#8A95A3">Khi đã chốt lô xuất, chọn nơi nhận và bấm "Lập Invoice mới", nhập model và số lượng — đơn giá, mã HS, mô tả, đóng gói được điền tự động.</span></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <select id="inv-kind" onchange="INV=null;renderInvPanel()"><option value="SOL">솔루엠비나 / Solum Vina (DDP)</option><option value="KR">본사 / Trụ sở THE GAUSS INC. (EXW gia công)</option></select>
+      <button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">➕ 새 인보이스 작성 / Lập Invoice mới</button>
     </div>
     <div id="inv-img-row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:12px"></div>
     <div id="inv-records"></div>
-    <div id="inv-ship-list"></div>
     <div id="inv-editor"></div>
   </div>
 </div>
@@ -13428,28 +13427,6 @@ function renderInvPanel(){
   box.style.display = '';
   if (COST_SERVER_OK !== true && !_invCostTried && (API_URL || IS_GAS)) { _invCostTried = true; loadCost().then(() => { if (INV) { INV = null; } renderInvPanel(); }); }
   renderInvImgRow(); renderInvRecords();
-  const kindEl = document.getElementById('inv-kind'), fEl = document.getElementById('inv-from'), tEl = document.getElementById('inv-to');
-  if (!fEl.value) {
-    // 아직 인보이스가 없는 가장 최근 출고일 (없으면 가장 최근 출고일)
-    const done = invInvoicedMap();
-    const all = (txLog||[]).filter(t => t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && invKindOf(t.dest) === kindEl.value);
-    const last = all.filter(t => !done[String(t.id)]).map(invVNDate).filter(Boolean).sort().pop() || all.map(invVNDate).filter(Boolean).sort().pop() || bdToday();
-    fEl.value = last; tEl.value = last;
-  }
-  const list = invShipments(kindEl.value, fEl.value, tEl.value || fEl.value);
-  const n = v => (+v||0).toLocaleString();
-  const done = invInvoicedMap();
-  const doneCnt = list.filter(t => done[String(t.id)]).length;
-  document.getElementById('inv-ship-list').innerHTML = list.length
-    ? `<div class="tw"><table><thead><tr><th style="width:30px"><input type="checkbox" checked onchange="document.querySelectorAll('.inv-pick').forEach(c=>c.checked=this.checked)"></th><th>출고일<span class="vi">Ngày xuất</span></th><th>품목<span class="vi">Mặt hàng</span></th><th>LOT</th><th style="text-align:right">수량<span class="vi">SL</span></th><th>출고처<span class="vi">Nơi nhận</span></th><th>등록자<span class="vi">Người ĐK</span></th><th>인보이스<span class="vi">Invoice</span></th></tr></thead><tbody>${
-        list.map(t => `<tr ${done[String(t.id)]?'style="opacity:.6"':''}><td><input type="checkbox" class="inv-pick" value="${t.id}" ${done[String(t.id)]?'':'checked'}></td><td>${t.day}</td><td>${t.name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${t.code}</span></td><td style="font-family:monospace;font-size:12px">${t.lot||'-'}</td><td style="text-align:right;font-weight:600">${n(t.qty)}</td><td>${destNorm(t.dest)||''}</td><td>${t.user||''}</td><td>${done[String(t.id)] ? `<span style="font-family:${done[String(t.id)]==='이전 발행'?'inherit':'monospace'};font-size:12px;padding:1px 6px;border-radius:999px;background:#DCFCE7;color:#166534">✔ ${done[String(t.id)]}</span>` : '<span style="color:#b45309;font-size:12px">미발행</span>'}</td></tr>`).join('')}</tbody></table></div>
-       ${doneCnt ? `<div style="font-size:12px;color:#5D6977;margin-top:6px">✔ 표시는 이미 인보이스가 있는 출고입니다(체크 해제됨). / Đã có Invoice.</div>` : ''}
-       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="invBuild()" style="padding:8px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">선택한 출고로 서류 작성 / Lập chứng từ →</button>
-         <button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성 / Nhập tay trước khi xuất</button>
-         <button onclick="invSetCutoff()" title="ERP 도입 전에 엑셀로 발행한 출고를 날짜 기준으로 한 번에 정리" style="padding:8px 16px;border-radius:8px;border:1px solid var(--line,#DCE1E7);background:#fff;color:#18212B;font-weight:600;cursor:pointer">📌 이 날짜까지 발행 완료 / Đã có đến ngày</button>
-         <button onclick="invLinkExisting()" title="ERP 밖에서 이미 만든 인보이스가 있으면 번호만 연결해 '발행됨'으로 표시" style="padding:8px 16px;border-radius:8px;border:1px solid var(--line,#DCE1E7);background:#fff;color:#18212B;font-weight:600;cursor:pointer">🔗 이미 발행한 인보이스 연결 / Gắn Invoice đã có</button></div>`
-    : `<div class="empty" style="padding:1.2rem">이 기간에 ${kindEl.value==='KR'?'본사(한국)':'솔루엠'} 출고 기록이 없습니다.<br>출고가 정해졌지만 아직 출고 등록 전이면 품목·수량을 직접 넣어 작성하세요.<br><span style="font-size:12px">Không có dữ liệu xuất kho trong kỳ này. Nếu chưa đăng ký xuất, hãy nhập tay mặt hàng và số lượng.</span>
-         <div style="margin-top:10px"><button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성 / Nhập tay trước khi xuất</button></div></div>`;
   if (!INV) document.getElementById('inv-editor').innerHTML = '';
 }
 function invBuild(){
