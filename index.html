@@ -13371,14 +13371,34 @@ function invAddLine(){
   renderInvEditor();
 }
 function invDelLine(i){ INV.lines.splice(i, 1); renderInvEditor(); }
+// ✅ 운송 방법: 트럭(솔루엠) · 해상 · 항공 · 특송 — 방법마다 출발지·도착지 기본값과 (6)번 칸 이름이 다르다.
+//    마지막으로 쓴 출발지·도착지는 출고처+운송방법별로 저장돼 다음에 그대로 채워진다.
+const INV_MODES = {
+  TRUCK:   {lbl:'트럭', field:'(6) Vessel / Voyage:', ph:'BY TRUCK', from:'HAI PHONG, VIET NAM', to:'PHU THO, VIET NAM', fieldKo:'운송 / 차량'},
+  SEA:     {lbl:'해상', field:'(6) Vessel / Voyage:', ph:'선박명 / 항차 (예: SITC HAIPHONG V.2610N)', from:'HAI PHONG PORT, VIET NAM', to:'BUSAN PORT, KOREA', fieldKo:'선박명 / 항차'},
+  AIR:     {lbl:'항공', field:'(6) Flight No.:', ph:'항공편 (예: WE272/26OCT)', from:'Ha Noi, Viet Nam', to:'INCHEON AIRPORT', fieldKo:'항공편'},
+  EXPRESS: {lbl:'특송', field:'(6) Courier / AWB No.:', ph:'특송사 / AWB 번호 (예: DHL 1234567890)', from:'Ha Noi, Viet Nam', to:'Republic of Korea', fieldKo:'특송사 / AWB 번호'}
+};
+function invModeDefaults(kind, mode){
+  const md = INV_MODES[mode] || INV_MODES.TRUCK, saved = (invDoc().tpl||{})[kind + '_' + mode] || {};
+  // 솔루엠은 국내(하이퐁 → 푸토), 본사는 운송 방법별 기본 항구·공항
+  return {from: saved.from || (kind === 'SOL' ? 'HAI PHONG, VIET NAM' : md.from),
+          to: saved.to || (kind === 'SOL' ? 'PHU THO, VIET NAM' : (mode === 'TRUCK' ? 'Republic of Korea' : md.to)),
+          vessel: mode === 'TRUCK' ? 'BY TRUCK' : ''};
+}
+function invSetMode(mode){
+  if (!INV) return;
+  INV.mode = mode; Object.assign(INV, invModeDefaults(INV.kind, mode));
+  renderInvEditor();
+}
 function invStart(kind, day, lines){
   const tpl = (invDoc().tpl||{})[kind] || {};
+  const mode = tpl.mode || (kind === 'KR' ? 'AIR' : 'TRUCK');
+  const md = invModeDefaults(kind, mode);
   INV = {
-    kind, invNo: 'TG' + day.replace(/-/g,''), invDate: day, shipDate: day,
+    kind, mode, invNo: 'TG' + day.replace(/-/g,''), invDate: day, shipDate: day,
     contact: tpl.contact || invDoc().contact || '', phone: tpl.phone || invDoc().phone || '',
-    vessel: kind === 'KR' ? (tpl.vessel || '') : 'BY TRUCK',
-    from: kind === 'KR' ? (tpl.from || 'Ha Noi, Viet Nam') : (tpl.from || 'HAI PHONG, VIET NAM'),
-    to: kind === 'KR' ? (tpl.to || 'INCHEON AIRPORT') : (tpl.to || 'PHU THO, VIET NAM'),
+    vessel: md.vessel, from: md.from, to: md.to,
     incoterm: kind === 'KR' ? (tpl.incoterm || 'EXW') : (tpl.incoterm || 'DDP'),
     net:'', gross:'', cbm:'', pallets:'', dims:'',
     lines: lines.map(l => invLine(l.code, l.name, l.qty, day))
@@ -13413,7 +13433,9 @@ function renderInvEditor(){
       ${missing.length?`<div style="color:#b45309;font-size:12.5px;margin-bottom:8px">⚠️ 단가·HS코드·박스 입수가 비어 있는 품목: ${missing.join(', ')} — 아래 표에서 채워 주세요.</div>`:''}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px">
         ${f('인보이스 번호','invNo',INV.invNo)}${f('인보이스 일자','invDate',INV.invDate,'date')}${f('출항·출발일','shipDate',INV.shipDate,'date')}
-        ${f(INV.kind==='KR'?'항공편 / Vessel':'운송 / Vessel','vessel',INV.vessel)}${f('출발지','from',INV.from)}${f('도착지','to',INV.to)}
+        <div class="ov-fr" style="margin:0"><label>운송 방법</label><select onchange="invSetMode(this.value)" style="width:100%">${Object.entries(INV_MODES).map(([k,v]) => `<option value="${k}" ${INV.mode===k?'selected':''}>${v.lbl}</option>`).join('')}</select></div>
+        <div class="ov-fr" style="margin:0"><label>${(INV_MODES[INV.mode]||INV_MODES.TRUCK).fieldKo}</label><input value="${String(INV.vessel||'').replace(/"/g,'&quot;')}" placeholder="${(INV_MODES[INV.mode]||INV_MODES.TRUCK).ph}" oninput="invSet('vessel', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>
+        ${f('출발지','from',INV.from)}${f('도착지','to',INV.to)}
         ${f('인도조건','incoterm',INV.incoterm)}${f('담당자(영문)','contact',INV.contact)}${f('연락처','phone',INV.phone)}
       </div>
       <div class="tw" style="margin-bottom:10px"><table><thead><tr><th>품목</th><th>HS</th><th style="min-width:260px">베트남어 품명</th><th style="text-align:right">수량</th><th style="text-align:right">박스 입수</th>
@@ -13449,7 +13471,8 @@ async function invSaveMaster(){
   const d = JSON.parse(JSON.stringify(invDoc()));
   d.items = d.items || {}; d.tpl = d.tpl || {};
   INV.lines.forEach(l => { d.items[l.code] = {hs:l.hs, vi:l.vi, en:l.en, pcsBox:+l.pcsBox||''}; });
-  d.tpl[INV.kind] = {contact:INV.contact, phone:INV.phone, vessel: INV.kind==='KR' ? '' : INV.vessel, from:INV.from, to:INV.to, incoterm:INV.incoterm};
+  d.tpl[INV.kind] = {contact:INV.contact, phone:INV.phone, mode:INV.mode, incoterm:INV.incoterm};
+  d.tpl[INV.kind + '_' + INV.mode] = {from:INV.from, to:INV.to};
   if (JSON.stringify(d) !== JSON.stringify(invDoc())) await saveCost('model', '_doc', d);
 }
 async function invMakeExcel(){
@@ -13531,7 +13554,9 @@ function invHeader(ws, title, lastCol){
     r += 2;
   };
   rowPair(['(4) Port of Departure', '(5) Port of Destination', kr ? '(11) Remarks:' : '(11) Remarks:'], [INV.from, INV.to, kr ? `${INV.incoterm} / Processing Contract No.: ${INV_CO.contract}` : INV.incoterm]);
-  rowPair(['(6) Vessel / Voyage:', '(7) Sailing on About', '(12) Payment term : TT'], [INV.vessel, invXDate(INV.shipDate), kr ? '' : `PROCESSING CONTRACT NO. ${INV_CO.contract}`]);
+  const mdx = INV_MODES[INV.mode] || INV_MODES.TRUCK;
+  const shipVal = INV.mode === 'TRUCK' ? (INV.vessel || 'BY TRUCK') : `BY ${({SEA:'SEA', AIR:'AIR', EXPRESS:'COURIER'})[INV.mode]}${INV.vessel ? ' - ' + INV.vessel : ''}`;
+  rowPair([mdx.field, INV.mode === 'AIR' ? '(7) Flight Date' : '(7) Sailing on About', '(12) Payment term : TT'], [shipVal, invXDate(INV.shipDate), kr ? '' : `PROCESSING CONTRACT NO. ${INV_CO.contract}`]);
   return r;
 }
 function invSheetInvoice(ws){
