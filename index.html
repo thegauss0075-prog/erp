@@ -1847,6 +1847,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <select id="inv-kind" onchange="INV=null;document.getElementById('inv-from').value='';renderInvPanel()"><option value="SOL">솔루엠비나 (DDP)</option><option value="KR">본사 THE GAUSS INC. (EXW 임가공)</option></select>
       <div class="date-range"><input type="date" id="inv-from" onchange="INV=null;renderInvPanel()"><span>~</span><input type="date" id="inv-to" onchange="INV=null;renderInvPanel()"></div>
     </div>
+    <div id="inv-img-row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:12px"></div>
     <div id="inv-ship-list"></div>
     <div id="inv-editor"></div>
   </div>
@@ -13258,6 +13259,55 @@ const INV_ITEM_DEFAULT = {
   'CH330125 IND-10T': {hs:'85045093', pcsBox:315, en:'CH330125-IND-10T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 10T, công suất danh định không quá 2.500KVA'}
 };
 let INV = null;   // 지금 작성 중인 서류
+// ── 도장·서명 이미지: 공개 코드(GitHub)에 두면 누구나 내려받아 위조할 수 있으므로, 관리자만 읽을 수 있는
+//    서버 원가 데이터(COST_DATA)에 나눠 저장한다(시트 한 칸 5만 자 제한 → 4만 자씩).
+const INV_IMG = {seal:'회사 도장·서명', title:'직함 도장'};
+function invImg(k){
+  const meta = (COST.model||{})['_img_'+k]; if (!meta || !meta.n) return '';
+  let d = ''; for (let i = 0; i < meta.n; i++) { const p = (COST.model||{})[`_img_${k}#${i}`]; if (!p) return ''; d += p.d; }
+  return d;
+}
+async function invUploadImg(k, input){
+  const file = input.files && input.files[0]; input.value = '';
+  if (!file) return;
+  if (!/^image\/(png|jpeg)$/.test(file.type)) { alert('PNG 또는 JPG 이미지를 골라주세요.'); return; }
+  const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+  // 너무 크면 줄인다(가로 최대 360px, 투명 배경 유지)
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+  let data = url;
+  if (img.width > 360 || file.type !== 'image/png') {
+    const w = Math.min(360, img.width), h = Math.round(img.height * w / img.width);
+    const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h);
+    data = c.toDataURL('image/png');
+  }
+  const parts = data.match(/[\s\S]{1,40000}/g);
+  const st = document.getElementById('inv-img-status'); if (st) st.textContent = '⏳ 저장 중...';
+  for (let i = 0; i < parts.length; i++) {
+    const r = await apiPost('saveCostData', {section:'model', key:`_img_${k}#${i}`, value: JSON.stringify({d: parts[i]}), user: CURRENT_USER||''});
+    if (!r || !r.ok) { alert('저장 실패: ' + (r && r.error || '서버 응답 없음')); renderInvImgRow(); return; }
+    COST.model[`_img_${k}#${i}`] = {d: parts[i]};
+  }
+  const r = await apiPost('saveCostData', {section:'model', key:'_img_'+k, value: JSON.stringify({n: parts.length, at: new Date().toISOString()}), user: CURRENT_USER||''});
+  if (!r || !r.ok) { alert('저장 실패: ' + (r && r.error || '')); renderInvImgRow(); return; }
+  COST.model['_img_'+k] = {n: parts.length};
+  renderInvImgRow(); if (INV) renderInvEditor();
+}
+async function invRemoveImg(k){
+  if (!confirm(INV_IMG[k] + ' 이미지를 삭제할까요?')) return;
+  const r = await apiPost('saveCostData', {section:'model', key:'_img_'+k, value:'', user: CURRENT_USER||''});
+  if (!r || !r.ok) { alert('삭제 실패: ' + (r && r.error || '')); return; }
+  delete COST.model['_img_'+k]; renderInvImgRow(); if (INV) renderInvEditor();
+}
+function renderInvImgRow(){
+  const el = document.getElementById('inv-img-row'); if (!el) return;
+  el.innerHTML = '<span style="font-weight:600">서류에 넣을 도장·서명</span>' + Object.entries(INV_IMG).map(([k,l]) => {
+    const d = invImg(k);
+    return `<span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line,#DCE1E7);border-radius:8px;padding:4px 8px;background:#fff">
+      ${d ? `<img src="${d}" alt="${l}" style="height:34px">` : `<span style="color:#8A95A3">${l} 없음</span>`}
+      <label style="cursor:pointer;color:#185FA5;font-weight:600">${d?'바꾸기':'올리기'}<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="invUploadImg('${k}', this)"></label>
+      ${d ? `<button onclick="invRemoveImg('${k}')" style="border:none;background:none;color:#b91c1c;cursor:pointer">삭제</button>` : ''}</span>`;
+  }).join('') + '<span id="inv-img-status" style="color:#5D6977"></span>';
+}
 function invDoc(){ return (COST.model && COST.model._doc) || {}; }
 function invItem(code){ return {...(INV_ITEM_DEFAULT[code]||{}), ...((invDoc().items||{})[code]||{})}; }
 function invKindOf(dest){ const d = String(dest||'').toUpperCase(); return (d === 'KR' || d.includes('한국') || d.includes('GAUSS INC')) ? 'KR' : (d === 'NG' ? '' : 'SOL'); }
@@ -13273,6 +13323,7 @@ function renderInvPanel(){
   if (!isAdmin) { box.style.display = 'none'; return; }
   box.style.display = '';
   if (COST_SERVER_OK !== true && !_invCostTried && (API_URL || IS_GAS)) { _invCostTried = true; loadCost().then(() => { if (INV) { INV = null; } renderInvPanel(); }); }
+  renderInvImgRow();
   const kindEl = document.getElementById('inv-kind'), fEl = document.getElementById('inv-from'), tEl = document.getElementById('inv-to');
   if (!fEl.value) {
     const last = (txLog||[]).filter(t => t.type === 'otp' && invKindOf(t.dest) === kindEl.value).map(invVNDate).filter(Boolean).sort().pop() || bdToday();
@@ -13357,6 +13408,7 @@ function renderInvEditor(){
         ${f('총 순중량 kg (Net)','net',INV.net,'number')}${f('총 총중량 kg (Gross)','gross',INV.gross,'number')}${f('총 부피 CBM','cbm',INV.cbm,'number')}${f('팔레트 수','pallets',INV.pallets,'number')}${f('팔레트 규격 (예: 1.1*1.1*0.88)','dims',INV.dims)}
       </div>
       <div id="inv-totals" style="font-size:13px;color:#18212B;margin-bottom:10px"></div>
+      ${(invImg('seal')||invImg('title')) ? `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="inv-stamp" ${INV.stamp!==false?'checked':''} onchange="INV.stamp=this.checked"> 서명란에 도장·서명 넣기</label>` : '<div style="font-size:12px;color:#8A95A3;margin-bottom:8px">도장·서명 이미지를 위에서 올려 두면 서명란에 자동으로 들어갑니다.</div>'}
       <button id="inv-make" onclick="invMakeExcel()" style="padding:9px 18px;border-radius:8px;border:none;background:#166534;color:#fff;font-weight:700;cursor:pointer">📥 인보이스·패킹리스트 엑셀 만들기</button>
     </div>`;
   invRefreshTotals();
@@ -13380,8 +13432,19 @@ async function invMakeExcel(){
   try {
     const EX = await invLoadExcelJS();
     const wb = new EX.Workbook();
-    invSheetInvoice(wb.addWorksheet('invoice', {pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0}}));
-    invSheetPacking(wb.addWorksheet('pkl', {pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0}}));
+    const wsI = wb.addWorksheet('invoice', {pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0}});
+    const wsP = wb.addWorksheet('pkl', {pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0}});
+    invSheetInvoice(wsI); invSheetPacking(wsP);
+    if (INV.stamp !== false) {
+      const seal = invImg('seal'), title = invImg('title');
+      // addImage는 첫 그림에 0번을 주므로 "있음/없음"은 null로 구분한다
+      const ids = {seal: seal ? wb.addImage({base64: seal, extension:'png'}) : null, title: title ? wb.addImage({base64: title, extension:'png'}) : null};
+      [wsI, wsP].forEach(ws => {
+        const at = ws._signAt; if (!at) return;
+        if (ids.seal != null) ws.addImage(ids.seal, {tl:{col: at.col + 0.1, row: at.row}, ext:{width:150, height:117}, editAs:'oneCell'});
+        if (ids.title != null) ws.addImage(ids.title, {tl:{col: at.col + 0.1, row: at.row + 5.6}, ext:{width:130, height:41}, editAs:'oneCell'});
+      });
+    }
     const buf = await wb.xlsx.writeBuffer();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
@@ -13500,7 +13563,8 @@ function invWeights(ws, r, col){
   [['* TOTAL NET WEIGHT :', +INV.net||'', 'KGM'], ['* TOTAL GROSS WEIGHT :', +INV.gross||'', 'KGM'], ['* TOTAL MEASUREMENT :', +INV.cbm||'', 'CBM'], ['* TOTAL PK :', ctn, 'CT'], ['* TOTAL PL :', +INV.pallets||'', 'PP']]
     .forEach(([a,v,u]) => { invCell(ws, `${col}${r}`, `${a} ${v===''?'':v} ${u}`, {bold:true}); r++; });
   r++; invCell(ws, `${col}${r}`, 'SIGN BY:', {bold:true});
-  return r + 1;
+  ws._signAt = {col: col.charCodeAt(0) - 65, row: r};   // 도장 위치(0부터 세는 열, 서명 줄 바로 아래)
+  return r + 6;
 }
 function invSheetPacking(ws){
   ws.columns = [{width:5},{width:18},{width:16},{width:14},{width:9},{width:13},{width:14},{width:14},{width:18}];
@@ -13530,6 +13594,7 @@ function invSheetPacking(ws){
   invGrid(ws, r, 1, r, 9); r += 1;
   invCell(ws, `A${r}`, `TOTAL: ${+INV.pallets||''} PALLET`, {bold:true}); r += 2;
   invCell(ws, `G${r}`, 'SHIPPER', {bold:true, h:'center'}); invCell(ws, `G${r+1}`, '(KÝ TÊN, ĐÓNG DẤU)', {italic:true, h:'center', size:9});
+  ws._signAt = {col: 6, row: r + 1};
 }
 </script>
 </body>
