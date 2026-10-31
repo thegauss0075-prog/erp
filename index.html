@@ -403,6 +403,21 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   .ov-bg{background:rgba(20,30,40,.5)}
   .ov-box{border-radius:12px;box-shadow:0 16px 48px rgba(15,25,35,.28)}
 
+  /* 대시보드 완제품 출고 현황 패널 */
+  .ds-panel{background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);padding:1rem 1.1rem;margin-bottom:1.25rem}
+  .ds-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .ds-head h3{font-size:16px;font-weight:600;margin:0}
+  .ds-head h3 span{font-size:12px;font-weight:400;color:var(--muted)}
+  .ds-nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .ds-nav strong{font-size:14px;min-width:92px;text-align:center}
+  .ds-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}
+  .ds-tile{border:1px solid var(--line-soft);background:#F8FAFC;border-radius:var(--r-md);padding:10px 12px}
+  .ds-lbl{font-size:12px;color:var(--muted);font-weight:500}
+  .ds-lbl .vi{font-size:10px;color:var(--faint)}
+  .ds-val{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:4px 0 2px;color:var(--ink)}
+  .ds-val small{font-size:13px;font-weight:500;color:var(--muted);margin-left:2px}
+  .ds-body{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
+  @media (max-width:900px){ .ds-body{grid-template-columns:1fr} }
   /* 작업지시 표: 좁은 화면에서도 액션 버튼까지 한 화면에 보이게 */
   #tab-wo th,#tab-wo td{padding-left:6px;padding-right:6px}
   #tab-wo td.wo-actions{white-space:normal;min-width:128px;max-width:132px;line-height:1.9}
@@ -471,6 +486,8 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     </table>
   </div>
 
+  <div id="d-ship-panel" class="ds-panel"></div>
+
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:1.25rem">
     <div class="ms-card" onclick="go('inv');setIC('TP')"><div class="ms-name">완제품 (TP)<span class="vi">Thành phẩm (TP)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-tp-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div><div class="ms-stat"><div class="ms-val hi" id="d-tp">-</div><div class="ms-lbl">총합 / Tổng</div></div></div></div>
     <div class="ms-card" onclick="go('inv');setIC('BTP')"><div class="ms-name">반제품 (BTP)<span class="vi">Bán thành phẩm (BTP)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-btp-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div><div class="ms-stat"><div class="ms-val hi" id="d-btp">-</div><div class="ms-lbl">총합 / Tổng</div></div></div></div>
@@ -478,11 +495,6 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <div class="ms-card" onclick="go('inv');setIC('VN')"><div class="ms-name">원자재 VN<span class="vi">NVL Việt Nam (VN)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-vn-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div></div></div>
     <div class="ms-card" onclick="go('inv');setIC('VTTH')"><div class="ms-name">소모품<span class="vi">Vật tư tiêu hao</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val" id="d-vtth-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div></div></div>
     <div class="ms-card" onclick="go('ng')"><div class="ms-name" style="color:#b91c1c">불량 (NG)<span class="vi">Hàng lỗi (NG)</span></div><div class="ms-row"><div class="ms-stat"><div class="ms-val ngc" id="d-ng-cnt">-</div><div class="ms-lbl">품목 / Mặt hàng</div></div></div></div>
-  </div>
-  <div style="margin-bottom:1.25rem">
-    <button onclick="openShipHist()" style="width:100%;padding:14px 18px;border-radius:12px;border:1.5px solid #7c3aed;background:linear-gradient(135deg,#f5f3ff,#ede9fe);color:#5b21b6;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
-      <span style="text-align:center">📊 완제품 출고 현황 보기 / Xem tình hình xuất kho thành phẩm <span style="display:block;font-weight:400;font-size:12px;color:#7c3aed">품목별 출고일자·수량·출고처·누계 / Theo mặt hàng: ngày xuất, số lượng, nơi nhận, lũy kế</span></span>
-    </button>
   </div>
   <div id="d-low-stock-wrap" style="display:none;background:#fff;border:1.5px solid #fca5a5;border-radius:12px;padding:1.1rem;margin-bottom:1.25rem">
     <div style="font-size:14px;font-weight:700;margin-bottom:10px;color:#b91c1c">⚠️ 안전재고 미달 품목 / Mặt hàng dưới mức tồn kho an toàn <span id="d-low-stock-cnt" style="font-weight:400;color:#888;font-size:12px"></span></div>
@@ -8200,6 +8212,7 @@ function initDashboard(){
   if(el('d-ng-cnt'))   el('d-ng-cnt').textContent   = DB.ng.length;
 
   el('d-tp').textContent=DB.tp.reduce((s,r)=>s+r.total,0).toLocaleString();
+  try { if (typeof renderShipPanel === 'function') renderShipPanel(); } catch(e) { console.warn('출고 현황 패널', e); }
   el('d-btp').textContent=DB.btp.reduce((s,r)=>s+r.total,0).toLocaleString();
 
   // ✅ 안전재고 미달 품목 (min이 설정되어 있고, 현재고가 그 아래인 품목만)
@@ -13073,6 +13086,137 @@ function checkAdminIdle(){
 }
 setInterval(checkAdminIdle, 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkAdminIdle(); });
+// ════════════════════════════════════════════════════════════
+//  🚚 대시보드 — 완제품 출고 현황 (2026-10-31): 월별 출고·매출을 대시보드 맨 위에서 한눈에
+//  - 출고 = 완제품(TP) 출고, 불량(NG) 출고 제외 (제조원가 탭과 같은 기준)
+//  - 매출은 원가 데이터(판매가·임가공비)를 볼 수 있는 관리자·본사 열람에만 표시 (USD)
+// ════════════════════════════════════════════════════════════
+let _dsMonth = null, _dsMode = 'qty', _dsCostTried = false;
+function dsNowYM(){ return new Date(Date.now() + 7*3600e3).toISOString().slice(0,7); }
+function dsShiftYM(m, k){ let [y,mo] = m.split('-').map(Number); mo += k; while (mo < 1) { mo += 12; y--; } while (mo > 12) { mo -= 12; y++; } return `${y}-${String(mo).padStart(2,'0')}`; }
+function dsShipByMonth(){
+  const out = {};   // out[ym][code] = qty
+  (txLog||[]).forEach(t => {
+    if (t.type !== 'otp' || String(t.cat||'').toUpperCase() === 'BTP' || t.dest === 'NG') return;
+    const ym = costYM(t.dt); if (!/^\d{4}-\d{2}$/.test(ym)) return;
+    const o = out[ym] = out[ym] || {}; o[t.code] = (o[t.code]||0) + (+t.qty||0);
+  });
+  return out;
+}
+// 이번 달처럼 진행 중인 달은 "전월 같은 날짜까지"와 비교해야 공정하다
+function dsShipUntilDay(ym, day){
+  const o = {};
+  (txLog||[]).forEach(t => {
+    if (t.type !== 'otp' || String(t.cat||'').toUpperCase() === 'BTP' || t.dest === 'NG') return;
+    const d = Date.parse(t.dt); if (isNaN(d)) return;
+    const v = new Date(d + 7*3600e3).toISOString();
+    if (v.slice(0,7) !== ym || +v.slice(8,10) > day) return;
+    o[t.code] = (o[t.code]||0) + (+t.qty||0);
+  });
+  return o;
+}
+function dsCanRev(){ return COST_SERVER_OK === true && Object.keys(COST.model||{}).length > 0; }
+function dsToUSD(v, cur, m){
+  v = +v || 0; if (!v) return 0; cur = cur || 'USD';
+  if (cur === 'USD') return v;
+  // 그 달 환율이 없으면 가장 가까운 이전 달 환율을 쓴다
+  let fx = null; for (let i = 0, mm = m; i < 13; i++, mm = dsShiftYM(mm, -1)) { const f = costFx(mm); if (f.usd) { fx = f; break; } }
+  if (!fx) return 0;
+  return cur === 'VND' ? v / fx.usd : (fx.krw ? v * fx.krw / fx.usd : 0);
+}
+function dsRev(code, qty, m){
+  const d = COST.model[code] || {};
+  return {sale: dsToUSD(d.sale, d.saleCur, m) * qty, fee: dsToUSD(d.fee, d.saleCur, m) * qty};
+}
+function dsMonthNav(k){ _dsMonth = dsShiftYM(_dsMonth || dsNowYM(), k); if (_dsMonth > dsNowYM()) _dsMonth = dsNowYM(); renderShipPanel(); }
+function dsSetMode(md){ _dsMode = md; renderShipPanel(); }
+function renderShipPanel(){
+  const box = document.getElementById('d-ship-panel'); if (!box) return;
+  // 매출 표시용 원가 데이터: 관리자·본사 열람이면 한 번만 불러온다
+  if (!_dsCostTried && (isAdmin || USER_ROLE === 'viewer') && COST_SERVER_OK !== true && typeof loadCost === 'function' && (API_URL || IS_GAS)) {
+    _dsCostTried = true; loadCost().then(() => { if (dsCanRev()) renderShipPanel(); });
+  }
+  const now = dsNowYM(); const m = _dsMonth || now; _dsMonth = m;
+  const pm = dsShiftYM(m, -1), yr = m.slice(0,4);
+  const by = dsShipByMonth();
+  const canRev = dsCanRev(); if (!canRev && _dsMode !== 'qty') _dsMode = 'qty';
+  const sumQ = ym => Object.values(by[ym]||{}).reduce((s,v)=>s+v,0);
+  const sumR = ym => Object.entries(by[ym]||{}).reduce((a,[c,q]) => { const r = dsRev(c,q,ym); a.sale += r.sale; a.fee += r.fee; return a; }, {sale:0, fee:0});
+  const isCurM = m === now, today = +new Date(Date.now() + 7*3600e3).toISOString().slice(8,10);
+  const pmCmp = isCurM ? dsShipUntilDay(pm, today) : (by[pm]||{});   // 비교 기준(진행 중인 달은 전월 같은 날까지)
+  const q = sumQ(m), qp = sumQ(pm), qpc = Object.values(pmCmp).reduce((a,v)=>a+v,0);
+  const ytdMonths = Object.keys(by).filter(k => k.slice(0,4) === yr && k <= m);
+  const qy = ytdMonths.reduce((s,k)=>s+sumQ(k),0);
+  const R = canRev ? sumR(m) : null;
+  const Rp = canRev ? Object.entries(pmCmp).reduce((a,[c,qq]) => { const r = dsRev(c,qq,pm); a.sale += r.sale; a.fee += r.fee; return a; }, {sale:0, fee:0}) : null;
+  const Ry = canRev ? ytdMonths.reduce((a,k) => { const r = sumR(k); a.sale += r.sale; a.fee += r.fee; return a; }, {sale:0, fee:0}) : null;
+  const n = v => Math.round(+v||0).toLocaleString();
+  const usd = v => '$' + Math.round(+v||0).toLocaleString();
+  const cmpLbl = isCurM ? `전월 1~${today}일 대비` : '전월 대비';
+  const delta = (a, b) => b ? `<span style="color:${a>=b?'#166534':'#b91c1c'};font-size:12px;font-weight:600">${a>=b?'▲':'▼'} ${Math.abs(Math.round((a-b)/b*100))}%</span> <span style="color:#8A95A3;font-size:11px">${cmpLbl}</span>` : '<span style="color:#8A95A3;font-size:11px">전월 출고 없음</span>';
+  const tile = (lbl, vi, val, sub) => `<div class="ds-tile"><div class="ds-lbl">${lbl}<span class="vi">${vi}</span></div><div class="ds-val">${val}</div><div class="ds-sub">${sub}</div></div>`;
+  const isCur = m === now;
+  let tiles = tile(`${+m.slice(5)}월 출고${isCur?' (진행 중)':''}`, 'Xuất tháng', `${n(q)}<small>개</small>`, delta(q, qpc))
+    + tile(`${yr}년 누계 출고`, 'Lũy kế năm', `${n(qy)}<small>개</small>`, `<span style="color:#8A95A3;font-size:11px">${ytdMonths.length}개월</span>`);
+  if (canRev) tiles += tile(`${+m.slice(5)}월 본사 매출`, 'Doanh thu HQ', usd(R.sale), delta(R.sale, Rp.sale) + `<div style="color:#8A95A3;font-size:11px">누계 ${usd(Ry.sale)}</div>`)
+    + tile(`${+m.slice(5)}월 임가공비 매출`, 'Doanh thu gia công', usd(R.fee), delta(R.fee, Rp.fee) + `<div style="color:#8A95A3;font-size:11px">누계 ${usd(Ry.fee)}</div>`);
+
+  // 12개월 막대 그래프
+  const months = []; for (let i = 11; i >= 0; i--) months.push(dsShiftYM(m, -i));
+  const series = _dsMode === 'qty' ? [{k:'q', col:COST_VIZ.bar, lbl:'출고 수량', v: months.map(sumQ)}]
+    : [{k:'s', col:COST_VIZ.bar, lbl:'본사 매출(USD)', v: months.map(mm => sumR(mm).sale)}, {k:'f', col:COST_VIZ.labor, lbl:'임가공비 매출(USD)', v: months.map(mm => sumR(mm).fee)}];
+  const W = 560, H = 200, L = 46, Rg = 8, T = 14, B = 24, iw = W-L-Rg, ih = H-T-B;
+  const maxV = costNiceMax(Math.max(1, ...series.flatMap(s => s.v)));
+  const y = v => T + ih - v/maxV*ih;
+  const slot = iw / months.length, bw = Math.min(26, slot*0.7/series.length);
+  let g = '';
+  for (let i=0;i<=4;i++){ const v=maxV*i/4; g += `<line x1="${L}" x2="${W-Rg}" y1="${y(v)}" y2="${y(v)}" stroke="${COST_VIZ.grid}"/><text x="${L-6}" y="${y(v)+3}" font-size="10" text-anchor="end" fill="${COST_VIZ.muted}">${_dsMode==='qty'?'':'$'}${v>=1e6?(v/1e6)+'M':v>=1000?(v/1000)+'k':v}</text>`; }
+  months.forEach((mm, i) => {
+    const x0 = L + slot*i + (slot - bw*series.length - (series.length-1)*2)/2;
+    const sel = mm === m;
+    series.forEach((s, j) => {
+      const v = s.v[i], h = (T+ih) - y(v); const x = x0 + j*(bw+2);
+      if (h > 0) { const r = Math.min(3, bw/2, h);
+        g += `<path d="M${x},${T+ih} V${y(v)+r} q0,-${r} ${r},-${r} H${x+bw-r} q${r},0 ${r},${r} V${T+ih} Z" fill="${s.col}" opacity="${sel?1:.45}" style="cursor:pointer" onclick="_dsMonth='${mm}';renderShipPanel()"><title>${mm} ${s.lbl}: ${_dsMode==='qty'?n(v)+'개':usd(v)}</title></path>`; }
+    });
+    if (sel && series[0].v[i]) g += `<text x="${x0 + (bw*series.length)/2}" y="${y(Math.max(...series.map(s=>s.v[i])))-4}" font-size="10" font-weight="600" text-anchor="middle" fill="${COST_VIZ.ink}">${_dsMode==='qty'?n(series[0].v[i]):usd(series[0].v[i])}</text>`;
+    g += `<text x="${L + slot*(i+0.5)}" y="${H-7}" font-size="10" text-anchor="middle" fill="${sel?COST_VIZ.ink:COST_VIZ.ink2}" font-weight="${sel?600:400}">${+mm.slice(5)}월</text>`;
+  });
+  const modeBtns = canRev ? `<div class="period-btns">${[['qty','수량'],['rev','매출(USD)']].map(([k,l]) => `<button class="period-btn ${_dsMode===k?'on':''}" onclick="dsSetMode('${k}')">${l}</button>`).join('')}</div>` : '';
+  const legend = series.length > 1 ? `<div style="display:flex;gap:12px;font-size:11.5px;color:#5D6977;margin-top:2px">${series.map(s=>`<span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${s.col};margin-right:4px"></i>${s.lbl}</span>`).join('')}</div>` : '';
+
+  // 모델별 표
+  const codes = new Set([...Object.keys(by[m]||{}), ...Object.keys(by[pm]||{})]);
+  const ytdBy = {}; ytdMonths.forEach(k => Object.entries(by[k]||{}).forEach(([c,v]) => { ytdBy[c] = (ytdBy[c]||0) + v; }));
+  const nameOf = c => ((DB.tp||[]).find(r => r.code === c) || {}).name || c;
+  const rows = [...codes].map(c => ({c, name:nameOf(c), q:(by[m]||{})[c]||0, qp:(by[pm]||{})[c]||0, qy:ytdBy[c]||0, r: canRev ? dsRev(c, (by[m]||{})[c]||0, m) : null}))
+    .sort((a,b) => b.q - a.q || b.qp - a.qp);
+  const noPrice = canRev ? rows.filter(r => r.q && !(COST.model[r.c]||{}).sale).map(r => r.name) : [];
+  const table = rows.length ? `<div class="tw"><table><thead><tr><th>모델<span class="vi">Model</span></th><th style="text-align:right">${+m.slice(5)}월 출고</th><th style="text-align:right">전월</th><th style="text-align:right">${yr} 누계</th>${canRev?'<th style="text-align:right">본사 매출</th><th style="text-align:right">임가공비</th>':''}</tr></thead><tbody>${
+      rows.map(r => `<tr><td>${r.name}</td><td style="text-align:right;font-weight:700">${r.q?n(r.q):'-'}</td><td style="text-align:right;color:#5D6977">${r.qp?n(r.qp):'-'}</td><td style="text-align:right;color:#5D6977">${n(r.qy)}</td>${canRev?`<td style="text-align:right">${r.r.sale?usd(r.r.sale):'-'}</td><td style="text-align:right">${r.r.fee?usd(r.r.fee):'-'}</td>`:''}</tr>`).join('')
+    }<tr style="font-weight:700;background:#F6F8FA"><td>합계</td><td style="text-align:right">${n(q)}</td><td style="text-align:right">${n(qp)}</td><td style="text-align:right">${n(qy)}</td>${canRev?`<td style="text-align:right">${usd(R.sale)}</td><td style="text-align:right">${usd(R.fee)}</td>`:''}</tr></tbody></table></div>`
+    : `<div class="empty">${m} 출고 기록이 없습니다.</div>`;
+  const revNote = canRev
+    ? `<div style="font-size:11px;color:#8A95A3;margin-top:6px">매출 = 출고 수량 × 판매가·임가공비 (제조원가 탭 ② 모델 정보 기준)${noPrice.length?` · ⚠️ 판매가 없음: ${noPrice.join(', ')}`:''}</div>`
+    : (USER_ROLE === 'viewer' && COST_SERVER_OK === 'auth' ? `<div style="font-size:11px;color:#8A95A3;margin-top:6px">매출은 💰 제조원가 탭에서 조회 비밀번호를 입력하면 함께 표시됩니다.</div>` : '');
+
+  box.innerHTML = `
+    <div class="ds-head">
+      <h3>🚚 완제품 출고 현황 <span>/ Tình hình xuất kho thành phẩm</span></h3>
+      <div class="ds-nav">
+        <button class="period-btn" onclick="dsMonthNav(-1)" aria-label="이전 달">‹</button>
+        <strong>${m.slice(0,4)}년 ${+m.slice(5)}월</strong>
+        <button class="period-btn" onclick="dsMonthNav(1)" ${isCur?'disabled style="opacity:.35;cursor:default"':''} aria-label="다음 달">›</button>
+        <button class="period-btn" onclick="openShipHist()">품목별 출고 상세 / Chi tiết</button>
+      </div>
+    </div>
+    <div class="ds-tiles">${tiles}</div>
+    <div class="ds-body">
+      <div class="ds-chart"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px"><div style="font-size:13px;font-weight:600">최근 12개월 <span style="font-weight:400;color:#8A95A3;font-size:11.5px">막대를 누르면 그 달로 이동</span></div>${modeBtns}</div>
+        <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="최근 12개월 완제품 출고">${g}</svg>${legend}</div>
+      <div class="ds-table">${table}${revNote}</div>
+    </div>`;
+}
 </script>
 </body>
 </html>
