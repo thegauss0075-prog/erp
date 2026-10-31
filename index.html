@@ -1842,9 +1842,9 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <!-- 📄 인보이스·패킹리스트 (관리자) -->
   <div id="inv-panel" class="ds-panel" style="display:none">
     <div class="ds-head"><h3>📄 인보이스·패킹리스트 만들기 <span>/ Lập Invoice · Packing list</span></h3></div>
-    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">① 출고처와 날짜를 고르면 그날 등록된 완제품 출고가 나옵니다. 서류에 넣을 출고를 고른 뒤 작성하세요. 단가는 💰 제조원가 탭 ② 모델 정보에서 가져옵니다.</div>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">① 출고처와 날짜를 고르면 그날 등록된 완제품 출고가 나옵니다. 서류에 넣을 출고를 고른 뒤 작성하세요. 단가는 💰 제조원가 탭 ② 모델 정보에서 가져옵니다.<br><span style="color:#8A95A3">Chọn nơi nhận và ngày để xem các lần xuất thành phẩm đã đăng ký, chọn các dòng cần đưa vào chứng từ. Đơn giá lấy từ tab Giá thành SX.</span></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-      <select id="inv-kind" onchange="INV=null;document.getElementById('inv-from').value='';renderInvPanel()"><option value="SOL">솔루엠비나 (DDP)</option><option value="KR">본사 THE GAUSS INC. (EXW 임가공)</option></select>
+      <select id="inv-kind" onchange="INV=null;document.getElementById('inv-from').value='';renderInvPanel()"><option value="SOL">솔루엠비나 / Solum Vina (DDP)</option><option value="KR">본사 / Trụ sở THE GAUSS INC. (EXW gia công)</option></select>
       <div class="date-range"><input type="date" id="inv-from" onchange="INV=null;renderInvPanel()"><span>~</span><input type="date" id="inv-to" onchange="INV=null;renderInvPanel()"></div>
     </div>
     <div id="inv-img-row" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:12px"></div>
@@ -13182,7 +13182,7 @@ function renderShipPanel(){
 
   // 12개월 막대 그래프
   const months = []; for (let i = 11; i >= 0; i--) months.push(dsShiftYM(m, -i));
-  const series = _dsMode === 'qty' ? [{k:'q', col:COST_VIZ.bar, lbl:'출고 수량', v: months.map(sumQ)}]
+  const series = _dsMode === 'qty' ? [{k:'q', col:COST_VIZ.bar, lbl:'출고 수량 / SL xuất', v: months.map(sumQ)}]
     : [{k:'s', col:COST_VIZ.bar, lbl:'본사 매출(USD)', v: months.map(mm => sumR(mm).sale)}, {k:'f', col:COST_VIZ.labor, lbl:'임가공비 매출(USD)', v: months.map(mm => sumR(mm).fee)}];
   const W = 560, H = 200, L = 46, Rg = 8, T = 14, B = 24, iw = W-L-Rg, ih = H-T-B;
   const maxV = costNiceMax(Math.max(1, ...series.flatMap(s => s.v)));
@@ -13201,7 +13201,7 @@ function renderShipPanel(){
     if (sel && series[0].v[i]) g += `<text x="${x0 + (bw*series.length)/2}" y="${y(Math.max(...series.map(s=>s.v[i])))-4}" font-size="10" font-weight="600" text-anchor="middle" fill="${COST_VIZ.ink}">${_dsMode==='qty'?n(series[0].v[i]):usd(series[0].v[i])}</text>`;
     g += `<text x="${L + slot*(i+0.5)}" y="${H-7}" font-size="10" text-anchor="middle" fill="${sel?COST_VIZ.ink:COST_VIZ.ink2}" font-weight="${sel?600:400}">${+mm.slice(5)}월</text>`;
   });
-  const modeBtns = canRev ? `<div class="period-btns">${[['qty','수량'],['rev','매출(USD)']].map(([k,l]) => `<button class="period-btn ${_dsMode===k?'on':''}" onclick="dsSetMode('${k}')">${l}</button>`).join('')}</div>` : '';
+  const modeBtns = canRev ? `<div class="period-btns" style="flex-wrap:nowrap">${[['qty','수량 / SL'],['rev','매출 / DT (USD)']].map(([k,l]) => `<button class="period-btn ${_dsMode===k?'on':''}" onclick="dsSetMode('${k}')">${l}</button>`).join('')}</div>` : '';
   const legend = series.length > 1 ? `<div style="display:flex;gap:12px;font-size:11.5px;color:#5D6977;margin-top:2px">${series.map(s=>`<span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${s.col};margin-right:4px"></i>${s.lbl}</span>`).join('')}</div>` : '';
 
   // 모델별 표
@@ -13211,10 +13211,10 @@ function renderShipPanel(){
   const rows = [...codes].map(c => ({c, name:nameOf(c), q:(by[m]||{})[c]||0, qp:(by[pm]||{})[c]||0, qy:ytdBy[c]||0, r: canRev ? dsRev(c, (by[m]||{})[c]||0, m) : null}))
     .sort((a,b) => b.q - a.q || b.qp - a.qp);
   const noPrice = canRev ? rows.filter(r => r.q && !(COST.model[r.c]||{}).sale).map(r => r.name) : [];
-  const table = rows.length ? `<div class="tw"><table><thead><tr><th>모델<span class="vi">Model</span></th><th style="text-align:right">${+m.slice(5)}월 출고</th><th style="text-align:right">전월</th><th style="text-align:right">${yr} 누계</th>${canRev?'<th style="text-align:right">본사 매출</th><th style="text-align:right">임가공비</th>':''}</tr></thead><tbody>${
+  const table = rows.length ? `<div class="tw"><table><thead><tr><th>모델<span class="vi">Model</span></th><th style="text-align:right">${+m.slice(5)}월 출고<span class="vi">Xuất T${+m.slice(5)}</span></th><th style="text-align:right">전월<span class="vi">Tháng trước</span></th><th style="text-align:right">${yr} 누계<span class="vi">Lũy kế ${yr}</span></th>${canRev?'<th style="text-align:right">본사 매출<span class="vi">Doanh thu HQ</span></th><th style="text-align:right">임가공비<span class="vi">Phí gia công</span></th>':''}</tr></thead><tbody>${
       rows.map(r => `<tr><td>${r.name}</td><td style="text-align:right;font-weight:700">${r.q?n(r.q):'-'}</td><td style="text-align:right;color:#5D6977">${r.qp?n(r.qp):'-'}</td><td style="text-align:right;color:#5D6977">${n(r.qy)}</td>${canRev?`<td style="text-align:right">${r.r.sale?usd(r.r.sale):'-'}</td><td style="text-align:right">${r.r.fee?usd(r.r.fee):'-'}</td>`:''}</tr>`).join('')
-    }<tr style="font-weight:700;background:#F6F8FA"><td>합계</td><td style="text-align:right">${n(q)}</td><td style="text-align:right">${n(qp)}</td><td style="text-align:right">${n(qy)}</td>${canRev?`<td style="text-align:right">${usd(R.sale)}</td><td style="text-align:right">${usd(R.fee)}</td>`:''}</tr></tbody></table></div>`
-    : `<div class="empty">${m} 출고 기록이 없습니다.</div>`;
+    }<tr style="font-weight:700;background:#F6F8FA"><td>합계 / Tổng</td><td style="text-align:right">${n(q)}</td><td style="text-align:right">${n(qp)}</td><td style="text-align:right">${n(qy)}</td>${canRev?`<td style="text-align:right">${usd(R.sale)}</td><td style="text-align:right">${usd(R.fee)}</td>`:''}</tr></tbody></table></div>`
+    : `<div class="empty">${m} 출고 기록이 없습니다.<br>Không có dữ liệu xuất kho tháng này.</div>`;
   const revNote = canRev
     ? `<div style="font-size:11px;color:#8A95A3;margin-top:6px">매출 = 출고 수량 × 판매가·임가공비 (제조원가 탭 ② 모델 정보 기준)${noPrice.length?` · ⚠️ 판매가 없음: ${noPrice.join(', ')}`:''}</div>`
     : (USER_ROLE === 'viewer' && COST_SERVER_OK === 'auth' ? `<div style="font-size:11px;color:#8A95A3;margin-top:6px">매출은 💰 제조원가 탭에서 조회 비밀번호를 입력하면 함께 표시됩니다.</div>` : '');
@@ -13231,7 +13231,7 @@ function renderShipPanel(){
     </div>
     <div class="ds-tiles">${tiles}</div>
     <div class="ds-body">
-      <div class="ds-chart"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px"><div style="font-size:13px;font-weight:600">최근 12개월 <span style="font-weight:400;color:#8A95A3;font-size:11.5px">막대를 누르면 그 달로 이동</span></div>${modeBtns}</div>
+      <div class="ds-chart"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px"><div style="font-size:13px;font-weight:600">최근 12개월 / 12 tháng gần nhất<div style="font-weight:400;color:#8A95A3;font-size:11.5px">막대를 누르면 그 달로 이동 / Bấm cột để xem tháng đó</div></div>${modeBtns}</div>
         <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="최근 12개월 완제품 출고">${g}</svg>${legend}</div>
       <div class="ds-table">${table}${revNote}</div>
     </div>`;
@@ -13272,7 +13272,7 @@ const INV_PALLET_CH  = {perPallet:10, dims:'0.95*0.62*0.50', tare:11};
 function invPalletOf(code){ return /^CH330125/i.test(code) ? INV_PALLET_CH : INV_PALLET_STD; }
 // ── 도장·서명 이미지: 공개 코드(GitHub)에 두면 누구나 내려받아 위조할 수 있으므로, 관리자만 읽을 수 있는
 //    서버 원가 데이터(COST_DATA)에 나눠 저장한다(시트 한 칸 5만 자 제한 → 4만 자씩).
-const INV_IMG = {seal:'회사 도장·서명', title:'직함 도장'};
+const INV_IMG = {seal:'회사 도장·서명 / Dấu công ty', title:'직함 도장 / Dấu chức danh'};
 function invImg(k){
   const meta = (COST.model||{})['_img_'+k]; if (!meta || !meta.n) return '';
   let d = ''; for (let i = 0; i < meta.n; i++) { const p = (COST.model||{})[`_img_${k}#${i}`]; if (!p) return ''; d += p.d; }
@@ -13311,12 +13311,12 @@ async function invRemoveImg(k){
 }
 function renderInvImgRow(){
   const el = document.getElementById('inv-img-row'); if (!el) return;
-  el.innerHTML = '<span style="font-weight:600">서류에 넣을 도장·서명</span>' + Object.entries(INV_IMG).map(([k,l]) => {
+  el.innerHTML = '<span style="font-weight:600">서류에 넣을 도장·서명 <span class="vi" style="display:inline">/ Con dấu · chữ ký</span></span>' + Object.entries(INV_IMG).map(([k,l]) => {
     const d = invImg(k);
     return `<span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line,#DCE1E7);border-radius:8px;padding:4px 8px;background:#fff">
       ${d ? `<img src="${d}" alt="${l}" style="height:34px">` : `<span style="color:#8A95A3">${l} 없음</span>`}
-      <label style="cursor:pointer;color:#185FA5;font-weight:600">${d?'바꾸기':'올리기'}<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="invUploadImg('${k}', this)"></label>
-      ${d ? `<button onclick="invRemoveImg('${k}')" style="border:none;background:none;color:#b91c1c;cursor:pointer">삭제</button>` : ''}</span>`;
+      <label style="cursor:pointer;color:#185FA5;font-weight:600">${d?'바꾸기 / Đổi':'올리기 / Tải lên'}<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="invUploadImg('${k}', this)"></label>
+      ${d ? `<button onclick="invRemoveImg('${k}')" style="border:none;background:none;color:#b91c1c;cursor:pointer">삭제 / Xóa</button>` : ''}</span>`;
   }).join('') + '<span id="inv-img-status" style="color:#5D6977"></span>';
 }
 function invDoc(){ return (COST.model && COST.model._doc) || {}; }
@@ -13343,12 +13343,12 @@ function renderInvPanel(){
   const list = invShipments(kindEl.value, fEl.value, tEl.value || fEl.value);
   const n = v => (+v||0).toLocaleString();
   document.getElementById('inv-ship-list').innerHTML = list.length
-    ? `<div class="tw"><table><thead><tr><th style="width:30px"><input type="checkbox" checked onchange="document.querySelectorAll('.inv-pick').forEach(c=>c.checked=this.checked)"></th><th>출고일</th><th>품목</th><th>LOT</th><th style="text-align:right">수량</th><th>출고처</th><th>등록자</th></tr></thead><tbody>${
+    ? `<div class="tw"><table><thead><tr><th style="width:30px"><input type="checkbox" checked onchange="document.querySelectorAll('.inv-pick').forEach(c=>c.checked=this.checked)"></th><th>출고일<span class="vi">Ngày xuất</span></th><th>품목<span class="vi">Mặt hàng</span></th><th>LOT</th><th style="text-align:right">수량<span class="vi">SL</span></th><th>출고처<span class="vi">Nơi nhận</span></th><th>등록자<span class="vi">Người ĐK</span></th></tr></thead><tbody>${
         list.map(t => `<tr><td><input type="checkbox" class="inv-pick" value="${t.id}" checked></td><td>${t.day}</td><td>${t.name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${t.code}</span></td><td style="font-family:monospace;font-size:12px">${t.lot||'-'}</td><td style="text-align:right;font-weight:600">${n(t.qty)}</td><td>${destNorm(t.dest)||''}</td><td>${t.user||''}</td></tr>`).join('')}</tbody></table></div>
-       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="invBuild()" style="padding:8px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">선택한 출고로 서류 작성 →</button>
-         <button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성</button></div>`
-    : `<div class="empty" style="padding:1.2rem">이 기간에 ${kindEl.value==='KR'?'본사(한국)':'솔루엠'} 출고 기록이 없습니다.<br>출고가 정해졌지만 아직 출고 등록 전이면 품목·수량을 직접 넣어 작성하세요.
-         <div style="margin-top:10px"><button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성</button></div></div>`;
+       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="invBuild()" style="padding:8px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">선택한 출고로 서류 작성 / Lập chứng từ →</button>
+         <button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성 / Nhập tay trước khi xuất</button></div>`
+    : `<div class="empty" style="padding:1.2rem">이 기간에 ${kindEl.value==='KR'?'본사(한국)':'솔루엠'} 출고 기록이 없습니다.<br>출고가 정해졌지만 아직 출고 등록 전이면 품목·수량을 직접 넣어 작성하세요.<br><span style="font-size:12px">Không có dữ liệu xuất kho trong kỳ này. Nếu chưa đăng ký xuất, hãy nhập tay mặt hàng và số lượng.</span>
+         <div style="margin-top:10px"><button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성 / Nhập tay trước khi xuất</button></div></div>`;
   if (!INV) document.getElementById('inv-editor').innerHTML = '';
 }
 function invBuild(){
@@ -13387,10 +13387,10 @@ function invDelLine(i){ INV.lines.splice(i, 1); renderInvEditor(); }
 // ✅ 운송 방법: 트럭(솔루엠) · 해상 · 항공 · 특송 — 방법마다 출발지·도착지 기본값과 (6)번 칸 이름이 다르다.
 //    마지막으로 쓴 출발지·도착지는 출고처+운송방법별로 저장돼 다음에 그대로 채워진다.
 const INV_MODES = {
-  TRUCK:   {lbl:'트럭', field:'(6) Vessel / Voyage:', ph:'BY TRUCK', from:'HAI PHONG, VIET NAM', to:'PHU THO, VIET NAM', fieldKo:'운송 / 차량'},
-  SEA:     {lbl:'해상', field:'(6) Vessel / Voyage:', ph:'선박명 / 항차 (예: SITC HAIPHONG V.2610N)', from:'HAI PHONG PORT, VIET NAM', to:'INCHEON PORT, KOREA', fieldKo:'선박명 / 항차'},
-  AIR:     {lbl:'항공', field:'(6) Flight No.:', ph:'항공편 (예: WE272/26OCT)', from:'Ha Noi, Viet Nam', to:'INCHEON AIRPORT', fieldKo:'항공편'},
-  EXPRESS: {lbl:'특송', field:'(6) Courier / AWB No.:', ph:'특송사 / AWB 번호 (예: DHL 1234567890)', from:'Ha Noi, Viet Nam', to:'Republic of Korea', fieldKo:'특송사 / AWB 번호'}
+  TRUCK:   {lbl:'트럭 / Xe tải', field:'(6) Vessel / Voyage:', ph:'BY TRUCK', from:'HAI PHONG, VIET NAM', to:'PHU THO, VIET NAM', fieldKo:'운송 / 차량'},
+  SEA:     {lbl:'해상 / Đường biển', field:'(6) Vessel / Voyage:', ph:'선박명 / 항차 (예: SITC HAIPHONG V.2610N)', from:'HAI PHONG PORT, VIET NAM', to:'INCHEON PORT, KOREA', fieldKo:'선박명 / 항차'},
+  AIR:     {lbl:'항공 / Hàng không', field:'(6) Flight No.:', ph:'항공편 (예: WE272/26OCT)', from:'Ha Noi, Viet Nam', to:'INCHEON AIRPORT', fieldKo:'항공편'},
+  EXPRESS: {lbl:'특송 / Chuyển phát nhanh', field:'(6) Courier / AWB No.:', ph:'특송사 / AWB 번호 (예: DHL 1234567890)', from:'Ha Noi, Viet Nam', to:'Republic of Korea', fieldKo:'특송사 / AWB 번호'}
 };
 function invModeDefaults(kind, mode){
   const md = INV_MODES[mode] || INV_MODES.TRUCK, saved = (invDoc().tpl||{})[kind + '_' + mode] || {};
@@ -13500,18 +13500,18 @@ function renderInvPlan(){
   if (!INV.lines.length || !Array.isArray(INV.plan)) { box.innerHTML = ''; return; }
   const cell = 'width:100%;padding:5px 6px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12.5px;text-align:right';
   box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 6px">
-      <div style="font-size:13px;font-weight:600">팔레트 구성 <span id="inv-plan-mode" style="font-size:10.5px;padding:1px 6px;border-radius:999px;margin-left:2px"></span>
+      <div style="font-size:13px;font-weight:600">팔레트 구성 / Phân bổ pallet <span id="inv-plan-mode" style="font-size:10.5px;padding:1px 6px;border-radius:999px;margin-left:2px"></span>
         <span style="font-weight:400;color:#5D6977;font-size:12px">— 박스를 순서대로 쌓아 자동 배정합니다. 실제로 실은 대로 수량을 고치면 패킹리스트가 팔레트별로 나옵니다</span></div>
-      <div style="display:flex;gap:6px"><button onclick="invPlanAdd()" style="padding:5px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:12.5px">+ 팔레트</button>
-        <button onclick="INV.palAuto=true;invEstimate();renderInvPlan()" style="padding:5px 10px;border-radius:6px;border:1px solid var(--line,#DCE1E7);background:#fff;cursor:pointer;font-size:12.5px">자동 배정</button></div></div>
-    <div class="tw"><table style="font-size:12.5px"><thead><tr><th>팔레트</th>${INV.lines.map(l=>`<th style="text-align:right;white-space:normal;min-width:90px">${l.name||l.code}</th>`).join('')}<th style="text-align:right">박스</th><th style="text-align:right">순중량 kg</th><th style="text-align:right">총중량 kg</th><th></th></tr></thead><tbody>
+      <div style="display:flex;gap:6px"><button onclick="invPlanAdd()" style="padding:5px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:12.5px">+ 팔레트 / Pallet</button>
+        <button onclick="INV.palAuto=true;invEstimate();renderInvPlan()" style="padding:5px 10px;border-radius:6px;border:1px solid var(--line,#DCE1E7);background:#fff;cursor:pointer;font-size:12.5px">자동 배정 / Tự động</button></div></div>
+    <div class="tw"><table style="font-size:12.5px"><thead><tr><th>팔레트<span class="vi">Pallet</span></th>${INV.lines.map(l=>`<th style="text-align:right;white-space:normal;min-width:90px">${l.name||l.code}</th>`).join('')}<th style="text-align:right">박스<span class="vi">Thùng</span></th><th style="text-align:right">순중량 kg<span class="vi">N.W</span></th><th style="text-align:right">총중량 kg<span class="vi">G.W</span></th><th></th></tr></thead><tbody>
       ${INV.plan.map((p,k) => `<tr><td style="font-weight:600">${k+1}</td>
         ${INV.lines.map((l,i)=>`<td><input type="number" min="0" value="${+p.q[i]||''}" oninput="invPlanSet(${k},${i},this.value)" style="${cell};min-width:70px"></td>`).join('')}
         <td style="text-align:right" id="inv-pb-${k}"></td>
         <td><input type="number" value="${p.net??''}" id="inv-pn-${k}" oninput="invPlanW(${k},'net',this.value)" style="${cell};min-width:80px"></td>
         <td><input type="number" value="${p.gross??''}" id="inv-pg-${k}" oninput="invPlanW(${k},'gross',this.value)" style="${cell};min-width:80px"></td>
         <td><button onclick="invPlanDel(${k})" title="팔레트 빼기" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></td></tr>`).join('')}
-      <tr style="background:#F6F8FA"><td style="font-weight:600">배정 합계</td>${INV.lines.map((l,i)=>`<td style="text-align:right" id="inv-ps-${i}"></td>`).join('')}<td colspan="4" style="color:#5D6977;font-size:11.5px">무게 칸이 비어 있으면 회색 예상값을 씁니다 · 계근 후 팔레트별 실측값을 넣으세요</td></tr>
+      <tr style="background:#F6F8FA"><td style="font-weight:600">배정 합계 / Tổng</td>${INV.lines.map((l,i)=>`<td style="text-align:right" id="inv-ps-${i}"></td>`).join('')}<td colspan="4" style="color:#5D6977;font-size:11.5px">무게 칸이 비어 있으면 회색 예상값을 씁니다 · 계근 후 팔레트별 실측값을 넣으세요</td></tr>
     </tbody></table></div>`;
   invPlanRefresh();
 }
@@ -13560,7 +13560,7 @@ function renderInvEditor(){
   const missing = INV.lines.filter(l => !(INV.kind==='KR' ? +l.fee : +l.sale) || !l.hs || !l.pcsBox).map(l => l.name||l.code);
   ed.innerHTML = `
     <div style="border-top:1px solid var(--line,#DCE1E7);margin-top:14px;padding-top:14px">
-      <h4 style="font-size:14px;margin:0 0 10px">② 서류 내용 확인 <span style="font-weight:400;color:#5D6977;font-size:12px">— ${INV.kind==='KR'?'본사(THE GAUSS INC.) · EXW 임가공':'솔루엠비나 · DDP'} · 고친 HS·품명·박스 입수·연락처는 저장돼 다음에도 쓰입니다</span></h4>
+      <h4 style="font-size:14px;margin:0 0 10px">② 서류 내용 확인 / Kiểm tra nội dung <span style="font-weight:400;color:#5D6977;font-size:12px">— ${INV.kind==='KR'?'본사(THE GAUSS INC.) · EXW 임가공':'솔루엠비나 · DDP'} · 고친 HS·품명·박스 입수·연락처는 저장돼 다음에도 쓰입니다</span></h4>
       ${INV._oldRev ? `<div style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:8px">📜 예전 판(Rev.${INV.rev||0})을 보고 있습니다. 이 상태로 엑셀을 만들면 이 내용이 새 판으로 저장됩니다(되돌리기).</div>` : ''}
       ${(COST.model||{})[invKey(INV.invNo)] ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:8px;background:#F6F8FA;border-radius:8px;padding:8px 10px">
         <span>📝 이미 만든 인보이스입니다 (현재 <b>Rev.${((COST.model||{})[invKey(INV.invNo)].rev)||0}</b>). 내용을 바꿔 다시 만들면 이전 판은 보관되고 판 번호가 올라갑니다.</span>
@@ -13568,38 +13568,38 @@ function renderInvEditor(){
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" ${INV.markRevised!==false?'checked':''} onchange="INV.markRevised=this.checked"> 엑셀에 REVISED 표시</label></div>` : ''}
       ${missing.length?`<div style="color:#b45309;font-size:12.5px;margin-bottom:8px">⚠️ 단가·HS코드·박스 입수가 비어 있는 품목: ${missing.join(', ')} — 아래 표에서 채워 주세요.</div>`:''}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px">
-        ${f('인보이스 번호','invNo',INV.invNo)}${f('인보이스 일자','invDate',INV.invDate,'date')}${f('출항·출발일','shipDate',INV.shipDate,'date')}
-        <div class="ov-fr" style="margin:0"><label>운송 방법</label><select onchange="invSetMode(this.value)" style="width:100%">${Object.entries(INV_MODES).map(([k,v]) => `<option value="${k}" ${INV.mode===k?'selected':''}>${v.lbl}</option>`).join('')}</select></div>
+        ${f('인보이스 번호 / Số Invoice','invNo',INV.invNo)}${f('인보이스 일자 / Ngày Invoice','invDate',INV.invDate,'date')}${f('출항·출발일 / Ngày khởi hành','shipDate',INV.shipDate,'date')}
+        <div class="ov-fr" style="margin:0"><label>운송 방법 / Phương thức vận chuyển</label><select onchange="invSetMode(this.value)" style="width:100%">${Object.entries(INV_MODES).map(([k,v]) => `<option value="${k}" ${INV.mode===k?'selected':''}>${v.lbl}</option>`).join('')}</select></div>
         <div class="ov-fr" style="margin:0"><label>${(INV_MODES[INV.mode]||INV_MODES.TRUCK).fieldKo}</label><input value="${String(INV.vessel||'').replace(/"/g,'&quot;')}" placeholder="${(INV_MODES[INV.mode]||INV_MODES.TRUCK).ph}" oninput="invSet('vessel', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>
-        ${f('출발지','from',INV.from)}${f('도착지','to',INV.to)}
-        ${f('인도조건','incoterm',INV.incoterm)}${f('담당자(영문)','contact',INV.contact)}${f('연락처','phone',INV.phone)}
+        ${f('출발지 / Nơi đi','from',INV.from)}${f('도착지 / Nơi đến','to',INV.to)}
+        ${f('인도조건 / Điều kiện giao hàng','incoterm',INV.incoterm)}${f('담당자(영문) / Người phụ trách','contact',INV.contact)}${f('연락처 / Điện thoại','phone',INV.phone)}
       </div>
-      <div class="tw" style="margin-bottom:10px"><table><thead><tr><th>품목</th><th>HS</th><th style="min-width:260px">베트남어 품명</th><th style="text-align:right">수량</th><th style="text-align:right">박스 입수</th><th style="text-align:right">개당 kg</th><th style="text-align:right">팔레트당 박스</th>
-        ${INV.kind==='KR'?'<th style="text-align:right">임가공비 USD</th><th style="text-align:right">무상 자재 USD</th>':'<th style="text-align:right">임가공비 USD</th><th style="text-align:right">판매가(가공비 포함) USD</th>'}</tr></thead><tbody>${
+      <div class="tw" style="margin-bottom:10px"><table><thead><tr><th>품목<span class="vi">Mặt hàng</span></th><th>HS</th><th style="min-width:260px">베트남어 품명<span class="vi">Mô tả tiếng Việt</span></th><th style="text-align:right">수량<span class="vi">SL</span></th><th style="text-align:right">박스 입수<span class="vi">SL/thùng</span></th><th style="text-align:right">개당 kg<span class="vi">kg/cái</span></th><th style="text-align:right">팔레트당 박스<span class="vi">Thùng/pallet</span></th>
+        ${INV.kind==='KR'?'<th style="text-align:right">임가공비 USD<span class="vi">Phí gia công</span></th><th style="text-align:right">무상 자재 USD<span class="vi">NVL miễn phí</span></th>':'<th style="text-align:right">임가공비 USD<span class="vi">Phí gia công</span></th><th style="text-align:right">판매가(가공비 포함) USD<span class="vi">Đơn giá gồm gia công</span></th>'}</tr></thead><tbody>${
         INV.lines.map((l,i) => `<tr><td><button onclick="invDelLine(${i})" title="빼기" style="float:right;border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>${l.name||''}<div style="font-family:monospace;color:#8A95A3;font-size:11px">${l.code}</div>${INV.kind==='KR'?`<div style="margin-top:3px">${inp(`lines.${i}.en`, l.en, '150px')}</div>`:''}</td>
           <td>${inp(`lines.${i}.hs`, l.hs, '90px')}</td><td style="white-space:normal"><textarea oninput="invSet('lines.${i}.vi', this.value)" rows="2" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12px;font-family:inherit">${l.vi||''}</textarea></td>
           <td style="text-align:right">${inp(`lines.${i}.qty`, l.qty, '80px', 'number')}</td><td style="text-align:right">${inp(`lines.${i}.pcsBox`, l.pcsBox, '70px', 'number')}</td><td style="text-align:right">${inp(`lines.${i}.unitKg`, l.unitKg, '76px', 'number')}</td><td style="text-align:right">${inp(`lines.${i}.perPallet`, l.perPallet, '64px', 'number')}</td>
           <td style="text-align:right">${inp(`lines.${i}.fee`, l.fee, '80px', 'number')}</td><td style="text-align:right">${INV.kind==='KR'?inp(`lines.${i}.foc`, l.foc, '80px', 'number'):inp(`lines.${i}.sale`, l.sale, '80px', 'number')}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">아래 "품목 추가"로 출고할 모델과 수량을 넣어주세요.</td></tr>'}</tbody></table></div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px;font-size:13px">
-        <span style="font-weight:600">품목 추가</span>
-        <select id="inv-add-code" style="min-width:220px"><option value="">모델 선택</option>${(DB.tp||[]).filter(r=>r.active!==false).map(r=>`<option value="${r.code}">${r.name} (${r.code})</option>`).join('')}</select>
-        <input id="inv-add-qty" type="number" min="1" placeholder="수량" style="width:100px;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px">
-        <button onclick="invAddLine()" style="padding:6px 12px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">추가</button>
-        <span style="color:#8A95A3;font-size:12px">출고 등록 전이면 여기서 품목·수량을 넣습니다</span>
+        <span style="font-weight:600">품목 추가 / Thêm mặt hàng</span>
+        <select id="inv-add-code" style="min-width:220px"><option value="">모델 선택 / Chọn model</option>${(DB.tp||[]).filter(r=>r.active!==false).map(r=>`<option value="${r.code}">${r.name} (${r.code})</option>`).join('')}</select>
+        <input id="inv-add-qty" type="number" min="1" placeholder="수량 / SL" style="width:100px;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px">
+        <button onclick="invAddLine()" style="padding:6px 12px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">추가 / Thêm</button>
+        <span style="color:#8A95A3;font-size:12px">출고 등록 전이면 여기서 품목·수량을 넣습니다 / Nhập mặt hàng, SL nếu chưa đăng ký xuất</span>
       </div>
-      <div style="font-size:13px;font-weight:600;margin:6px 0">포장 <span style="font-weight:400;color:#5D6977;font-size:12px">— 수량으로 자동 계산된 <b style="color:#92400E">예상</b>값입니다. 계근 후 실측값으로 고치면 <b style="color:#166534">실측</b>으로 바뀝니다(칸을 비우면 다시 예상값)</span></div>
+      <div style="font-size:13px;font-weight:600;margin:6px 0">포장 / Đóng gói <span style="font-weight:400;color:#5D6977;font-size:12px">— 수량으로 자동 계산된 <b style="color:#92400E">예상</b>값입니다. 계근 후 실측값으로 고치면 <b style="color:#166534">실측</b>으로 바뀝니다(칸을 비우면 다시 예상값)<br>Giá trị <b>dự kiến</b> tính từ số lượng — nhập số cân thực tế để đổi thành <b>thực tế</b>.</span></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:6px">
-        ${[['net','총 순중량 kg (Net)'],['gross','총 총중량 kg (Gross)'],['cbm','총 부피 CBM'],['pallets','팔레트 수']].map(([k,l]) => `<div class="ov-fr" style="margin:0"><label>${l} <span id="inv-t-${k}" style="font-size:10.5px;padding:1px 6px;border-radius:999px;margin-left:2px"></span></label><input id="inv-f-${k}" type="number" value="${INV[k]??''}" oninput="invSet('${k}', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>`).join('')}
+        ${[['net','총 순중량 / N.W kg'],['gross','총 총중량 / G.W kg'],['cbm','총 부피 / Thể tích CBM'],['pallets','팔레트 수 / Số pallet']].map(([k,l]) => `<div class="ov-fr" style="margin:0"><label>${l} <span id="inv-t-${k}" style="font-size:10.5px;padding:1px 6px;border-radius:999px;margin-left:2px"></span></label><input id="inv-f-${k}" type="number" value="${INV[k]??''}" oninput="invSet('${k}', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>`).join('')}
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:6px">
-        <div class="ov-fr" style="margin:0"><label>팔레트 규격 m (예: 1.1*1.1*0.88)</label><input id="inv-f-dims" value="${INV.dims??''}" oninput="invSet('dims', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>
-        <div class="ov-fr" style="margin:0"><label>팔레트 1개 무게 kg</label><input id="inv-f-tare" type="number" value="${INV.tare??''}" oninput="invSet('tare', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>
+        <div class="ov-fr" style="margin:0"><label>팔레트 규격 / Kích thước pallet m</label><input id="inv-f-dims" value="${INV.dims??''}" oninput="invSet('dims', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>
+        <div class="ov-fr" style="margin:0"><label>팔레트 1개 무게 / KL pallet kg</label><input id="inv-f-tare" type="number" value="${INV.tare??''}" oninput="invSet('tare', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>
       </div>
       <div id="inv-kg-warn" style="font-size:12px;color:#b45309;margin-bottom:6px"></div>
       <div id="inv-plan" style="margin-bottom:10px"></div>
       <div id="inv-totals" style="font-size:13px;color:#18212B;margin-bottom:10px"></div>
-      ${(invImg('seal')||invImg('title')) ? `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="inv-stamp" ${INV.stamp!==false?'checked':''} onchange="INV.stamp=this.checked"> 서명란에 도장·서명 넣기</label>` : '<div style="font-size:12px;color:#8A95A3;margin-bottom:8px">도장·서명 이미지를 위에서 올려 두면 서명란에 자동으로 들어갑니다.</div>'}
-      <button id="inv-make" onclick="invMakeExcel()" style="padding:9px 18px;border-radius:8px;border:none;background:#166534;color:#fff;font-weight:700;cursor:pointer">📥 인보이스·패킹리스트 엑셀 만들기</button>
+      ${(invImg('seal')||invImg('title')) ? `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="inv-stamp" ${INV.stamp!==false?'checked':''} onchange="INV.stamp=this.checked"> 서명란에 도장·서명 넣기 / Đóng dấu vào ô ký</label>` : '<div style="font-size:12px;color:#8A95A3;margin-bottom:8px">도장·서명 이미지를 위에서 올려 두면 서명란에 자동으로 들어갑니다.</div>'}
+      <button id="inv-make" onclick="invMakeExcel()" style="padding:9px 18px;border-radius:8px;border:none;background:#166534;color:#fff;font-weight:700;cursor:pointer">📥 인보이스·패킹리스트 엑셀 만들기 / Tạo file Excel</button>
     </div>`;
   invEstimate(); renderInvPlan(); invRefreshTotals();
 }
@@ -13686,8 +13686,8 @@ function renderInvRecords(){
   if (!list.length) { el.innerHTML = ''; return; }
   const modeLbl = m => (INV_MODES[m] || {}).lbl || '';
   el.innerHTML = `<details ${list.some(r => r.mode && r.mode !== 'TRUCK' && !r.vessel) ? 'open' : ''} style="margin-bottom:12px">
-    <summary style="cursor:pointer;font-weight:600;font-size:13px">📁 만든 인보이스 ${list.length}건 <span style="font-weight:400;color:#5D6977;font-size:12px">— 열어서 편명·AWB 번호 등을 넣고 같은 번호로 다시 만들 수 있습니다</span></summary>
-    <div class="tw" style="margin-top:8px"><table><thead><tr><th>인보이스 번호</th><th>일자</th><th>출고처</th><th>운송</th><th>편명·선박·AWB</th><th style="text-align:right">수량</th><th style="text-align:right">금액 USD</th><th></th></tr></thead><tbody>${
+    <summary style="cursor:pointer;font-weight:600;font-size:13px">📁 만든 인보이스 / Invoice đã lập ${list.length}건 <span style="font-weight:400;color:#5D6977;font-size:12px">— 열어서 편명·AWB 번호 등을 넣고 같은 번호로 다시 만들 수 있습니다</span></summary>
+    <div class="tw" style="margin-top:8px"><table><thead><tr><th>인보이스 번호<span class="vi">Số Invoice</span></th><th>일자<span class="vi">Ngày</span></th><th>출고처<span class="vi">Nơi nhận</span></th><th>운송<span class="vi">Vận chuyển</span></th><th>편명·선박·AWB<span class="vi">Chuyến / AWB</span></th><th style="text-align:right">수량<span class="vi">SL</span></th><th style="text-align:right">금액 USD<span class="vi">Trị giá</span></th><th></th></tr></thead><tbody>${
       list.slice(0, 30).map(r => {
         const qty = (r.lines||[]).reduce((s,l)=>s+(+l.qty||0),0);
         const amt = r.kind === 'KR' ? (r.lines||[]).reduce((s,l)=>s+(+l.qty||0)*((+l.fee||0)+(+l.foc||0)),0) : (r.lines||[]).reduce((s,l)=>s+(+l.qty||0)*(+l.sale||0),0);
