@@ -13027,6 +13027,25 @@ function lotQCBadge(code, lot){
   const bad = /불|NG|fail/i.test(q.result||'');
   return `<span style="font-size:11px;font-weight:600;color:${bad?'#b91c1c':'#166534'}">수입검사 ${q.result||''}</span>${q.attachmentUrl?` <a href="${q.attachmentUrl}" target="_blank" rel="noopener" style="font-size:11px">성적서</a>`:''}`;
 }
+// ════════════════════════════════════════════════════════════
+//  ⏲️ 관리자 모드 자동 해제 (2026-10-31) — 1시간 동안 화면 조작이 없으면 관리자 모드만 끄고
+//  일반 직원 권한으로 계속 쓴다(로그아웃 아님). 직원·한국 열람·현장 기기는 해당 없음.
+// ════════════════════════════════════════════════════════════
+const ADMIN_IDLE_MS = 60 * 60 * 1000;
+let _lastActive = Date.now();
+['mousedown','keydown','touchstart','wheel'].forEach(ev => document.addEventListener(ev, () => { _lastActive = Date.now(); }, {passive:true, capture:true}));
+function checkAdminIdle(){
+  if (!isAdmin || Date.now() - _lastActive < ADMIN_IDLE_MS) return;
+  isAdmin = false; ADMIN_TOKEN = '';
+  try { safeLSRemove('_adm'); } catch(e){}
+  try { ADMIN_TOKEN = safeLSGet('_stf','') || ''; } catch(e){}
+  if (USER_ROLE === 'admin') { USER_ROLE = 'user'; try { safeLSSet('erp_role','user'); } catch(e){} }
+  applyAdminUI(false);
+  try { setSyncBadge('ok', '✅ 베트남'); } catch(e){}
+  alert('1시간 동안 사용하지 않아 관리자 모드가 꺼졌습니다. 필요하면 🔐 관리자로 다시 켜주세요.\nChế độ quản trị đã tắt do không sử dụng 1 giờ.');
+}
+setInterval(checkAdminIdle, 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkAdminIdle(); });
 </script>
 </body>
 </html>
