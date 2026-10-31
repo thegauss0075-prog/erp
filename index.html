@@ -735,7 +735,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
           <label>출고처 * / Điểm xuất *</label>
           <div class="dest-btns">
             <button class="dest-btn on" id="dest-kr" onclick="setDest('KR')">🏠 한국 (KR)</button>
-            <button class="dest-btn" id="dest-sol" onclick="setDest('Soluem Vina')">🏭 솔루엠비나</button>
+            <button class="dest-btn" id="dest-sol" onclick="setDest('Solum Vina')">🏭 솔루엠비나</button>
             <button class="dest-btn" id="dest-ng" onclick="setDest('NG')" style="border-color:#fca5a5;border-width:2px">⚠️ NG 창고 (불량 이동)</button>
           </div>
         </div>
@@ -1948,7 +1948,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <label>출고처</label>
       <div class="dest-btns">
         <button class="dest-btn" id="edit-dest-kr" onclick="setED('KR')">🏠 한국 (KR)</button>
-        <button class="dest-btn" id="edit-dest-sol" onclick="setED('Soluem Vina')">🏭 솔루엠비나</button>
+        <button class="dest-btn" id="edit-dest-sol" onclick="setED('Solum Vina')">🏭 솔루엠비나</button>
       </div>
     </div>
     <div class="ov-fr"><label>비고</label><input id="edit-note"></div>
@@ -2345,6 +2345,8 @@ function destBadge(dest) {
   if (dest === 'NG')  return ` <span class="badge b-ng">⚠️ NG창고</span>`;
   return ` <span class="badge b-dest-sol">솔루엠비나</span>`;
 }
+// ✅ [2026-10-31] 솔루엠 영문 표기 정정: 예전 기록의 'Soluem Vina'(오타)는 'Solum Vina'로 보여준다. 새 출고는 'Solum Vina'로 저장.
+function destNorm(dest) { return dest === 'Soluem Vina' ? 'Solum Vina' : dest; }
 function destText(dest) {
   if (!dest) return '';
   if (dest === 'KR') return '한국';
@@ -2570,14 +2572,14 @@ function setIOTab(t){
 function setDest(d){
   curDest=d;
   document.getElementById('dest-kr').classList.toggle('on',d==='KR');
-  document.getElementById('dest-sol').classList.toggle('on',d==='Soluem Vina');
+  document.getElementById('dest-sol').classList.toggle('on',destNorm(d)==='Solum Vina');
   const ngBtn = document.getElementById('dest-ng');
   if(ngBtn) ngBtn.classList.toggle('on', d==='NG');
   // ✅ NG 창고 선택 시 불량 원인 입력란 표시
   const reasonRow = document.getElementById('otp-ng-reason-row');
   if(reasonRow) reasonRow.style.display = (d==='NG') ? 'block' : 'none';
 }
-function setED(d){editDest=d;document.getElementById('edit-dest-kr').classList.toggle('on',d==='KR');document.getElementById('edit-dest-sol').classList.toggle('on',d==='Soluem Vina');}
+function setED(d){editDest=d;document.getElementById('edit-dest-kr').classList.toggle('on',d==='KR');document.getElementById('edit-dest-sol').classList.toggle('on',destNorm(d)==='Solum Vina');}
 
 // ✅ 재고 현황의 모델 그룹 순서: 일반 모델(가나다/ABC순) → 기타 → 라벨 및 기타 → 소모품 (맨 아래)
 function modelRank(m){ return m==='소모품' ? 3 : m==='라벨 및 기타' ? 2 : m==='기타' ? 1 : 0; }
@@ -13043,7 +13045,7 @@ function runLotTrace(){
   const sec = (title, html) => `<div style="margin-bottom:16px"><h4 style="font-size:14px;margin:0 0 8px">${title}</h4>${html}</div>`;
   const card = inner => `<div style="border:1px solid var(--line,#DCE1E7);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff">${inner}</div>`;
   const shipTable = arr => arr.length ? `<div class="tw"><table><thead><tr><th>출고일</th><th>품목</th><th style="text-align:right">수량</th><th>출고처</th><th>등록자</th></tr></thead><tbody>${
-      arr.map(t => `<tr><td>${lotFmtDt(t)}</td><td>${t.name||t.code}</td><td style="text-align:right">${n(t.qty)} ${t.unit||''}</td><td>${t.dest||'-'}</td><td>${t.user||'-'}</td></tr>`).join('')}</tbody></table></div>`
+      arr.map(t => `<tr><td>${lotFmtDt(t)}</td><td>${t.name||t.code}</td><td style="text-align:right">${n(t.qty)} ${t.unit||''}</td><td>${destNorm(t.dest)||'-'}</td><td>${t.user||'-'}</td></tr>`).join('')}</tbody></table></div>`
     : '<div style="color:#8A95A3;font-size:12.5px">출고 기록 없음 (아직 공장 재고)</div>';
   const woHead = w => `<div style="font-weight:600">📋 ${w.orderNo||w.id} · ${w.name||''} <span style="font-family:monospace;color:#5D6977;font-size:12px">${w.code||''}</span> <span class="badge ${w.cat==='BTP'?'b-btp':'b-tp'}">${w.cat==='BTP'?'반제품':'완제품'}</span></div>
       <div style="font-size:12px;color:#5D6977;margin:2px 0 6px">실적 ${n(w.producedQty)} ${w.unit||''} · 라인 ${w.line||'-'} · ${w.status||''} · 시작 ${woYMD(w.startDate)||'-'}</div>`;
@@ -13342,7 +13344,7 @@ function renderInvPanel(){
   const n = v => (+v||0).toLocaleString();
   document.getElementById('inv-ship-list').innerHTML = list.length
     ? `<div class="tw"><table><thead><tr><th style="width:30px"><input type="checkbox" checked onchange="document.querySelectorAll('.inv-pick').forEach(c=>c.checked=this.checked)"></th><th>출고일</th><th>품목</th><th>LOT</th><th style="text-align:right">수량</th><th>출고처</th><th>등록자</th></tr></thead><tbody>${
-        list.map(t => `<tr><td><input type="checkbox" class="inv-pick" value="${t.id}" checked></td><td>${t.day}</td><td>${t.name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${t.code}</span></td><td style="font-family:monospace;font-size:12px">${t.lot||'-'}</td><td style="text-align:right;font-weight:600">${n(t.qty)}</td><td>${t.dest||''}</td><td>${t.user||''}</td></tr>`).join('')}</tbody></table></div>
+        list.map(t => `<tr><td><input type="checkbox" class="inv-pick" value="${t.id}" checked></td><td>${t.day}</td><td>${t.name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${t.code}</span></td><td style="font-family:monospace;font-size:12px">${t.lot||'-'}</td><td style="text-align:right;font-weight:600">${n(t.qty)}</td><td>${destNorm(t.dest)||''}</td><td>${t.user||''}</td></tr>`).join('')}</tbody></table></div>
        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="invBuild()" style="padding:8px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">선택한 출고로 서류 작성 →</button>
          <button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성</button></div>`
     : `<div class="empty" style="padding:1.2rem">이 기간에 ${kindEl.value==='KR'?'본사(한국)':'솔루엠'} 출고 기록이 없습니다.<br>출고가 정해졌지만 아직 출고 등록 전이면 품목·수량을 직접 넣어 작성하세요.
