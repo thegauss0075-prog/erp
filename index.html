@@ -13334,8 +13334,10 @@ function renderInvPanel(){
   document.getElementById('inv-ship-list').innerHTML = list.length
     ? `<div class="tw"><table><thead><tr><th style="width:30px"><input type="checkbox" checked onchange="document.querySelectorAll('.inv-pick').forEach(c=>c.checked=this.checked)"></th><th>출고일</th><th>품목</th><th>LOT</th><th style="text-align:right">수량</th><th>출고처</th><th>등록자</th></tr></thead><tbody>${
         list.map(t => `<tr><td><input type="checkbox" class="inv-pick" value="${t.id}" checked></td><td>${t.day}</td><td>${t.name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${t.code}</span></td><td style="font-family:monospace;font-size:12px">${t.lot||'-'}</td><td style="text-align:right;font-weight:600">${n(t.qty)}</td><td>${t.dest||''}</td><td>${t.user||''}</td></tr>`).join('')}</tbody></table></div>
-       <div style="margin-top:10px"><button onclick="invBuild()" style="padding:8px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">선택한 출고로 서류 작성 →</button></div>`
-    : `<div class="empty">이 기간에 ${kindEl.value==='KR'?'본사(한국)':'솔루엠'} 출고 기록이 없습니다. 날짜를 바꿔 보세요.</div>`;
+       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button onclick="invBuild()" style="padding:8px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">선택한 출고로 서류 작성 →</button>
+         <button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성</button></div>`
+    : `<div class="empty" style="padding:1.2rem">이 기간에 ${kindEl.value==='KR'?'본사(한국)':'솔루엠'} 출고 기록이 없습니다.<br>출고가 정해졌지만 아직 출고 등록 전이면 품목·수량을 직접 넣어 작성하세요.
+         <div style="margin-top:10px"><button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:700;cursor:pointer">✏️ 출고 전 직접 작성</button></div></div>`;
   if (!INV) document.getElementById('inv-editor').innerHTML = '';
 }
 function invBuild(){
@@ -13346,8 +13348,30 @@ function invBuild(){
   const byCode = {};
   picked.forEach(t => { (byCode[t.code] = byCode[t.code] || {code:t.code, name:t.name, qty:0}).qty += +t.qty||0; });
   const day = picked.map(invVNDate).sort().pop();
-  const m = day.slice(0,7);
-  const toUSD = (v, cur) => dsToUSD(v, cur, m);
+  invStart(kind, day, Object.values(byCode));
+}
+// 출고 등록 전에(출고가 정해지면) 품목·수량을 직접 넣어 작성
+function invStartManual(){
+  const kind = document.getElementById('inv-kind').value;
+  invStart(kind, bdToday(), []);
+}
+function invLine(code, name, qty, day){
+  const m = day.slice(0,7), toUSD = (v, cur) => dsToUSD(v, cur, m);
+  const it = invItem(code), md = COST.model[code] || {};
+  return {code, name, qty, hs: it.hs||'', vi: it.vi||'', en: it.en || code, pcsBox: it.pcsBox||'',
+    fee: Math.round(toUSD(md.fee, md.saleCur)*10000)/10000, sale: Math.round(toUSD(md.sale, md.saleCur)*10000)/10000,
+    foc: Math.round(toUSD(md.matRef, 'USD')*10000)/10000};
+}
+function invAddLine(){
+  const sel = document.getElementById('inv-add-code'), q = +document.getElementById('inv-add-qty').value;
+  if (!sel.value || !(q > 0)) { alert('품목과 수량을 넣어주세요.'); return; }
+  const tp = (DB.tp||[]).find(r => r.code === sel.value) || {code: sel.value, name: sel.value};
+  const ex = INV.lines.find(l => l.code === tp.code);
+  if (ex) ex.qty = (+ex.qty||0) + q; else INV.lines.push(invLine(tp.code, tp.name, q, INV.invDate || bdToday()));
+  renderInvEditor();
+}
+function invDelLine(i){ INV.lines.splice(i, 1); renderInvEditor(); }
+function invStart(kind, day, lines){
   const tpl = (invDoc().tpl||{})[kind] || {};
   INV = {
     kind, invNo: 'TG' + day.replace(/-/g,''), invDate: day, shipDate: day,
@@ -13357,12 +13381,7 @@ function invBuild(){
     to: kind === 'KR' ? (tpl.to || 'INCHEON AIRPORT') : (tpl.to || 'PHU THO, VIET NAM'),
     incoterm: kind === 'KR' ? (tpl.incoterm || 'EXW') : (tpl.incoterm || 'DDP'),
     net:'', gross:'', cbm:'', pallets:'', dims:'',
-    lines: Object.values(byCode).map(l => {
-      const it = invItem(l.code), md = COST.model[l.code] || {};
-      return {code:l.code, name:l.name, qty:l.qty, hs: it.hs||'', vi: it.vi||'', en: it.en || l.code, pcsBox: it.pcsBox||'',
-        fee: Math.round(toUSD(md.fee, md.saleCur)*10000)/10000, sale: Math.round(toUSD(md.sale, md.saleCur)*10000)/10000,
-        foc: Math.round(toUSD(md.matRef, 'USD')*10000)/10000};
-    })
+    lines: lines.map(l => invLine(l.code, l.name, l.qty, day))
   };
   renderInvEditor();
 }
@@ -13399,10 +13418,17 @@ function renderInvEditor(){
       </div>
       <div class="tw" style="margin-bottom:10px"><table><thead><tr><th>품목</th><th>HS</th><th style="min-width:260px">베트남어 품명</th><th style="text-align:right">수량</th><th style="text-align:right">박스 입수</th>
         ${INV.kind==='KR'?'<th style="text-align:right">임가공비 USD</th><th style="text-align:right">무상 자재 USD</th>':'<th style="text-align:right">임가공비 USD</th><th style="text-align:right">판매가(가공비 포함) USD</th>'}</tr></thead><tbody>${
-        INV.lines.map((l,i) => `<tr><td>${l.name||''}<div style="font-family:monospace;color:#8A95A3;font-size:11px">${l.code}</div>${INV.kind==='KR'?`<div style="margin-top:3px">${inp(`lines.${i}.en`, l.en, '150px')}</div>`:''}</td>
+        INV.lines.map((l,i) => `<tr><td><button onclick="invDelLine(${i})" title="빼기" style="float:right;border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>${l.name||''}<div style="font-family:monospace;color:#8A95A3;font-size:11px">${l.code}</div>${INV.kind==='KR'?`<div style="margin-top:3px">${inp(`lines.${i}.en`, l.en, '150px')}</div>`:''}</td>
           <td>${inp(`lines.${i}.hs`, l.hs, '90px')}</td><td style="white-space:normal"><textarea oninput="invSet('lines.${i}.vi', this.value)" rows="2" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12px;font-family:inherit">${l.vi||''}</textarea></td>
           <td style="text-align:right">${inp(`lines.${i}.qty`, l.qty, '80px', 'number')}</td><td style="text-align:right">${inp(`lines.${i}.pcsBox`, l.pcsBox, '70px', 'number')}</td>
-          <td style="text-align:right">${inp(`lines.${i}.fee`, l.fee, '80px', 'number')}</td><td style="text-align:right">${INV.kind==='KR'?inp(`lines.${i}.foc`, l.foc, '80px', 'number'):inp(`lines.${i}.sale`, l.sale, '80px', 'number')}</td></tr>`).join('')}</tbody></table></div>
+          <td style="text-align:right">${inp(`lines.${i}.fee`, l.fee, '80px', 'number')}</td><td style="text-align:right">${INV.kind==='KR'?inp(`lines.${i}.foc`, l.foc, '80px', 'number'):inp(`lines.${i}.sale`, l.sale, '80px', 'number')}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">아래 "품목 추가"로 출고할 모델과 수량을 넣어주세요.</td></tr>'}</tbody></table></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px;font-size:13px">
+        <span style="font-weight:600">품목 추가</span>
+        <select id="inv-add-code" style="min-width:220px"><option value="">모델 선택</option>${(DB.tp||[]).filter(r=>r.active!==false).map(r=>`<option value="${r.code}">${r.name} (${r.code})</option>`).join('')}</select>
+        <input id="inv-add-qty" type="number" min="1" placeholder="수량" style="width:100px;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px">
+        <button onclick="invAddLine()" style="padding:6px 12px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">추가</button>
+        <span style="color:#8A95A3;font-size:12px">출고 등록 전이면 여기서 품목·수량을 넣습니다</span>
+      </div>
       <div style="font-size:13px;font-weight:600;margin:6px 0">포장 (실측값 입력)</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px">
         ${f('총 순중량 kg (Net)','net',INV.net,'number')}${f('총 총중량 kg (Gross)','gross',INV.gross,'number')}${f('총 부피 CBM','cbm',INV.cbm,'number')}${f('팔레트 수','pallets',INV.pallets,'number')}${f('팔레트 규격 (예: 1.1*1.1*0.88)','dims',INV.dims)}
@@ -13428,6 +13454,7 @@ async function invSaveMaster(){
 }
 async function invMakeExcel(){
   if (!INV) return;
+  if (!INV.lines.length) { alert('품목을 하나 이상 넣어주세요.'); return; }
   const guard = withButtonGuard('#inv-make', '⏳ 만드는 중...'); if (guard === null) return;
   try {
     const EX = await invLoadExcelJS();
