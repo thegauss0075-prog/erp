@@ -13790,8 +13790,14 @@ function invOpenRecord(key){
 }
 async function invDeleteRecord(key){
   if (!confirm('이 인보이스 기록을 목록에서 지울까요? 수정 이력도 함께 지워집니다. (이미 내려받은 엑셀 파일은 그대로입니다)')) return;
+  const no = ((COST.model||{})[key]||{}).invNo;
   for (const k of Object.keys(COST.model||{}).filter(k => k.startsWith(key + '#'))) await saveCost('model', k, null);
-  if (await saveCost('model', key, null)) renderInvRecords();
+  if (await saveCost('model', key, null)) {
+    // 이 인보이스에 연결된(아직 출고 확정 전인) 출고 예정은 '출고 대기'로 되돌린다
+    await splUnlinkInvoice(no);
+    if (INV && INV.invNo === no) { INV = null; renderInvEditor(); }
+    renderInvRecords(); renderShipPlans(); renderInvPanel();
+  }
 }
 function renderInvRecords(){
   const el = document.getElementById('inv-records'); if (!el) return;
@@ -14073,6 +14079,11 @@ function splKeepForm(){
 function renderShipPlans(){
   const box = document.getElementById('spl-panel'); if (!box) return;
   splKeepForm();
+  // 인보이스 기록이 지워졌는데 출고 예정에 번호가 남아 있으면 정리 (관리자 화면에서만 확인 가능)
+  if (isAdmin && COST_SERVER_OK === true) {
+    const gone = [...new Set(SPL.filter(p => p.invNo && p.status === 'inv' && !(COST.model||{})[invKey(p.invNo)]).map(p => p.invNo))];
+    if (gone.length) { gone.forEach(no => splUnlinkInvoice(no).then(renderShipPlans)); }
+  }
   if (!_splLoaded && (API_URL || IS_GAS)) { loadShipPlans().then(renderShipPlans); }
   const canEdit = USER_ROLE !== 'viewer';
   const n = v => (+v||0).toLocaleString();
@@ -14254,6 +14265,13 @@ function invFromPlan(id){
   INV.planId = p.id;
   renderInvEditor();
   document.getElementById('inv-panel').scrollIntoView({behavior:'smooth', block:'start'});
+}
+async function splUnlinkInvoice(no){
+  if (!no || typeof SPL === 'undefined') return;
+  for (const p of SPL.filter(x => x.invNo === no && x.status !== 'done' && x.status !== 'cancel')) {
+    delete p.invNo; delete p.invRev; delete p.invLines; p.status = 'wait';
+    await splSavePlan(p);
+  }
 }
 // 인보이스를 저장할 때 연결된 출고 예정에 번호·최종 수량을 남긴다
 async function splLinkInvoice(rec){
