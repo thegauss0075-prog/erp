@@ -508,6 +508,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <button class="tb" onclick="go('po')">📧 발주관리<span class="vi">Quản lý đặt hàng</span></button>
   <button class="tb" onclick="go('mes')">📷 현장입력<span class="vi">Nhập liệu tại xưởng</span></button>
   <button class="tb" id="tb-ship" onclick="go('ship')">🚚 출고<span class="vi">Xuất hàng</span></button>
+  <button class="tb" id="tb-shipstat" onclick="go('shipstat')">📊 출고 실적<span class="vi">Kết quả xuất</span></button>
   <button class="tb" id="tb-cost" onclick="go('cost')" style="display:none">💰 제조원가<span class="vi">Giá thành SX</span></button>
 </div>
 
@@ -1898,12 +1899,6 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 </div>
 
 <div id="tab-ship" class="sec">
-  <!-- 출고 탭 안의 두 화면: 업무(예정→인보이스→확정) / 현황(실적·매출) -->
-  <div class="io-tabs ship-sub" style="grid-template-columns:repeat(2,1fr);max-width:640px;margin-bottom:1rem">
-    <button class="io-tab on-otp" id="ship-sub-work" onclick="setShipSub('work')">📦 출고 업무 / Nghiệp vụ xuất<br><small style="font-weight:400;opacity:.8">출고 예정 → 인보이스 → 출고 확정</small></button>
-    <button class="io-tab" id="ship-sub-stat" onclick="setShipSub('stat')">📊 출고 실적 / Kết quả xuất<br><small style="font-weight:400;opacity:.8">월별 출고·매출</small></button>
-  </div>
-  <div id="ship-sub-work-box">
   <div id="spl-panel" class="ds-panel"></div>
   <!-- 📄 인보이스·패킹리스트 (관리자) -->
   <div id="inv-panel" class="ds-panel" style="display:none">
@@ -1918,10 +1913,10 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <div id="inv-records"></div>
     <div id="inv-editor"></div>
   </div>
-  </div>
-  <div id="ship-sub-stat-box" style="display:none">
-    <div id="d-ship-panel" class="ds-panel"></div>
-  </div>
+</div>
+
+<div id="tab-shipstat" class="sec">
+  <div id="d-ship-panel" class="ds-panel"></div>
 </div>
 
 <div id="tab-mes" class="sec">
@@ -2610,7 +2605,7 @@ function go(id){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.tb').forEach(b=>b.classList.remove('on'));
   document.getElementById('tab-'+id).classList.add('on');
-  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,qc:5,hist:6,ng:7,po:8,mes:9,ship:10,cost:11};
+  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,qc:5,hist:6,ng:7,po:8,mes:9,ship:10,shipstat:11,cost:12};
   document.querySelectorAll('.tb')[order[id]].classList.add('on');
   if(id==='inv'){initMS();renderInv();}
   if(id==='io') renderIOTable();
@@ -2622,7 +2617,8 @@ function go(id){
   if(id==='po') { renderPO({soft:true}); _goPO(); }
   if(id==='mes') renderMES();
   if(id==='cost') renderCost();
-  if(id==='ship') { setShipSub(window._shipSub || 'work'); }
+  if(id==='ship') { renderShipPlans(); loadShipPlans().then(renderShipPlans); renderInvPanel(); }
+  if(id==='shipstat') renderShipPanel();
 }
 function setIC(c){document.getElementById('inv-cat').value=c;initMS();renderInv();}
 
@@ -8311,7 +8307,7 @@ function initDashboard(){
   if(el('d-ng-cnt'))   el('d-ng-cnt').textContent   = DB.ng.length;
 
   el('d-tp').textContent=DB.tp.reduce((s,r)=>s+r.total,0).toLocaleString();
-  try { const sp = document.getElementById('tab-ship'); if (sp && sp.classList.contains('on') && typeof renderShipPanel === 'function') renderShipPanel(); } catch(e) { console.warn('출고 현황 패널', e); }
+  try { const sp = document.getElementById('tab-shipstat'); if (sp && sp.classList.contains('on') && typeof renderShipPanel === 'function') renderShipPanel(); } catch(e) { console.warn('출고 현황 패널', e); }
   el('d-btp').textContent=DB.btp.reduce((s,r)=>s+r.total,0).toLocaleString();
 
   // ✅ 안전재고 미달 품목 (min이 설정되어 있고, 현재고가 그 아래인 품목만)
@@ -14263,16 +14259,6 @@ async function splLinkInvoice(rec){
   const p = SPL.find(x => x.id === rec.planId); if (!p || p.status === 'done' || p.status === 'cancel') return;
   Object.assign(p, {invNo: rec.invNo, invRev: rec.rev || 0, invLines: (rec.lines||[]).map(l => ({code:l.code, name:l.name, unit:'Ea', qty:+l.qty||0})), status:'inv'});
   if (await splSavePlan(p)) renderShipPlans();
-}
-// 출고 탭 하위 화면 전환
-function setShipSub(k){
-  window._shipSub = k;
-  document.getElementById('ship-sub-work-box').style.display = k === 'work' ? '' : 'none';
-  document.getElementById('ship-sub-stat-box').style.display = k === 'stat' ? '' : 'none';
-  document.getElementById('ship-sub-work').className = 'io-tab' + (k === 'work' ? ' on-otp' : '');
-  document.getElementById('ship-sub-stat').className = 'io-tab' + (k === 'stat' ? ' on-otp' : '');
-  if (k === 'work') { renderShipPlans(); loadShipPlans().then(renderShipPlans); renderInvPanel(); }
-  else renderShipPanel();
 }
 </script>
 </body>
