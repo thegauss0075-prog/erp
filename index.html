@@ -2950,7 +2950,7 @@ async function renderPO(opts) {
 // 자재 발주(공급사) 목록은 발주관리 탭을 열 때마다 서버에서 새로 받는다
 const _goPO = () => { renderSupplyPO(); loadSupplyPO().then(renderSupplyPO); };
 function _renderPOBody() {
-  document.getElementById('po-clear-btn').style.display = isAdmin ? 'inline-block' : 'none';
+  document.getElementById('po-clear-btn').style.display = isMaster ? 'inline-block' : 'none';
   const body = document.getElementById('po-body');
   const emptyEl = document.getElementById('po-empty');
   if (!PO.length) {
@@ -2978,7 +2978,7 @@ function _renderPOBody() {
       <td style="text-align:right;font-weight:700;color:${remain>0?'#b45309':'#166534'}">${remain.toLocaleString()}</td>
       <td style="font-size:12px;color:#666">${r.deliveryDate||'-'}</td>
       <td><span style="color:${statusColor[status]};font-weight:600">${status}</span></td>
-      <td class="no-print">${isAdmin ? `<button class="edit-btn" onclick="deletePOItemUI(${r.id})" title="삭제">🗑️</button>` : ''}</td>
+      <td class="no-print">${isMaster ? `<button class="edit-btn" onclick="deletePOItemUI(${r.id})" title="삭제">🗑️</button>` : ''}</td>
     </tr>`;
   };
 
@@ -3522,7 +3522,7 @@ async function submitPOReview() {
 }
 
 async function deletePOItemUI(id) {
-  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (!isMaster) { alert('마스터만 발주를 삭제할 수 있습니다.'); return; }
   if (!confirm('이 발주 항목을 삭제하시겠습니까?')) return;
   let res = await api('deletePOItem', { id, token: ADMIN_TOKEN });
   if (!res || !res.ok) res = await api('deletePOItem', { id, token: ADMIN_TOKEN });
@@ -3533,7 +3533,7 @@ async function deletePOItemUI(id) {
 // ✅ 컬럼 밀림 버그 등으로 잘못 등록된 예전 데이터를 한 번에 정리할 때 사용.
 //    되돌릴 수 없는 작업이라 확인을 두 번 받는다.
 async function clearAllPOItemsUI() {
-  if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
+  if (!isMaster) { alert('마스터만 발주를 삭제할 수 있습니다.'); return; }
   if (!PO.length) { alert('삭제할 발주 데이터가 없습니다.'); return; }
   if (!confirm(`⚠️ 등록된 발주 ${PO.length}건을 전부 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
   if (!confirm('정말로 전체 삭제하시겠습니까? 다시 한번 확인해주세요.')) return;
@@ -8449,6 +8449,15 @@ var API_URL      = safeLSGet('erp_api_url','') || 'https://script.google.com/mac
 var ADMIN_TOKEN  = '';
 var CURRENT_USER = '';
 var isAdmin      = false;
+var isMaster     = false;   // 👑 마스터(원가·인보이스·발주 삭제·출고 예정 완전 삭제). 마스터는 관리자 기능도 전부 가진다
+function setMaster(on){
+  isMaster = !!on;
+  try { if (isMaster) safeLSSet('_mst','1'); else safeLSRemove('_mst'); } catch(e){}
+  // 권한이 바뀌면 원가 데이터를 다시 불러오게 하고, 마스터가 아니면 메모리에 남은 원가·매출 데이터도 지운다
+  try { _dsCostTried = false; } catch(e){}
+  try { _invCostTried = false; } catch(e){}
+  if (!isMaster && USER_ROLE !== 'viewer') { try { COST = {price:{}, month:{}, model:{}, out:{}}; COST_SERVER_OK = null; } catch(e){} }
+}
 var syncTimer    = null;
 var USER_ROLE    = 'viewer';
 // ✅ (원복됨) 한때 베트남 일반(user) 로그인을 "생산"/"품질"/"자재" 비밀번호로 나눠
@@ -8480,7 +8489,7 @@ function promptReLogin() {
   if (USER_ROLE === 'viewer') return;
   const now = Date.now(); if (now - _authPromptAt < 5000) return; _authPromptAt = now;
   try { safeLSRemove('_adm'); safeLSRemove('_stf'); } catch(e){}
-  ADMIN_TOKEN = ''; isAdmin = false; try { applyAdminUI(false); } catch(e){}
+  ADMIN_TOKEN = ''; isAdmin = false; setMaster(false); try { applyAdminUI(false); } catch(e){}
   alert('로그인 시간이 끝났습니다. 다시 로그인해주세요.\nPhiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
   try { showLoginModal(); } catch(e){}
 }
@@ -8660,7 +8669,7 @@ const COST_MODEL_ORDER = ['ML27A040118A','ML27A040091A','ML27A040090A','ML27A040
 function costEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 // 베트남 시간 기준 YYYY-MM
 function costYM(dt){ const d=new Date(dt); if(isNaN(d)) return String(dt||'').slice(0,7); return new Date(d.getTime()+7*3600e3).toISOString().slice(0,7); }
-function costCanEdit(){ return !!isAdmin; }
+function costCanEdit(){ return !!isMaster; }
 
 async function loadCost(){
   if (!(API_URL || IS_GAS)) return;
@@ -9531,7 +9540,7 @@ function exportCostExcel(){
 // 원가 탭은 관리자(입력)와 한국 열람(본사 조회)만 보인다 — 베트남 일반 직원에게는 숨김(급여 등 민감 정보)
 function applyCostTabUI() {
   const b = document.getElementById('tb-cost'); if (!b) return;
-  const show = isAdmin || USER_ROLE === 'viewer';
+  const show = isMaster || USER_ROLE === 'viewer';
   b.style.display = show ? '' : 'none';
   const sec = document.getElementById('tab-cost');
   if (!show && sec && sec.classList.contains('on')) go('dashboard');
@@ -9861,7 +9870,7 @@ function applyRoleUI() {
     // 베트남 관리자: 전체
     isAdmin = true;
     applyAdminUI(true);
-    setSyncBadge('ok', '🔓 관리자 모드');
+    setSyncBadge('ok', isMaster ? '👑 마스터 모드' : '🔓 관리자 모드');
   }
 
   // 공통: 유저 배지 이름
@@ -9958,7 +9967,7 @@ async function loginVN() {
     if (!(staff && staff.ok && staff.token) && staff && staff.error === '비밀번호 오류') admin = await once('adminLogin');
   } finally { guard.release(); }
   if (admin && admin.ok && admin.token) {
-    CURRENT_USER = name; USER_ROLE = 'admin'; ADMIN_TOKEN = admin.token;
+    CURRENT_USER = name; USER_ROLE = 'admin'; ADMIN_TOKEN = admin.token; setMaster(admin.role === 'master');
     try { safeLSSet('_adm', admin.token); if (admin.staffToken) safeLSSet('_stf', admin.staffToken); } catch(e){}
     try { safeLSSet('erp_username', name); safeLSSet('erp_role', 'admin'); } catch(e){}
     closeLoginModal(); applyRoleUI(); startAutoSync();
@@ -9997,7 +10006,7 @@ function logoutUser() {
   if (!confirm('로그아웃 하시겠습니까?')) return;
   try { safeLSRemove('erp_username'); safeLSRemove('erp_role'); safeLSRemove('erp_dept'); } catch(e){}
   try { safeLSRemove('_adm'); safeLSRemove('_stf'); } catch(e){}  // ✅ staff 토큰도 삭제
-  CURRENT_USER=''; USER_ROLE='viewer'; isAdmin=false; ADMIN_TOKEN=''; STAFF_DEPT='';
+  CURRENT_USER=''; USER_ROLE='viewer'; isAdmin=false; setMaster(false); ADMIN_TOKEN=''; STAFF_DEPT='';
   applyAdminUI(false);
   const ov = document.getElementById('user-ov');
   if (ov) ov.style.display = 'flex';
@@ -10024,8 +10033,8 @@ async function ensureStaffToken() {
 // ── 관리자 로그인
 function openAdminLogin() {
   if (isAdmin) {
-    if (confirm('관리자 모드를 해제하시겠습니까?')) {
-      isAdmin=false; ADMIN_TOKEN='';
+    if (confirm(isMaster ? '마스터 모드를 해제하시겠습니까?' : '관리자 모드를 해제하시겠습니까?')) {
+      isAdmin=false; setMaster(false); ADMIN_TOKEN='';
       safeLSRemove('_adm');
       try { ADMIN_TOKEN = safeLSGet('_stf','') || ''; } catch(e){}
       // ✅ 관리자 해제 후에는 일반 직원 권한으로 계속 사용 (상태변경·실적입력 등)
@@ -10050,7 +10059,7 @@ async function doAdminLogin() {
   let ok = false; let token = '';
   if (!API_URL) { if(errEl){errEl.textContent='서버 주소(⚙️ API 설정)가 없어 확인할 수 없습니다.';errEl.style.display='block';} return; }
   const res = await api('adminLogin', {password:pw});
-  if (res.ok && res.token) { ok=true; token=res.token; if (res.staffToken) { try{ safeLSSet('_stf', res.staffToken); }catch(e){} } }
+  if (res.ok && res.token) { ok=true; token=res.token; setMaster(res.role === 'master'); if (res.staffToken) { try{ safeLSSet('_stf', res.staffToken); }catch(e){} } }
   else { if(errEl){errEl.textContent=res.error||'비밀번호 오류';errEl.style.display='block';} return; }
   if (ok) {
     ADMIN_TOKEN = token;
@@ -10066,7 +10075,7 @@ function applyAdminUI(on) {
   const btn = document.getElementById('admin-btn');
   if (btn) {
     btn.style.display = 'inline-block';
-    btn.textContent = on ? '🔓 관리자 ON' : '🔐 관리자';
+    btn.textContent = on ? (isMaster ? '👑 마스터 ON' : '🔓 관리자 ON') : '🔐 관리자';
     btn.style.background   = on ? '#fef3c7' : '#fff';
     btn.style.color        = on ? '#92400e' : '#555';
     btn.style.borderColor  = on ? '#f59e0b' : '#dde';
@@ -10368,6 +10377,7 @@ function initMultiUser() {
         USER_ROLE    = savedRole;
         if (savedRole === 'admin') {
           ADMIN_TOKEN = safeLSGet('_adm','') || '';
+          isMaster = !!ADMIN_TOKEN && safeLSGet('_mst','') === '1';
           if (!ADMIN_TOKEN) { showLoginModal(); return; }
         } else if (savedRole === 'user') {
           // ✅ staff 토큰 복원 - 없으면 재로그인 유도
@@ -12984,7 +12994,7 @@ function renderSupplyPO(){
       <td>${r.dueDate||'-'}</td>
       <td><span style="color:${lbl[r.status][1]};font-weight:600">${lbl[r.status][0]}</span>${r.closed&&r.got<r.q?' <span style="color:#8A95A3;font-size:11px">(종결)</span>':''}</td>
       <td style="white-space:normal;color:#5D6977;font-size:12px">${r.note||''}</td>
-      <td class="no-print">${USER_ROLE!=='viewer'?`<button class="edit-btn" title="수정" onclick="openSupplyPO('${r.id}')">✏️</button>`:''}${isAdmin?`<button class="edit-btn" title="삭제" onclick="deleteSupplyPOUI('${r.id}')">🗑️</button>`:''}</td>
+      <td class="no-print">${USER_ROLE!=='viewer'?`<button class="edit-btn" title="수정" onclick="openSupplyPO('${r.id}')">✏️</button>`:''}${isMaster?`<button class="edit-btn" title="삭제" onclick="deleteSupplyPOUI('${r.id}')">🗑️</button>`:''}</td>
     </tr>`).join('') : `<tr><td colspan="12" class="empty">${SPO.length ? '조건에 맞는 발주가 없습니다.' : '등록된 자재 발주가 없습니다. "➕ 자재 발주 등록"으로 시작하세요.'}</td></tr>`;
   document.getElementById('spo-add-btn').style.display = USER_ROLE === 'viewer' ? 'none' : '';
 }
@@ -13184,13 +13194,14 @@ let _lastActive = Date.now();
 ['mousedown','keydown','touchstart','wheel'].forEach(ev => document.addEventListener(ev, () => { _lastActive = Date.now(); }, {passive:true, capture:true}));
 function checkAdminIdle(){
   if (!isAdmin || Date.now() - _lastActive < ADMIN_IDLE_MS) return;
-  isAdmin = false; ADMIN_TOKEN = '';
+  const wasMaster = isMaster;
+  isAdmin = false; setMaster(false); ADMIN_TOKEN = '';
   try { safeLSRemove('_adm'); } catch(e){}
   try { ADMIN_TOKEN = safeLSGet('_stf','') || ''; } catch(e){}
   if (USER_ROLE === 'admin') { USER_ROLE = 'user'; try { safeLSSet('erp_role','user'); } catch(e){} }
   applyAdminUI(false);
   try { setSyncBadge('ok', '✅ 베트남'); } catch(e){}
-  alert('1시간 동안 사용하지 않아 관리자 모드가 꺼졌습니다. 필요하면 🔐 관리자로 다시 켜주세요.\nChế độ quản trị đã tắt do không sử dụng 1 giờ.');
+  alert((wasMaster ? '1시간 동안 사용하지 않아 마스터 모드가 꺼졌습니다.' : '1시간 동안 사용하지 않아 관리자 모드가 꺼졌습니다.') + ' 필요하면 🔐 관리자로 다시 켜주세요.\nChế độ quản trị đã tắt do không sử dụng 1 giờ.');
 }
 setInterval(checkAdminIdle, 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkAdminIdle(); });
@@ -13241,7 +13252,7 @@ function dsSetMode(md){ _dsMode = md; renderShipPanel(); }
 function renderShipPanel(){
   const box = document.getElementById('d-ship-panel'); if (!box) return;
   // 매출 표시용 원가 데이터: 관리자·본사 열람이면 한 번만 불러온다
-  if (!_dsCostTried && (isAdmin || USER_ROLE === 'viewer') && COST_SERVER_OK !== true && typeof loadCost === 'function' && (API_URL || IS_GAS)) {
+  if (!_dsCostTried && (isMaster || USER_ROLE === 'viewer') && COST_SERVER_OK !== true && typeof loadCost === 'function' && (API_URL || IS_GAS)) {
     _dsCostTried = true; loadCost().then(() => { if (dsCanRev()) renderShipPanel(); });
   }
   const now = dsNowYM(); const m = _dsMonth || now; _dsMonth = m;
@@ -13459,7 +13470,7 @@ async function invLinkExisting(){
 }
 function renderInvPanel(){
   const box = document.getElementById('inv-panel'); if (!box) return;
-  if (!isAdmin) { box.style.display = 'none'; return; }
+  if (!isMaster) { box.style.display = 'none'; return; }
   box.style.display = '';
   if (COST_SERVER_OK !== true && !_invCostTried && (API_URL || IS_GAS)) { _invCostTried = true; loadCost().then(() => { if (INV) { INV = null; } renderInvPanel(); if (typeof renderShipPlans==='function') renderShipPlans(); }); }
   renderInvImgRow(); renderInvRecords();
@@ -14091,7 +14102,7 @@ function renderShipPlans(){
   const box = document.getElementById('spl-panel'); if (!box) return;
   splKeepForm();
   // 인보이스 기록이 지워졌는데 출고 예정에 번호가 남아 있으면 정리 (관리자 화면에서만 확인 가능)
-  if (isAdmin && COST_SERVER_OK === true) {
+  if (isMaster && COST_SERVER_OK === true) {
     const gone = [...new Set(SPL.filter(p => p.invNo && p.status === 'inv' && !(COST.model||{})[invKey(p.invNo)]).map(p => p.invNo))];
     if (gone.length) { gone.forEach(no => splUnlinkInvoice(no).then(renderShipPlans)); }
   }
@@ -14137,10 +14148,10 @@ function renderShipPlans(){
     const changed = p.invLines && p.invLines.length && JSON.stringify(p.invLines.map(l=>[l.code,+l.qty])) !== JSON.stringify((p.lines||[]).map(l=>[l.code,+l.qty]));
     const act = [];
     if ((p.status === 'wait' || p.status === 'inv') && canEdit) act.push(`<button onclick="splConfirm('${p.id}')" style="padding:4px 10px;border-radius:6px;border:none;background:#166534;color:#fff;font-weight:600;cursor:pointer;font-size:12px">출고 확정 / Xác nhận xuất</button>`);
-    if ((p.status === 'wait' || p.status === 'inv') && isAdmin) act.push(`<button onclick="invFromPlan('${p.id}')" style="padding:4px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer;font-size:12px">${p.invNo ? '인보이스 열기' : '인보이스 작성'}</button>`);
+    if ((p.status === 'wait' || p.status === 'inv') && isMaster) act.push(`<button onclick="invFromPlan('${p.id}')" style="padding:4px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer;font-size:12px">${p.invNo ? '인보이스 열기' : '인보이스 작성'}</button>`);
     if ((p.status === 'wait' || p.status === 'inv') && canEdit) act.push(`<button onclick="splEdit('${p.id}')" title="LOT·수량 수정" class="edit-btn">✏️</button>`);
     if (p.status === 'wait' && canEdit) act.push(`<button onclick="splCancel('${p.id}')" title="취소" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>`);
-    if (p.status === 'cancel' && isAdmin) act.push(`<button onclick="splPurge('${p.id}')" title="완전 삭제" style="padding:4px 10px;border-radius:6px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer;font-size:12px">🗑 완전 삭제</button>`);
+    if (p.status === 'cancel' && isMaster) act.push(`<button onclick="splPurge('${p.id}')" title="완전 삭제" style="padding:4px 10px;border-radius:6px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer;font-size:12px">🗑 완전 삭제</button>`);
     return `<tr>
       <td style="font-family:monospace;font-size:12px">${p.no||''}</td><td style="white-space:nowrap">${p.date||''}</td><td>${(SPL_DEST[p.dest]||p.dest||'').replace(/^\S+\s/,'')}</td>
       <td style="white-space:normal">${(p.lines||[]).map(l => `${l.name||l.code} <b>${n(l.qty)}</b><div style="font-size:11px;color:#185FA5">${(l.lots||[]).map(x => `${splLotName(x.lot)} ${n(x.qty)}`).join(' · ')}</div>`).join('')}${splMismatch(p).length ? `<div style="font-size:11.5px;color:#b91c1c;font-weight:600">⚠️ 인보이스 수량과 다름: ${splMismatch(p).join(', ')} — ✏️로 LOT 수량을 맞춰주세요</div>` : ''}</td>
@@ -14185,7 +14196,7 @@ async function splSave(){
   if (!r || !r.ok) { alert('저장 실패: ' + (r && r.error || '서버 응답 없음') + (r && /unknown action/i.test(r.error||'') ? '\n서버(Code.gs)를 새 버전으로 배포해야 합니다.' : '')); return; }
   if (old) Object.assign(old, rec); else SPL.push(rec);
   SPL_DRAFT = []; SPL_EDIT = null; SPL_PICK = null; SPL_FORM.note = ''; document.getElementById('spl-note').value = '';
-  renderShipPlans(); if (typeof renderInvPanel === 'function' && isAdmin) renderInvPanel();
+  renderShipPlans(); if (typeof renderInvPanel === 'function' && isMaster) renderInvPanel();
 }
 // 인보이스(수정본) 수량과 LOT 지정 수량이 다른 모델
 function splMismatch(p){
@@ -14216,7 +14227,7 @@ async function splCancel(id){
 }
 // 취소된 출고 예정만 목록에서 완전히 지운다 (관리자). 재고·출고 기록은 건드리지 않음
 async function splPurge(id){
-  const p = SPL.find(x => x.id === id); if (!p || p.status !== 'cancel' || !isAdmin) return;
+  const p = SPL.find(x => x.id === id); if (!p || p.status !== 'cancel' || !isMaster) return;
   if (!confirm(`취소된 출고 예정 ${p.no}을 완전히 삭제할까요? 되돌릴 수 없습니다.`)) return;
   const r = await api('deleteShipPlan', {id});
   if (!r || !r.ok) { alert('삭제 실패: ' + (r && r.error || '서버 응답 없음')); return; }
