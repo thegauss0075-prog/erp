@@ -420,6 +420,18 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   @media (max-width:900px){ .ds-body{grid-template-columns:1fr} }
   /* 작업지시 표: 좁은 화면에서도 액션 버튼까지 한 화면에 보이게 */
   .inv-grid label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 제조원가 표: 줄맞춤·모델 열 고정·핵심(개당) 열 먼저 */
+  #cost-table{font-size:12px;border-collapse:separate;border-spacing:0}
+  #cost-table th{white-space:normal;word-break:keep-all;min-width:54px;text-align:right;vertical-align:bottom;padding:6px 7px;line-height:1.25;font-size:11.5px}
+  #cost-table th small{font-weight:400;font-size:10px}
+  #cost-table tr.cost-grp th{text-align:center;vertical-align:middle;border-bottom:1px solid var(--line);font-size:11px;color:var(--ink)}
+  #cost-table td{text-align:right;vertical-align:top;padding:6px 7px;white-space:nowrap;line-height:1.3}
+  #cost-table td.cost-pct{font-weight:700;vertical-align:top}
+  #cost-table td.cost-key{background:#F8FBFE}
+  #cost-table .cost-sticky{position:sticky;left:0;z-index:2;background:#fff;text-align:left;min-width:150px;box-shadow:1px 0 0 var(--line)}
+  #cost-table thead .cost-sticky{z-index:3;background:#F6F8FA;vertical-align:middle}
+  #cost-table tr.cost-total td{background:#F1F5F9;font-weight:700;border-top:1px solid var(--line)}
+  #cost-table tbody tr:hover td.cost-sticky{background:#F7FAFD}
   #tab-wo th,#tab-wo td{padding-left:6px;padding-right:6px}
   #tab-wo td.wo-actions{white-space:normal;min-width:128px;max-width:132px;line-height:1.9}
   #tab-wo td.wo-actions .edit-btn{padding:2px 3px!important;margin:0!important}
@@ -1782,12 +1794,23 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <div id="cost-charts" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:10px;margin-bottom:12px"></div>
   <div id="cost-tip" style="position:fixed;pointer-events:none;display:none;z-index:9999;background:#0b0b0b;color:#fff;font-size:12px;line-height:1.45;padding:6px 9px;border-radius:6px;max-width:260px;white-space:pre-line;box-shadow:0 2px 8px rgba(0,0,0,.2)"></div>
 
-  <div class="tw"><table style="width:100%" id="cost-table">
-    <thead><tr>
-      <th>모델</th><th style="text-align:right">생산수량</th><th style="text-align:right">출고수량</th><th style="text-align:right">표준시간<br>(초/개)</th>
-      <th style="text-align:right">재료비</th><th style="text-align:right">노무비</th><th style="text-align:right">제조경비</th><th style="text-align:right">외주비</th><th style="text-align:right">감가상각비</th>
-      <th style="text-align:right">제조원가</th><th style="text-align:right">개당 제조원가</th><th style="text-align:right">판매가</th><th style="text-align:right">이익률<br><span style="font-weight:400;font-size:10px">(그룹)</span></th><th style="text-align:right">가공원가<br>/개</th><th style="text-align:right">임가공비</th><th style="text-align:right">임가공 이익률<br><span style="font-weight:400;font-size:10px">(법인)</span></th><th>재료비<br>근거</th>
-    </tr></thead><tbody id="cost-body"></tbody></table></div>
+  <div class="tw cost-tw"><table id="cost-table">
+    <thead>
+      <tr class="cost-grp">
+        <th rowspan="2" class="cost-sticky">모델<span class="vi">Model</span></th>
+        <th colspan="2" style="text-align:center">수량 <span style="font-weight:400">(개)</span></th>
+        <th colspan="6" style="text-align:center;background:#EEF4FB">개당 원가·이익 <span style="font-weight:400">(VND / ₩)</span></th>
+        <th colspan="6" style="text-align:center">월 원가 구성 <span style="font-weight:400">(VND / ₩)</span></th>
+        <th colspan="2" style="text-align:center">기준</th>
+      </tr>
+      <tr>
+        <th>생산</th><th>출고</th>
+        <th style="background:#EEF4FB">제조원가<br>/개</th><th style="background:#EEF4FB">판매가</th><th style="background:#EEF4FB">이익률<br><small>(그룹)</small></th>
+        <th style="background:#EEF4FB">가공원가<br>/개</th><th style="background:#EEF4FB">임가공비</th><th style="background:#EEF4FB">임가공<br>이익률<small>(법인)</small></th>
+        <th>제조원가<br>합계</th><th>재료비</th><th>노무비</th><th>제조경비</th><th>외주비</th><th>감가<br>상각비</th>
+        <th>표준시간<br><small>(초/개)</small></th><th style="text-align:center">재료비<br>근거</th>
+      </tr>
+    </thead><tbody id="cost-body"></tbody></table></div>
   <div id="cost-check" style="font-size:12px;margin:6px 0 16px"></div>
   <div class="cost-edit">
     <details open style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px">
@@ -8843,29 +8866,29 @@ function renderCostBody(keepEdits){
   if (!rows.length) {
     body.innerHTML = `<tr><td colspan="17"><div class="empty">${m}에 생산·출고 실적이 없습니다.</div></td></tr>`;
   } else {
+    const pct = (v) => `<td class="cost-pct" style="color:${v==null?'#94a3b8':(v<0?'#dc2626':'#166534')}">${v==null?'-':(v*100).toFixed(1)+'%'}</td>`;
     body.innerHTML = rows.map(r => `<tr>
-      <td><div style="font-weight:600">${costEsc(r.name)}</div><div style="font-family:monospace;font-size:10.5px;color:#94a3b8">${costEsc(r.code)}${COST_CUSTOMER[r.code]?' · '+COST_CUSTOMER[r.code]:''}</div></td>
-      <td style="text-align:right">${r.qty.toLocaleString()}</td>
-      <td style="text-align:right">${(r.ship||0).toLocaleString()}</td>
-      <td style="text-align:right;color:${r.st?'#334155':'#dc2626'}">${r.st||'미입력'}</td>
-      <td style="text-align:right">${costMoney(r.mat,c.fx)}</td>
-      <td style="text-align:right">${costMoney(r.labor,c.fx)}</td>
-      <td style="text-align:right">${costMoney(r.overhead,c.fx)}</td>
-      <td style="text-align:right">${costMoney(r.out,c.fx)}</td>
-      <td style="text-align:right">${costMoney(r.dep,c.fx)}</td>
-      <td style="text-align:right;font-weight:700">${costMoney(r.total,c.fx)}</td>
-      <td style="text-align:right;font-weight:700;color:#1d4ed8">${r.qty?costMoney(r.unit,c.fx):(r.unitSrc?costMoney(r.shipUnit,c.fx)+`<div style="font-size:10px;color:#7c3aed">${r.unitSrc.slice(5)}월 원가</div>`:(r.ship?'<span style="color:#dc2626;font-size:11px">원가 없음</span>':'-'))}</td>
-      <td style="text-align:right">${costMoney(r.saleVND,c.fx)}</td>
-      <td style="text-align:right;font-weight:700;color:${r.margin==null?'#94a3b8':(r.margin<0?'#dc2626':'#166534')}">${r.margin==null?'-':(r.margin*100).toFixed(1)+'%'}</td>
-      <td style="text-align:right">${costMoney(r.qty?r.procUnit:r.shipProcUnit,c.fx)}</td>
-      <td style="text-align:right">${costMoney(r.feeVND,c.fx)}</td>
-      <td style="text-align:right;font-weight:700;color:${r.procMargin==null?'#94a3b8':(r.procMargin<0?'#dc2626':'#166534')}">${r.procMargin==null?'-':(r.procMargin*100).toFixed(1)+'%'}</td>
+      <td class="cost-sticky"><div style="font-weight:600">${costEsc(r.name)}</div><div style="font-family:monospace;font-size:10.5px;color:#94a3b8">${costEsc(r.code)}${COST_CUSTOMER[r.code]?' · '+COST_CUSTOMER[r.code]:''}</div></td>
+      <td>${r.qty ? r.qty.toLocaleString() : '-'}</td>
+      <td>${r.ship ? r.ship.toLocaleString() : '-'}</td>
+      <td class="cost-key" style="font-weight:700;color:#1d4ed8">${r.qty?costMoney(r.unit,c.fx):(r.unitSrc?costMoney(r.shipUnit,c.fx)+`<div style="font-size:10px;color:#7c3aed">${r.unitSrc.slice(5)}월 원가</div>`:(r.ship?'<span style="color:#dc2626;font-size:11px">원가 없음</span>':'-'))}</td>
+      <td class="cost-key">${costMoney(r.saleVND,c.fx)}</td>
+      ${pct(r.margin)}
+      <td class="cost-key">${costMoney(r.qty?r.procUnit:r.shipProcUnit,c.fx)}</td>
+      <td class="cost-key">${costMoney(r.feeVND,c.fx)}</td>
+      ${pct(r.procMargin)}
+      <td style="font-weight:700">${costMoney(r.total,c.fx)}</td>
+      <td>${costMoney(r.mat,c.fx)}</td>
+      <td>${costMoney(r.labor,c.fx)}</td>
+      <td>${costMoney(r.overhead,c.fx)}</td>
+      <td>${costMoney(r.out,c.fx)}</td>
+      <td>${costMoney(r.dep,c.fx)}</td>
+      <td style="color:${r.st?'#334155':'#dc2626'}">${r.st||'미입력'}</td>
       <td style="text-align:center;font-size:11px">${r.matSrc==='HQ'?'<span style="color:#7c3aed" title="본사 원자재비(USD/개) 기준">본사</span>':r.matSrc==='BOM'?'<span style="color:#166534" title="ERP BOM × 자재단가">BOM</span>':r.matSrc==='ACT'?'실제':'<span title="BOM도 본사 원자재비도 없음 — 재료비 0" style="color:#dc2626">없음</span>'}</td>
-    </tr>`).join('') + `<tr style="background:#f1f5f9;font-weight:700">
-      <td>합계</td><td style="text-align:right">${T.qty.toLocaleString()}</td><td style="text-align:right">${T.ship.toLocaleString()}</td><td></td>
-      <td style="text-align:right">${costMoney(T.mat,c.fx)}</td><td style="text-align:right">${costMoney(T.labor,c.fx)}</td>
-      <td style="text-align:right">${costMoney(T.overhead,c.fx)}</td><td style="text-align:right">${costMoney(T.out,c.fx)}</td>
-      <td style="text-align:right">${costMoney(T.dep,c.fx)}</td><td style="text-align:right">${costMoney(T.total,c.fx)}</td><td colspan="7"></td></tr>`;
+    </tr>`).join('') + `<tr class="cost-total">
+      <td class="cost-sticky">합계 / Tổng</td><td>${T.qty.toLocaleString()}</td><td>${T.ship.toLocaleString()}</td><td colspan="6" class="cost-key"></td>
+      <td>${costMoney(T.total,c.fx)}</td><td>${costMoney(T.mat,c.fx)}</td><td>${costMoney(T.labor,c.fx)}</td>
+      <td>${costMoney(T.overhead,c.fx)}</td><td>${costMoney(T.out,c.fx)}</td><td>${costMoney(T.dep,c.fx)}</td><td colspan="2"></td></tr>`;
   }
   const missingST = rows.filter(r => r.qty && !r.st).length;
   const chk = document.getElementById('cost-check');
