@@ -14413,7 +14413,8 @@ function renderShipPlans(){
     if ((p.status === 'wait' || p.status === 'inv') && canEdit) act.push(`<button onclick="splConfirm('${p.id}')" style="padding:4px 10px;border-radius:6px;border:none;background:#166534;color:#fff;font-weight:600;cursor:pointer;font-size:12px">출고 확정 / Xác nhận xuất</button>`);
     if ((p.status === 'wait' || p.status === 'inv') && isMaster) act.push(`<button onclick="invFromPlan('${p.id}')" style="padding:4px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer;font-size:12px">${p.invNo ? '인보이스 열기' : '인보이스 작성'}</button>`);
     if ((p.status === 'wait' || p.status === 'inv') && canEdit) act.push(`<button onclick="splEdit('${p.id}')" title="LOT·수량 수정" class="edit-btn">✏️</button>`);
-    if (p.status === 'wait' && canEdit) act.push(`<button onclick="splCancel('${p.id}')" title="취소" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>`);
+    if ((p.status === 'wait' || p.status === 'inv') && canEdit) act.push(`<button onclick="splCancel('${p.id}')" title="출고 예정 취소 / Hủy" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>`);
+    if (p.status === 'done' && isAdmin) act.push(`<button onclick="splUndoConfirm('${p.id}')" title="출고 확정 취소 — 재고·PO 잔량 되돌림" style="padding:4px 10px;border-radius:6px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer;font-size:12px">↩ 출고 취소 / Hủy xuất</button>`);
     if (p.status === 'cancel' && isMaster) act.push(`<button onclick="splPurge('${p.id}')" title="완전 삭제" style="padding:4px 10px;border-radius:6px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer;font-size:12px">🗑 완전 삭제</button>`);
     return `<tr>
       <td style="font-family:monospace;font-size:12px">${p.no||''}</td><td style="white-space:nowrap">${p.date||''}</td><td>${(SPL_DEST[p.dest]||p.dest||'').replace(/^\S+\s/,'')}</td>
@@ -14482,7 +14483,7 @@ function splEdit(id){
 }
 async function splCancel(id){
   const p = SPL.find(x => x.id === id); if (!p) return;
-  if (!confirm(`출고 예정 ${p.no}을 취소할까요? / Hủy kế hoạch này?`)) return;
+  if (!confirm(`출고 예정 ${p.no}을 취소할까요? / Hủy kế hoạch này?${p.invNo ? `\n\n※ 연결된 인보이스 ${p.invNo}는 지워지지 않습니다. 필요 없으면 인보이스 목록에서 따로 삭제하세요.` : ''}`)) return;
   const rec = {...p, status:'cancel', cancelBy: CURRENT_USER||'', cancelAt: new Date().toISOString()};
   const r = await api('saveShipPlan', {rec});
   if (!r || !r.ok) { alert('저장 실패: ' + (r && r.error || '')); return; }
@@ -14495,6 +14496,23 @@ async function splPurge(id){
   const r = await api('deleteShipPlan', {id});
   if (!r || !r.ok) { alert('삭제 실패: ' + (r && r.error || '서버 응답 없음')); return; }
   SPL = SPL.filter(x => x.id !== id); renderShipPlans(); renderInvPanel();
+}
+// ↩ 출고 확정 취소 (관리자): 이 출고 예정으로 등록된 완제품 출고 이력을 지우고 재고·고객 PO 잔량을 되돌린다
+async function splUndoConfirm(id){
+  const p = SPL.find(x => x.id === id); if (!p || p.status !== 'done' || !isAdmin) return;
+  const qty = splLines(p).reduce((s,l) => s + (+l.qty||0), 0);
+  const reason = prompt(`출고 확정을 취소합니다 / Hủy xác nhận xuất\n${p.no} · ${(SPL_DEST[p.dest]||p.dest||'').replace(/^\S+\s/,'')} · ${qty.toLocaleString()}개\n\n- 완제품 출고 이력을 지우고 재고를 되돌립니다(LOT 그대로)\n- 고객 PO 잔량도 되돌립니다\n- 출고 예정은 '${p.invNo ? '인보이스 발행' : '출고 대기'}' 상태로 돌아갑니다\n\n취소 사유를 입력하세요 / Nhập lý do:`, '');
+  if (reason == null) return;
+  if (!reason.trim()) { alert('취소 사유를 입력해주세요.'); return; }
+  const r = await api('cancelShipConfirm', {no: p.no, reason: reason.trim(), user: CURRENT_USER || '', token: ADMIN_TOKEN});
+  if (!r || !r.ok) { alert('출고 취소 실패: ' + (r && r.error ? (r.error === 'unknown action: cancelShipConfirm' ? '서버(Code.gs)를 새 버전으로 배포해야 합니다.' : r.error) : '서버 응답 없음')); return; }
+  p.status = p.invNo ? 'inv' : 'wait'; p.posted = {};
+  p.undoLog = (p.undoLog || []).concat([{at: new Date().toISOString(), by: CURRENT_USER || '', reason: reason.trim(), doneAt: p.doneAt, doneBy: p.doneBy}]);
+  delete p.doneAt; delete p.doneBy;
+  await splSavePlan(p);
+  if (API_URL || IS_GAS) await syncNow();
+  renderShipPlans(); try { renderIOTable(); initDashboard(); } catch(e) {}
+  alert(`↩ 출고 확정이 취소됐습니다 (출고 이력 ${r.removed}건 삭제, 재고·PO 잔량 복구).\nĐã hủy xác nhận xuất.`);
 }
 async function splSavePlan(p){ const r = await api('saveShipPlan', {rec:p}); return r && r.ok; }
 // ③ 출고 확정: 모델별로 LOT 오래된 순 배정 → 완제품 출고(otp) 등록 → '완료'
