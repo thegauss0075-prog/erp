@@ -7867,7 +7867,7 @@ function renderNG(){
         <td style="overflow:hidden;text-overflow:ellipsis"><span class="badge ${tb[r.type]}">${tl[r.type]}</span></td>
         <td style="font-size:12px;color:#888;overflow:hidden;text-overflow:ellipsis">${m}</td>
         <td style="font-family:monospace;font-size:12px">${r.code}</td>
-        <td style="overflow:hidden;text-overflow:ellipsis;max-width:200px">${r.name}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;max-width:200px"><span onclick="openNGHist('${r.code}')" style="cursor:pointer;color:#185FA5;text-decoration:underline dotted;text-underline-offset:3px" title="클릭하면 입출고 내역 / Bấm để xem lịch sử">${r.name}</span></td>
         <td style="text-align:center;color:#666">${r.unit}</td>
         <td style="text-align:right">${r.prev%1?r.prev.toFixed(2):n(r.prev)}</td>
         <td style="text-align:right" class="${r.inng>0?'ngc':''}">${r.inng>0?(r.inng%1?r.inng.toFixed(2):r.inng.toLocaleString()):'<span class="dim">—</span>'}</td>
@@ -8218,6 +8218,39 @@ function initNGLogModel(){
   if(!sel)return;
   const cur=sel.value;
   sel.innerHTML='<option value="">전체 모델</option>'+models.map(m=>`<option value="${m}"${m===cur?' selected':''}>${m}</option>`).join('');
+}
+
+// 불량 품목 클릭 → 그 품목의 불량 입출고 내역 + 재고에서 불량으로 보낸 출고 이력
+function openNGHist(code){
+  const it = DB.ng.find(x => x.code === code) || {code, name:code, unit:''};
+  const f = v => { v = +v || 0; return v % 1 ? v.toFixed(2) : v.toLocaleString(); };
+  const logs = ngLog.filter(l => l.code === code).slice().sort((a,b) => String(a.dt).localeCompare(String(b.dt)));
+  let bal = 0;
+  const rows = logs.map(l => { const inn = l.type === 'ng-in'; bal += inn ? (+l.qty||0) : -(+l.qty||0);
+    return `<tr><td style="white-space:nowrap;color:#5D6977">${fmtDt(l.dt)}</td><td><span class="badge ${inn?'b-ng':'b-kr'}">${inn?'불량 입고 / Nhập NG':'불량 출고 / Xuất NG'}</span></td>
+      <td style="text-align:right;font-weight:700;${inn?'color:#b91c1c':''}">${inn?'+':'−'}${f(l.qty)}</td><td style="text-align:right;color:#5D6977">${f(bal)}</td>
+      <td style="white-space:normal">${l.reason||''}${l.note?`<div style="color:#8A95A3;font-size:11.5px">${l.note}</div>`:''}</td><td style="color:#8A95A3">${l.user||''}</td></tr>`; }).reverse().join('');
+  const tin = logs.filter(l => l.type==='ng-in').reduce((s,l)=>s+(+l.qty||0),0), tout = logs.filter(l => l.type!=='ng-in').reduce((s,l)=>s+(+l.qty||0),0);
+  // 재고(완제품·자재)에서 불량으로 보낸 출고 기록
+  const moved = (txLog||[]).filter(t => t.code === code && (t.type === 'otp' || t.type === 'omt') && (t.dest === 'NG' || /NG ?이동/.test(t.note||''))).slice().sort((a,b)=>String(b.dt).localeCompare(String(a.dt)));
+  const mrows = moved.map(t => `<tr><td style="white-space:nowrap;color:#5D6977">${fmtDt(t.dt)}</td><td>${t.lot && t.lot!=='__nolot__' ? t.lot : '—'}</td><td style="text-align:right;font-weight:600">${f(t.qty)}</td><td style="white-space:normal;color:#5D6977">${t.note||''}</td><td style="color:#8A95A3">${t.user||''}</td></tr>`).join('');
+  let ov = document.getElementById('ng-hist-ov');
+  if (!ov) { ov = document.createElement('div'); ov.id = 'ng-hist-ov'; ov.className = 'ov-bg'; ov.onclick = e => { if (e.target === ov) ov.classList.remove('show'); }; document.body.appendChild(ov); }
+  ov.innerHTML = `<div class="ov-box" style="max-width:860px;max-height:86vh;overflow:auto">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <h3 style="margin-bottom:4px">${it.name}<span style="font-family:monospace;font-size:12px;color:#8A95A3;margin-left:8px">${code}</span></h3>
+      <button onclick="document.getElementById('ng-hist-ov').classList.remove('show')" style="border:none;background:#F1F5F9;border-radius:8px;padding:6px 12px;cursor:pointer">닫기 / Đóng</button></div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:13px;margin:6px 0 14px;color:#5D6977">
+      <span>현재 불량 재고 / Tồn NG: <b style="color:#b91c1c;font-size:15px">${f(it.cur)} ${it.unit||''}</b></span>
+      <span>불량 입고 합계 / Tổng nhập: <b>${f(tin)}</b></span><span>불량 출고 합계 / Tổng xuất: <b>${f(tout)}</b></span></div>
+    <h4 style="font-size:13.5px;margin:0 0 6px">불량 입출고 내역 / Lịch sử nhập xuất NG <span style="font-weight:400;color:#8A95A3">(${logs.length}건, 최신순)</span></h4>
+    <div class="tw"><table><thead><tr><th>일시 / Ngày</th><th>구분 / Loại</th><th style="text-align:right">수량 / SL</th><th style="text-align:right">누계 / Lũy kế</th><th>사유·비고 / Lý do</th><th>등록 / Người</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" class="empty">불량 입출고 내역이 없습니다 / Không có dữ liệu</td></tr>'}</tbody></table></div>
+    ${moved.length ? `<h4 style="font-size:13.5px;margin:16px 0 6px">재고에서 불량으로 이동한 출고 / Xuất từ kho sang NG <span style="font-weight:400;color:#8A95A3">(${moved.length}건)</span></h4>
+    <div class="tw"><table><thead><tr><th>일시 / Ngày</th><th>LOT</th><th style="text-align:right">수량 / SL</th><th>비고 / Ghi chú</th><th>등록 / Người</th></tr></thead><tbody>${mrows}</tbody></table></div>` : ''}
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:10px">누계는 이 화면에 있는 불량 입출고 기록만으로 계산한 값입니다. 기록 이전 재고나 재고조정이 있으면 현재 불량 재고와 다를 수 있습니다.</div>
+  </div>`;
+  ov.classList.add('show');
 }
 
 function renderNGLog(){
@@ -12230,7 +12263,7 @@ function nameClick(code, catHint) {
     'initDashboard','initMS','initNGModel','initNGLogModel','initSubFilter',
     'setSub','setNGCat','setIC','renderLotCal','openLotCal','closeLotCal',
     'lotCalMove','selectLotDay','confirmLotCal','updateLotPreview',
-    'openTrace','openTraceSearch','nameClick',
+    'openTrace','openTraceSearch','nameClick','openNGHist',
     'openItemEdit','saveItemEdit','openItemDel','confirmItemDel','openItemPermDel','confirmItemPermDel','submitItem',
     'openAddItem','updateItemSubOpts','prefillIO','fillForm','fillLotDropdown',
     'closeOv','closeLoginModal','loginViewer','loginVN','saveUserName',
