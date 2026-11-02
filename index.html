@@ -14129,6 +14129,16 @@ async function invMakeExcel(){
     a.href = URL.createObjectURL(new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
     a.download = `${INV.invNo}${INV.rev?`_Rev${INV.rev}`:''}_INV_PK_${INV.kind==='KR'?'THEGAUSS':'SOLUM'}.xlsx`;
     document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    // 🧾 발행본을 서버(드라이브 비공개 폴더)에 보관 → 창고 직원이 출고 탭에서 내려받고, 발행 알림이 간다
+    try {
+      const u8 = new Uint8Array(buf); let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+      const plan = INV.planId && typeof SPL !== 'undefined' ? SPL.find(x => x.id === INV.planId) : null;
+      const up = await apiPost('saveInvoiceFile', {name: a.download, b64: btoa(bin), invNo: INV.invNo, rev: INV.rev || 0, invDate: INV.invDate || '',
+        planNo: plan ? plan.no : '', dest: plan ? plan.dest : (INV.kind === 'KR' ? 'KR' : 'Solum Vina'),
+        lines: (INV.lines||[]).map(l => ({code: l.code, name: l.name, qty: +l.qty || 0, unit: 'Ea'}))});
+      if (up && up.ok) { INV.fileId = up.id; INV.fileName = up.name; }
+      else alert('⚠️ 엑셀은 내려받았지만 서버 보관에 실패했습니다 (창고 직원 내려받기·알림 안 됨): ' + (up && up.error ? (up.error === 'unknown action: saveInvoiceFile' ? '서버(Code.gs)를 새 버전으로 배포해야 합니다.' : up.error) : '서버 응답 없음'));
+    } catch (e) { console.warn('invoice upload', e); }
     invSaveMaster().catch(() => {});
     invSaveRecord().catch(() => {});
   } catch(e) { alert('엑셀 만들기 실패: ' + e.message); }
@@ -14414,6 +14424,7 @@ function renderShipPlans(){
     if ((p.status === 'wait' || p.status === 'inv') && isMaster) act.push(`<button onclick="invFromPlan('${p.id}')" style="padding:4px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer;font-size:12px">${p.invNo ? '인보이스 열기' : '인보이스 작성'}</button>`);
     if ((p.status === 'wait' || p.status === 'inv') && canEdit) act.push(`<button onclick="splEdit('${p.id}')" title="LOT·수량 수정" class="edit-btn">✏️</button>`);
     if ((p.status === 'wait' || p.status === 'inv') && canEdit) act.push(`<button onclick="splCancel('${p.id}')" title="출고 예정 취소 / Hủy" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>`);
+    if ((p.status === 'inv' || p.status === 'done') && p.invFileId && USER_ROLE !== 'viewer') act.push(`<button onclick="splDownloadInv('${p.id}')" title="${(p.invFileName||'').replace(/"/g,'')}" style="padding:4px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer;font-size:12px">📄 인보이스 받기 / Tải Invoice</button>`);
     if (p.status === 'done' && isAdmin) act.push(`<button onclick="splUndoConfirm('${p.id}')" title="출고 확정 취소 — 재고·PO 잔량 되돌림" style="padding:4px 10px;border-radius:6px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer;font-size:12px">↩ 출고 취소 / Hủy xuất</button>`);
     if (p.status === 'cancel' && isMaster) act.push(`<button onclick="splPurge('${p.id}')" title="완전 삭제" style="padding:4px 10px;border-radius:6px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer;font-size:12px">🗑 완전 삭제</button>`);
     return `<tr>
@@ -14514,6 +14525,19 @@ async function splUndoConfirm(id){
   renderShipPlans(); try { renderIOTable(); initDashboard(); } catch(e) {}
   alert(`↩ 출고 확정이 취소됐습니다 (출고 이력 ${r.removed}건 삭제, 재고·PO 잔량 복구).\nĐã hủy xác nhận xuất.`);
 }
+// 📄 발행된 인보이스 엑셀 내려받기 (창고 직원도 가능 — 서버가 직원 로그인을 확인하고 인보이스 폴더 파일만 보낸다)
+async function splDownloadInv(id){
+  const p = SPL.find(x => x.id === id); if (!p || !p.invFileId) return;
+  const btn = document.querySelector(`button[onclick="splDownloadInv('${id}')"]`); const old = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ ...'; }
+  try {
+    const r = await api('getInvoiceFile', {id: p.invFileId, token: ADMIN_TOKEN});
+    if (!r || !r.ok) { alert('인보이스를 받지 못했습니다: ' + (r && r.error ? (r.error === 'unknown action: getInvoiceFile' ? '서버(Code.gs)를 새 버전으로 배포해야 합니다.' : r.error) : '서버 응답 없음')); return; }
+    const bin = atob(r.b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u8], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    a.download = r.name || (p.invNo + '.xlsx'); document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } finally { if (btn) { btn.disabled = false; btn.textContent = old; } }
+}
 async function splSavePlan(p){ const r = await api('saveShipPlan', {rec:p}); return r && r.ok; }
 // ③ 출고 확정: 모델별로 LOT 오래된 순 배정 → 완제품 출고(otp) 등록 → '완료'
 async function splConfirm(id){
@@ -14581,7 +14605,7 @@ function invFromPlan(id){
 async function splUnlinkInvoice(no){
   if (!no || typeof SPL === 'undefined') return;
   for (const p of SPL.filter(x => x.invNo === no && x.status !== 'done' && x.status !== 'cancel')) {
-    delete p.invNo; delete p.invRev; delete p.invLines; p.status = 'wait';
+    delete p.invNo; delete p.invRev; delete p.invLines; delete p.invFileId; delete p.invFileName; p.status = 'wait';
     await splSavePlan(p);
   }
 }
@@ -14590,6 +14614,7 @@ async function splLinkInvoice(rec){
   if (!rec.planId) return;
   const p = SPL.find(x => x.id === rec.planId); if (!p || p.status === 'done' || p.status === 'cancel') return;
   Object.assign(p, {invNo: rec.invNo, invRev: rec.rev || 0, invLines: (rec.lines||[]).map(l => ({code:l.code, name:l.name, unit:'Ea', qty:+l.qty||0})), status:'inv'});
+  if (rec.fileId) Object.assign(p, {invFileId: rec.fileId, invFileName: rec.fileName || ''});
   if (await splSavePlan(p)) renderShipPlans();
 }
 </script>
