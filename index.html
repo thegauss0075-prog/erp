@@ -13224,16 +13224,69 @@ function lotEstUsed(L){
     return {it, prods};
   });
 }
-// 📎 첨부파일 링크: 구글 드라이브에 올린 엑셀·CSV 등은 기본 링크가 "구글 시트로 열기"라서 큰 파일은
-//    "The file is too large to open" 오류가 난다 → 드라이브 파일 화면(미리보기 + 다운로드 버튼)으로 바꿔서 연다.
-function driveFileUrl(u){
-  const m = String(u||'').match(/docs\.google\.com\/(?:spreadsheets|document|presentation)\/d\/([A-Za-z0-9_-]{20,})/);
-  return (m && /rtpof=true/.test(u)) ? `https://drive.google.com/file/d/${m[1]}/view` : u;
-}
+// 📎 첨부파일 보기 (2026-11-02): 품질검사에 올린 엑셀·CSV는 구글 시트로 열면 큰 파일이 "too large to open"으로
+//    안 열린다 → 서버(getQCFile)에서 파일을 받아 ERP 화면 안에서 표로 보여준다. 워드·PPT는 드라이브 파일 화면으로 연다.
+function driveFileId(u){ const m = String(u||'').match(/(?:docs\.google\.com\/(?:spreadsheets|document|presentation)|drive\.google\.com\/file)\/d\/([A-Za-z0-9_-]{20,})/); return m ? m[1] : ''; }
 document.addEventListener('click', e => {
   const a = e.target && e.target.closest && e.target.closest('a[href]'); if (!a) return;
-  const u = driveFileUrl(a.getAttribute('href')); if (u !== a.getAttribute('href')) a.setAttribute('href', u);
+  const href = a.getAttribute('href') || '';
+  if (!/rtpof=true/.test(href)) return;               // 드라이브에 올린 오피스 파일 링크만
+  const id = driveFileId(href); if (!id) return;
+  e.preventDefault(); e.stopPropagation();
+  if (/docs\.google\.com\/spreadsheets/.test(href)) openFileViewer(id, a.getAttribute('title') || a.textContent || '');
+  else window.open(`https://drive.google.com/file/d/${id}/view`, '_blank', 'noopener');
 }, true);
+let FV = null;
+function fvClose(){ const o = document.getElementById('fv-ov'); if (o) o.remove(); FV = null; }
+function fvShell(title, body){
+  let o = document.getElementById('fv-ov');
+  if (!o) { o = document.createElement('div'); o.id = 'fv-ov'; o.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    o.addEventListener('click', ev => { if (ev.target === o) fvClose(); }); document.body.appendChild(o); }
+  o.innerHTML = `<div style="background:#fff;border-radius:12px;width:min(1200px,100%);height:min(88vh,900px);display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid #DCE1E7">
+      <div style="font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 ${title}</div>
+      ${FV && FV.id ? `<a href="https://drive.google.com/uc?export=download&id=${FV.id}" target="_blank" rel="noopener" style="font-size:12.5px;padding:6px 10px;border:1px solid #185FA5;border-radius:8px;color:#185FA5;text-decoration:none">⬇ 다운로드</a>` : ''}
+      <button onclick="fvClose()" style="padding:6px 12px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기 / Đóng</button></div>
+    <div id="fv-body" style="flex:1;overflow:auto;padding:10px 14px">${body}</div></div>`;
+}
+async function openFileViewer(id, title){
+  FV = {id, title: String(title||'').replace(/\s*열기$/, '') || '첨부파일', limit: 500, sheet: 0, q: ''};
+  fvShell(FV.title, '<div class="empty">⏳ 파일을 불러오는 중... (큰 파일은 10~20초 걸립니다)</div>');
+  const r = await api('getQCFile', {id});
+  if (!FV || FV.id !== id) return;
+  if (!r || !r.ok) {
+    const why = r && r.error === 'unknown action: getQCFile' ? '서버(Code.gs)를 새 버전으로 배포해야 이 기능을 쓸 수 있습니다.' : (r && r.error || '서버 응답 없음');
+    fvShell(FV.title, `<div class="empty">파일을 불러오지 못했습니다: ${why}<br><br><a href="https://drive.google.com/file/d/${id}/view" target="_blank" rel="noopener">드라이브에서 열기</a></div>`); return;
+  }
+  FV.title = r.name || FV.title;
+  if (typeof XLSX === 'undefined') { fvShell(FV.title, '<div class="empty">엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.</div>'); return; }
+  try {
+    const bin = atob(r.b64), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const wb = XLSX.read(bytes, {type:'array', cellDates:true, dense:true});
+    FV.sheets = wb.SheetNames.map(n => ({name: n, rows: XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, raw:false, defval:''})}));
+  } catch (e) { fvShell(FV.title, `<div class="empty">이 파일 형식은 미리보기할 수 없습니다 (${String(e.message||e).slice(0,80)}). 다운로드해서 열어주세요.</div>`); return; }
+  fvRender();
+}
+function fvRender(){
+  if (!FV || !FV.sheets) return;
+  const sh = FV.sheets[FV.sheet] || {rows: []};
+  const q = FV.q.trim().toLowerCase();
+  const head = sh.rows[0] || [], body = sh.rows.slice(1);
+  const list = q ? body.filter(r => r.some(c => String(c).toLowerCase().includes(q))) : body;
+  const ncol = Math.max(head.length, ...sh.rows.slice(0, 50).map(r => r.length));
+  const esc = v => String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const shown = list.slice(0, FV.limit);
+  fvShell(FV.title, `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+      ${FV.sheets.length > 1 ? FV.sheets.map((x, i) => `<button onclick="FV.sheet=${i};FV.limit=500;fvRender()" style="padding:4px 10px;border-radius:6px;border:1px solid ${i===FV.sheet?'#185FA5':'#DCE1E7'};background:${i===FV.sheet?'#E8F0F8':'#fff'};cursor:pointer;font-size:12.5px">${esc(x.name)}</button>`).join('') : ''}
+      <input id="fv-q" value="${esc(FV.q)}" placeholder="검색 (S/N, 값…) / Tìm kiếm" oninput="FV.q=this.value;FV.limit=500;fvRender();const i=document.getElementById('fv-q');i.focus();i.setSelectionRange(i.value.length,i.value.length)" style="margin-left:auto;padding:6px 10px;border:1px solid #DCE1E7;border-radius:8px;min-width:220px">
+      <span style="font-size:12px;color:#5D6977">${list.length.toLocaleString()}행${q ? ` / 전체 ${body.length.toLocaleString()}` : ''}</span></div>
+    <div style="overflow:auto;border:1px solid #DCE1E7;border-radius:8px">
+    <table style="border-collapse:collapse;font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums">
+      <thead><tr><th style="position:sticky;top:0;background:#F1F5F9;padding:5px 8px;border-bottom:1px solid #DCE1E7;color:#8A95A3">#</th>${Array.from({length: ncol}, (_, j) => `<th style="position:sticky;top:0;background:#F1F5F9;padding:5px 8px;border-bottom:1px solid #DCE1E7;text-align:left">${esc(head[j] ?? '')}</th>`).join('')}</tr></thead>
+      <tbody>${shown.map((r, i) => `<tr style="border-bottom:1px solid #EEF1F4"><td style="padding:3px 8px;color:#8A95A3">${i+1}</td>${Array.from({length: ncol}, (_, j) => { const v = r[j] ?? ''; return `<td style="padding:3px 8px;${/^-?[\d,.]+%?$/.test(String(v))?'text-align:right':''}">${esc(v)}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
+    ${list.length > shown.length ? `<div style="text-align:center;margin:10px"><button onclick="FV.limit+=1000;fvRender()" style="padding:6px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">더 보기 (${(list.length-shown.length).toLocaleString()}행 남음)</button></div>` : ''}`);
+}
 function openLotTrace(lot){
   document.getElementById('lot-ov').classList.add('show');
   const dl = document.getElementById('lot-list');
