@@ -13168,6 +13168,62 @@ function lotWhereUsed(L, depth, seen){
       next: String(w.cat||'').toUpperCase() === 'BTP' ? lotWhereUsed(lotNorm(o.lot), depth + 1, seen) : []}))};
   });
 }
+// ── 작업지시 없이 생산·투입된 기록의 "추정" 추적 (2026-11-02)
+//    작업지시 이전(또는 작업지시 없이) 등록된 생산분은 실제 투입 LOT 기록이 없다.
+//    BOM × 생산수량만큼, 생산일 이전(+1일)에 출고(투입)된 같은 자재의 LOT을 최근 것부터 채워서 '추정'으로 보여준다.
+const LOT_EST_DAYS = 45;
+function lotIsProduct(t){ return t.type === 'tp-in' || [...(DB.tp||[]), ...(DB.btp||[])].some(r => r.code === t.code); }
+function lotTime(t){ const d = Date.parse(t && (t.dt || t.createdAt)); return isNaN(d) ? 0 : d; }
+function lotBomOf(code, cat){
+  cat = String(cat||'TP').toUpperCase();
+  return (BOM||[]).filter(b => b.productCode === code && (cat === 'BTP' ? String(b.productCat||'').toUpperCase() === 'BTP' : String(b.productCat||'').toUpperCase() !== 'BTP'));
+}
+function lotIssuedBefore(code, cat, tm, need, usedMap){
+  // 이 자재가 생산 시점 이전(+1일)에 생산 투입(출고)된 기록을 최근 것부터 need 만큼
+  const isBTP = String(cat||'').toUpperCase() === 'BTP';
+  const list = (txLog||[]).filter(t => t.code === code && (isBTP ? (t.type === 'otp' && String(t.cat||'').toUpperCase() === 'BTP') : t.type === 'omt')
+      && !/LOT 지정 전환/.test(String(t.note||'')) && lotTime(t) <= tm + 86400e3 && lotTime(t) >= tm - LOT_EST_DAYS * 86400e3)
+    .sort((a,b) => lotTime(b) - lotTime(a));
+  const out = []; let left = need;
+  for (const t of list) { if (left <= 1e-9) break; const avail = (+t.qty||0) - ((usedMap && usedMap.get(t)) || 0); if (avail <= 1e-9) continue; const q = Math.min(avail, left); if (usedMap) usedMap.set(t, ((usedMap.get(t)) || 0) + q); out.push({lot: t.lot && t.lot !== '__nolot__' ? t.lot : '', qty: q, dt: t.dt, code: t.code, name: t.name, unit: t.unit, cat: t.cat}); left -= q; }
+  return {rows: out, short: Math.max(0, left)};
+}
+function lotEstimate(L){
+  // 이 제품 LOT의 생산 입고(작업지시와 연결 안 된 것)마다 BOM으로 자재 LOT 추정
+  const prods = (txLog||[]).filter(t => (t.type === 'tp-in' || (t.type === 'in' && ['TP','BTP'].includes(String(t.cat||'').toUpperCase()))) && lotNorm(t.lot) === L && !/삭제로 인한/.test(String(t.note||'')))
+    .sort((a,b) => lotTime(b) - lotTime(a));   // 최근 생산분부터 → 같은 자재 출고를 두 번 배정하지 않도록 사용량을 공유
+  const usedMap = new Map();
+  return prods.map(pt => {
+    const cat = String(pt.cat||'TP').toUpperCase(), tm = lotTime(pt), q = +pt.qty || 0;
+    const mats = lotBomOf(pt.code, cat).map(b => {
+      const need = q * (+b.qtyPerUnit || 0);
+      const mc = String(b.materialCat||'').toUpperCase();
+      const r = lotIssuedBefore(b.materialCode, mc, tm, need, usedMap);
+      const sub = mc === 'BTP' ? lotBomOf(b.materialCode, 'BTP').map(bb => {
+        const n2 = need * (+bb.qtyPerUnit || 0);
+        return {b: bb, need: n2, ...lotIssuedBefore(bb.materialCode, bb.materialCat, tm, n2, usedMap)};
+      }) : [];
+      return {b, need, ...r, sub};
+    });
+    return {pt, mats};
+  }).filter(x => x.mats.length).reverse();
+}
+function lotEstUsed(L){
+  // 자재 LOT이 작업지시 없이 출고(투입)된 경우: 그 뒤 이 자재를 쓰는 제품의 생산 입고를 추정 사용처로
+  const issues = (txLog||[]).filter(t => (t.type === 'omt' || (t.type === 'otp' && String(t.cat||'').toUpperCase() === 'BTP')) && lotNorm(t.lot) === L && !/LOT 지정 전환|작업지시/.test(String(t.note||'')));
+  return issues.map(it => {
+    const tm = lotTime(it);
+    const users = (BOM||[]).filter(b => b.materialCode === it.code);
+    const prods = [];
+    users.forEach(b => {
+      const pcat = String(b.productCat||'').toUpperCase() === 'BTP' ? 'BTP' : 'TP';
+      let left = (+it.qty||0) / Math.max(1e-9, +b.qtyPerUnit || 1);
+      (txLog||[]).filter(t => t.type === 'tp-in' && t.code === b.productCode && String(t.cat||'').toUpperCase() === pcat && lotTime(t) >= tm - 86400e3 && lotTime(t) <= tm + LOT_EST_DAYS * 86400e3)
+        .sort((a,c) => lotTime(a) - lotTime(c)).forEach(t => { if (left <= 1e-9) return; const q = Math.min(+t.qty||0, left); prods.push({t, q, pcat}); left -= q; });
+    });
+    return {it, prods};
+  });
+}
 function openLotTrace(lot){
   document.getElementById('lot-ov').classList.add('show');
   const dl = document.getElementById('lot-list');
@@ -13181,6 +13237,7 @@ function openLotTrace(lot){
   if (typeof loadWOOutputLots === 'function') need.push(loadWOOutputLots());
   if (!WO_MAT.length && typeof loadWOMaterials === 'function') need.push(loadWOMaterials());
   if (!QC.length) need.push(loadQC());
+  if (!BOM.length && typeof loadBOM === 'function') need.push(loadBOM());
   document.getElementById('lot-body').innerHTML = need.length ? '<div class="empty">⏳ 작업지시·투입 자재 기록을 불러오는 중...</div>' : '';
   Promise.all(need).then(() => { if (document.getElementById('lot-q').value) runLotTrace(); else document.getElementById('lot-body').innerHTML = '<div class="empty">LOT 번호를 입력하면 그 LOT의 구성 자재와 출고처를 보여줍니다.</div>'; });
   setTimeout(() => document.getElementById('lot-q').focus(), 50);
@@ -13216,6 +13273,40 @@ function runLotTrace(){
   if (tree.length) {
     html += sec('🧩 이 LOT은 무엇으로 만들었나 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Thành phần của LOT</span>', tree.map(t => card(woHead(t.wo) + matList(t.mats))).join(''));
     html += sec('🚚 이 LOT의 출고 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Xuất kho</span>', shipTable(ships));
+  }
+  if (!tree.length) {
+    const est = lotEstimate(L);
+    if (est.length) {
+      const estRow = (r, lvl, name, code, cat, need, unit) => {
+        const isB = String(cat||'').toUpperCase() === 'BTP';
+        if (isB && !r.rows.length) r = {...r, short: 0};
+        const lots = r.rows.length ? r.rows.map(x => `${x.lot ? lotLink(x.lot) : '<span style="color:#b45309">(LOT 없음)</span>'} <span style="color:#5D6977">${n(x.qty)}</span> <span style="color:#8A95A3;font-size:11px">${lotFmtDt(x).slice(5,10)}</span>${x.lot && String(cat||'').toUpperCase()!=='BTP' ? ' ' + lotQCBadge(code, x.lot) : ''}`).join('<br>') : `<span style="color:#8A95A3">${isB ? '반제품 투입 기록 없음 (아래 반제품 자재로 추정)' : '출고 기록 없음'}</span>`;
+        return `<tr><td style="padding:4px 8px 4px ${8+lvl*18}px;white-space:normal"><span class="badge ${CB[String(cat||'').toUpperCase()]||''}">${CL[String(cat||'').toUpperCase()]||cat||''}</span> ${name||''} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${code||''}</span></td>
+          <td style="padding:4px 8px;text-align:right">${n(need)} ${unit||''}</td><td style="padding:4px 8px;white-space:normal">${lots}${r.short > 1e-6 ? `<div style="color:#b45309;font-size:11px">⚠️ ${n(r.short)} 부족 — 이 기간 출고 기록 없음</div>` : ''}</td></tr>`;
+      };
+      html += sec('🧩 이 LOT은 무엇으로 만들었나 — 추정 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Thành phần (ước tính)</span>',
+        `<div style="font-size:12px;color:#92400e;background:#FEF3C7;border-radius:6px;padding:6px 10px;margin-bottom:8px">작업지시 없이 등록된 생산분이라 실제 투입 LOT 기록이 없습니다. <b>BOM × 생산수량</b>만큼, 생산일 이전 ${LOT_EST_DAYS}일 안에 생산 투입(출고)된 같은 자재의 LOT을 최근 것부터 채운 <b>추정</b>입니다.</div>` +
+        est.map(e => card(`<div style="font-weight:600">📥 생산 입고 ${lotFmtDt(e.pt)} · ${e.pt.name||e.pt.code} ${n(e.pt.qty)} ${e.pt.unit||''}</div>
+          <div class="tw" style="margin-top:6px"><table style="font-size:12.5px"><thead><tr><th>자재 (BOM)</th><th style="text-align:right">소요량</th><th>추정 자재 LOT · 수량 · 출고일</th></tr></thead><tbody>${
+            e.mats.map(m => estRow(m, 0, m.b.materialName, m.b.materialCode, m.b.materialCat, m.need, m.b.materialUnit) +
+              m.sub.map(sb => estRow(sb, 1, sb.b.materialName, sb.b.materialCode, sb.b.materialCat, sb.need, sb.b.materialUnit)).join('')).join('')}</tbody></table></div>`)).join(''));
+    } else if (inTx.some(t => lotIsProduct(t))) {
+      const codes = [...new Set(inTx.filter(t => lotIsProduct(t)).map(t => t.code))];
+      if (codes.some(c => !(BOM||[]).some(b => b.productCode === c))) html += sec('🧩 이 LOT은 무엇으로 만들었나', '<div style="color:#b45309;font-size:12.5px">⚠️ 이 품목의 BOM이 등록돼 있지 않아 자재를 추정할 수 없습니다. BOM을 등록하면 추정 자재가 나옵니다.</div>');
+    }
+  }
+  if (!used.length) {
+    const eu = lotEstUsed(L).filter(x => x.prods.length);
+    if (eu.length) {
+      html += sec('🎯 이 자재 LOT이 쓰인 곳 — 추정 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Nơi sử dụng (ước tính)</span>',
+        `<div style="font-size:12px;color:#92400e;background:#FEF3C7;border-radius:6px;padding:6px 10px;margin-bottom:8px">작업지시 없이 출고(투입)된 자재라 실제 사용 기록이 없습니다. 출고 후 ${LOT_EST_DAYS}일 안에 이 자재를 쓰는 제품(BOM)의 생산 입고를 순서대로 채운 <b>추정</b>입니다.</div>` +
+        eu.map(x => {
+          const g = {}; x.prods.forEach(p => { const k = (p.t.lot || '(LOT 없음)') + '|' + p.t.code; (g[k] = g[k] || {t: p.t, pcat: p.pcat, q: 0, days: []}).q += p.q; g[k].days.push(lotFmtDt(p.t).slice(5,10)); });
+          return card(`<div style="font-weight:600">📤 자재 출고 ${lotFmtDt(x.it)} · ${x.it.name||x.it.code} ${n(x.it.qty)} ${x.it.unit||''}</div>` +
+            Object.values(g).map(p => `<div style="font-size:12.5px;margin:4px 0">→ ${p.pcat==='BTP'?'반제품':'완제품'} ${p.t.name||p.t.code} · LOT ${p.t.lot ? lotLink(p.t.lot) : '(LOT 없음)'} · 생산 ${[...new Set(p.days)].join(', ')} · 약 ${n(p.q)}개분
+              ${p.pcat==='TP' && p.t.lot ? `<div style="margin-left:18px">${shipTable(lotShipments(lotNorm(p.t.lot), p.t.code))}</div>` : ''}</div>`).join(''));
+        }).join(''));
+    }
   }
   if (used.length) {
     const affected = [];
