@@ -13224,6 +13224,16 @@ function lotEstUsed(L){
     return {it, prods};
   });
 }
+// 📎 첨부파일 링크: 구글 드라이브에 올린 엑셀·CSV 등은 기본 링크가 "구글 시트로 열기"라서 큰 파일은
+//    "The file is too large to open" 오류가 난다 → 드라이브 파일 화면(미리보기 + 다운로드 버튼)으로 바꿔서 연다.
+function driveFileUrl(u){
+  const m = String(u||'').match(/docs\.google\.com\/(?:spreadsheets|document|presentation)\/d\/([A-Za-z0-9_-]{20,})/);
+  return (m && /rtpof=true/.test(u)) ? `https://drive.google.com/file/d/${m[1]}/view` : u;
+}
+document.addEventListener('click', e => {
+  const a = e.target && e.target.closest && e.target.closest('a[href]'); if (!a) return;
+  const u = driveFileUrl(a.getAttribute('href')); if (u !== a.getAttribute('href')) a.setAttribute('href', u);
+}, true);
 function openLotTrace(lot){
   document.getElementById('lot-ov').classList.add('show');
   const dl = document.getElementById('lot-list');
