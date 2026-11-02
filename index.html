@@ -4339,7 +4339,7 @@ async function deleteWO(id) {
   if (guard === null) return; // 이미 처리 중 - 중복 클릭 무시
   let res;
   try {
-    res = await retrySafe(() => api('deleteWorkOrder', { id, token: ADMIN_TOKEN }));
+    res = await retrySafe(() => api('deleteWorkOrder', { id, token: ADMIN_TOKEN, user: CURRENT_USER || '' }));
   } finally {
     guard.release();
   }
