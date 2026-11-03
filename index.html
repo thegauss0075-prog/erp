@@ -2731,6 +2731,8 @@ function openShipHist() {
   ['month','3m','all'].forEach(k => document.getElementById('ship-hist-period-'+k).classList.toggle('on', k==='month'));
   renderShipHistTable();
   document.getElementById('ship-hist-ov').classList.add('show');
+  // 인보이스 번호(출고 예정에 연결된 최신 판)를 보여주기 위해 출고 예정을 아직 안 불러왔으면 불러온 뒤 다시 그린다
+  if (typeof _splLoaded !== 'undefined' && !_splLoaded && typeof loadShipPlans === 'function' && (API_URL || IS_GAS)) loadShipPlans().then(() => renderShipHistTable()).catch(() => {});
 }
 
 function setShipHistPeriod(mode) {
@@ -2781,8 +2783,19 @@ function computeShipHistRows(item) {
   let running = 0;
   return all.map(t => {
     running += (+t.qty || 0);
-    return { dt: t.dt, lot: t.lot || '-', qty: +t.qty || 0, dest: destText(t.dest) || '-', cumulative: running, note: t.note || '' };
+    return { dt: t.dt, lot: t.lot || '-', qty: +t.qty || 0, dest: destText(t.dest) || '-', cumulative: running, note: t.note || '', inv: shipInvNo(t) };
   });
+}
+// 출고 이력의 인보이스 번호: 출고 확정 메모 "[출고예정 SPxxxx] INV TGxxxx Rev.n" → 없으면 출고 예정에 연결된 번호 → 메모 속 TG번호
+function shipInvNo(t){
+  const note = String(t.note || '');
+  const m = note.match(/INV\s+([A-Za-z0-9-]+)(?:\s+Rev\.(\d+))?/);
+  const sp = note.match(/\[출고예정 (SP\d{8}-\d+)\]/);
+  const p = sp && typeof SPL !== 'undefined' ? SPL.find(x => x.no === sp[1]) : null;
+  if (p && p.invNo) return p.invNo + (+p.invRev ? ' Rev.' + p.invRev : '');
+  if (m) return m[1] + (m[2] ? ' Rev.' + m[2] : '');
+  const tg = note.match(/\bTGV?\d{8}(?:-\d+)?\b/);
+  return tg ? tg[0] : '';
 }
 
 // ✅ 출고 이력이 있는 완제품 전체를 모아서, (선택) 필터로 좁힌 목록을 돌려준다
@@ -2835,18 +2848,20 @@ function renderShipHistTable() {
           <th style="text-align:left;padding:6px 4px">LOT</th>
           <th style="text-align:right;padding:6px 4px">수량</th>
           <th style="text-align:left;padding:6px 4px">출고처</th>
+          <th style="text-align:left;padding:6px 4px">인보이스</th>
           <th style="text-align:right;padding:6px 4px">누계</th>
         </tr></thead><tbody>`;
       Object.keys(grouped).sort().forEach(ym => {
         const rows = grouped[ym];
         const monthSum = rows.reduce((s,r) => s + r.qty, 0);
-        bodyHtml += `<tr style="background:#f8faff"><td colspan="5" style="padding:6px 4px;font-weight:700;color:#3730a3">📅 ${ym}월 · 소계 ${monthSum.toLocaleString()} ${item.unit}</td></tr>`;
+        bodyHtml += `<tr style="background:#f8faff"><td colspan="6" style="padding:6px 4px;font-weight:700;color:#3730a3">📅 ${ym}월 · 소계 ${monthSum.toLocaleString()} ${item.unit}</td></tr>`;
         rows.forEach(r => {
           bodyHtml += `<tr style="border-bottom:1px solid #f0f0f5">
             <td style="padding:5px 4px;color:#666">${fmtDt(r.dt)}</td>
             <td style="padding:5px 4px;font-family:monospace;color:#1d4ed8">${(!r.lot || r.lot === '__nolot__') ? 'LOT 미지정' : r.lot}</td>
             <td style="padding:5px 4px;text-align:right">${r.qty.toLocaleString()}</td>
             <td style="padding:5px 4px;color:#7c3aed">${r.dest}</td>
+            <td style="padding:5px 4px;font-family:monospace;color:${r.inv ? '#0f172a' : '#cbd5e1'}">${r.inv || '-'}</td>
             <td style="padding:5px 4px;text-align:right;font-weight:600;color:#166534">${r.cumulative.toLocaleString()}</td>
           </tr>`;
         });
@@ -2904,6 +2919,7 @@ function exportShipHistExcel() {
         'LOT': r.lot,
         '수량': r.qty,
         '출고처': r.dest,
+        '인보이스': r.inv || '',
         '누계': r.cumulative,
         '비고': r.note
       });
