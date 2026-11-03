@@ -3811,8 +3811,14 @@ function woQCBadge(st, w){
   if (st.k === 'fail') return '<br>' + pill('❌ 검사 불합격', '#b91c1c', '#FEE2E2', tip);
   return '<br>' + pill('⚠️ ' + (q.result || '검사'), '#b45309', '#FEF3C7', tip);
 }
+let _woQCLoading = false;
 function woQCState(w, find){
   if ((w.status || '대기') !== '완료') return null;
+  // 품질검사 목록을 아직 못 받았으면 "대기"로 잘못 보이지 않게 표시하지 않고, 받아온 뒤 다시 그린다
+  if (!_loadedAt.qc) {
+    if (!_woQCLoading) { _woQCLoading = true; loadQC().catch(() => {}).finally(() => { _woQCLoading = false; if (_loadedAt.qc && typeof _renderWOBody === 'function') _renderWOBody(); }); }
+    return null;
+  }
   const q = find(w);
   if (!q) return {k: 'wait', q: null};
   return {k: q.result === '합격' ? 'pass' : q.result === '불합격' ? 'fail' : 'cond', q};
