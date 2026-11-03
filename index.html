@@ -3675,7 +3675,7 @@ function acSearch(dir){
   if(!q){drop.style.display='none';acResults[dir]=[];return;}
   let pool=allRows();
   if(dir==='otp'||dir==='tp-in') pool=pool.filter(r=>r.cat==='TP'||r.cat==='BTP');
-  if(dir==='omt') pool=pool.filter(r=>r.cat==='KR'||r.cat==='VN'||r.cat==='VTTH');
+  if(dir==='omt') pool=pool.filter(r=>r.cat==='KR'||r.cat==='VN'||r.cat==='VTTH'||r.cat==='BTP'); // 반제품도 검색되게 — 고르면 반제품 출고(완제품 출고 탭)로 넘겨준다
   const res=pool.filter(r=>r.code.toLowerCase().includes(q)||r.name.toLowerCase().includes(q)).slice(0,12);
   acResults[dir]=res;acIdx[dir]=-1;
   if(!res.length){drop.style.display='none';return;}
@@ -3691,6 +3691,18 @@ function acKey(e,dir){
 }
 function acPick(dir,i){
   const item=acResults[dir][i];if(!item)return;
+  if(dir==='omt'&&item.cat==='BTP'){
+    // 반제품은 LOT·이력이 완제품 쪽(반제품 입고/출고)으로 관리돼서 그 화면에서 출고한다
+    document.getElementById('omt-q').value='';document.getElementById('omt-drop').style.display='none';
+    setIOTab('otp');
+    document.getElementById('otp-q').value=item.code+' — '+item.name;
+    fillForm('otp',item);
+    const w=document.getElementById('otp-q').parentNode;let h=document.getElementById('otp-btp-hint');
+    if(!h){h=document.createElement('div');h.id='otp-btp-hint';h.style.cssText='margin-top:6px;padding:6px 10px;border-radius:7px;background:#E8F0F8;color:#185FA5;font-size:12.5px';w.appendChild(h);}
+    h.innerHTML='ℹ️ 반제품은 이 화면에서 "반제품 출고"로 처리됩니다 (자재 출고에서 자동으로 옮겨옴).<br><b>완제품 생산에 넣는 거라면</b> 여기 말고 <b>작업지시 → 🔗 전공정 추적 → 자재 투입</b>으로 등록하세요 — 그래야 어느 작업지시·LOT에 들어갔는지 추적됩니다. / Nếu đưa vào sản xuất TP: Lệnh sản xuất → 🔗 → Xuất NVL';
+    clearTimeout(window._btpHintT);window._btpHintT=setTimeout(()=>{const x=document.getElementById('otp-btp-hint');if(x)x.remove();},30000);
+    return;
+  }
   document.getElementById(dir+'-q').value=item.code+' — '+item.name;
   document.getElementById(dir+'-drop').style.display='none';
   fillForm(dir,item);
