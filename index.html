@@ -604,6 +604,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <select id="inv-model" onchange="renderInv()"><option value="">전체 모델</option></select>
     <button onclick="openTraceSearch()" style="padding:7px 14px;border-radius:7px;border:1px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔍 이력 추적</button>
     <button onclick="openLotTrace()" style="padding:7px 14px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔗 LOT 추적</button>
+    <button onclick="openCapacity()" style="padding:7px 14px;border-radius:7px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🏭 생산 가능 수량</button>
     <button onclick="openBonded()" style="padding:7px 14px;border-radius:7px;border:1px solid #1F2D3B;background:#fff;color:#1F2D3B;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🛃 보세 정산</button>
   </div>
   <div id="inv-sub-filter" style="display:none;flex-wrap:wrap;gap:5px;margin-bottom:8px;padding:8px 0"></div>
@@ -978,6 +979,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <button onclick="syncNow(true)" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 새로고침</button>
     <div class="sw"><span class="si">🔍</span><input id="wo-q" placeholder="지시번호·코드·품명·LOT 검색..." oninput="renderWO({local:true})"></div>
     <button onclick="openLotTrace()" style="padding:7px 14px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔗 LOT 추적</button>
+    <button onclick="openCapacity()" style="padding:7px 14px;border-radius:7px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🏭 생산 가능 수량</button>
   </div>
   <div id="wo-status-btns" style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
     <button class="period-btn on" data-status=""        onclick="setWOStatusFilter('')">전체</button>
@@ -13513,6 +13515,96 @@ function fvRender(){
       <thead><tr><th style="position:sticky;top:0;background:#F1F5F9;padding:5px 8px;border-bottom:1px solid #DCE1E7;color:#8A95A3">#</th>${Array.from({length: ncol}, (_, j) => `<th style="position:sticky;top:0;background:#F1F5F9;padding:5px 8px;border-bottom:1px solid #DCE1E7;text-align:left">${esc(head[j] ?? '')}</th>`).join('')}</tr></thead>
       <tbody>${shown.map((r, i) => `<tr style="border-bottom:1px solid #EEF1F4"><td style="padding:3px 8px;color:#8A95A3">${i+1}</td>${Array.from({length: ncol}, (_, j) => { const v = r[j] ?? ''; return `<td style="padding:3px 8px;${/^-?[\d,.]+%?$/.test(String(v))?'text-align:right':''}">${esc(v)}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
     ${list.length > shown.length ? `<div style="text-align:center;margin:10px"><button onclick="FV.limit+=1000;fvRender()" style="padding:6px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">더 보기 (${(list.length-shown.length).toLocaleString()}행 남음)</button></div>` : ''}`);
+}
+// 🏭 남은 재고로 생산 가능 수량 (2026-11-03)
+//   제품마다 BOM × 현재 재고로 몇 개까지 만들 수 있는지, 병목(가장 먼저 떨어지는) 자재를 보여준다.
+//   완제품 = 완제품 단계 자재 + 반제품. 반제품은 "반제품 재고 + 반제품 자재로 더 만들 수 있는 수량"까지 쓴다.
+//   목표 수량을 넣으면 자재별 부족 수량(발주 필요량)을 계산한다.
+let CAP = {target: {}, open: null, q: ''};
+function capStock(code, cat){ const arr = {TP:DB.tp, BTP:DB.btp, KR:DB.kr, VN:DB.vn, VTTH:DB.vtth}[String(cat||'').toUpperCase()]; const it = (arr||[]).find(x => x.code === code); return it ? Math.max(0, +it.cur || 0) : 0; }
+function capItem(code, cat){ const arr = {TP:DB.tp, BTP:DB.btp, KR:DB.kr, VN:DB.vn, VTTH:DB.vtth}[String(cat||'').toUpperCase()]; return (arr||[]).find(x => x.code === code) || {}; }
+function capBom(code, cat){ const isB = String(cat).toUpperCase() === 'BTP'; return (BOM||[]).filter(b => b.productCode === code && (isB ? String(b.productCat||'').toUpperCase() === 'BTP' : String(b.productCat||'').toUpperCase() !== 'BTP') && +b.qtyPerUnit > 0); }
+// 반제품: 원자재로 더 만들 수 있는 수량
+function capBTPMake(code){ const bom = capBom(code, 'BTP'); if (!bom.length) return {make: 0, mats: []};
+  const mats = bom.map(b => { const st = capStock(b.materialCode, b.materialCat); return {b, st, can: Math.floor(st / (+b.qtyPerUnit) + 1e-9)}; });
+  return {make: Math.min(...mats.map(m => m.can)), mats}; }
+function capCalc(code, cat){
+  cat = String(cat||'TP').toUpperCase();
+  const bom = capBom(code, cat); if (!bom.length) return null;
+  const mats = bom.map(b => {
+    const mc = String(b.materialCat||'').toUpperCase(), per = +b.qtyPerUnit;
+    let st = capStock(b.materialCode, mc), extra = 0, sub = null;
+    if (mc === 'BTP' && cat === 'TP') { sub = capBTPMake(b.materialCode); extra = sub.make; }
+    return {b, mc, per, st, extra, sub, can: Math.floor((st + extra) / per + 1e-9)};
+  });
+  const can = Math.min(...mats.map(m => m.can));
+  return {code, cat, mats, can, neck: mats.filter(m => m.can === can)};
+}
+function capProducts(){
+  const codes = new Set((BOM||[]).map(b => b.productCode + '|' + (String(b.productCat||'').toUpperCase() === 'BTP' ? 'BTP' : 'TP')));
+  return [...codes].map(k => { const [code, cat] = k.split('|'); const it = capItem(code, cat); return {code, cat, name: it.name || code, unit: it.unit || 'Ea', active: it.active !== false}; })
+    .filter(p => p.active).sort((a,b) => (a.cat === b.cat ? 0 : a.cat === 'TP' ? -1 : 1) || a.name.localeCompare(b.name));
+}
+async function openCapacity(){
+  if (!(BOM && BOM.length) && typeof loadBOM === 'function') { try { await loadBOM(); } catch(e) {} }
+  let o = document.getElementById('cap-ov');
+  if (!o) { o = document.createElement('div'); o.id = 'cap-ov'; o.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9997;display:flex;align-items:center;justify-content:center;padding:16px';
+    o.addEventListener('click', e => { if (e.target === o) o.remove(); }); document.body.appendChild(o); }
+  renderCapacity();
+}
+function renderCapacity(){
+  const o = document.getElementById('cap-ov'); if (!o) return;
+  const n = v => (Math.round((+v||0)*1000)/1000).toLocaleString();
+  const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const q = CAP.q.trim().toLowerCase();
+  const prods = capProducts().filter(p => !q || (p.name + ' ' + p.code).toLowerCase().includes(q));
+  const rows = prods.map(p => {
+    const c = capCalc(p.code, p.cat); if (!c) return '';
+    const key = p.code + '|' + p.cat, open = CAP.open === key, tgt = +CAP.target[key] || 0;
+    const neck = c.neck.map(m => m.b.materialName || m.b.materialCode).join(', ');
+    let detail = '';
+    if (open) {
+      const line = (m, lvl) => {
+        const need = tgt ? tgt * m.per : 0, have = m.st + (m.extra || 0), short = tgt ? Math.max(0, need - have) : 0;
+        return `<tr style="${c.neck.includes(m) && lvl === 0 ? 'background:#FEF2F2' : ''}">
+          <td style="padding:4px 6px 4px ${6 + lvl*18}px;white-space:normal"><span class="badge ${CB[m.mc]||''}">${CL[m.mc]||m.mc}</span> ${esc(m.b.materialName||'')} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${esc(m.b.materialCode)}</span></td>
+          <td style="padding:4px 6px;text-align:right">${n(m.per)}</td>
+          <td style="padding:4px 6px;text-align:right">${n(m.st)}${m.extra ? `<div style="font-size:11px;color:#185FA5">+ 자재로 ${n(m.extra)}개 더</div>` : ''}</td>
+          <td style="padding:4px 6px;text-align:right;font-weight:700;color:${c.neck.includes(m) && lvl === 0 ? '#b91c1c' : '#18212B'}">${lvl === 0 ? n(m.can) : n(Math.floor(m.st / m.per + 1e-9))}</td>
+          ${tgt ? `<td style="padding:4px 6px;text-align:right">${n(need)}</td><td style="padding:4px 6px;text-align:right;font-weight:700;color:${short ? '#b91c1c' : '#166534'}">${short ? n(short) : '충분'}</td>` : ''}</tr>` +
+          (m.sub && m.sub.mats.length ? m.sub.mats.map(sm => {
+            const per2 = +sm.b.qtyPerUnit, needB = tgt ? Math.max(0, tgt * m.per - m.st) : 0, need2 = needB * per2, short2 = tgt ? Math.max(0, need2 - sm.st) : 0;
+            return `<tr style="color:#475569"><td style="padding:3px 6px 3px 26px;white-space:normal;font-size:12px">↳ <span class="badge ${CB[String(sm.b.materialCat||'').toUpperCase()]||''}">${CL[String(sm.b.materialCat||'').toUpperCase()]||''}</span> ${esc(sm.b.materialName||'')} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${esc(sm.b.materialCode)}</span> <span style="font-size:11px">(반제품 1개당)</span></td>
+              <td style="padding:3px 6px;text-align:right;font-size:12px">${n(per2)}</td><td style="padding:3px 6px;text-align:right;font-size:12px">${n(sm.st)}</td><td style="padding:3px 6px;text-align:right;font-size:12px">${n(sm.can)}</td>
+              ${tgt ? `<td style="padding:3px 6px;text-align:right;font-size:12px">${n(need2)}</td><td style="padding:3px 6px;text-align:right;font-size:12px;font-weight:700;color:${short2 ? '#b91c1c' : '#166534'}">${short2 ? n(short2) : '충분'}</td>` : ''}</tr>`;
+          }).join('') : '');
+      };
+      detail = `<tr><td colspan="4" style="padding:6px 10px 12px;background:#F8FAFC">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12.5px">목표 수량 / SL mục tiêu <input type="number" min="0" value="${tgt || ''}" placeholder="예: 3000" oninput="CAP.target['${key}']=this.value;clearTimeout(window._capT);window._capT=setTimeout(()=>{renderCapacity();const e=document.getElementById('cap-tgt');if(e){e.focus();}},400)" id="cap-tgt" style="width:110px;padding:5px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px"> <span style="color:#5D6977">넣으면 자재별 부족 수량(발주 필요량)이 나옵니다</span></div>
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px;background:#fff;border:1px solid #DCE1E7"><thead><tr style="background:#F1F5F9"><th style="text-align:left;padding:5px 6px">자재</th><th style="text-align:right;padding:5px 6px">1개당</th><th style="text-align:right;padding:5px 6px">재고</th><th style="text-align:right;padding:5px 6px">가능 수량</th>${tgt ? '<th style="text-align:right;padding:5px 6px">필요량</th><th style="text-align:right;padding:5px 6px">부족</th>' : ''}</tr></thead>
+        <tbody>${c.mats.map(m => line(m, 0)).join('')}</tbody></table></td></tr>`;
+    }
+    return `<tr onclick="CAP.open=CAP.open==='${key}'?null:'${key}';renderCapacity()" style="cursor:pointer;border-bottom:1px solid #EEF1F4;${open ? 'background:#F0FDF4' : ''}">
+      <td style="padding:8px 6px"><span class="badge ${p.cat === 'BTP' ? 'b-btp' : 'b-tp'}">${p.cat === 'BTP' ? '반제품' : '완제품'}</span> <b>${esc(p.name)}</b> <span style="font-family:monospace;color:#8A95A3;font-size:11px">${esc(p.code)}</span></td>
+      <td style="padding:8px 6px;text-align:right;font-size:16px;font-weight:800;color:${c.can > 0 ? '#166534' : '#b91c1c'}">${n(c.can)} <span style="font-size:11px;font-weight:400;color:#5D6977">${esc(p.unit)}</span></td>
+      <td style="padding:8px 6px;font-size:12px;color:#b91c1c;white-space:normal">${c.can >= 0 ? esc(neck) : ''}</td>
+      <td style="padding:8px 6px;color:#8A95A3">${open ? '▲' : '▼'}</td></tr>` + detail;
+  }).join('');
+  const noBom = (DB.tp||[]).filter(t => t.active !== false && !(BOM||[]).some(b => b.productCode === t.code)).map(t => t.name);
+  o.innerHTML = `<div style="background:#fff;border-radius:12px;width:min(900px,100%);max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #DCE1E7">
+      <div style="flex:1"><div style="font-weight:800;font-size:16px">🏭 생산 가능 수량 / Số lượng có thể sản xuất</div>
+        <div style="font-size:12px;color:#5D6977">지금 재고(BOM 기준)로 몇 개까지 만들 수 있는지 · 빨간 자재가 가장 먼저 떨어지는 병목 · 줄을 누르면 자재별 상세</div></div>
+      <input value="${esc(CAP.q)}" placeholder="제품 검색" oninput="CAP.q=this.value;renderCapacity();const e=this;setTimeout(()=>{const i=document.querySelector('#cap-ov input[placeholder=\\'제품 검색\\']');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}},0)" style="padding:6px 10px;border:1px solid #DCE1E7;border-radius:8px;width:160px">
+      <button onclick="document.getElementById('cap-ov').remove()" style="padding:6px 12px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button></div>
+    <div style="overflow:auto;padding:8px 16px 14px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid #DCE1E7"><th style="text-align:left;padding:6px">제품</th><th style="text-align:right;padding:6px">생산 가능</th><th style="text-align:left;padding:6px">병목 자재</th><th></th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="4" class="empty">BOM이 등록된 제품이 없습니다.</td></tr>'}</tbody></table>
+      <div style="font-size:11.5px;color:#8A95A3;margin-top:10px;line-height:1.6">
+        · 재고는 지금 ERP 재고(작업지시로 이미 출고된 자재는 빠진 상태) 기준입니다. 진행 중 작업지시의 남은 소요량은 따로 빼지 않습니다.<br>
+        · 완제품은 반제품 재고에 더해, 반제품 자재로 더 만들 수 있는 수량까지 합쳐 계산합니다. 같은 자재를 여러 제품이 함께 쓰면 각 제품을 따로 계산한 값입니다(합계가 아님).
+        ${noBom.length ? `<br>· BOM이 없어 계산할 수 없는 제품: ${esc(noBom.join(', '))}` : ''}</div>
+    </div></div>`;
 }
 function openLotTrace(lot){
   document.getElementById('lot-ov').classList.add('show');
