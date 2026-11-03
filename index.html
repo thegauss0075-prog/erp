@@ -10455,7 +10455,9 @@ async function submitItem() {
   }
   if (API_URL || IS_GAS) {
     // ✅ 서버 전송 전 로컬 DB에서 먼저 중복 체크
-    const allLocal = [...DB.tp,...DB.btp,...DB.kr,...DB.vn,...DB.vtth];
+    // 같은 코드는 완제품(TP)과 반제품(BTP) 사이에서만 함께 쓸 수 있다 (예: ML27A040112A 완제품·반제품)
+    const pair = {tp:'btp', btp:'tp'}[body.cat];
+    const allLocal = ['tp','btp','kr','vn','vtth'].filter(c => c !== pair).flatMap(c => DB[c] || []);
     if (!itemEditMode && allLocal.find(r=>r.code===body.code)) {
       if(errEl){errEl.textContent='이미 존재하는 코드입니다 (로컬): '+body.code;errEl.style.display='block';}
       return;
