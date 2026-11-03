@@ -13299,12 +13299,26 @@ function driveFileId(u){ const m = String(u||'').match(/(?:docs\.google\.com\/(?
 document.addEventListener('click', e => {
   const a = e.target && e.target.closest && e.target.closest('a[href]'); if (!a) return;
   const href = a.getAttribute('href') || '';
-  if (!/rtpof=true/.test(href)) return;               // 드라이브에 올린 오피스 파일 링크만
   const id = driveFileId(href); if (!id) return;
+  // 품질검사 첨부 이름으로 형식 판단 (Access .accdb/.mdb는 드라이브에서 미리보기가 안 됨 → ERP 안에서 표로)
+  const qn = fvNameById(id);
+  if (/\.(accdb|mdb)$/i.test(qn) || (/drive\.google\.com\/file/.test(href) && /\.(xlsx|xls|csv)$/i.test(qn))) { e.preventDefault(); e.stopPropagation(); openFileViewer(id, qn); return; }
+  if (!/rtpof=true/.test(href)) return;               // 드라이브에 올린 오피스 파일 링크만
   e.preventDefault(); e.stopPropagation();
   if (/docs\.google\.com\/spreadsheets/.test(href)) openFileViewer(id, a.getAttribute('title') || a.textContent || '');
   else window.open(`https://drive.google.com/file/d/${id}/view`, '_blank', 'noopener');
 }, true);
+function fvNameById(id){
+  for (const q of (typeof QC !== 'undefined' ? QC : [])) {
+    if (q.attachmentUrl && String(q.attachmentUrl).includes(id)) return q.attachmentName || '';
+    if (q.attachmentUrl2 && String(q.attachmentUrl2).includes(id)) return q.attachmentName2 || '';
+  }
+  return '';
+}
+function fvLoadMDB(){
+  if (window.MDBReader) return Promise.resolve();
+  return new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'lib/mdb-reader.min.js'; sc.onload = res; sc.onerror = () => rej(new Error('Access 읽기 모듈을 불러오지 못했습니다')); document.head.appendChild(sc); });
+}
 let FV = null;
 function fvClose(){ const o = document.getElementById('fv-ov'); if (o) o.remove(); FV = null; }
 function fvShell(title, body){
@@ -13328,9 +13342,23 @@ async function openFileViewer(id, title){
     fvShell(FV.title, `<div class="empty">파일을 불러오지 못했습니다: ${why}<br><br><a href="https://drive.google.com/file/d/${id}/view" target="_blank" rel="noopener">드라이브에서 열기</a></div>`); return;
   }
   FV.title = r.name || FV.title;
+  const bin = atob(r.b64), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  if (/\.(accdb|mdb)$/i.test(FV.title) || /msaccess/i.test(r.mime || '')) {
+    // Access 데이터베이스: 테이블마다 탭으로
+    try {
+      await fvLoadMDB();
+      const db = new window.MDBReader(window.MDBBuffer.from(bytes));
+      FV.sheets = db.getTableNames().map(tn => {
+        const t = db.getTable(tn), cols = t.getColumnNames();
+        const fmt = v => v == null ? '' : (v instanceof Date ? v.toISOString().slice(0,19).replace('T',' ').replace(/ 00:00:00$/,'') : (typeof v === 'object' ? JSON.stringify(v) : v));
+        return {name: tn, rows: [cols].concat(t.getData().map(row => cols.map(c => fmt(row[c]))))};
+      });
+      if (!FV.sheets.length) throw new Error('테이블이 없습니다');
+    } catch (e) { fvShell(FV.title, `<div class="empty">Access 파일을 읽지 못했습니다 (${String(e.message||e).slice(0,100)}). 다운로드해서 열어주세요.</div>`); return; }
+    fvRender(); return;
+  }
   if (typeof XLSX === 'undefined') { fvShell(FV.title, '<div class="empty">엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.</div>'); return; }
   try {
-    const bin = atob(r.b64), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     const wb = XLSX.read(bytes, {type:'array', cellDates:true, dense:true});
     FV.sheets = wb.SheetNames.map(n => ({name: n, rows: XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, raw:false, defval:''})}));
   } catch (e) { fvShell(FV.title, `<div class="empty">이 파일 형식은 미리보기할 수 없습니다 (${String(e.message||e).slice(0,80)}). 다운로드해서 열어주세요.</div>`); return; }
