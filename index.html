@@ -987,6 +987,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <button class="period-btn"    data-status="진행중"  onclick="setWOStatusFilter('진행중')">진행중</button>
     <button class="period-btn"    data-status="완료"    onclick="setWOStatusFilter('완료')">완료</button>
     <button class="period-btn"    data-status="보류"    onclick="setWOStatusFilter('보류')">보류</button>
+    <button class="period-btn wo-qcw-btn" data-status="__qcwait" onclick="setWOStatusFilter('__qcwait')" title="생산은 완료됐지만 출하검사를 아직 안 한 작업지시">🔬 출하검사 대기</button>
   </div>
   <div style="display:flex;gap:6px;margin-bottom:12px">
     <button class="period-btn" id="wo-period-7"  onclick="setWOPeriod(7)">최근 1주일</button>
@@ -3762,7 +3763,7 @@ function updateWOStatusButtons(counts) {
   if (!wrap) return;
   wrap.querySelectorAll('button[data-status]').forEach(btn => {
     const st = btn.getAttribute('data-status');
-    const label = st || '전체';
+    const label = st === '__qcwait' ? '🔬 출하검사 대기' : (st || '전체');
     const c = counts ? (st ? (counts[st] || 0) : counts.__all) : null;
     btn.textContent = (c === null || c === undefined) ? label : `${label} ${c}`;
     btn.classList.toggle('on', st === woStatusFilter);
@@ -3784,8 +3785,42 @@ async function renderWO(opts) {
   opts = opts || {};
   if (opts.local) { _renderWOBody(); return; }
   if (opts.soft) { _renderWOBody(); if (_isFresh(['wo'])) return; }
-  await loadWO();
+  await Promise.all([loadWO(), _isFresh(['qc']) ? null : loadQC().catch(() => {})]);
   _renderWOBody();
+}
+// 🔬 작업지시별 출하검사 상태 (2026-11-03)
+//   완료된 작업지시마다 출하검사 기록을 찾는다 — 작업지시 연결(workOrderId) 우선, 없으면 같은 품목·LOT.
+function woQCMap(){
+  const byWo = {}, byLot = {};
+  (QC||[]).filter(q => q.inspType === '출하검사').forEach(q => {
+    if (q.workOrderId) byWo[String(q.workOrderId)] = q;
+    if (q.lot) byLot[q.code + '|' + String(q.lot).trim().toLowerCase()] = q;
+  });
+  return w => byWo[String(w.id)] || (w.lot ? byLot[w.code + '|' + String(w.lot).trim().toLowerCase()] : null) || null;
+}
+function woQCBadge(st, w){
+  if (!st) return '';
+  const pill = (t, c, bg, tip) => `<div title="${tip||''}" style="margin-top:3px;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;color:${c};background:${bg};display:inline-block">${t}</div>`;
+  if (st.k === 'wait') {
+    const due = woYMD(w.dueDate), days = due ? Math.floor((Date.now() - new Date(due + 'T00:00:00').getTime()) / 864e5) : null;
+    return '<br>' + pill('🔬 출하검사 대기' + (days > 0 ? ` · ${days}일` : ''), '#b45309', '#FEF3C7', '생산 완료 — 출하검사 미등록 (🔬 버튼으로 바로 등록)' + (days > 0 ? `\n마감일 ${due}부터 ${days}일 경과` : ''));
+  }
+  const q = st.q, d = q.inspDate ? fmtDt(q.inspDate) : '', qty = +q.totalQty || 0;
+  const tip = `출하검사 ${q.result || ''} ${d}${q.inspector ? ' · ' + q.inspector : ''}${qty ? ' · ' + qty.toLocaleString() + (w.unit ? ' ' + w.unit : '') : ''}`;
+  if (st.k === 'pass') return '<br>' + pill('✅ 검사 합격', '#166534', '#DCFCE7', tip);
+  if (st.k === 'fail') return '<br>' + pill('❌ 검사 불합격', '#b91c1c', '#FEE2E2', tip);
+  return '<br>' + pill('⚠️ ' + (q.result || '검사'), '#b45309', '#FEF3C7', tip);
+}
+function woQCState(w, find){
+  if ((w.status || '대기') !== '완료') return null;
+  const q = find(w);
+  if (!q) return {k: 'wait', q: null};
+  return {k: q.result === '합격' ? 'pass' : q.result === '불합격' ? 'fail' : 'cond', q};
+}
+async function woStartShipQC(id){
+  const w = WO.find(x => String(x.id) === String(id)); if (!w) return;
+  await openAddQC('출하검사');
+  qcWoAcResults = [w]; acPickQCWO(0);
 }
 function _renderWOBody() {
   const q = (document.getElementById('wo-q').value || '').toLowerCase().trim();
@@ -3805,13 +3840,22 @@ function _renderWOBody() {
 
   // 상태 버튼의 건수는 "검색·기간 조건은 적용, 상태 조건은 미적용" 기준으로 센다
   const statusCounts = { __all: rows.length };
-  rows.forEach(r => { const st = r.status || '대기'; statusCounts[st] = (statusCounts[st] || 0) + 1; });
+  const qcFind = woQCMap(), qcSt = {};
+  rows.forEach(r => { const st = r.status || '대기'; statusCounts[st] = (statusCounts[st] || 0) + 1;
+    const s2 = woQCState(r, qcFind); if (s2) { qcSt[r.id] = s2; if (s2.k === 'wait') statusCounts.__qcwait = (statusCounts.__qcwait || 0) + 1; } });
   updateWOStatusButtons(statusCounts);
-  if (statusF) rows = rows.filter(r => (r.status || '대기') === statusF);
+  const qb = document.querySelector('#wo-status-btns .wo-qcw-btn');
+  if (qb) { const c = statusCounts.__qcwait || 0, on = statusF === '__qcwait';
+    qb.style.cssText = c ? `border-color:#d97706;color:${on ? '#fff' : '#b45309'};background:${on ? '#d97706' : '#FFFBEB'};font-weight:700` : ''; }
+  if (statusF === '__qcwait') {
+    rows = rows.filter(r => qcSt[r.id] && qcSt[r.id].k === 'wait');
+    // 오래 기다린 것(마감일 빠른 것)부터
+    rows.sort((a, b) => String(woYMD(a.dueDate) || '9999').localeCompare(String(woYMD(b.dueDate) || '9999')) || (+a.id - +b.id));
+  } else if (statusF) rows = rows.filter(r => (r.status || '대기') === statusF);
 
   const body = document.getElementById('wo-body');
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="11" style="padding:20px;text-align:center;color:#aaa">작업지시가 없습니다.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="11" style="padding:20px;text-align:center;color:#aaa">${statusF === '__qcwait' ? '✅ 출하검사를 기다리는 작업지시가 없습니다. / Không có lệnh chờ kiểm tra xuất hàng' : '작업지시가 없습니다.'}</td></tr>`;
     return;
   }
 
@@ -3829,11 +3873,12 @@ function _renderWOBody() {
       <td style="text-align:right;font-weight:700;color:${barColor}">${produced.toLocaleString()} ${r.unit||''}</td>
       <td><div class="bar-wrap"><div class="bar-fill" style="width:${pct}%;background:${barColor}"></div></div><div style="font-size:11px;color:#888;text-align:center">${pct}%</div></td>
       <td>${r.line||'-'}</td>
-      <td><span style="color:${statusColor[r.status]||'#555'};font-weight:600">${r.status||'대기'}</span></td>
+      <td style="white-space:nowrap"><span style="color:${statusColor[r.status]||'#555'};font-weight:600">${r.status||'대기'}</span>${woQCBadge(qcSt[r.id], r)}</td>
       <td style="font-size:12px;color:#666;white-space:nowrap">${woYMD(r.dueDate)||'-'}</td>
       <td style="font-size:12px;color:#888;white-space:normal;min-width:60px">${r.note||'-'}</td>
       <td class="no-print wo-actions">
         ${isAdmin ? `<button class="edit-btn" onclick="openEditWO(${r.id})" title="수정">✏️</button>` : ''}
+        ${qcSt[r.id] && qcSt[r.id].k === 'wait' ? `<button class="edit-btn" onclick="woStartShipQC(${r.id})" title="출하검사 등록 / Kiểm tra xuất hàng" style="background:#FFFBEB;border-color:#d97706">🔬</button>` : ''}
         <button class="edit-btn" onclick="openWOProd(${r.id})" title="실적 입력">📈</button>
         <button class="edit-btn" onclick="openWOTrace(${r.id})" title="전공정 추적">🔗</button>
         <button class="edit-btn" onclick="openWOProcess(${r.id})" title="공정별 작업일지">🏭</button>
