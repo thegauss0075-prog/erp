@@ -5211,6 +5211,22 @@ async function submitQC() {
   }
 
   const isNew = !qcEditTarget;
+  // ✅ [2026-11-03] 오래된 작업지시를 뒤늦게 출하검사하면, 그 사이 재고 실사 조정이나 같은 LOT 입고로
+  //    이미 재고에 들어가 있어 자동입고가 이중으로 잡힐 수 있다 (30KW PFC BTP 7,100개 사례).
+  //    그런 흔적이 있으면 "검사 기록만 남길지" 먼저 묻는다.
+  let qcSkipInbound = false;
+  if (isNew && inspType === '출하검사' && result === '합격' && qcSelectedWorkOrder) {
+    const w = qcSelectedWorkOrder, since = +w.id || 0, cat = String(qcSelectedItem.cat||'').toUpperCase();
+    const same = t => t.code === w.code && String(t.cat||'').toUpperCase() === cat;
+    const adj = (txLog||[]).filter(t => same(t) && t.type === 'adjust' && new Date(t.dt).getTime() > since && /실사|재고조정/.test(String(t.note||'')) );
+    const lotIn = w.lot ? (txLog||[]).filter(t => same(t) && t.type === 'tp-in' && lotNorm(t.lot) === lotNorm(w.lot)) : [];
+    if (adj.length || lotIn.length) {
+      const why = [lotIn.length ? `• 같은 LOT(${w.lot})으로 이미 입고 ${lotIn.reduce((a,t)=>a+(+t.qty||0),0).toLocaleString()}개가 있습니다` : '',
+                   adj.length ? `• 이 작업지시 생산 이후 재고 실사 조정이 있었습니다 (${fmtDt(adj[0].dt)}) — 실사 수량에 이미 포함됐을 수 있습니다` : ''].filter(Boolean).join('\n');
+      qcSkipInbound = !confirm(`⚠️ 재고가 이중으로 잡힐 수 있습니다\n\n${why}\n\n[확인] 검사 기록 + 재고 ${totalQty.toLocaleString()}개 입고\n[취소] 검사 기록만 남기고 재고는 그대로 (권장)`);
+      if (qcSkipInbound) body.note = ((body.note || '') + ' [재고 미반영 — 이미 재고에 포함]').trim();
+    }
+  }
   // ✅ 첨부파일이 있을 땐 데이터가 커서 JSONP(주소창 방식)로는 실패할 수 있으니
   //    실제 POST 요청(apiPost)으로 보낸다. 첨부파일이 없으면 기존 방식 그대로 유지.
   const submitFn = (attachment || attachment2) ? apiPost : api;
@@ -5247,7 +5263,7 @@ async function submitQC() {
     // ✅ 수입검사/출하검사 + 합격 + 신규 등록일 때만 자동 입고 (수정 시엔 중복 반영 방지를 위해 하지 않음)
     let inboundOk = null;
     let consumeResult = null;
-    if (isNew && (inspType === '수입검사' || inspType === '출하검사') && result === '합격') {
+    if (isNew && !qcSkipInbound && (inspType === '수입검사' || inspType === '출하검사') && result === '합격') {
       inboundOk = await autoInboundFromQC(body, totalQty, qcSelectedItem.unit);
 
       // ✅ 반제품(BTP) 출하검사 합격 시, BOM(자재 소요량) 설정 기준으로 투입 자재를
@@ -5287,7 +5303,7 @@ async function submitQC() {
         }
       }
       alert(msg);
-    }
+    } else if (qcSkipInbound) alert('✅ 출하검사 기록만 저장했습니다 (재고는 바꾸지 않음).');
   } finally {
     guard.release();
   }
