@@ -14019,6 +14019,7 @@ function invPalWeights(p){
   return {est, net, gross, estGross: r2(net + (+INV.tare||0))};
 }
 // 📦 박스만(팔레트 없음) 포장 — 특송·항공 소량 출고용 (2026-11-03)
+const INV_BOX_STD = '0.34*0.20*0.20';   // 더가우스비나 카톤 박스 바깥 치수(m) — 2026-11-03 실측
 function invIsBox(){ return INV && INV.packMode === 'box'; }
 function invAutoBoxes(){ return INV.lines.reduce((s,l)=>s+invCartons(l).reduce((a,c)=>a+c.n,0),0); }
 function invBoxCount(){ return invIsBox() ? (+INV.boxes || invAutoBoxes()) : invAutoBoxes(); }
@@ -14026,6 +14027,7 @@ function invBoxVol(){ const dv = String(INV.boxDims||'').replace(/,/g,'.').split
 function invEstimateBox(){
   const r2 = v => Math.round(v*100)/100;
   INV.auto = Object.assign({net:true, gross:true, cbm:true, boxes:true}, INV.auto || {});
+  if (!String(INV.boxDims||'').trim()) INV.boxDims = INV_BOX_STD;   // 우리 카톤 박스 기본 규격
   if (INV.auto.boxes === undefined) INV.auto.boxes = true;
   if (INV.auto.boxes) INV.boxes = invAutoBoxes() || '';
   const nb = +INV.boxes || 0;
