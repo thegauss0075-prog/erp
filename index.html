@@ -1320,7 +1320,8 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     </div>
 
     <div>
-      <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#92400e">📥 투입 자재 (이 작업지시에 사용된 원자재/반제품 LOT — 실제 재고에서 출고 처리됩니다)</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><div style="font-weight:700;font-size:13px;color:#92400e;flex:1;min-width:240px">📥 투입 자재 (이 작업지시에 사용된 원자재/반제품 LOT — 실제 재고에서 출고 처리됩니다)</div>
+        <button onclick="openNGFast()" style="padding:6px 12px;border-radius:8px;border:1px solid #b91c1c;background:#fff1f2;color:#b91c1c;font-weight:700;cursor:pointer;font-size:12.5px;white-space:nowrap">🔴 불량 대체 출고 / Xuất bù hàng lỗi</button></div>
       <div id="wo-trace-material-list" style="margin-bottom:8px"></div>
 
       <div style="background:#eef2ff;border-radius:8px;padding:10px;margin-bottom:10px">
@@ -6375,6 +6376,110 @@ async function submitWOMatBrowse() {
   }
 }
 
+// 🔴 불량 대체 출고 (2026-11-03): 불량 등록 + 대체 자재 출고를 한 화면에서 한 번에
+//    - 자재 불량: 자재와 수량만 고르면 → 그 자재 불량(NG) 입고 + 같은 수량 재출고
+//    - 완제품 불량(특성검사 등): 불량 수량만 넣으면 → 완제품 불량(NG) 입고 + BOM × 수량만큼 자재 재출고(재사용 부품은 체크 해제)
+let NGF = null;
+function ngfBom(wo){
+  const isB = String(wo.cat||'').toUpperCase() === 'BTP';
+  return (BOM||[]).filter(b => b.productCode === wo.code && (isB ? String(b.productCat||'').toUpperCase() === 'BTP' : String(b.productCat||'').toUpperCase() !== 'BTP'));
+}
+function ngfItem(code, cat){ const arr = {TP:DB.tp, BTP:DB.btp, KR:DB.kr, VN:DB.vn, VTTH:DB.vtth}[String(cat||'').toUpperCase()]; return (arr||[]).find(x => x.code === code); }
+async function openNGFast(){
+  const wo = woTraceTarget; if (!wo) return;
+  if (!(BOM && BOM.length)) { try { await loadBOM(); } catch(e) {} }
+  const bom = ngfBom(wo);
+  // 자재 후보: BOM 자재 + 이 작업지시에 이미 투입된 자재
+  const cands = {};
+  bom.forEach(b => { cands[b.materialCode + '|' + String(b.materialCat||'').toUpperCase()] = {code: b.materialCode, cat: String(b.materialCat||'').toUpperCase(), name: b.materialName, unit: b.materialUnit || (ngfItem(b.materialCode, b.materialCat)||{}).unit || 'Ea', per: +b.qtyPerUnit || 0}; });
+  (WO_MAT||[]).filter(m => String(m.workOrderId) === String(wo.id)).forEach(m => { const k = m.code + '|' + String(m.cat||'').toUpperCase(); if (!cands[k]) cands[k] = {code: m.code, cat: String(m.cat||'').toUpperCase(), name: m.name, unit: m.unit, per: 0}; });
+  NGF = {wo, kind: 'mat', cands: Object.values(cands), mat: '', qty: '', reason: '', lines: []};
+  ngfRender();
+}
+function ngfClose(){ const o = document.getElementById('ngf-ov'); if (o) o.remove(); NGF = null; }
+function ngfLines(){
+  if (!NGF) return [];
+  const q = +NGF.qty || 0; if (!(q > 0)) return [];
+  if (NGF.kind === 'mat') { const c = NGF.cands.find(x => x.code + '|' + x.cat === NGF.mat); return c ? [{...c, need: q, on: true}] : []; }
+  return NGF.cands.filter(c => c.per > 0).map(c => { const prev = (NGF.lines||[]).find(l => l.code === c.code && l.cat === c.cat); return {...c, need: Math.round(c.per * q * 1000) / 1000, on: prev ? prev.on : true}; });
+}
+function ngfLinesHtml(){
+  const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const stockOf = l => { const it = ngfItem(l.code, l.cat); return it ? (+it.cur || 0) : 0; };
+  const rowsHtml = NGF.lines.length ? NGF.lines.map((l, i) => {
+    const st = stockOf(l), short = l.on && st < l.need;
+    return `<tr style="${l.on ? '' : 'color:#94a3b8'}"><td style="padding:5px 6px">${NGF.kind === 'tp' ? `<input type="checkbox" ${l.on ? 'checked' : ''} onchange="NGF.lines[${i}].on=this.checked;ngfLinesOnly()">` : ''}</td>
+      <td style="padding:5px 6px">${esc(l.name)} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${esc(l.code)}</span></td>
+      <td style="padding:5px 6px;text-align:right;font-weight:700">${l.need.toLocaleString()} ${esc(l.unit)}</td>
+      <td style="padding:5px 6px;text-align:right;color:${short ? '#b91c1c' : '#5D6977'}">${st.toLocaleString()}${short ? ' ⚠️ 부족' : ''}</td></tr>`;
+  }).join('') : `<tr><td colspan="4" style="padding:10px;color:#8A95A3;text-align:center">${NGF.kind === 'tp' ? (NGF.cands.some(c => c.per > 0) ? '불량 수량을 입력하세요' : '이 제품의 BOM이 없어 자재를 계산할 수 없습니다 — 자재 불량으로 하나씩 등록하세요') : '자재와 수량을 고르세요'}</td></tr>`;
+  return rowsHtml;
+}
+function ngfLinesOnly(){ if (!NGF) return; NGF.lines = ngfLines(); const t = document.getElementById('ngf-tbody'); if (t) t.innerHTML = ngfLinesHtml(); }
+function ngfRender(){
+  if (!NGF) return;
+  NGF.lines = ngfLines();
+  const ae = document.activeElement, aeId = ae && ae.id, aeVal = ae && ae.value;
+  const wo = NGF.wo, esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  let o = document.getElementById('ngf-ov');
+  if (!o) { o = document.createElement('div'); o.id = 'ngf-ov'; o.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9998;display:flex;align-items:center;justify-content:center;padding:16px'; document.body.appendChild(o); }
+  const rowsHtml = ngfLinesHtml();
+  o.innerHTML = `<div style="background:#fff;border-radius:12px;width:min(640px,100%);max-height:90vh;overflow:auto;padding:16px 18px">
+    <div style="display:flex;align-items:center;margin-bottom:10px"><div style="font-weight:800;font-size:16px;flex:1">🔴 불량 대체 출고 / Xuất bù hàng lỗi</div><button onclick="ngfClose()" style="border:none;background:none;font-size:18px;cursor:pointer">✕</button></div>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">${esc(wo.orderNo)} · ${esc(wo.name)} · LOT ${esc(wo.lot || '-')}</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      ${[['mat','자재 불량 / NVL lỗi','생산 중 자재가 깨지거나 불량'],['tp',(String(wo.cat||'').toUpperCase()==='BTP'?'반제품':'완제품')+' 불량 / SP lỗi','특성검사(EOL) 등에서 제품 불량']].map(([k,t,d]) => `<label style="flex:1;border:2px solid ${NGF.kind===k?'#b91c1c':'#DCE1E7'};border-radius:10px;padding:8px 10px;cursor:pointer;background:${NGF.kind===k?'#fff1f2':'#fff'}"><input type="radio" name="ngf-kind" ${NGF.kind===k?'checked':''} onchange="NGF.kind='${k}';NGF.lines=[];ngfRender()" style="margin-right:6px"><b>${t}</b><div style="font-size:11.5px;color:#5D6977;margin-top:2px">${d}</div></label>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:${NGF.kind==='mat'?'2fr 1fr':'1fr'};gap:8px;margin-bottom:8px">
+      ${NGF.kind==='mat' ? `<label style="font-size:12px;color:#475569">불량 자재 / NVL lỗi<select onchange="NGF.mat=this.value;ngfRender()" style="width:100%;margin-top:3px;padding:6px"><option value="">-- 선택 --</option>${NGF.cands.map(c => `<option value="${esc(c.code+'|'+c.cat)}" ${NGF.mat===c.code+'|'+c.cat?'selected':''}>${esc(c.name)} (${esc(c.code)})</option>`).join('')}</select></label>` : ''}
+      <label style="font-size:12px;color:#475569">불량 수량 / SL lỗi<input id="ngf-qty" type="number" min="0" step="any" value="${esc(NGF.qty)}" oninput="NGF.qty=this.value;ngfLinesOnly()" style="width:100%;margin-top:3px;padding:6px"></label>
+    </div>
+    <label style="font-size:12px;color:#475569;display:block;margin-bottom:10px">불량 사유 / Lý do<input id="ngf-reason" value="${esc(NGF.reason)}" oninput="NGF.reason=this.value" placeholder="예: 코어 크랙, L값 불량, 단선" style="width:100%;margin-top:3px;padding:6px"></label>
+    <div style="font-weight:700;font-size:12.5px;margin-bottom:4px">다시 출고할 자재 ${NGF.kind==='tp'?'<span style="font-weight:400;color:#5D6977">(분해해서 다시 쓰는 부품은 체크 해제)</span>':''}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12.5px;border:1px solid #DCE1E7;border-radius:8px"><thead><tr style="background:#F1F5F9"><th style="width:24px"></th><th style="text-align:left;padding:5px 6px">자재</th><th style="text-align:right;padding:5px 6px">출고 수량</th><th style="text-align:right;padding:5px 6px">재고</th></tr></thead><tbody id="ngf-tbody">${rowsHtml}</tbody></table>
+    <div id="ngf-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px;display:none"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+      <button onclick="ngfClose()" style="padding:8px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button>
+      <button id="ngf-go" onclick="ngfSubmit()" style="padding:8px 16px;border-radius:8px;border:none;background:#b91c1c;color:#fff;font-weight:700;cursor:pointer">불량 등록 + 자재 출고</button></div></div>`;
+  if (aeId) { const e = document.getElementById(aeId); if (e) { e.focus(); try { if (e.type !== 'number') e.setSelectionRange(String(aeVal).length, String(aeVal).length); } catch(x) {} } }
+}
+async function ngfSubmit(){
+  if (!NGF) return;
+  const wo = NGF.wo, q = +NGF.qty || 0, err = document.getElementById('ngf-err');
+  const fail = t => { err.textContent = t; err.style.display = 'block'; };
+  if (!(q > 0)) return fail('불량 수량을 입력해주세요.');
+  if (NGF.kind === 'mat' && !NGF.mat) return fail('불량 자재를 골라주세요.');
+  if (!NGF.reason.trim()) return fail('불량 사유를 입력해주세요.');
+  const lines = NGF.lines.filter(l => l.on && l.need > 0);
+  if (!lines.length) return fail('다시 출고할 자재가 없습니다.');
+  // 재고 확인 + LOT 배분(오래된 LOT부터)
+  const rows = [];
+  for (const l of lines) {
+    const a = allocateFIFOWithUntracked(l.code, l.cat, l.need);
+    if (!a.ok) return fail(`"${l.name}" 재고가 부족합니다 (필요 ${l.need.toLocaleString()}, 재고 ${(+a.totalAvailable||0).toLocaleString()}).`);
+    a.allocations.forEach(x => rows.push({code: l.code, cat: l.cat, name: l.name, unit: l.unit, lot: x.lot, qty: x.qty}));
+  }
+  const ngItem = NGF.kind === 'mat' ? NGF.cands.find(c => c.code + '|' + c.cat === NGF.mat) : {code: wo.code, cat: String(wo.cat||'TP').toUpperCase(), name: wo.name, unit: wo.unit};
+  if (!confirm(`불량 ${q.toLocaleString()} ${ngItem.unit||''} (${ngItem.name}) 을 등록하고,\n자재 ${lines.length}종을 다시 출고합니다.\n${lines.map(l => `• ${l.name} ${l.need.toLocaleString()} ${l.unit||''}`).join('\n')}\n\n진행할까요?`)) return;
+  const btn = document.getElementById('ngf-go'); btn.disabled = true; btn.textContent = '⏳ 처리 중...';
+  try {
+    // ① 불량(NG) 입고
+    const ng = {id: Date.now(), type: 'ng-in', code: ngItem.code, name: ngItem.name, cat: ngItem.cat, unit: ngItem.unit, qty: q,
+      note: `[작업지시 ${wo.orderNo}] 불량 대체 출고`, reason: NGF.reason.trim(), dt: vnDt(), user: CURRENT_USER || ''};
+    const r1 = await retrySafe(() => api('addNG', {...ng, token: ADMIN_TOKEN}));
+    if (!r1 || !r1.ok) return fail('불량 등록 실패: ' + (r1 && r1.error || '서버 응답 없음'));
+    const ngRefId = r1.id || ng.id, ngRefLabel = `${(r1.dt || ng.dt)} · ${ngItem.name} (${ngItem.code}) · ${q.toLocaleString()}${ngItem.unit||''} · ${ng.reason}`;
+    // ② 대체 자재 출고 (불량 대체로 표시)
+    const body = {workOrderId: wo.id, orderNo: wo.orderNo, productCode: wo.code, rows: rows.map(r => ({...r, ngRefId, ngRefLabel}))};
+    let r2 = await apiPost('addWOMaterialsBatch', body);
+    if (!r2 || !r2.ok) { const already = await findMatchingWOBatchSince(rows); if (already) r2 = {ok: true, failures: []}; }
+    if (!r2 || !r2.ok) return fail('⚠️ 불량은 등록됐지만 자재 출고에 실패했습니다: ' + (r2 && r2.error || '서버 응답 없음') + ' — 아래 "재고 있는 자재에서 출고"로 다시 출고해주세요.');
+    ngfClose();
+    try { await syncNow(); } catch(e) {}
+    await loadWOMaterials(); renderWOTraceLists(); try { renderWOMatBrowse(); } catch(e) {}
+    alert(`✅ 불량 ${q.toLocaleString()} 등록 + 자재 ${rows.length}건 출고 완료\nĐã ghi nhận lỗi và xuất bù NVL.` + ((r2.failures||[]).length ? `\n⚠️ 처리 안 된 자재: ${r2.failures.join(', ')}` : ''));
+  } finally { const b = document.getElementById('ngf-go'); if (b) { b.disabled = false; b.textContent = '불량 등록 + 자재 출고'; } }
+}
 // ↩ 투입 자재 반납 (2026-11-02): 생산 중 남은 자재를 같은 LOT으로 창고에 되돌린다
 async function woReturnMat(id, presetQty, silent){
   const m = WO_MAT.find(x => String(x.id) === String(id)); if (!m) return false;
