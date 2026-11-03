@@ -1033,7 +1033,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <div id="wo-lot-hint" style="font-size:11px;color:#888;margin-bottom:4px">지시서 생성일 기준으로 자동 배정됩니다</div>
       <input id="wo-lot" readonly style="background:#f5f6f8;color:#1d4ed8;font-weight:700;font-family:monospace" maxlength="40">
     </div>
-    <div class="ov-fr"><label>계획수량 *</label><input id="wo-plan-qty" type="number" placeholder="0"></div>
+    <div class="ov-fr"><label>계획수량 *</label><input id="wo-plan-qty" type="number" placeholder="0" oninput="woCapHint('add')"><div id="wo-cap-hint" style="font-size:12px;margin-top:4px"></div></div>
     <div class="ov-fr"><label>생산 라인 (선택)</label><input id="wo-line" placeholder="예: 1라인, A설비"></div>
     <div class="ov-fr"><label>마감일 (선택)</label><input id="wo-due" type="date"></div>
     <div class="ov-fr"><label>비고 (선택)</label><input id="wo-note" placeholder="선택사항"></div>
@@ -1053,7 +1053,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <div class="ov-fr"><label>지시번호</label><input id="wo-edit-orderno" readonly style="background:#f5f6f8;color:#888"></div>
     <div class="ov-fr"><label>품목</label><input id="wo-edit-item" readonly style="background:#f5f6f8;color:#888"></div>
     <div class="ov-fr"><label>LOT</label><input id="wo-edit-lot" readonly style="background:#f5f6f8;color:#1d4ed8;font-weight:700;font-family:monospace"></div>
-    <div class="ov-fr"><label>계획수량 *</label><input id="wo-edit-plan-qty" type="number" placeholder="0"></div>
+    <div class="ov-fr"><label>계획수량 *</label><input id="wo-edit-plan-qty" type="number" placeholder="0" oninput="woCapHint('edit')"><div id="wo-edit-cap-hint" style="font-size:12px;margin-top:4px"></div></div>
     <div class="ov-fr"><label>생산 라인 (선택)</label><input id="wo-edit-line" placeholder="예: 1라인, A설비"></div>
     <div class="ov-fr"><label>마감일 (선택)</label><input id="wo-edit-due" type="date"></div>
     <div class="ov-fr"><label>비고 (선택)</label><input id="wo-edit-note" placeholder="선택사항"></div>
@@ -4070,6 +4070,7 @@ function acPickWO(i) {
   document.getElementById('wo-code').value = item.code;
   document.getElementById('wo-name').value = item.name;
   updateWOLotPreview();
+  woCapHint('add');
   document.getElementById('wo-maker').focus(); // ✅ 커서가 계획수량이 아니라 제조사 선택으로 먼저 가게 해서 놓치지 않도록
 }
 
@@ -4154,6 +4155,7 @@ async function submitWO() {
   }
   const planQty = parseFloat(document.getElementById('wo-plan-qty').value);
   if (!planQty || planQty <= 0) { errEl.textContent = '계획수량을 입력해주세요.'; errEl.style.display='block'; return; }
+  if (!(await woCapConfirm(woSelectedItem.code, woSelectedItem.cat, planQty, null))) { document.getElementById('wo-plan-qty').focus(); return; }
 
   // ✅ 수동 LOT: 비어있거나 이미 쓰는 LOT이면 막는다 (LOT은 추적의 기준이라 중복되면 안 된다)
   let lotValue = document.getElementById('wo-lot').value;
@@ -4204,6 +4206,7 @@ function openEditWO(id) {
   document.getElementById('wo-edit-note').value = wo.note || '';
   document.getElementById('wo-edit-err').style.display = 'none';
   document.getElementById('wo-edit-ov').classList.add('show');
+  woCapHint('edit');
 }
 
 async function submitEditWO() {
@@ -4213,6 +4216,7 @@ async function submitEditWO() {
   if (!woEditTarget) return;
   const planQty = parseFloat(document.getElementById('wo-edit-plan-qty').value);
   if (!planQty || planQty <= 0) { errEl.textContent = '계획수량을 입력해주세요.'; errEl.style.display='block'; return; }
+  if (planQty > (+woEditTarget.planQty || 0) && !(await woCapConfirm(woEditTarget.code, woEditTarget.cat, planQty, woEditTarget))) { document.getElementById('wo-edit-plan-qty').focus(); return; }
 
   const body = {
     id: woEditTarget.id,
@@ -13539,6 +13543,61 @@ function capCalc(code, cat){
   });
   const can = Math.min(...mats.map(m => m.can));
   return {code, cat, mats, can, neck: mats.filter(m => m.can === can)};
+}
+// 📋 작업지시 계획수량 ↔ 생산 가능 수량 연동 (2026-11-03)
+//   재고 + (수정이면) 이 작업지시에 이미 투입된 자재 기준으로 계획수량을 만들 수 있는지 본다.
+//   다른 미완료 작업지시(대기·진행중)의 아직 투입 안 된 필요량은 "예정"으로 따로 보여준다.
+function woCapOpenReserve(matCode, exceptId){
+  let r = 0;
+  for (const w of (WO||[])) {
+    if (String(w.id) === String(exceptId) || !(w.status === '대기' || w.status === '진행중')) continue;
+    const b = capBom(w.code, w.cat).find(x => x.materialCode === matCode); if (!b) continue;
+    const issued = (WO_MAT||[]).filter(m => String(m.workOrderId) === String(w.id) && m.code === matCode).reduce((a, m) => a + (+m.qty||0), 0);
+    r += Math.max(0, (+b.qtyPerUnit) * (+w.planQty||0) - issued);
+  }
+  return r;
+}
+function woCapCheck(code, cat, plan, wo){
+  const c = capCalc(code, cat); if (!c) return null;
+  const mats = c.mats.map(m => {
+    const issued = wo ? (WO_MAT||[]).filter(x => String(x.workOrderId) === String(wo.id) && x.code === m.b.materialCode).reduce((a, x) => a + (+x.qty||0), 0) : 0;
+    const have = m.st + (m.extra||0) + issued, need = m.per * plan;
+    return {...m, issued, have, need, short: Math.max(0, Math.round((need - have)*1000)/1000), can2: Math.floor(have / m.per + 1e-9), resv: woCapOpenReserve(m.b.materialCode, wo && wo.id)};
+  });
+  const can = Math.min(...mats.map(m => m.can2));
+  return {mats, can, neck: mats.filter(m => m.can2 === can), short: mats.filter(m => m.short > 0), resvShort: mats.filter(m => m.short <= 0 && m.need > m.have - m.resv)};
+}
+let _woCapP = null, _woCapAt = 0;
+function woCapEnsure(){
+  // BOM·투입자재를 한 번 불러오고 1분 동안은 다시 부르지 않는다 (입력할 때마다 서버 호출 방지)
+  if (_woCapP && Date.now() - _woCapAt < 60000) return _woCapP;
+  _woCapAt = Date.now();
+  _woCapP = Promise.all([(BOM && BOM.length) ? null : loadBOM(), loadWOMaterials()]).catch(() => {});
+  return _woCapP;
+}
+async function woCapHint(mode){
+  const el = document.getElementById(mode === 'edit' ? 'wo-edit-cap-hint' : 'wo-cap-hint'); if (!el) return;
+  const wo = mode === 'edit' ? woEditTarget : null, it = mode === 'edit' ? woEditTarget : woSelectedItem;
+  if (!it) { el.innerHTML = ''; return; }
+  if (!(BOM && BOM.length)) el.innerHTML = '<span style="color:#8A95A3">⏳ 생산 가능 수량 계산 중…</span>';
+  await woCapEnsure();
+  const plan = parseFloat(document.getElementById(mode === 'edit' ? 'wo-edit-plan-qty' : 'wo-plan-qty').value) || 0;
+  const r = woCapCheck(it.code, it.cat, plan, wo);
+  const n = v => (Math.round((+v||0)*1000)/1000).toLocaleString();
+  const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  if (!r) { el.innerHTML = '<span style="color:#8A95A3">BOM 없음 — 자재 확인 불가 / Chưa có BOM</span>'; return; }
+  const neck = r.neck.map(m => esc(m.b.materialName || m.b.materialCode)).join(', ');
+  let h = `<div style="color:#185FA5">🏭 생산 가능 <b title="클릭하면 계획수량에 입력" style="cursor:pointer;text-decoration:underline" onclick="const i=document.getElementById('${mode === 'edit' ? 'wo-edit-plan-qty' : 'wo-plan-qty'}');i.value=${r.can};woCapHint('${mode}')">${n(r.can)}</b>개 <span style="color:#5D6977">(병목: ${neck})</span>${wo ? ' <span style="color:#8A95A3">· 이미 투입분 포함</span>' : ''}</div>`;
+  if (plan > 0 && r.short.length) h += `<div style="color:#b91c1c;font-weight:600;margin-top:2px">⚠️ 자재 부족 / Thiếu NVL: ${r.short.map(m => `${esc(m.b.materialName || m.b.materialCode)} ${n(m.short)} 부족`).join(', ')}</div>`;
+  else if (plan > 0 && r.resvShort.length) h += `<div style="color:#b45309;margin-top:2px">ℹ️ 재고는 있지만 다른 미완료 작업지시도 쓸 예정: ${r.resvShort.map(m => `${esc(m.b.materialName || m.b.materialCode)} (예정 ${n(m.resv)})`).join(', ')}</div>`;
+  else if (plan > 0) h += `<div style="color:#166534;margin-top:2px">✅ 자재 충분 / Đủ NVL</div>`;
+  el.innerHTML = h;
+}
+async function woCapConfirm(code, cat, plan, wo){
+  await woCapEnsure();
+  const r = woCapCheck(code, cat, plan, wo); if (!r || !r.short.length) return true;
+  const n = v => (Math.round((+v||0)*1000)/1000).toLocaleString();
+  return confirm(`⚠️ 자재가 부족합니다 / Thiếu nguyên vật liệu\n\n계획 ${n(plan)}개 · 현재 재고로 생산 가능 ${n(r.can)}개\n\n${r.short.map(m => `• ${m.b.materialName || m.b.materialCode}: 필요 ${n(m.need)} / 보유 ${n(m.have)} → ${n(m.short)} 부족`).join('\n')}\n\n입고 예정 자재가 있어서 그대로 등록하려면 [확인],\n수량을 줄이려면 [취소]를 누르세요.`);
 }
 function capProducts(){
   const codes = new Set((BOM||[]).map(b => b.productCode + '|' + (String(b.productCat||'').toUpperCase() === 'BTP' ? 'BTP' : 'TP')));
