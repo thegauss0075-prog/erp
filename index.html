@@ -13951,7 +13951,9 @@ function invModeDefaults(kind, mode){
   // 솔루엠은 국내(하이퐁 → 푸토), 본사는 운송 방법별 기본 항구·공항
   return {from: saved.from || (kind === 'SOL' ? 'HAI PHONG, VIET NAM' : md.from),
           to: saved.to || (kind === 'SOL' ? 'PHU THO, VIET NAM' : (mode === 'TRUCK' ? 'Republic of Korea' : md.to)),
-          vessel: mode === 'TRUCK' ? 'BY TRUCK' : ''};
+          vessel: mode === 'TRUCK' ? 'BY TRUCK' : '',
+          // 포장 방식은 운송 방법별로 지난번 선택을 기억 (예: 특송은 박스만)
+          packMode: saved.packMode || 'pallet', boxDims: saved.boxDims || '', boxTare: saved.boxTare ?? ''};
 }
 function invSetMode(mode){
   if (!INV) return;
@@ -13976,10 +13978,11 @@ function invStart(kind, day, lines){
     contact: tpl.contact || invDoc().contact || 'Kim Insun',
     phone: tpl.phone || invDoc().phone || (kind === 'KR' ? '+84-936 733 956' : '+84-038 883 7593'),
     vessel: md.vessel, from: md.from, to: md.to,
+    packMode: md.packMode, boxDims: md.boxDims, boxTare: md.boxTare, boxes: '',
     incoterm: kind === 'KR' ? (tpl.incoterm || 'EXW') : (tpl.incoterm || 'DDP'),
     net:'', gross:'', cbm:'', pallets:'',
     tare:'', dims:'',
-    auto: {net:true, gross:true, cbm:true, pallets:true, tare:true, dims:true},
+    auto: {net:true, gross:true, cbm:true, pallets:true, tare:true, dims:true, boxes:true},
     lines: lines.map(l => invLine(l.code, l.name, l.qty, day))
   };
   renderInvEditor();
@@ -14015,10 +14018,36 @@ function invPalWeights(p){
   const gross = hasG ? +p.gross : r2(net + (+INV.tare||0));
   return {est, net, gross, estGross: r2(net + (+INV.tare||0))};
 }
+// 📦 박스만(팔레트 없음) 포장 — 특송·항공 소량 출고용 (2026-11-03)
+function invIsBox(){ return INV && INV.packMode === 'box'; }
+function invAutoBoxes(){ return INV.lines.reduce((s,l)=>s+invCartons(l).reduce((a,c)=>a+c.n,0),0); }
+function invBoxCount(){ return invIsBox() ? (+INV.boxes || invAutoBoxes()) : invAutoBoxes(); }
+function invBoxVol(){ const dv = String(INV.boxDims||'').replace(/,/g,'.').split(/[*x×X]/).map(Number); return dv.length === 3 && dv.every(n => n > 0) ? dv[0]*dv[1]*dv[2] : 0; }
+function invEstimateBox(){
+  const r2 = v => Math.round(v*100)/100;
+  INV.auto = Object.assign({net:true, gross:true, cbm:true, boxes:true}, INV.auto || {});
+  if (INV.auto.boxes === undefined) INV.auto.boxes = true;
+  if (INV.auto.boxes) INV.boxes = invAutoBoxes() || '';
+  const nb = +INV.boxes || 0;
+  const net = r2(INV.lines.reduce((s,l)=>s+(+l.qty||0)*(+l.unitKg||0),0));
+  if (INV.auto.net) INV.net = net || '';
+  if (INV.auto.gross) INV.gross = (+INV.net || net) ? r2((+INV.net || net) + (+INV.boxTare||0)*nb) : '';
+  const bv = invBoxVol();
+  if (INV.auto.cbm) INV.cbm = (bv && nb) ? Math.round(bv*nb*10000)/10000 : '';
+  INV.pallets = '';
+  ['net','gross','cbm','boxes'].forEach(k => {
+    const el = document.getElementById('inv-f-'+k); if (el && document.activeElement !== el) el.value = INV[k] ?? '';
+    const tag = document.getElementById('inv-t-'+k); if (!tag) return;
+    tag.textContent = INV.auto[k] ? '예상' : '실측';
+    tag.style.background = INV.auto[k] ? '#FEF3C7' : '#DCFCE7'; tag.style.color = INV.auto[k] ? '#92400E' : '#166534';
+  });
+}
+function invSetPack(m){ INV.packMode = m; if (m === 'box') { INV.auto = Object.assign(INV.auto || {}, {boxes: true}); } renderInvEditor(); }
 function invEstimate(){
   if (!INV) return;
   INV.auto = INV.auto || {net:false, gross:false, cbm:false, pallets:false};
   if (INV.palAuto === undefined) INV.palAuto = true;
+  if (invIsBox()) { invEstimateBox(); const w = document.getElementById('inv-kg-warn'); const noKg = INV.lines.filter(l => !(+l.unitKg)); if (w) w.textContent = noKg.length ? `⚠️ 개당 무게가 없어 순중량에서 빠진 품목: ${noKg.map(l=>l.name||l.code).join(', ')} — 표의 "개당 kg"에 넣어주세요.` : ''; return; }
   const r2 = v => Math.round(v*100)/100;
   // 자동 배정이거나, 품목 수가 바뀌었으면(추가·삭제) 다시 짠다 (팔레트별 실측 무게는 번호대로 유지)
   if (INV.palAuto || !Array.isArray(INV.plan) || INV.plan.some(p => !p.q || p.q.length !== INV.lines.length)) {
@@ -14051,7 +14080,7 @@ function invEstimate(){
 }
 function renderInvPlan(){
   const box = document.getElementById('inv-plan'); if (!box || !INV) return;
-  if (!INV.lines.length || !Array.isArray(INV.plan)) { box.innerHTML = ''; return; }
+  if (invIsBox() || !INV.lines.length || !Array.isArray(INV.plan)) { box.innerHTML = ''; return; }
   const cell = 'width:100%;padding:5px 6px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12.5px;text-align:right';
   box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 6px">
       <div style="font-size:13px;font-weight:600">팔레트 구성 / Phân bổ pallet <span id="inv-plan-mode" style="font-size:10.5px;padding:1px 6px;border-radius:999px;margin-left:2px"></span>
@@ -14070,7 +14099,7 @@ function renderInvPlan(){
   invPlanRefresh();
 }
 function invPlanRefresh(){
-  if (!INV || !Array.isArray(INV.plan)) return;
+  if (!INV || !Array.isArray(INV.plan) || invIsBox()) return;
   const mode = document.getElementById('inv-plan-mode');
   if (mode) { mode.textContent = INV.palAuto ? '자동' : '직접 입력'; mode.style.background = INV.palAuto ? '#FEF3C7' : '#DCFCE7'; mode.style.color = INV.palAuto ? '#92400E' : '#166534'; }
   INV.plan.forEach((p,k) => {
@@ -14096,7 +14125,7 @@ function invRefreshTotals(){
   const qty = INV.lines.reduce((s,l)=>s+(+l.qty||0),0);
   const amt = INV.kind === 'KR' ? INV.lines.reduce((s,l)=>s+(+l.qty||0)*((+l.fee||0)+(+l.foc||0)),0) : INV.lines.reduce((s,l)=>s+(+l.qty||0)*(+l.sale||0),0);
   const fee = INV.lines.reduce((s,l)=>s+(+l.qty||0)*(+l.fee||0),0);
-  const ctn = INV.lines.reduce((s,l)=>s+invCartons(l).reduce((a,c)=>a+c.n,0),0);
+  const ctn = invBoxCount();
   el.innerHTML = `합계 ${qty.toLocaleString()}개 · 박스 ${ctn}개 · 임가공비 $${fee.toLocaleString(undefined,{maximumFractionDigits:2})} · ${INV.kind==='KR'?'인보이스 금액(임가공비+무상자재)':'인보이스 금액(판매가)'} <b>$${amt.toLocaleString(undefined,{maximumFractionDigits:2})}</b>`;
 }
 function invCartons(l){
@@ -14143,13 +14172,18 @@ function renderInvEditor(){
         <span style="color:#8A95A3;font-size:12px">출고 등록 전이면 여기서 품목·수량을 넣습니다 / Nhập mặt hàng, SL nếu chưa đăng ký xuất</span>
       </div>
       <div style="font-size:13px;font-weight:600;margin:6px 0">포장 / Đóng gói <span style="font-weight:400;color:#5D6977;font-size:12px">— 수량으로 자동 계산된 <b style="color:#92400E">예상</b>값입니다. 계근 후 실측값으로 고치면 <b style="color:#166534">실측</b>으로 바뀝니다(칸을 비우면 다시 예상값)<br>Giá trị <b>dự kiến</b> tính từ số lượng — nhập số cân thực tế để đổi thành <b>thực tế</b>.</span></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:13px"><span style="font-weight:600">포장 방식 / Kiểu đóng gói</span>
+        ${[['pallet','팔레트 / Pallet'],['box','박스만 (팔레트 없음) / Chỉ thùng']].map(([k,t]) => `<label style="display:flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;border:1px solid ${(INV.packMode||'pallet')===k?'#185FA5':'var(--line,#DCE1E7)'};background:${(INV.packMode||'pallet')===k?'#E8F0F8':'#fff'};cursor:pointer"><input type="radio" name="inv-pack" ${(INV.packMode||'pallet')===k?'checked':''} onchange="invSetPack('${k}')"> ${t}</label>`).join('')}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:6px">
-        ${[['net','총 순중량 / N.W kg'],['gross','총 총중량 / G.W kg'],['cbm','총 부피 / Thể tích CBM'],['pallets','팔레트 수 / Số pallet']].map(([k,l]) => `<div class="ov-fr" style="margin:0"><label>${l} <span id="inv-t-${k}" style="font-size:10.5px;padding:1px 6px;border-radius:999px;margin-left:2px"></span></label><input id="inv-f-${k}" type="number" value="${INV[k]??''}" oninput="invSet('${k}', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>`).join('')}
+        ${(invIsBox() ? [['net','총 순중량 / N.W kg'],['gross','총 총중량 / G.W kg'],['cbm','총 부피 / Thể tích CBM'],['boxes','박스 수 / Số thùng']] : [['net','총 순중량 / N.W kg'],['gross','총 총중량 / G.W kg'],['cbm','총 부피 / Thể tích CBM'],['pallets','팔레트 수 / Số pallet']]).map(([k,l]) => `<div class="ov-fr" style="margin:0"><label>${l} <span id="inv-t-${k}" style="font-size:10.5px;padding:1px 6px;border-radius:999px;margin-left:2px"></span></label><input id="inv-f-${k}" type="number" value="${INV[k]??''}" oninput="invSet('${k}', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>`).join('')}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:6px">
+      ${invIsBox() ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:6px">
+        <div class="ov-fr" style="margin:0"><label>박스 규격 m (가로*세로*높이) / Kích thước thùng m</label><input id="inv-f-boxDims" value="${INV.boxDims??''}" placeholder="예: 0.40*0.30*0.25" oninput="invSet('boxDims', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>
+        <div class="ov-fr" style="margin:0"><label>빈 박스 1개 무게 / KL thùng rỗng kg</label><input id="inv-f-boxTare" type="number" value="${INV.boxTare??''}" placeholder="0.5" oninput="invSet('boxTare', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>
+      </div>` : `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:6px">
         <div class="ov-fr" style="margin:0"><label>팔레트 규격 / Kích thước pallet m</label><input id="inv-f-dims" value="${INV.dims??''}" oninput="invSet('dims', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>
         <div class="ov-fr" style="margin:0"><label>팔레트 1개 무게 / KL pallet kg</label><input id="inv-f-tare" type="number" value="${INV.tare??''}" oninput="invSet('tare', this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px"></div>
-      </div>
+      </div>`}
       <div id="inv-kg-warn" style="font-size:12px;color:#b45309;margin-bottom:6px"></div>
       <div id="inv-plan" style="margin-bottom:10px"></div>
       <div id="inv-totals" style="font-size:13px;color:#18212B;margin-bottom:10px"></div>
@@ -14169,7 +14203,7 @@ async function invSaveMaster(){
   d.items = d.items || {}; d.tpl = d.tpl || {};
   INV.lines.forEach(l => { d.items[l.code] = {hs:l.hs, vi:l.vi, en:l.en, pcsBox:+l.pcsBox||'', unitKg:+l.unitKg||'', perPallet:+l.perPallet||'', palDims:l.palDims, palTare:+l.palTare||0}; });
   d.tpl[INV.kind] = {contact:INV.contact, phone:INV.phone, mode:INV.mode, incoterm:INV.incoterm};
-  d.tpl[INV.kind + '_' + INV.mode] = {from:INV.from, to:INV.to};
+  d.tpl[INV.kind + '_' + INV.mode] = {from:INV.from, to:INV.to, packMode: INV.packMode || 'pallet', boxDims: INV.boxDims || '', boxTare: INV.boxTare ?? ''};
   if (JSON.stringify(d) !== JSON.stringify(invDoc())) await saveCost('model', '_doc', d);
 }
 // ── 만든 인보이스 보관: 나중에 편명·AWB·C/O 정보를 넣어 같은 번호로 다시 만들 수 있게 (관리자 전용 서버 데이터)
@@ -14409,14 +14443,51 @@ function invSheetInvoice(ws){
   }
 }
 function invWeights(ws, r, col){
-  const ctn = INV.lines.reduce((s,l)=>s+invCartons(l).reduce((a,c)=>a+c.n,0),0);
-  [['* TOTAL NET WEIGHT :', +INV.net||'', 'KGM'], ['* TOTAL GROSS WEIGHT :', +INV.gross||'', 'KGM'], ['* TOTAL MEASUREMENT :', +INV.cbm||'', 'CBM'], ['* TOTAL PK :', ctn, 'CT'], ['* TOTAL PL :', +INV.pallets||'', 'PP']]
+  const ctn = invBoxCount();
+  [['* TOTAL NET WEIGHT :', +INV.net||'', 'KGM'], ['* TOTAL GROSS WEIGHT :', +INV.gross||'', 'KGM'], ['* TOTAL MEASUREMENT :', +INV.cbm||'', 'CBM'], ['* TOTAL PK :', ctn, 'CT']].concat(invIsBox() ? [] : [['* TOTAL PL :', +INV.pallets||'', 'PP']])
     .forEach(([a,v,u]) => { invCell(ws, `${col}${r}`, `${a} ${v===''?'':v} ${u}`, {bold:true}); r++; });
   r++; invCell(ws, `${col}${r}`, 'SIGN BY:', {bold:true});
   ws._signAt = {col: col.charCodeAt(0) - 65, row: r};   // 도장 위치(0부터 세는 열, 서명 줄 바로 아래)
   return r + 6;
 }
+function invSheetPackingBox(ws){
+  ws.columns = [{width:8},{width:18},{width:14},{width:13},{width:9},{width:12},{width:13},{width:13},{width:16}];
+  let r = invHeader(ws, 'PACKING LIST', 9) + 1;
+  const hd = ['Carton\nNo','Code No','Description of goods','Quantity/box\n(PCS)','Carton','Quantity\n(PCS)','Net weight\n(KGS)','Gross Weight\n(KGS)','Measurement\n(CBM)'];
+  hd.forEach((h,i) => invCell(ws, `${String.fromCharCode(65+i)}${r}`, h, {bold:true, h:'center', wrap:true, fill:'FFF2F2F2'}));
+  ws.getRow(r).height = 32; invGrid(ws, r, 1, r, 9); r++;
+  const start = r, nb = invBoxCount(), bv = invBoxVol();
+  const manual = +INV.boxes && INV.lines.length === 1;   // 품목 1개면 입력한 박스 수 그대로
+  let totCtn = 0;
+  INV.lines.forEach(l => {
+    const q = +l.qty||0; if (!q) return;
+    const cs = manual ? [{per: Math.ceil(q / nb), n: nb, qty: q}] : invCartons(l), rl = r;
+    cs.forEach((c, j) => {
+      if (j === 0) invCell(ws, `B${r}`, INV.kind==='KR' ? (l.en||l.code) : l.code, {h:'center'});
+      invCell(ws, `C${r}`, 'Inductor', {h:'center'}); invCell(ws, `D${r}`, c.per, {h:'center', fmt:'#,##0'}); invCell(ws, `E${r}`, c.n, {h:'center'});
+      invCell(ws, `F${r}`, c.qty, {h:'center', fmt:'#,##0'});
+      totCtn += c.n; r++;
+    });
+    if (cs.length > 1) ws.mergeCells(`B${rl}:B${r-1}`);
+  });
+  if (r > start) {
+    invCell(ws, `A${start}`, nb > 1 ? `1~${nb}` : '1', {h:'center', bold:true});
+    invCell(ws, `G${start}`, +INV.net||'', {h:'center', fmt:'#,##0.00'}); invCell(ws, `H${start}`, +INV.gross||'', {h:'center', fmt:'#,##0.00'});
+    invCell(ws, `I${start}`, [INV.boxDims, bv ? (Math.round(bv*nb*10000)/10000) : ''].filter(Boolean).join('\n'), {h:'center', wrap:true});
+    if (r - 1 > start) ['A','G','H','I'].forEach(c => ws.mergeCells(`${c}${start}:${c}${r-1}`));
+  }
+  invGrid(ws, start, 1, r-1, 9);
+  ws.mergeCells(`A${r}:D${r}`); invCell(ws, `A${r}`, 'TOTAL:', {bold:true});
+  invCell(ws, `E${r}`, nb, {bold:true, h:'center'});
+  invCell(ws, `F${r}`, INV.lines.reduce((s,l)=>s+(+l.qty||0),0), {bold:true, h:'center', fmt:'#,##0'});
+  invCell(ws, `G${r}`, +INV.net||'', {bold:true, h:'center', fmt:'#,##0.00'}); invCell(ws, `H${r}`, +INV.gross||'', {bold:true, h:'center', fmt:'#,##0.00'}); invCell(ws, `I${r}`, +INV.cbm||'', {bold:true, h:'center'});
+  invGrid(ws, r, 1, r, 9); r += 1;
+  invCell(ws, `A${r}`, `TOTAL: ${nb} CARTON${nb > 1 ? 'S' : ''}`, {bold:true}); r += 2;
+  invCell(ws, `G${r}`, 'SHIPPER', {bold:true, h:'center'}); invCell(ws, `G${r+1}`, '(KÝ TÊN, ĐÓNG DẤU)', {italic:true, h:'center', size:9});
+  ws._signAt = {col: 6, row: r + 1};
+}
 function invSheetPacking(ws){
+  if (invIsBox()) return invSheetPackingBox(ws);
   ws.columns = [{width:8},{width:18},{width:14},{width:13},{width:9},{width:12},{width:13},{width:13},{width:16}];
   let r = invHeader(ws, 'PACKING LIST', 9) + 1;
   const hd = ['Pallet\nNo','Code No','Description of goods','Quantity/box\n(PCS)','Carton','Quantity\n(PCS)','Net weight\n(KGS)','Gross Weight\n(KGS)','Measurement\n(CBM)'];
