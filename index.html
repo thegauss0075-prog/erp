@@ -8827,7 +8827,13 @@ async function saveCost(section, key, value){
 }
 
 // ── 계산 도우미
-function costFx(m){ const d = COST.month[m] || {}; return {usd:+d.fxUsd||0, krw:+d.fxKrw||0}; }
+// 그 달 환율이 비어 있으면 가장 가까운 이전 달 환율을 쓴다 (화면에 "○월 환율 사용"으로 표시)
+function costFx(m){
+  const d = COST.month[m] || {};
+  const prevOf = k => { const mm = Object.keys(COST.month).filter(x => x < m && +(COST.month[x]||{})[k]).sort().pop(); return mm ? {v: +COST.month[mm][k], m: mm} : {v: 0, m: ''}; };
+  const u = +d.fxUsd ? {v: +d.fxUsd, m: ''} : prevOf('fxUsd'), k = +d.fxKrw ? {v: +d.fxKrw, m: ''} : prevOf('fxKrw');
+  return {usd: u.v, krw: k.v, usdFrom: u.m, krwFrom: k.m};
+}
 function costToVND(amount, cur, m){
   amount = +amount || 0; if (!amount) return 0;
   const fx = costFx(m);
@@ -9026,6 +9032,7 @@ function renderCostBody(keepEdits){
   if (COST_SERVER_OK === false) msgs.push('⚠️ 서버(Apps Script)에 원가 저장 기능이 아직 없습니다. 생산수량·BOM은 보이지만 단가·비용은 입력/저장할 수 없습니다.');
   const c = costCompute(m, basis);
   if (!c.fx.krw) msgs.push(`⚠️ ${m} 원화 환율이 없어 ₩ 환산이 표시되지 않습니다.` + (edit ? ' ① 월 비용·환율에서 입력하세요.' : ''));
+  if (c.fx.krwFrom || c.fx.usdFrom) msgs.push(`ℹ️ ${m} 환율이 입력되지 않아 이전 달 환율을 썼습니다: ${c.fx.usdFrom ? `USD ${c.fx.usd.toLocaleString()} (${c.fx.usdFrom}) ` : ''}${c.fx.krwFrom ? `KRW ${c.fx.krw} (${c.fx.krwFrom})` : ''}` + (edit ? ' — 확정 환율이 있으면 ① 월 비용·환율에 입력하세요.' : ''));
   if (!COST.month[m]) msgs.push(`ℹ️ ${m} 노무비·제조경비가 아직 입력되지 않았습니다.`);
   const noPrice = Object.keys(COST.price||{}).length === 0;
   if (noPrice) msgs.push('ℹ️ 자재단가가 아직 하나도 입력되지 않아 재료비가 0으로 나옵니다.');
