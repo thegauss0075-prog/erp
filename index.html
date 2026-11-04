@@ -1182,6 +1182,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <div class="toolbar">
     <button onclick="openAddQC()" style="padding:7px 16px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 검사 기록 추가</button>
     <button onclick="renderQC()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 새로고침</button>
+    <button onclick="openNCR()" style="padding:7px 16px;border-radius:7px;border:1px solid #991b1b;background:#fff;color:#991b1b;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">📋 부적합 관리대장 / NCR</button>
     <div class="sw"><span class="si">🔍</span><input id="qc-q" placeholder="코드·품명·LOT 검색..." oninput="renderQC({local:true})"></div>
     <select id="qc-type-f" onchange="renderQC({local:true})">
       <option value="">전체 유형</option>
@@ -1675,6 +1676,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <div class="toolbar">
     <button onclick="window.print()" style="padding:7px 16px;border-radius:7px;border:1px solid #991b1b;background:#991b1b;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🖨️ 인쇄 / In</button>
     <button onclick="exportNGExcel()" style="padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">📊 엑셀 다운로드</button>
+    <button onclick="openNCR()" style="padding:7px 16px;border-radius:7px;border:1px solid #991b1b;background:#fff;color:#991b1b;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">📋 부적합 관리대장 / NCR</button>
     <div class="sw"><span class="si">🔍</span><input id="ng-q" placeholder="코드·품명 검색 / Tìm kiếm..." oninput="renderNG()"></div>
     <select id="ng-tp" onchange="renderNG()">
       <option value="">전체 불량 / Tất cả NG</option>
@@ -13874,6 +13876,290 @@ function checkAdminIdle(){
 }
 setInterval(checkAdminIdle, 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkAdminIdle(); });
+// ════════════════════════════════════════════════════════════
+//  📋 부적합품 관리대장 (NCR) — 2026-11-04 고객 감사 대응
+//  발생(수입·공정·출하·고객) → 원인 → 처리(폐기·재작업·특채·반품·선별) → 시정·재발방지 → 효과 확인 → 종결
+//  - 품질검사 불합격/조건부합격, 불량(NG) 입고 기록을 "등록 후보"로 보여주고 한 번에 NCR로 만든다
+//  - 서버 NCR_LOG 시트(JSON) 저장, 첨부(사진·성적서)는 QC_첨부파일 폴더
+// ════════════════════════════════════════════════════════════
+let NCR = [], NCRV = {q:'', st:'', src:'', from:'', to:'', tab:'list'}, NCR_EDIT = null, NCR_NEWFILES = [];
+const NCR_SRC = ['수입검사','공정','출하검사','고객 클레임','기타'];
+const NCR_SRC_VI = {'수입검사':'KT đầu vào','공정':'Công đoạn','출하검사':'KT xuất hàng','고객 클레임':'Khiếu nại KH','기타':'Khác'};
+const NCR_TYPES = ['외관','치수','전기특성(L값)','내전압·절연','권선·납땜','이물·오염','포장·라벨','수량','기타'];
+const NCR_DISP = ['폐기','재작업','특채(조건부 사용)','반품(공급사)','선별','수리','기타'];
+const NCR_DISP_VI = {'폐기':'Hủy','재작업':'Làm lại','특채(조건부 사용)':'Chấp nhận có điều kiện','반품(공급사)':'Trả NCC','선별':'Tuyển lựa','수리':'Sửa','기타':'Khác'};
+const NCR_ST = ['접수','조치중','효과확인','종결'];
+const NCR_ST_VI = {'접수':'Tiếp nhận','조치중':'Đang xử lý','효과확인':'Xác nhận hiệu quả','종결':'Đã đóng'};
+const NCR_ST_COL = {'접수':['#b91c1c','#FEE2E2'],'조치중':['#b45309','#FEF3C7'],'효과확인':['#185FA5','#E8F0F8'],'종결':['#166534','#DCFCE7']};
+const ncrEsc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const ncrN = v => (Math.round((+v||0)*1000)/1000).toLocaleString();
+function ncrToday(){ return new Date(Date.now() + 7*3600e3).toISOString().slice(0,10); }
+function ncrYMD(v){ if (!v) return ''; const s = String(v); if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{2})\/(\d{2})(?!\/)/);   // 불량 이력의 "MM/dd HH:mm" 형식 — 올해 날짜로 (미래면 작년)
+  if (m) { const y = new Date().getFullYear(), v = `${y}-${m[1]}-${m[2]}`; return v > ncrToday() ? `${y-1}-${m[1]}-${m[2]}` : v; }
+  const d = new Date(s); if (!isNaN(d)) return new Date(d.getTime() + 7*3600e3).toISOString().slice(0,10);
+  return s.slice(0,10); }
+function ncrDays(a, b){ if (!a) return null; const t1 = new Date(a + 'T00:00:00').getTime(), t2 = new Date((b || ncrToday()) + 'T00:00:00').getTime(); return Math.round((t2 - t1) / 864e5); }
+
+async function loadNCR(){
+  if (!(API_URL || IS_GAS)) return;
+  const r = await api('getNCR', {});
+  if (r && r.ok) NCR = (r.data || []).sort((a,b) => String(b.date||'').localeCompare(String(a.date||'')) || String(b.no||'').localeCompare(String(a.no||'')));
+}
+async function openNCR(){
+  let o = document.getElementById('ncr-ov');
+  if (!o) { o = document.createElement('div'); o.id = 'ncr-ov';
+    o.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9990;display:flex;align-items:center;justify-content:center;padding:14px';
+    o.addEventListener('click', e => { if (e.target === o) o.remove(); }); document.body.appendChild(o); }
+  o.innerHTML = '<div style="background:#fff;border-radius:12px;padding:30px;color:#5D6977">⏳ 부적합 관리대장 불러오는 중… / Đang tải…</div>';
+  await Promise.all([loadNCR(), loadQC().catch(()=>{}), (typeof loadWO === 'function' ? loadWO().catch(()=>{}) : null)]);
+  renderNCR();
+}
+function ncrFiltered(){
+  const q = NCRV.q.trim().toLowerCase();
+  return NCR.filter(r => (!NCRV.st || (NCRV.st === '미종결' ? r.status !== '종결' : r.status === NCRV.st))
+    && (!NCRV.src || r.source === NCRV.src)
+    && (!NCRV.from || String(r.date||'') >= NCRV.from) && (!NCRV.to || String(r.date||'') <= NCRV.to)
+    && (!q || [r.no, r.code, r.name, r.lot, r.woNo, r.desc, r.cause, r.partner].join(' ').toLowerCase().includes(q)));
+}
+// 아직 NCR로 등록 안 된 불합격 검사·불량 입고
+function ncrCandidates(){
+  const linkedQC = new Set(NCR.map(r => String(r.qcId||'')).filter(Boolean)), linkedNG = new Set(NCR.map(r => String(r.ngId||'')).filter(Boolean));
+  const since = Date.now() - 180*864e5;
+  const qc = (QC||[]).filter(q => (q.result === '불합격' || q.result === '조건부합격') && !linkedQC.has(String(q.id)) && (+q.id || 0) > since)
+    .map(q => ({kind:'qc', id:q.id, date: ncrYMD(q.inspDate), source: q.inspType === '출하검사' ? '출하검사' : q.inspType === '수입검사' ? '수입검사' : '공정',
+      code:q.code, name:q.name, cat:q.cat, unit:q.unit||((typeof allRows === 'function' ? allRows() : []).find(x => x.code === q.code)||{}).unit||'', lot:q.lot||'', woNo:q.workOrderNo||'', qty:+q.defectQty||0, lotQty:+q.totalQty||0,
+      desc:`${q.inspType||''} ${q.result} — 시료 ${ncrN(q.sampleQty)} 중 불량 ${ncrN(q.defectQty)}${q.note ? ' · ' + q.note : ''}`, label:`${q.inspType} ${q.result}`}));
+  const ng = (typeof ngLog !== 'undefined' ? ngLog : []).filter(l => l.type === 'ng-in' && !linkedNG.has(String(l.id)) && (+l.id || 0) > since)
+    .map(l => ({kind:'ng', id:l.id, date: ncrYMD(l.dt), source: /고객|클레임|반품/.test((l.reason||'') + (l.note||'')) ? '고객 클레임' : '공정',
+      code:l.code, name:l.name, cat:l.cat, unit:l.unit||'', lot:'', woNo:(String(l.note||'').match(/WO\d{6}-\d{6}/)||[''])[0], qty:+l.qty||0, lotQty:0,
+      desc:[l.reason, l.note].filter(Boolean).join(' · '), label:'불량 입고'}));
+  return [...qc, ...ng].sort((a,b) => String(b.date).localeCompare(String(a.date)));
+}
+function renderNCR(){
+  const o = document.getElementById('ncr-ov'); if (!o) return;
+  const all = NCR, list = ncrFiltered(), ym = ncrToday().slice(0,7);
+  const open = all.filter(r => r.status !== '종결'), overdue = open.filter(r => r.dueDate && r.dueDate < ncrToday());
+  const closed = all.filter(r => r.status === '종결' && r.closedDate && r.date);
+  const avg = closed.length ? Math.round(closed.reduce((a,r) => a + (ncrDays(r.date, r.closedDate)||0), 0) / closed.length) : null;
+  const cands = ncrCandidates();
+  const tile = (l, vi, v, sub, col) => `<div style="flex:1;min-width:130px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${l} <span style="color:#8A95A3;font-size:11px">${vi}</span></div><div style="font-size:22px;font-weight:700;color:${col||'#18212B'}">${v}</div><div style="font-size:11px;color:#8A95A3">${sub||''}</div></div>`;
+  const stPill = s => { const c = NCR_ST_COL[s] || ['#555','#eee']; return `<span style="font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;color:${c[0]};background:${c[1]};white-space:nowrap">${ncrEsc(s||'접수')}</span>`; };
+  const sel = (id, opts, val, all) => `<select onchange="NCRV.${id}=this.value;renderNCR()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px;font-size:12.5px"><option value="">${all}</option>${opts.map(x => `<option ${val===x?'selected':''}>${x}</option>`).join('')}</select>`;
+  const rows = list.map(r => {
+    const late = r.status !== '종결' && r.dueDate && r.dueDate < ncrToday();
+    return `<tr style="cursor:pointer" onclick="ncrEdit('${r.id}')">
+      <td style="font-family:monospace;font-size:12px;white-space:nowrap">${ncrEsc(r.no)}</td>
+      <td style="white-space:nowrap">${ncrEsc(r.date)}</td>
+      <td>${ncrEsc(r.source)}</td>
+      <td style="min-width:150px">${ncrEsc(r.name||r.code)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${ncrEsc(r.code)}${r.lot ? ' · ' + ncrEsc(r.lot) : ''}</div></td>
+      <td style="text-align:right;white-space:nowrap">${ncrN(r.qty)} ${ncrEsc(r.unit||'')}</td>
+      <td style="min-width:180px;white-space:normal">${ncrEsc(r.defectType ? '[' + r.defectType + '] ' : '')}${ncrEsc(String(r.desc||'').slice(0,80))}</td>
+      <td style="white-space:nowrap">${ncrEsc(r.disposition||'-')}</td>
+      <td>${stPill(r.status)}${late ? '<div style="font-size:11px;color:#b91c1c;margin-top:2px">기한 초과</div>' : ''}</td>
+      <td style="white-space:nowrap">${ncrEsc(r.owner||'-')}</td>
+      <td style="white-space:nowrap">${ncrEsc(r.closedDate||'-')}</td>
+      <td>${(r.files||[]).length ? '📎' + r.files.length : ''}</td></tr>`;
+  }).join('');
+  const candHtml = cands.length ? `<div class="tw"><table><thead><tr><th>발생일</th><th>근거</th><th>품목 / LOT</th><th style="text-align:right">불량 수량</th><th>내용</th><th></th></tr></thead><tbody>${cands.slice(0,100).map((c,i) => `<tr>
+      <td style="white-space:nowrap">${ncrEsc(c.date)}</td><td style="white-space:nowrap">${ncrEsc(c.label)}</td>
+      <td>${ncrEsc(c.name||c.code)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${ncrEsc(c.code)}${c.lot?' · '+ncrEsc(c.lot):''}</div></td>
+      <td style="text-align:right">${ncrN(c.qty)} ${ncrEsc(c.unit)}</td><td style="white-space:normal;max-width:320px">${ncrEsc(c.desc)}</td>
+      <td><button onclick="ncrFromCand(${i})" style="padding:4px 10px;border-radius:6px;border:1px solid #991b1b;background:#fff;color:#991b1b;font-weight:600;cursor:pointer;font-size:12px;white-space:nowrap">📋 NCR 등록</button></td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="empty">✅ NCR로 등록 안 된 불합격 검사·불량 입고가 없습니다 (최근 6개월).</div>';
+  o.innerHTML = `<div style="background:#fff;border-radius:12px;width:min(1240px,100%);max-height:94vh;overflow:auto;padding:18px 20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <h3 style="margin:0;font-size:17px">📋 부적합품 관리대장 <span style="font-weight:400;color:#5D6977;font-size:13px">/ Sổ quản lý hàng không phù hợp (NCR)</span></h3>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button onclick="ncrEdit(null)" style="padding:7px 14px;border-radius:8px;border:1px solid #991b1b;background:#991b1b;color:#fff;font-weight:600;cursor:pointer">➕ 부적합 등록 / Thêm</button>
+        <button onclick="ncrExcel()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer">📊 관리대장 엑셀</button>
+        <button onclick="document.getElementById('ncr-ov').remove()" style="padding:7px 12px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
+      </div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      ${tile('이번 달 발생','Tháng này', all.filter(r => String(r.date||'').slice(0,7) === ym).length + '건', `누적 ${all.length}건`)}
+      ${tile('미종결','Chưa đóng', open.length + '건', overdue.length ? `<span style="color:#b91c1c">기한 초과 ${overdue.length}건</span>` : '기한 초과 없음', open.length ? '#b45309' : '#166534')}
+      ${tile('평균 처리 기간','TB thời gian xử lý', avg === null ? '-' : avg + '일', `종결 ${closed.length}건 기준`)}
+      ${tile('고객 클레임','Khiếu nại KH', all.filter(r => r.source === '고객 클레임' && String(r.date||'').slice(0,4) === ym.slice(0,4)).length + '건', `${ym.slice(0,4)}년`)}
+      ${tile('등록 후보','Chờ lập NCR', cands.length + '건', '불합격 검사·불량 입고', cands.length ? '#991b1b' : '#166534')}
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      ${[['list','📋 관리대장'],['cand',`🔎 등록 후보 ${cands.length}`]].map(([k,l]) => `<button class="period-btn ${NCRV.tab===k?'on':''}" onclick="NCRV.tab='${k}';renderNCR()">${l}</button>`).join('')}
+    </div>
+    ${NCRV.tab === 'cand' ? `<div style="font-size:12px;color:#5D6977;margin-bottom:6px">품질검사 불합격·조건부합격과 불량(NG) 입고 중 아직 NCR이 없는 건입니다. "NCR 등록"을 누르면 내용이 채워진 등록 창이 열립니다.</div>${candHtml}` : `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <input placeholder="NCR No·품목·LOT·내용 검색" value="${ncrEsc(NCRV.q)}" oninput="NCRV.q=this.value;clearTimeout(window._ncrT);window._ncrT=setTimeout(()=>{renderNCR();const i=document.querySelector('#ncr-ov input[placeholder^=NCR]');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)" style="padding:6px 10px;border:1px solid #DCE1E7;border-radius:8px;min-width:220px;font-size:12.5px">
+      ${sel('st', ['미종결', ...NCR_ST], NCRV.st, '상태 전체')}
+      ${sel('src', NCR_SRC, NCRV.src, '발생구분 전체')}
+      <input type="date" value="${NCRV.from}" onchange="NCRV.from=this.value;renderNCR()" style="padding:5px 8px;border:1px solid #DCE1E7;border-radius:8px"> ~
+      <input type="date" value="${NCRV.to}" onchange="NCRV.to=this.value;renderNCR()" style="padding:5px 8px;border:1px solid #DCE1E7;border-radius:8px">
+      <span style="font-size:12px;color:#5D6977;margin-left:auto">${list.length}건</span>
+    </div>
+    ${list.length ? `<div class="tw"><table><thead><tr><th>NCR No</th><th>발생일<span class="vi">Ngày</span></th><th>구분<span class="vi">Nguồn</span></th><th>품목 / LOT</th><th style="text-align:right">수량<span class="vi">SL</span></th><th>부적합 내용<span class="vi">Nội dung</span></th><th>처리<span class="vi">Xử lý</span></th><th>상태<span class="vi">Trạng thái</span></th><th>담당<span class="vi">Phụ trách</span></th><th>종결일</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<div class="empty">${NCR.length ? '조건에 맞는 부적합 기록이 없습니다.' : '아직 등록된 부적합 기록이 없습니다. "➕ 부적합 등록" 또는 "🔎 등록 후보"에서 시작하세요.'}</div>`}`}
+  </div>`;
+}
+function ncrNextNo(date){
+  const d = String(date || ncrToday()).replace(/-/g,'').slice(2), pre = 'NCR-' + d + '-';
+  const n = NCR.filter(r => String(r.no||'').startsWith(pre)).map(r => +String(r.no).slice(pre.length) || 0);
+  return pre + String((n.length ? Math.max(...n) : 0) + 1).padStart(2, '0');
+}
+function ncrFromCand(i){
+  const c = ncrCandidates()[i]; if (!c) return;
+  ncrEdit(null, {date:c.date, source:c.source, code:c.code, name:c.name, cat:c.cat, unit:c.unit, lot:c.lot, woNo:c.woNo, qty:c.qty, lotQty:c.lotQty, desc:c.desc,
+    qcId: c.kind === 'qc' ? String(c.id) : '', ngId: c.kind === 'ng' ? String(c.id) : '', disposition: c.kind === 'ng' ? '폐기' : ''});
+}
+function ncrEdit(id, preset){
+  const r = id ? NCR.find(x => String(x.id) === String(id)) : null;
+  NCR_EDIT = r ? JSON.parse(JSON.stringify(r)) : Object.assign({id: String(Date.now()), date: ncrToday(), status: '접수', source: '공정', owner: '', files: [], history: []}, preset || {});
+  NCR_NEWFILES = [];
+  let m = document.getElementById('ncr-ed');
+  if (!m) { m = document.createElement('div'); m.id = 'ncr-ed'; m.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9992;display:flex;align-items:center;justify-content:center;padding:14px'; document.body.appendChild(m); }
+  renderNCREdit();
+}
+function ncrSet(k, v){ if (NCR_EDIT) NCR_EDIT[k] = v; }
+function ncrPickItem(v){
+  const code = String(v).split(' — ')[0].trim();
+  const it = (typeof allRows === 'function' ? allRows() : []).find(x => x.code === code);
+  if (it) { Object.assign(NCR_EDIT, {code: it.code, name: it.name, cat: it.cat, unit: it.unit}); renderNCREdit(); }
+  else NCR_EDIT.code = v;
+}
+function renderNCREdit(){
+  const m = document.getElementById('ncr-ed'), r = NCR_EDIT; if (!m || !r) return;
+  const isNew = !NCR.some(x => String(x.id) === String(r.id));
+  const fld = (lbl, vi, html, span) => `<label style="display:block;${span ? 'grid-column:1/-1;' : ''}"><div style="font-size:12px;font-weight:600;color:#33404D;margin-bottom:3px">${lbl} <span style="font-weight:400;color:#8A95A3;font-size:11px">${vi}</span></div>${html}</label>`;
+  const inp = (k, type, ph) => `<input type="${type||'text'}" value="${ncrEsc(r[k] ?? '')}" placeholder="${ph||''}" oninput="ncrSet('${k}',this.value)" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #DCE1E7;border-radius:7px;font-size:13px">`;
+  const ta = (k, ph) => `<textarea rows="2" placeholder="${ph||''}" oninput="ncrSet('${k}',this.value)" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #DCE1E7;border-radius:7px;font-size:13px;font-family:inherit;resize:vertical">${ncrEsc(r[k] ?? '')}</textarea>`;
+  const sl = (k, opts, vi) => `<select onchange="ncrSet('${k}',this.value)" style="width:100%;padding:7px 9px;border:1px solid #DCE1E7;border-radius:7px;font-size:13px"><option value="">선택</option>${opts.map(x => `<option value="${x}" ${r[k]===x?'selected':''}>${x}${vi && vi[x] ? ' / ' + vi[x] : ''}</option>`).join('')}</select>`;
+  const items = (typeof allRows === 'function' ? allRows() : []);
+  const sec = (t) => `<div style="grid-column:1/-1;font-size:13px;font-weight:700;color:#991b1b;border-bottom:1px solid #F1D5D5;padding-bottom:3px;margin-top:6px">${t}</div>`;
+  m.innerHTML = `<div style="background:#fff;border-radius:12px;width:min(820px,100%);max-height:94vh;overflow:auto;padding:18px 20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+      <h3 style="margin:0;font-size:16px">${isNew ? '➕ 부적합 등록' : '✏️ ' + ncrEsc(r.no)} <span style="font-weight:400;color:#5D6977;font-size:12.5px">/ Báo cáo không phù hợp</span></h3>
+      ${!isNew ? `<button onclick="ncrPrint('${r.id}')" style="padding:5px 12px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">🖨️ 부적합 보고서 인쇄</button>` : ''}
+    </div>
+    <datalist id="ncr-items">${items.slice(0, 2000).map(x => `<option value="${ncrEsc(x.code)} — ${ncrEsc(x.name)}">`).join('')}</datalist>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+      ${sec('① 발생 / Phát sinh')}
+      ${fld('발생일 *','Ngày', inp('date','date'))}
+      ${fld('발생구분 *','Nguồn', sl('source', NCR_SRC, NCR_SRC_VI))}
+      ${fld('상태','Trạng thái', sl('status', NCR_ST, NCR_ST_VI))}
+      ${fld('품목 *','Mã / Tên', `<input list="ncr-items" value="${ncrEsc(r.code ? r.code + (r.name ? ' — ' + r.name : '') : '')}" onchange="ncrPickItem(this.value)" placeholder="코드·품명 검색" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #DCE1E7;border-radius:7px;font-size:13px">`, true)}
+      ${fld('LOT','LOT', inp('lot'))}
+      ${fld('작업지시 No','Lệnh SX', inp('woNo','text','WO…'))}
+      ${fld(r.source === '수입검사' ? '공급사' : r.source === '고객 클레임' ? '고객사' : '공급사·고객사','NCC / KH', inp('partner','text', r.source === '고객 클레임' ? '예: 솔루엠비나' : ''))}
+      ${fld('부적합 수량 *','SL lỗi', inp('qty','number'))}
+      ${fld('LOT·검사 수량','SL lô', inp('lotQty','number'))}
+      ${fld('단위','ĐVT', inp('unit'))}
+      ${fld('불량 유형','Loại lỗi', sl('defectType', NCR_TYPES))}
+      ${fld('발견자','Người phát hiện', inp('finder'))}
+      ${fld('부적합 내용 *','Mô tả lỗi', ta('desc','무엇이·어디서·어떻게 기준을 벗어났는지'), true)}
+      ${sec('② 원인·처리 / Nguyên nhân · Xử lý')}
+      ${fld('원인 분석','Nguyên nhân', ta('cause','4M(사람·설비·자재·방법) 관점 — 왜 발생했고 왜 유출됐는지'), true)}
+      ${fld('처리 방법','Cách xử lý', sl('disposition', NCR_DISP, NCR_DISP_VI))}
+      ${fld('처리 수량','SL xử lý', inp('dispQty','number'))}
+      ${fld('처리일','Ngày xử lý', inp('dispDate','date'))}
+      ${fld('승인자 (특채·폐기)','Người duyệt', inp('approver'))}
+      ${sec('③ 시정조치·재발방지 / Khắc phục · Phòng ngừa')}
+      ${fld('시정조치','Hành động khắc phục', ta('action'), true)}
+      ${fld('재발방지 대책','Biện pháp phòng ngừa', ta('prevent','작업표준·검사기준·설비 개선 등'), true)}
+      ${fld('담당자','Phụ trách', inp('owner'))}
+      ${fld('조치 기한','Hạn', inp('dueDate','date'))}
+      ${sec('④ 효과 확인·종결 / Xác nhận · Đóng')}
+      ${fld('효과 확인 내용','Xác nhận hiệu quả', ta('verify','재발 여부·후속 LOT 검사 결과 등'), true)}
+      ${fld('확인자','Người xác nhận', inp('verifier'))}
+      ${fld('종결일','Ngày đóng', inp('closedDate','date'))}
+      ${sec('📎 첨부 / Đính kèm (사진·성적서·클레임 문서)')}
+      <div style="grid-column:1/-1">
+        ${(r.files||[]).map(f => `<div style="font-size:12.5px;margin:2px 0">📎 <a href="${ncrEsc(f.url)}" target="_blank" rel="noopener">${ncrEsc(f.name)}</a> <span style="color:#8A95A3;font-size:11px">${ncrEsc(String(f.at||'').slice(0,10))} ${ncrEsc(f.by||'')}</span></div>`).join('')}
+        ${NCR_NEWFILES.map(f => `<div style="font-size:12.5px;margin:2px 0;color:#185FA5">⬆ ${ncrEsc(f.name)} (저장 시 업로드)</div>`).join('')}
+        <input type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx" onchange="ncrAddFiles(this)" style="font-size:12px;margin-top:4px">
+      </div>
+      ${(r.history||[]).length ? `<div style="grid-column:1/-1;font-size:11.5px;color:#8A95A3">이력: ${(r.history||[]).map(h => `${ncrEsc(String(h.at||'').slice(0,16).replace('T',' '))} ${ncrEsc(h.by||'')} ${ncrEsc(h.status||'')}`).join(' → ')}</div>` : ''}
+    </div>
+    <div id="ncr-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <div>${!isNew && isAdmin ? `<button onclick="ncrDelete('${r.id}')" style="padding:7px 12px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}</div>
+      <div style="display:flex;gap:6px"><button onclick="document.getElementById('ncr-ed').remove()" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button>
+      <button id="ncr-save" onclick="ncrSave()" style="padding:7px 18px;border-radius:8px;border:1px solid #991b1b;background:#991b1b;color:#fff;font-weight:600;cursor:pointer">💾 저장 / Lưu</button></div>
+    </div></div>`;
+}
+async function ncrAddFiles(el){
+  for (const f of Array.from(el.files || [])) {
+    if (f.size > 10 * 1024 * 1024) { alert(`${f.name}: 10MB 이하 파일만 올릴 수 있습니다.`); continue; }
+    const b64 = await new Promise(res => { const rd = new FileReader(); rd.onload = () => res(String(rd.result).split(',')[1] || ''); rd.readAsDataURL(f); });
+    NCR_NEWFILES.push({name: f.name, mime: f.type || 'application/octet-stream', base64: b64});
+  }
+  renderNCREdit();
+}
+async function ncrSave(){
+  const r = NCR_EDIT, err = document.getElementById('ncr-err'); if (!r) return;
+  if (!ADMIN_TOKEN) { err.textContent = '로그인(직원 이상) 후 저장할 수 있습니다.'; return; }
+  if (!r.date || !r.source || !r.code || !(+r.qty > 0) || !String(r.desc||'').trim()) { err.textContent = '발생일·발생구분·품목·부적합 수량·부적합 내용은 꼭 넣어주세요.'; return; }
+  if (r.status === '종결' && (!String(r.disposition||'') || !r.closedDate)) { err.textContent = '종결하려면 처리 방법과 종결일을 넣어주세요.'; return; }
+  const old = NCR.find(x => String(x.id) === String(r.id));
+  if (!r.no) r.no = ncrNextNo(r.date);
+  if (r.status === '종결' && !r.closedDate) r.closedDate = ncrToday();
+  r.qty = +r.qty || 0; if (r.lotQty !== undefined && r.lotQty !== '') r.lotQty = +r.lotQty || 0; if (r.dispQty !== undefined && r.dispQty !== '') r.dispQty = +r.dispQty || 0;
+  if (!old || old.status !== r.status) r.history = (r.history || []).concat([{at: new Date().toISOString(), by: CURRENT_USER || '', status: r.status || '접수'}]);
+  r.updatedAt = new Date().toISOString(); r.updatedBy = CURRENT_USER || ''; if (!old) { r.createdAt = r.updatedAt; r.createdBy = r.updatedBy; }
+  const btn = document.getElementById('ncr-save'); if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중…'; }
+  const rec = {...r}; const body = {rec, newFiles: NCR_NEWFILES};
+  const res = NCR_NEWFILES.length ? await apiPost('saveNCR', body) : await retrySafe(() => api('saveNCR', body));
+  if (!res || !res.ok) { if (btn) { btn.disabled = false; btn.textContent = '💾 저장 / Lưu'; } err.textContent = '저장 실패: ' + ((res && res.error) || '알 수 없는 오류') + (String(res && res.error || '').includes('unknown action') ? ' — Apps Script(Code.gs)를 새 버전으로 배포해야 합니다.' : ''); return; }
+  if (res.files) r.files = res.files;
+  const i = NCR.findIndex(x => String(x.id) === String(r.id)); if (i >= 0) NCR[i] = r; else NCR.unshift(r);
+  NCR_NEWFILES = []; document.getElementById('ncr-ed').remove(); NCRV.tab = 'list'; renderNCR();
+}
+async function ncrDelete(id){
+  const r = NCR.find(x => String(x.id) === String(id)); if (!r) return;
+  if (!confirm(`${r.no} 부적합 기록을 삭제할까요? 되돌릴 수 없습니다.\n(감사 이력이 필요하면 삭제 대신 '종결'로 남기세요)`)) return;
+  const res = await retrySafe(() => api('deleteNCR', {id}));
+  if (!res || !res.ok) { alert('삭제 실패: ' + ((res && res.error) || '')); return; }
+  NCR = NCR.filter(x => String(x.id) !== String(id)); const m = document.getElementById('ncr-ed'); if (m) m.remove(); renderNCR();
+}
+function ncrExcel(){
+  if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.'); return; }
+  const list = ncrFiltered();
+  const rows = list.map(r => ({'NCR No': r.no, '발생일': r.date, '발생구분': r.source, '품목코드': r.code, '품명': r.name, 'LOT': r.lot||'', '작업지시': r.woNo||'', '공급사/고객사': r.partner||'',
+    '부적합 수량': +r.qty||0, '단위': r.unit||'', 'LOT·검사 수량': r.lotQty === '' || r.lotQty == null ? '' : +r.lotQty, '불량 유형': r.defectType||'', '부적합 내용': r.desc||'', '발견자': r.finder||'',
+    '원인 분석': r.cause||'', '처리 방법': r.disposition||'', '처리 수량': r.dispQty === '' || r.dispQty == null ? '' : +r.dispQty, '처리일': r.dispDate||'', '승인자': r.approver||'',
+    '시정조치': r.action||'', '재발방지 대책': r.prevent||'', '담당자': r.owner||'', '조치 기한': r.dueDate||'', '효과 확인': r.verify||'', '확인자': r.verifier||'',
+    '상태': r.status||'', '종결일': r.closedDate||'', '처리 기간(일)': r.closedDate ? ncrDays(r.date, r.closedDate) : '', '첨부': (r.files||[]).map(f => f.name + ' ' + f.url).join('\n'),
+    '등록': `${String(r.createdAt||'').slice(0,10)} ${r.createdBy||''}`, '최종 수정': `${String(r.updatedAt||'').slice(0,10)} ${r.updatedBy||''}`}));
+  const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{'NCR No': '기록 없음'}]);
+  ws['!cols'] = Object.keys(rows[0] || {'NCR No':1}).map(k => ({wch: /내용|원인|조치|대책|확인|첨부/.test(k) ? 40 : /품명/.test(k) ? 26 : 13}));
+  const sum = {}; list.forEach(r => { const k = (r.date||'').slice(0,7) + '|' + (r.source||''); sum[k] = (sum[k]||0) + 1; });
+  const ws2 = XLSX.utils.json_to_sheet(Object.entries(sum).sort().map(([k,v]) => ({'월': k.split('|')[0], '발생구분': k.split('|')[1], '건수': v})));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '부적합품 관리대장'); XLSX.utils.book_append_sheet(wb, ws2, '월별 집계');
+  XLSX.writeFile(wb, `부적합품관리대장_${ncrToday().replace(/-/g,'')}.xlsx`);
+}
+function ncrPrint(id){
+  const r = NCR.find(x => String(x.id) === String(id)); if (!r) return;
+  const e = ncrEsc, row = (a, b, c, d) => `<tr><th>${a}</th><td>${b}</td>${c !== undefined ? `<th>${c}</th><td>${d}</td>` : '<td colspan="2" style="border:none"></td>'}</tr>`;
+  const big = (t, v) => `<tr><th>${t}</th><td colspan="3" style="height:52px;vertical-align:top;white-space:pre-wrap">${e(v||'')}</td></tr>`;
+  const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단됐습니다. 팝업을 허용해주세요.'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e(r.no)}</title><style>
+    @page{size:A4;margin:12mm} body{font-family:'Malgun Gothic','Noto Sans KR',sans-serif;font-size:11px;color:#111}
+    h1{font-size:18px;text-align:center;margin:0 0 2px} .sub{text-align:center;color:#555;margin-bottom:10px}
+    table{width:100%;border-collapse:collapse;margin-bottom:8px} th,td{border:1px solid #444;padding:5px 6px;text-align:left} th{background:#f1f1f1;width:16%;white-space:nowrap}
+    .h{background:#7f1d1d;color:#fff;font-weight:700;padding:4px 6px;margin-top:6px} .sign td{height:46px;text-align:center;vertical-align:bottom;color:#888}
+  </style></head><body>
+    <h1>부적합 보고서 / NONCONFORMANCE REPORT</h1><div class="sub">THE GAUSS VINA CO., LTD · ${e(r.no)}</div>
+    <div class="h">① 발생 / Phát sinh</div><table>
+    ${row('발생일', e(r.date), '발생구분', e(r.source))}${row('품목', e((r.name||'') + ' (' + (r.code||'') + ')'), 'LOT', e(r.lot||'-'))}
+    ${row('작업지시', e(r.woNo||'-'), '공급사·고객사', e(r.partner||'-'))}${row('부적합 수량', e(ncrN(r.qty) + ' ' + (r.unit||'')), 'LOT·검사 수량', e(r.lotQty ? ncrN(r.lotQty) : '-'))}
+    ${row('불량 유형', e(r.defectType||'-'), '발견자', e(r.finder||'-'))}${big('부적합 내용', r.desc)}</table>
+    <div class="h">② 원인·처리 / Nguyên nhân · Xử lý</div><table>${big('원인 분석', r.cause)}
+    ${row('처리 방법', e(r.disposition||'-'), '처리 수량', e(r.dispQty ? ncrN(r.dispQty) : '-'))}${row('처리일', e(r.dispDate||'-'), '승인자', e(r.approver||'-'))}</table>
+    <div class="h">③ 시정조치·재발방지 / Khắc phục · Phòng ngừa</div><table>${big('시정조치', r.action)}${big('재발방지 대책', r.prevent)}
+    ${row('담당자', e(r.owner||'-'), '조치 기한', e(r.dueDate||'-'))}</table>
+    <div class="h">④ 효과 확인·종결 / Xác nhận · Đóng</div><table>${big('효과 확인', r.verify)}
+    ${row('확인자', e(r.verifier||'-'), '종결일', e(r.closedDate||'-'))}${row('상태', e(r.status||''), '첨부', e((r.files||[]).map(f => f.name).join(', ') || '-'))}</table>
+    <table class="sign"><tr><th style="text-align:center">작성 / Lập</th><th style="text-align:center">검토 / Kiểm tra</th><th style="text-align:center">승인 / Phê duyệt</th></tr><tr><td>${e(r.createdBy||'')}</td><td></td><td></td></tr></table>
+    <div style="color:#888;font-size:9px">출력 ${e(new Date().toLocaleString())} · ERP NCR_LOG</div>
+  </body></html>`);
+  w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch(x){} }, 400);
+}
 // ════════════════════════════════════════════════════════════
 //  🚚 대시보드 — 완제품 출고 현황 (2026-10-31): 월별 출고·매출을 대시보드 맨 위에서 한눈에
 //  - 출고 = 완제품(TP) 출고, 불량(NG) 출고 제외 (제조원가 탭과 같은 기준)
