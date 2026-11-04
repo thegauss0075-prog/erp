@@ -8199,7 +8199,7 @@ function ngmPrint(){
   const tpL = {TP:'완성품 NG', copper:'동선 NG', mat:'원자재 NG'}[NGM.tp] || '전체';
   const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단됐습니다. 팝업을 허용해주세요.'); return; }
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${ngmTitle()} ${NGM.m}</title><style>
-    @page{size:A4 landscape;margin:10mm} body{font-family:'Malgun Gothic','Noto Sans KR',sans-serif;font-size:10.5px;color:#111}
+    @page{size:A4 landscape;margin:0} body{font-family:'Malgun Gothic','Noto Sans KR',sans-serif;font-size:10.5px;color:#111;margin:0;padding:10mm} thead{display:table-header-group} tr{page-break-inside:avoid}
     h1{font-size:16px;margin:0} .sub{color:#555;margin:2px 0 8px} table{width:100%;border-collapse:collapse;margin-bottom:10px} th,td{border:1px solid #555;padding:3px 5px} th{background:#eee} td.r{text-align:right}
     h2{font-size:12px;margin:8px 0 4px} .sign{width:300px;margin-left:auto} .sign td{height:40px}
   </style></head><body>
@@ -8210,7 +8210,7 @@ function ngmPrint(){
       rows.map((r,i) => `<tr><td class="r">${i+1}</td><td>${esc(r.dt)}</td><td>${esc(r.typeL)}</td><td>${esc(r.model)}</td><td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="r">${n(r.qty)}</td><td>${esc(r.unit)}</td><td>${esc(r.reason)}</td><td>${esc(r.note)}</td><td>${esc(r.user)}</td>${ngmDisp() ? '<td style="width:60px"></td><td style="width:60px"></td><td style="width:50px"></td>' : ''}</tr>`).join('')}</tbody></table>
     <h2>품목별 합계</h2><table><thead><tr><th>구분</th><th>모델</th><th>코드</th><th>품명</th><th>건수</th><th>합계 수량</th><th>단위</th>${ngmDisp() ? '<th>현재 불량 재고</th><th>폐기 수량</th><th>폐기일</th><th>확인</th>' : ''}</tr></thead><tbody>${
       Object.values(sum).sort((a,b) => b.qty - a.qty).map(s => `<tr><td>${esc(s.typeL)}</td><td>${esc(s.model)}</td><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td class="r">${s.cnt}</td><td class="r">${n(s.qty)}</td><td>${esc(s.unit)}</td>${ngmDisp() ? `<td class="r">${n(ngmCurNG(s.code))}</td><td style="width:70px"></td><td style="width:70px"></td><td style="width:50px"></td>` : ''}</tr>`).join('')}</tbody></table>
-    <div style="color:#888;font-size:9px">출력 ${esc(new Date().toLocaleString())}</div></body></html>`);
+</body></html>`);
   w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch(x){} }, 400);
 }
 function ngCalc(r){
