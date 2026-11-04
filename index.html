@@ -13900,6 +13900,23 @@ function dsShipUntilDay(ym, day){
   });
   return o;
 }
+// 🏢 업체(출고처)별 (2026-11-04) — 본사(KR)는 임가공비로, 솔루엠비나는 판매가(DDP)로 청구한다
+const DS_CUST = {KR:{name:'더가우스 본사', vi:'THE GAUSS INC. (KR)', col:'#2a78d6'}, SOL:{name:'솔루엠비나', vi:'Solum Vina', col:'#1baf7a'}, ETC:{name:'기타', vi:'Khác', col:'#eda100'}};
+function dsCustKey(dest){ dest = String(dest||''); if (dest === 'KR') return 'KR'; if (/sol|솔루엠/i.test(dest)) return 'SOL'; return dest ? 'ETC' : 'KR'; }
+function dsShipByCust(){
+  const out = {};   // out[ym][cust][code] = qty
+  (txLog||[]).forEach(t => {
+    if (t.type !== 'otp' || String(t.cat||'').toUpperCase() === 'BTP' || t.dest === 'NG') return;
+    const ym = costYM(t.dt); if (!/^\d{4}-\d{2}$/.test(ym)) return;
+    const c = dsCustKey(t.dest), o = ((out[ym] = out[ym] || {})[c] = (out[ym] || {})[c] || {});
+    o[t.code] = (o[t.code]||0) + (+t.qty||0);
+  });
+  return out;
+}
+// 업체별 청구 매출(USD): 본사 = 임가공비 × 수량, 솔루엠·기타 = 판매가 × 수량
+function dsCustRev(cust, byCode, m){
+  return Object.entries(byCode||{}).reduce((a,[c,q]) => { const r = dsRev(c,q,m); a.sale += r.sale; a.fee += r.fee; a.inv += cust === 'KR' ? r.fee : r.sale; a.q += q; return a; }, {sale:0, fee:0, inv:0, q:0});
+}
 function dsCanRev(){ return COST_SERVER_OK === true && Object.keys(COST.model||{}).length > 0; }
 function dsToUSD(v, cur, m){
   v = +v || 0; if (!v) return 0; cur = cur || 'USD';
@@ -13924,7 +13941,7 @@ function renderShipPanel(){
   const now = dsNowYM(); const m = _dsMonth || now; _dsMonth = m;
   const pm = dsShiftYM(m, -1), yr = m.slice(0,4);
   const by = dsShipByMonth();
-  const canRev = dsCanRev(); if (!canRev && _dsMode !== 'qty') _dsMode = 'qty';
+  const canRev = dsCanRev(); if (!canRev && _dsMode === 'rev') _dsMode = 'qty';
   const sumQ = ym => Object.values(by[ym]||{}).reduce((s,v)=>s+v,0);
   const sumR = ym => Object.entries(by[ym]||{}).reduce((a,[c,q]) => { const r = dsRev(c,q,ym); a.sale += r.sale; a.fee += r.fee; return a; }, {sale:0, fee:0});
   const isCurM = m === now, today = +new Date(Date.now() + 7*3600e3).toISOString().slice(8,10);
@@ -13948,26 +13965,31 @@ function renderShipPanel(){
 
   // 12개월 막대 그래프
   const months = []; for (let i = 11; i >= 0; i--) months.push(dsShiftYM(m, -i));
+  const byC = dsShipByCust();
+  const custKeys = ['KR','SOL','ETC'].filter(k => months.some(mm => (byC[mm]||{})[k]));
   const series = _dsMode === 'qty' ? [{k:'q', col:COST_VIZ.bar, lbl:'출고 수량 / SL xuất', v: months.map(sumQ)}]
+    : _dsMode === 'cust' ? custKeys.map(k => ({k, col: DS_CUST[k].col, lbl: DS_CUST[k].name + (canRev ? ' 청구 매출(USD)' : ' 출고'), v: months.map(mm => canRev ? dsCustRev(k, (byC[mm]||{})[k], mm).inv : Object.values((byC[mm]||{})[k]||{}).reduce((a,v)=>a+v,0))}))
     : [{k:'s', col:COST_VIZ.bar, lbl:'본사 매출(USD)', v: months.map(mm => sumR(mm).sale)}, {k:'f', col:COST_VIZ.labor, lbl:'임가공비 매출(USD)', v: months.map(mm => sumR(mm).fee)}];
   const W = 560, H = 200, L = 46, Rg = 8, T = 14, B = 24, iw = W-L-Rg, ih = H-T-B;
+  if (!series.length) series.push({k:'q', col:COST_VIZ.bar, lbl:'출고', v: months.map(() => 0)});
+  const isMoney = _dsMode === 'rev' || (_dsMode === 'cust' && canRev);
   const maxV = costNiceMax(Math.max(1, ...series.flatMap(s => s.v)));
   const y = v => T + ih - v/maxV*ih;
   const slot = iw / months.length, bw = Math.min(26, slot*0.7/series.length);
   let g = '';
-  for (let i=0;i<=4;i++){ const v=maxV*i/4; g += `<line x1="${L}" x2="${W-Rg}" y1="${y(v)}" y2="${y(v)}" stroke="${COST_VIZ.grid}"/><text x="${L-6}" y="${y(v)+3}" font-size="10" text-anchor="end" fill="${COST_VIZ.muted}">${_dsMode==='qty'?'':'$'}${v>=1e6?(v/1e6)+'M':v>=1000?(v/1000)+'k':v}</text>`; }
+  for (let i=0;i<=4;i++){ const v=maxV*i/4; g += `<line x1="${L}" x2="${W-Rg}" y1="${y(v)}" y2="${y(v)}" stroke="${COST_VIZ.grid}"/><text x="${L-6}" y="${y(v)+3}" font-size="10" text-anchor="end" fill="${COST_VIZ.muted}">${isMoney?'$':''}${v>=1e6?(v/1e6)+'M':v>=1000?(v/1000)+'k':v}</text>`; }
   months.forEach((mm, i) => {
     const x0 = L + slot*i + (slot - bw*series.length - (series.length-1)*2)/2;
     const sel = mm === m;
     series.forEach((s, j) => {
       const v = s.v[i], h = (T+ih) - y(v); const x = x0 + j*(bw+2);
       if (h > 0) { const r = Math.min(3, bw/2, h);
-        g += `<path d="M${x},${T+ih} V${y(v)+r} q0,-${r} ${r},-${r} H${x+bw-r} q${r},0 ${r},${r} V${T+ih} Z" fill="${s.col}" opacity="${sel?1:.45}" style="cursor:pointer" onclick="_dsMonth='${mm}';renderShipPanel()"><title>${mm} ${s.lbl}: ${_dsMode==='qty'?n(v)+'개':usd(v)}</title></path>`; }
+        g += `<path d="M${x},${T+ih} V${y(v)+r} q0,-${r} ${r},-${r} H${x+bw-r} q${r},0 ${r},${r} V${T+ih} Z" fill="${s.col}" opacity="${sel?1:.45}" style="cursor:pointer" onclick="_dsMonth='${mm}';renderShipPanel()"><title>${mm} ${s.lbl}: ${isMoney?usd(v):n(v)+'개'}</title></path>`; }
     });
-    if (sel && series[0].v[i]) g += `<text x="${x0 + (bw*series.length)/2}" y="${y(Math.max(...series.map(s=>s.v[i])))-4}" font-size="10" font-weight="600" text-anchor="middle" fill="${COST_VIZ.ink}">${_dsMode==='qty'?n(series[0].v[i]):usd(series[0].v[i])}</text>`;
+    if (sel && series.some(s => s.v[i])) g += `<text x="${x0 + (bw*series.length)/2}" y="${y(Math.max(...series.map(s=>s.v[i])))-4}" font-size="10" font-weight="600" text-anchor="middle" fill="${COST_VIZ.ink}">${series.length > 1 ? (isMoney ? usd(series.reduce((a,s)=>a+s.v[i],0)) : n(series.reduce((a,s)=>a+s.v[i],0))) : (isMoney ? usd(series[0].v[i]) : n(series[0].v[i]))}</text>`;
     g += `<text x="${L + slot*(i+0.5)}" y="${H-7}" font-size="10" text-anchor="middle" fill="${sel?COST_VIZ.ink:COST_VIZ.ink2}" font-weight="${sel?600:400}">${+mm.slice(5)}월</text>`;
   });
-  const modeBtns = canRev ? `<div class="period-btns" style="flex-wrap:nowrap">${[['qty','수량 / SL'],['rev','매출 / DT (USD)']].map(([k,l]) => `<button class="period-btn ${_dsMode===k?'on':''}" onclick="dsSetMode('${k}')">${l}</button>`).join('')}</div>` : '';
+  const modeBtns = `<div class="period-btns" style="flex-wrap:nowrap">${[['qty','수량 / SL'], ...(canRev ? [['rev','매출 / DT (USD)']] : []), ['cust','업체별 / Khách hàng']].map(([k,l]) => `<button class="period-btn ${_dsMode===k?'on':''}" onclick="dsSetMode('${k}')">${l}</button>`).join('')}</div>`;
   const legend = series.length > 1 ? `<div style="display:flex;gap:12px;font-size:11.5px;color:#5D6977;margin-top:2px">${series.map(s=>`<span><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${s.col};margin-right:4px"></i>${s.lbl}</span>`).join('')}</div>` : '';
 
   // 모델별 표
@@ -13981,6 +14003,19 @@ function renderShipPanel(){
       rows.map(r => `<tr><td>${r.name}</td><td style="text-align:right;font-weight:700">${r.q?n(r.q):'-'}</td><td style="text-align:right;color:#5D6977">${r.qp?n(r.qp):'-'}</td><td style="text-align:right;color:#5D6977">${n(r.qy)}</td>${canRev?`<td style="text-align:right">${r.r.sale?usd(r.r.sale):'-'}</td><td style="text-align:right">${r.r.fee?usd(r.r.fee):'-'}</td>`:''}</tr>`).join('')
     }<tr style="font-weight:700;background:#F6F8FA"><td>합계 / Tổng</td><td style="text-align:right">${n(q)}</td><td style="text-align:right">${n(qp)}</td><td style="text-align:right">${n(qy)}</td>${canRev?`<td style="text-align:right">${usd(R.sale)}</td><td style="text-align:right">${usd(R.fee)}</td>`:''}</tr></tbody></table></div>`
     : `<div class="empty">${m} 출고 기록이 없습니다.<br>Không có dữ liệu xuất kho tháng này.</div>`;
+  // 업체별 표
+  const ytdC = {}; ytdMonths.forEach(k => Object.entries(byC[k]||{}).forEach(([c, o]) => { const r = canRev ? dsCustRev(c, o, k) : null; const t = ytdC[c] = ytdC[c] || {q:0, inv:0};
+    t.q += Object.values(o).reduce((a,v)=>a+v,0); if (r) t.inv += r.inv; }));
+  const cAll = ['KR','SOL','ETC'].filter(k => (byC[m]||{})[k] || (byC[pm]||{})[k] || ytdC[k]);
+  const cRows = cAll.map(k => { const cur = dsCustRev(k, (byC[m]||{})[k], m), prv = dsCustRev(k, (byC[pm]||{})[k], pm); return {k, cur, prv, y: ytdC[k] || {q:0, inv:0}}; });
+  const cTot = cRows.reduce((a,r) => ({q:a.q+r.cur.q, inv:a.inv+r.cur.inv, pq:a.pq+r.prv.q, pinv:a.pinv+r.prv.inv, yq:a.yq+r.y.q, yinv:a.yinv+r.y.inv}), {q:0,inv:0,pq:0,pinv:0,yq:0,yinv:0});
+  const custTable = cRows.length ? `<div style="font-size:13px;font-weight:600;margin:0 0 6px">🏢 업체별 / Theo khách hàng</div><div class="tw" style="margin-bottom:12px"><table><thead><tr><th>업체<span class="vi">Khách hàng</span></th><th style="text-align:right">${+m.slice(5)}월 출고<span class="vi">Xuất T${+m.slice(5)}</span></th>${canRev?`<th style="text-align:right">${+m.slice(5)}월 청구 매출<span class="vi">Doanh thu T${+m.slice(5)}</span></th><th style="text-align:right">전월<span class="vi">Tháng trước</span></th>`:'<th style="text-align:right">전월<span class="vi">Tháng trước</span></th>'}<th style="text-align:right">${yr} 누계<span class="vi">Lũy kế</span></th>${canRev?'<th style="text-align:right">비중<span class="vi">Tỷ trọng</span></th>':''}</tr></thead><tbody>${
+      cRows.map(r => `<tr><td><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${DS_CUST[r.k].col};margin-right:6px"></i>${DS_CUST[r.k].name}<span class="vi">${DS_CUST[r.k].vi}${canRev?` · ${r.k==='KR'?'임가공비 청구':'판매가 청구'}`:''}</span></td>
+        <td style="text-align:right;font-weight:700">${r.cur.q?n(r.cur.q):'-'}</td>
+        ${canRev?`<td style="text-align:right;font-weight:700">${r.cur.inv?usd(r.cur.inv):'-'}</td><td style="text-align:right;color:#5D6977">${r.prv.inv?usd(r.prv.inv):'-'}</td>`:`<td style="text-align:right;color:#5D6977">${r.prv.q?n(r.prv.q):'-'}</td>`}
+        <td style="text-align:right;color:#5D6977">${canRev?usd(r.y.inv):n(r.y.q)}</td>
+        ${canRev?`<td style="text-align:right;color:#5D6977">${cTot.inv?Math.round(r.cur.inv/cTot.inv*100)+'%':'-'}</td>`:''}</tr>`).join('')
+    }<tr style="font-weight:700;background:#F6F8FA"><td>합계 / Tổng</td><td style="text-align:right">${n(cTot.q)}</td>${canRev?`<td style="text-align:right">${usd(cTot.inv)}</td><td style="text-align:right">${usd(cTot.pinv)}</td>`:`<td style="text-align:right">${n(cTot.pq)}</td>`}<td style="text-align:right">${canRev?usd(cTot.yinv):n(cTot.yq)}</td>${canRev?'<td></td>':''}</tr></tbody></table></div>` : '';
   const revNote = canRev
     ? `<div style="font-size:11px;color:#8A95A3;margin-top:6px">매출 = 출고 수량 × 판매가·임가공비 (제조원가 탭 ② 모델 정보 기준)${noPrice.length?` · ⚠️ 판매가 없음: ${noPrice.join(', ')}`:''}</div>`
     : (USER_ROLE === 'viewer' && COST_SERVER_OK === 'auth' ? `<div style="font-size:11px;color:#8A95A3;margin-top:6px">매출은 💰 제조원가 탭에서 조회 비밀번호를 입력하면 함께 표시됩니다.</div>` : '');
@@ -13999,7 +14034,7 @@ function renderShipPanel(){
     <div class="ds-body">
       <div class="ds-chart"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px"><div style="font-size:13px;font-weight:600">최근 12개월 / 12 tháng gần nhất<div style="font-weight:400;color:#8A95A3;font-size:11.5px">막대를 누르면 그 달로 이동 / Bấm cột để xem tháng đó</div></div>${modeBtns}</div>
         <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="최근 12개월 완제품 출고">${g}</svg>${legend}</div>
-      <div class="ds-table">${table}${revNote}</div>
+      <div class="ds-table">${custTable}${table}${revNote}${canRev && cRows.length ? '<div style="font-size:11px;color:#8A95A3;margin-top:2px">청구 매출 = 법인이 실제로 청구하는 금액 — 본사(KR)는 임가공비, 솔루엠비나는 판매가(DDP)</div>' : ''}</div>
     </div>`;
 }
 // ════════════════════════════════════════════════════════════
