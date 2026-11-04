@@ -8128,6 +8128,7 @@ function initNGModel(){
 function ngF(v){ v=Math.round((+v||0)*100)/100; return v ? (v%1 ? v.toFixed(2) : v.toLocaleString()) : '<span class="dim">—</span>'; }
 // 📅 월별 불량 입고내역 (2026-11-04) — 한 달 동안 불량(NG) 창고로 들어온 기록만 모아 인쇄·엑셀
 let NGM = {m: null, tp: '', kind: 'in', rs: '폐기', disp: true};   // kind: in=불량 입고내역, out=폐기관리 대장(불량 출고)
+function ngmUnitSum(rows){ const u = {}; rows.forEach(r => { u[r.unit || ''] = (u[r.unit || ''] || 0) + r.qty; }); return Object.entries(u).map(([k,v]) => `${(Math.round(v*1000)/1000).toLocaleString()} ${k}`).join(' / '); }
 function ngmDisp(){ return NGM.kind === 'in' && NGM.disp; }   // 불량 입고내역에 손으로 적는 폐기란(폐기 수량·폐기일·확인) 붙이기
 function ngmCurNG(code){ const it = (DB.ng||[]).find(r => r.code === code); return it ? +it.cur || 0 : 0; }
 function ngmTitle(){ return NGM.kind === 'out' ? (NGM.rs === '폐기' ? '폐기관리 대장' : '불량 출고 대장') : '불량 입고내역'; }
@@ -8172,12 +8173,10 @@ function renderNGMonth(){
         <button onclick="ngmExcel()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer">📊 엑셀</button>
         <button onclick="document.getElementById('ngm-ov').remove()" style="padding:7px 12px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
       </div></div>
-    ${rows.length ? `<div style="font-size:13px;color:#5D6977;margin-bottom:6px">${rows.length}건 · 품목 ${sums.length}개</div>
+    ${rows.length ? `<div style="font-size:13px;color:#5D6977;margin-bottom:6px">${rows.length}건 · 수량 합계 ${ngmUnitSum(rows)}</div>
     <div class="tw"><table><thead><tr><th>일시<span class="vi">Ngày</span></th><th>구분<span class="vi">Loại</span></th><th>모델</th><th>코드</th><th>품명<span class="vi">Tên</span></th><th style="text-align:right">수량<span class="vi">SL</span></th><th>단위</th><th>${NGM.kind === 'out' ? '출고 사유' : '사유'}<span class="vi">Lý do</span></th><th>비고</th><th>등록자</th>${ngmDisp() ? '<th style="background:#FEF3C7">폐기 수량</th><th style="background:#FEF3C7">폐기일</th><th style="background:#FEF3C7">확인</th>' : ''}</tr></thead><tbody>${
       rows.map(r => `<tr><td style="white-space:nowrap">${esc(r.dt)}</td><td style="white-space:nowrap">${esc(r.typeL)}</td><td>${esc(r.model)}</td><td style="font-family:monospace;font-size:12px">${esc(r.code)}</td><td>${esc(r.name)}</td><td style="text-align:right;font-weight:700">${n(r.qty)}</td><td>${esc(r.unit)}</td><td style="white-space:normal">${esc(r.reason)}</td><td style="white-space:normal;color:#5D6977">${esc(r.note)}</td><td>${esc(r.user)}</td>${ngmDisp() ? '<td style="background:#FFFBEB"></td><td style="background:#FFFBEB"></td><td style="background:#FFFBEB"></td>' : ''}</tr>`).join('')}</tbody></table></div>
-    <div style="font-size:13px;font-weight:600;margin:14px 0 6px">품목별 합계 / Tổng theo mã</div>
-    <div class="tw"><table><thead><tr><th>구분</th><th>모델</th><th>코드</th><th>품명</th><th style="text-align:right">건수</th><th style="text-align:right">합계 수량</th><th>단위</th></tr></thead><tbody>${
-      sums.map(s => `<tr><td>${esc(s.typeL)}</td><td>${esc(s.model)}</td><td style="font-family:monospace;font-size:12px">${esc(s.code)}</td><td>${esc(s.name)}</td><td style="text-align:right">${s.cnt}</td><td style="text-align:right;font-weight:700">${n(s.qty)}</td><td>${esc(s.unit)}</td></tr>`).join('')}</tbody></table></div>`
+`
     : `<div class="empty">${NGM.m} ${NGM.kind === 'out' ? (NGM.rs === '폐기' ? '폐기' : '불량 출고') : '불량 입고'} 기록이 없습니다.<br>Không có dữ liệu tháng này.</div>`}
   </div>`;
 }
@@ -8189,7 +8188,7 @@ function ngmExcel(){
   const sum = {}; rows.forEach(r => { (sum[r.code] = sum[r.code] || {'구분': r.typeL, '모델': r.model, '코드': r.code, '품명': r.name, '건수': 0, '합계 수량': 0, '단위': r.unit}); sum[r.code]['건수']++; sum[r.code]['합계 수량'] += r.qty; });
   const ws2 = XLSX.utils.json_to_sheet(Object.values(sum).sort((a,b) => b['합계 수량'] - a['합계 수량']).map(x => ngmDisp() ? {...x, '현재 불량 재고': ngmCurNG(x['코드']), '폐기 수량': '', '폐기일': '', '확인': ''} : x));
   ws2['!cols'] = [{wch:11},{wch:14},{wch:18},{wch:30},{wch:7},{wch:10},{wch:6}];
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, ngmTitle()); XLSX.utils.book_append_sheet(wb, ws2, '품목별 합계');
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, ngmTitle()); 
   XLSX.writeFile(wb, `${ngmTitle().replace(/ /g,'')}_${NGM.m.replace('-','')}${NGM.tp ? '_' + NGM.tp : ''}.xlsx`);
 }
 function ngmPrint(){
@@ -8203,13 +8202,12 @@ function ngmPrint(){
     h1{font-size:16px;margin:0} .sub{color:#555;margin:2px 0 8px} table{width:100%;border-collapse:collapse;margin-bottom:10px} th,td{border:1px solid #555;padding:3px 5px} th{background:#eee} td.r{text-align:right}
     h2{font-size:12px;margin:8px 0 4px} .sign{width:300px;margin-left:auto} .sign td{height:40px}
   </style></head><body>
-    <div style="display:flex;justify-content:space-between;align-items:flex-end"><div><h1>${ngmTitle()} / ${ngmTitleVi()} — ${NGM.m.slice(0,4)}년 ${+NGM.m.slice(5)}월</h1><div class="sub">THE GAUSS VINA CO., LTD · 구분: ${tpL} · ${rows.length}건</div></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end"><div><h1>${ngmTitle()} / ${ngmTitleVi()} — ${NGM.m.slice(0,4)}년 ${+NGM.m.slice(5)}월</h1><div class="sub">THE GAUSS VINA CO., LTD · 구분: ${tpL} · ${rows.length}건 · 수량 합계 ${ngmUnitSum(rows)}</div></div>
     <table class="sign"><tr><th>작성</th><th>검토</th><th>승인</th></tr><tr><td></td><td></td><td></td></tr></table></div>
     ${ngmDisp() || (NGM.kind === 'out' && NGM.rs === '폐기') ? '<div style="font-size:10px;color:#555;margin-bottom:4px">폐기 방법·업체: ____________________ &nbsp; 폐기일: __________ &nbsp; 입회자: __________</div>' : ''}
     <table><thead><tr><th>No</th><th>일시</th><th>구분</th><th>모델</th><th>코드</th><th>품명</th><th>수량</th><th>단위</th><th>${NGM.kind === 'out' ? '출고 사유' : '사유'}</th><th>비고</th><th>등록자</th>${ngmDisp() ? '<th>폐기 수량</th><th>폐기일</th><th>확인</th>' : ''}</tr></thead><tbody>${
       rows.map((r,i) => `<tr><td class="r">${i+1}</td><td>${esc(r.dt)}</td><td>${esc(r.typeL)}</td><td>${esc(r.model)}</td><td>${esc(r.code)}</td><td class="w">${esc(r.name)}</td><td class="r">${n(r.qty)}</td><td>${esc(r.unit)}</td><td class="w">${esc(r.reason)}</td><td class="w">${esc(r.note)}</td><td>${esc(r.user)}</td>${ngmDisp() ? '<td style="width:60px"></td><td style="width:60px"></td><td style="width:50px"></td>' : ''}</tr>`).join('')}</tbody></table>
-    <div class="sum"><h2>품목별 합계</h2><table><thead><tr><th>구분</th><th>모델</th><th>코드</th><th>품명</th><th>건수</th><th>합계 수량</th><th>단위</th>${ngmDisp() ? '<th>현재 불량 재고</th><th>폐기 수량</th><th>폐기일</th><th>확인</th>' : ''}</tr></thead><tbody>${
-      Object.values(sum).sort((a,b) => b.qty - a.qty).map(s => `<tr><td>${esc(s.typeL)}</td><td>${esc(s.model)}</td><td>${esc(s.code)}</td><td class="w">${esc(s.name)}</td><td class="r">${s.cnt}</td><td class="r">${n(s.qty)}</td><td>${esc(s.unit)}</td>${ngmDisp() ? `<td class="r">${n(ngmCurNG(s.code))}</td><td style="width:70px"></td><td style="width:70px"></td><td style="width:50px"></td>` : ''}</tr>`).join('')}</tbody></table></div>
+
 </body></html>`);
   w.document.close();
   // ✅ 한 장에 들어갈 만큼이면 살짝 줄여서 한 장에 맞춘다 (마지막 몇 줄만 다음 장으로 넘어가 잘리는 것 방지).
