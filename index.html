@@ -8199,7 +8199,7 @@ function ngmPrint(){
   const tpL = {TP:'완성품 NG', copper:'동선 NG', mat:'원자재 NG'}[NGM.tp] || '전체';
   const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단됐습니다. 팝업을 허용해주세요.'); return; }
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${ngmTitle()} ${NGM.m}</title><style>
-    @page{size:A4 landscape;margin:0} body{font-family:'Malgun Gothic','Noto Sans KR',sans-serif;font-size:10.5px;color:#111;margin:0;padding:10mm} thead{display:table-header-group} tr{page-break-inside:avoid}
+    @page{size:A4 landscape;margin:0} body{font-family:'Malgun Gothic','Noto Sans KR',sans-serif;font-size:10.5px;color:#111;margin:0;padding:10mm;width:297mm;box-sizing:border-box} thead{display:table-header-group} tr{page-break-inside:avoid} .sum{page-break-inside:avoid} td{white-space:nowrap} td.w{white-space:normal}
     h1{font-size:16px;margin:0} .sub{color:#555;margin:2px 0 8px} table{width:100%;border-collapse:collapse;margin-bottom:10px} th,td{border:1px solid #555;padding:3px 5px} th{background:#eee} td.r{text-align:right}
     h2{font-size:12px;margin:8px 0 4px} .sign{width:300px;margin-left:auto} .sign td{height:40px}
   </style></head><body>
@@ -8207,11 +8207,19 @@ function ngmPrint(){
     <table class="sign"><tr><th>작성</th><th>검토</th><th>승인</th></tr><tr><td></td><td></td><td></td></tr></table></div>
     ${ngmDisp() || (NGM.kind === 'out' && NGM.rs === '폐기') ? '<div style="font-size:10px;color:#555;margin-bottom:4px">폐기 방법·업체: ____________________ &nbsp; 폐기일: __________ &nbsp; 입회자: __________</div>' : ''}
     <table><thead><tr><th>No</th><th>일시</th><th>구분</th><th>모델</th><th>코드</th><th>품명</th><th>수량</th><th>단위</th><th>${NGM.kind === 'out' ? '출고 사유' : '사유'}</th><th>비고</th><th>등록자</th>${ngmDisp() ? '<th>폐기 수량</th><th>폐기일</th><th>확인</th>' : ''}</tr></thead><tbody>${
-      rows.map((r,i) => `<tr><td class="r">${i+1}</td><td>${esc(r.dt)}</td><td>${esc(r.typeL)}</td><td>${esc(r.model)}</td><td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="r">${n(r.qty)}</td><td>${esc(r.unit)}</td><td>${esc(r.reason)}</td><td>${esc(r.note)}</td><td>${esc(r.user)}</td>${ngmDisp() ? '<td style="width:60px"></td><td style="width:60px"></td><td style="width:50px"></td>' : ''}</tr>`).join('')}</tbody></table>
-    <h2>품목별 합계</h2><table><thead><tr><th>구분</th><th>모델</th><th>코드</th><th>품명</th><th>건수</th><th>합계 수량</th><th>단위</th>${ngmDisp() ? '<th>현재 불량 재고</th><th>폐기 수량</th><th>폐기일</th><th>확인</th>' : ''}</tr></thead><tbody>${
-      Object.values(sum).sort((a,b) => b.qty - a.qty).map(s => `<tr><td>${esc(s.typeL)}</td><td>${esc(s.model)}</td><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td class="r">${s.cnt}</td><td class="r">${n(s.qty)}</td><td>${esc(s.unit)}</td>${ngmDisp() ? `<td class="r">${n(ngmCurNG(s.code))}</td><td style="width:70px"></td><td style="width:70px"></td><td style="width:50px"></td>` : ''}</tr>`).join('')}</tbody></table>
+      rows.map((r,i) => `<tr><td class="r">${i+1}</td><td>${esc(r.dt)}</td><td>${esc(r.typeL)}</td><td>${esc(r.model)}</td><td>${esc(r.code)}</td><td class="w">${esc(r.name)}</td><td class="r">${n(r.qty)}</td><td>${esc(r.unit)}</td><td class="w">${esc(r.reason)}</td><td class="w">${esc(r.note)}</td><td>${esc(r.user)}</td>${ngmDisp() ? '<td style="width:60px"></td><td style="width:60px"></td><td style="width:50px"></td>' : ''}</tr>`).join('')}</tbody></table>
+    <div class="sum"><h2>품목별 합계</h2><table><thead><tr><th>구분</th><th>모델</th><th>코드</th><th>품명</th><th>건수</th><th>합계 수량</th><th>단위</th>${ngmDisp() ? '<th>현재 불량 재고</th><th>폐기 수량</th><th>폐기일</th><th>확인</th>' : ''}</tr></thead><tbody>${
+      Object.values(sum).sort((a,b) => b.qty - a.qty).map(s => `<tr><td>${esc(s.typeL)}</td><td>${esc(s.model)}</td><td>${esc(s.code)}</td><td class="w">${esc(s.name)}</td><td class="r">${s.cnt}</td><td class="r">${n(s.qty)}</td><td>${esc(s.unit)}</td>${ngmDisp() ? `<td class="r">${n(ngmCurNG(s.code))}</td><td style="width:70px"></td><td style="width:70px"></td><td style="width:50px"></td>` : ''}</tr>`).join('')}</tbody></table></div>
 </body></html>`);
-  w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch(x){} }, 400);
+  w.document.close();
+  // ✅ 한 장에 들어갈 만큼이면 살짝 줄여서 한 장에 맞춘다 (마지막 몇 줄만 다음 장으로 넘어가 잘리는 것 방지).
+  //    너무 길면(70%보다 더 줄여야 하면) 그대로 여러 장으로 출력하되, 합계 표는 쪼개지지 않게 한다.
+  setTimeout(() => { try {
+    const d = w.document, pageH = (210 / 25.4 * 96) * 0.95, body = d.body;   // 여유 5%   // A4 가로 높이(px)
+    const h = body.scrollHeight;
+    if (h > pageH) { const z = pageH / h; if (z >= 0.7) body.style.zoom = String(Math.floor(z * 1000) / 1000); }
+    w.focus(); w.print();
+  } catch(x){} }, 400);
 }
 function ngCalc(r){
   const now = new Date(Date.now() + 7*3600e3);
