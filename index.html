@@ -5765,18 +5765,19 @@ function renderBOMBrowse() {
   let pool = allRows().filter(r => r.cat !== 'TP' && !already.has(r.code + '|' + r.cat));
   // ✅ 반제품(BTP)은 권선 공정이라 실제로 필요한 자재가 COIL뿐이다. 다른 부자재까지
   //    다 보여주면 찾기 번거로우니, 반제품 지시서일 땐 COIL만 목록에 남긴다.
-  if (woTraceTarget.cat === 'BTP') {
+  //    ✅ [2026-11-04] 단, 검색어를 넣으면 전체 자재에서 찾는다 (PCDU처럼 COIL 외 자재가 들어가는 반제품)
+  if (woTraceTarget.cat === 'BTP' && !q) {
     pool = pool.filter(r => r.name.toUpperCase().includes('COIL'));
   }
   const filtered = q ? pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) : pool;
   const list = filtered.slice(0, 200);
   const container = document.getElementById('bom-browse-list');
   if (!list.length) {
-    const emptyMsg = q ? '검색 결과가 없습니다.' : (woTraceTarget.cat === 'BTP' ? 'COIL 자재가 없습니다 (전부 이미 설정됨).' : '추가할 수 있는 자재가 없습니다 (전부 이미 설정됨).');
+    const emptyMsg = q ? '검색 결과가 없습니다.' : (woTraceTarget.cat === 'BTP' ? 'COIL 자재가 없습니다 (전부 이미 설정됨). 다른 자재는 위에서 검색하세요.' : '추가할 수 있는 자재가 없습니다 (전부 이미 설정됨).');
     container.innerHTML = `<div style="color:#aaa;font-size:11px;padding:6px 2px">${emptyMsg}</div>`;
     return;
   }
-  container.innerHTML = list.map(r => `
+  container.innerHTML = (woTraceTarget.cat === 'BTP' && !q ? '<div style="color:#5D6977;font-size:11px;padding:2px 2px 4px">COIL만 표시 중 — 다른 자재(동판·부자재 등)는 위 검색창에 입력하면 나옵니다</div>' : '') + list.map(r => `
     <div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #e0e7ff;font-size:12px">
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.name} (${r.code})">${r.name} <span style="color:#aaa;font-family:monospace;font-size:10px">${r.code}</span></span>
       <input class="bomb-qty" data-code="${r.code}" data-cat="${r.cat}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" type="number" placeholder="1개당 소요량" style="width:90px;font-size:11px">
@@ -6282,8 +6283,10 @@ function renderWOMatBrowse() {
   let pool = allRows().filter(r => r.cat !== 'TP' && (+r.cur || 0) > 0);
   // ✅ 반제품(BTP) 지시서는 권선 공정이라 실제로 쓰는 자재가 COIL뿐이다. 다른 부자재까지
   //    섞여 나오면 찾기 번거로우니, 반제품일 땐 COIL만 목록에 남긴다.
-  if (woTraceTarget && woTraceTarget.cat === 'BTP') {
-    pool = pool.filter(r => r.name.toUpperCase().includes('COIL'));
+  //    ✅ [2026-11-04] 검색어를 넣었거나 이 제품 BOM에 등록된 자재면 COIL이 아니어도 보여준다
+  if (woTraceTarget && woTraceTarget.cat === 'BTP' && !q) {
+    const inBom = new Set((BOM||[]).filter(b => b.productCode === woTraceTarget.code && effectiveBOMCat(b) === 'BTP').map(b => b.materialCode));
+    pool = pool.filter(r => r.name.toUpperCase().includes('COIL') || inBom.has(r.code));
   }
   let filtered = q ? pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)) : pool;
   if (filledOnly) {
