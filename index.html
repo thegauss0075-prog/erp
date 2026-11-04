@@ -8137,15 +8137,26 @@ function ngmYM(dt){
 }
 function ngmDate(dt){ const s = String(dt||''); if (/^\d{2}\/\d{2}/.test(s)) return s.slice(0,11); const d = new Date(s); if (isNaN(d)) return s;
   const v = new Date(d.getTime() + 7*3600e3).toISOString(); return v.slice(5,10).replace('-','/') + ' ' + v.slice(11,16); }
+// 폐기 기록(재고 미차감): 실제 폐기했지만 불량 재고 정리는 나중에 하는 건 — 서버 SCRAP_LOG에 따로 저장, 재고는 건드리지 않는다
+let SCRAP = [], _scrapLoaded = false;
+async function loadScrap(){ if (!(API_URL || IS_GAS)) return; const r = await api('getScrap', {}); if (r && r.ok) { SCRAP = r.data || []; _scrapLoaded = true; } }
+function ngmScrapRows(){
+  if (NGM.kind !== 'out' || !(NGM.rs === '폐기' || NGM.rs === '')) return [];
+  const tl = {TP:'완성품 NG', copper:'동선 NG', mat:'원자재 NG'};
+  return SCRAP.filter(r => String(r.date||'').slice(0,7) === NGM.m && (!NGM.tp || r.type === NGM.tp)).map(r => ({
+    dt: String(r.date||'').slice(5).replace('-','/'), id: Date.parse(r.date + 'T12:00:00') || 0, type: r.type || '', typeL: tl[r.type] || '', model: r.model || '', code: r.code, name: r.name || '',
+    qty: +r.qty || 0, unit: r.unit || '', reason: '폐기 / Tiêu hủy' + (r.method ? ' · ' + r.method : ''), note: r.note || '', user: r.user || '', noStock: true, scrapId: r.id}));
+}
 function ngmRows(){
   const tl = {TP:'완성품 NG', copper:'동선 NG', mat:'원자재 NG'};
-  return (ngLog||[]).filter(l => (NGM.kind === 'out' ? l.type === 'ng-out' && (!NGM.rs || String(l.reason||'').startsWith(NGM.rs)) : l.type === 'ng-in') && ngmYM(l.dt) === NGM.m).map(l => {
+  return ngmScrapRows().concat((ngLog||[]).filter(l => (NGM.kind === 'out' ? l.type === 'ng-out' && (!NGM.rs || String(l.reason||'').startsWith(NGM.rs)) : l.type === 'ng-in') && ngmYM(l.dt) === NGM.m).map(l => {
     const it = (DB.ng||[]).find(r => r.code === l.code) || {};
-    return {dt: ngmDate(l.dt), id: +l.id || 0, type: it.type || '', typeL: tl[it.type] || l.cat || '', model: it.model || '', code: l.code, name: l.name || it.name || '', qty: +l.qty || 0, unit: l.unit || it.unit || '', reason: l.reason || '', note: l.note || '', user: l.user || ''};
-  }).filter(r => !NGM.tp || r.type === NGM.tp).sort((a,b) => a.id - b.id);
+    return {dt: ngmDate(l.dt), id: Date.parse(l.dt) || +l.id || 0, type: it.type || '', typeL: tl[it.type] || l.cat || '', model: it.model || '', code: l.code, name: l.name || it.name || '', qty: +l.qty || 0, unit: l.unit || it.unit || '', reason: l.reason || '', note: l.note || '', user: l.user || ''};
+  }).filter(r => !NGM.tp || r.type === NGM.tp)).sort((a,b) => a.id - b.id);
 }
-function openNGMonth(kind){
+async function openNGMonth(kind){
   NGM.kind = kind === 'out' ? 'out' : 'in';
+  if (NGM.kind === 'out' && !_scrapLoaded) { try { await loadScrap(); } catch(e) {} }
   if (!NGM.m) NGM.m = new Date(Date.now() + 7*3600e3).toISOString().slice(0,7);
   let o = document.getElementById('ngm-ov');
   if (!o) { o = document.createElement('div'); o.id = 'ngm-ov'; o.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9990;display:flex;align-items:center;justify-content:center;padding:14px';
@@ -8165,23 +8176,61 @@ function renderNGMonth(){
         <button class="period-btn" onclick="ngmShift(-1)">‹</button><strong>${NGM.m.slice(0,4)}년 ${+NGM.m.slice(5)}월</strong><button class="period-btn" onclick="ngmShift(1)">›</button>
         <select onchange="NGM.tp=this.value;renderNGMonth()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px"><option value="">전체 / Tất cả</option>${[['TP','완성품 NG'],['copper','동선 NG'],['mat','원자재 NG']].map(([k,l]) => `<option value="${k}" ${NGM.tp===k?'selected':''}>${l}</option>`).join('')}</select>
         ${NGM.kind === 'out' ? `<select onchange="NGM.rs=this.value;renderNGMonth()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px">${[['폐기','폐기만 / Tiêu hủy'],['','출고 사유 전체'],['재가공','재가공'],['반품','반품(한국)'],['기타','기타']].map(([k,l]) => `<option value="${k}" ${NGM.rs===k?'selected':''}>${l}</option>`).join('')}</select>` : ''}
+        ${NGM.kind === 'out' ? `<button onclick="ngmScrapForm()" style="padding:7px 14px;border-radius:8px;border:1px solid #92400e;background:#fff;color:#92400e;font-weight:600;cursor:pointer">➕ 폐기 기록 (재고 유지)</button>` : ''}
         <button onclick="ngmPrint()" style="padding:7px 14px;border-radius:8px;border:1px solid #991b1b;background:#991b1b;color:#fff;font-weight:600;cursor:pointer">🖨️ 인쇄 / In</button>
         <button onclick="ngmExcel()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer">📊 엑셀</button>
         <button onclick="document.getElementById('ngm-ov').remove()" style="padding:7px 12px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
       </div></div>
+    <div id="ngm-form"></div>
     ${rows.length ? `<div style="font-size:13px;color:#5D6977;margin-bottom:6px">${rows.length}건 · 품목 ${sums.length}개</div>
-    <div class="tw"><table><thead><tr><th>일시<span class="vi">Ngày</span></th><th>구분<span class="vi">Loại</span></th><th>모델</th><th>코드</th><th>품명<span class="vi">Tên</span></th><th style="text-align:right">수량<span class="vi">SL</span></th><th>단위</th><th>${NGM.kind === 'out' ? '출고 사유' : '사유'}<span class="vi">Lý do</span></th><th>비고</th><th>등록자</th></tr></thead><tbody>${
-      rows.map(r => `<tr><td style="white-space:nowrap">${esc(r.dt)}</td><td style="white-space:nowrap">${esc(r.typeL)}</td><td>${esc(r.model)}</td><td style="font-family:monospace;font-size:12px">${esc(r.code)}</td><td>${esc(r.name)}</td><td style="text-align:right;font-weight:700">${n(r.qty)}</td><td>${esc(r.unit)}</td><td style="white-space:normal">${esc(r.reason)}</td><td style="white-space:normal;color:#5D6977">${esc(r.note)}</td><td>${esc(r.user)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="tw"><table><thead><tr><th>일시<span class="vi">Ngày</span></th><th>구분<span class="vi">Loại</span></th><th>모델</th><th>코드</th><th>품명<span class="vi">Tên</span></th><th style="text-align:right">수량<span class="vi">SL</span></th><th>단위</th><th>${NGM.kind === 'out' ? '출고 사유' : '사유'}<span class="vi">Lý do</span></th><th>비고</th><th>등록자</th>${NGM.kind === 'out' ? '<th>재고 반영<span class="vi">Trừ tồn</span></th>' : ''}</tr></thead><tbody>${
+      rows.map(r => `<tr><td style="white-space:nowrap">${esc(r.dt)}</td><td style="white-space:nowrap">${esc(r.typeL)}</td><td>${esc(r.model)}</td><td style="font-family:monospace;font-size:12px">${esc(r.code)}</td><td>${esc(r.name)}</td><td style="text-align:right;font-weight:700">${n(r.qty)}</td><td>${esc(r.unit)}</td><td style="white-space:normal">${esc(r.reason)}</td><td style="white-space:normal;color:#5D6977">${esc(r.note)}</td><td>${esc(r.user)}</td>${NGM.kind === 'out' ? `<td style="white-space:nowrap">${r.noStock ? `<span style="color:#b45309;font-weight:600">미차감</span>${isAdmin ? ` <button onclick="ngmScrapDel('${r.scrapId}')" title="폐기 기록 삭제" style="border:none;background:none;color:#b91c1c;cursor:pointer">🗑</button>` : ''}` : '<span style="color:#166534">차감</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>
+    ${NGM.kind === 'out' && rows.some(r => r.noStock) ? `<div style="font-size:12px;color:#b45309;margin-top:6px">⚠️ 재고 미차감 ${rows.filter(r => r.noStock).length}건 — 실제 폐기했지만 불량 재고는 아직 그대로입니다. 불량 재고와 차이: ${Object.values(rows.filter(r => r.noStock).reduce((a,r) => { (a[r.code] = a[r.code] || {name:r.name, q:0, u:r.unit}).q += r.qty; return a; }, {})).map(x => `${esc(x.name)} ${n(x.q)} ${esc(x.u)}`).join(', ')}</div>` : ''}
     <div style="font-size:13px;font-weight:600;margin:14px 0 6px">품목별 합계 / Tổng theo mã</div>
     <div class="tw"><table><thead><tr><th>구분</th><th>모델</th><th>코드</th><th>품명</th><th style="text-align:right">건수</th><th style="text-align:right">합계 수량</th><th>단위</th></tr></thead><tbody>${
       sums.map(s => `<tr><td>${esc(s.typeL)}</td><td>${esc(s.model)}</td><td style="font-family:monospace;font-size:12px">${esc(s.code)}</td><td>${esc(s.name)}</td><td style="text-align:right">${s.cnt}</td><td style="text-align:right;font-weight:700">${n(s.qty)}</td><td>${esc(s.unit)}</td></tr>`).join('')}</tbody></table></div>`
     : `<div class="empty">${NGM.m} ${NGM.kind === 'out' ? (NGM.rs === '폐기' ? '폐기' : '불량 출고') : '불량 입고'} 기록이 없습니다.<br>Không có dữ liệu tháng này.</div>`}
   </div>`;
 }
+function ngmScrapForm(){
+  const f = document.getElementById('ngm-form'); if (!f) return;
+  if (!ADMIN_TOKEN) { alert('로그인(직원 이상) 후 등록할 수 있습니다.'); return; }
+  const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const items = (DB.ng||[]).filter(r => r.active !== false).sort((a,b) => String(a.model||'').localeCompare(String(b.model||'')) || String(a.name).localeCompare(String(b.name)));
+  const today = new Date(Date.now() + 7*3600e3).toISOString().slice(0,10);
+  const st = 'padding:6px 8px;border:1px solid #DCE1E7;border-radius:7px;font-size:13px';
+  f.innerHTML = `<div style="background:#FFFBEB;border:1px solid #FCD34D;border-radius:10px;padding:12px;margin-bottom:12px">
+    <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:8px">➕ 폐기 기록 (불량 재고는 그대로) / Ghi nhận tiêu hủy (không trừ tồn)</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <label style="font-size:12px">폐기일<br><input id="sc-date" type="date" value="${NGM.m === today.slice(0,7) ? today : NGM.m + '-01'}" style="${st}"></label>
+      <label style="font-size:12px;flex:1;min-width:240px">불량 품목<br><select id="sc-item" style="${st};width:100%"><option value="">선택 / Chọn</option>${items.map(r => `<option value="${esc(r.code)}">[${esc(r.model||'기타')}] ${esc(r.name)} (${esc(r.code)}) · 재고 ${(+r.cur||0).toLocaleString()} ${esc(r.unit||'')}</option>`).join('')}</select></label>
+      <label style="font-size:12px">수량<br><input id="sc-qty" type="number" min="0" step="0.01" style="${st};width:100px"></label>
+      <label style="font-size:12px">폐기 방법·업체<br><input id="sc-method" placeholder="예: 소각 / 스크랩 업체" style="${st};width:170px"></label>
+      <label style="font-size:12px">비고<br><input id="sc-note" style="${st};width:160px"></label>
+      <button onclick="ngmScrapSave()" style="padding:7px 14px;border-radius:8px;border:1px solid #92400e;background:#92400e;color:#fff;font-weight:600;cursor:pointer">저장</button>
+      <button onclick="document.getElementById('ngm-form').innerHTML=''" style="padding:7px 10px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button>
+    </div><div id="sc-err" style="color:#b91c1c;font-size:12px;margin-top:6px"></div></div>`;
+}
+async function ngmScrapSave(){
+  const v = id => (document.getElementById(id).value || '').trim(), err = document.getElementById('sc-err');
+  const it = (DB.ng||[]).find(r => r.code === v('sc-item')), qty = parseFloat(v('sc-qty'));
+  if (!v('sc-date') || !it || !(qty > 0)) { err.textContent = '폐기일·품목·수량을 넣어주세요.'; return; }
+  const rec = {id: String(Date.now()), date: v('sc-date'), code: it.code, name: it.name, type: it.type, model: it.model || '', unit: it.unit || '', qty, method: v('sc-method'), note: v('sc-note'), user: CURRENT_USER || '', createdAt: new Date().toISOString()};
+  const res = await retrySafe(() => api('saveScrap', {rec}));
+  if (!res || !res.ok) { err.textContent = '저장 실패: ' + ((res && res.error) || '알 수 없는 오류') + (String(res && res.error || '').includes('unknown action') ? ' — Apps Script(Code.gs)를 새 버전으로 배포해야 합니다.' : ''); return; }
+  SCRAP.push(rec); NGM.m = rec.date.slice(0,7); NGM.rs = '폐기'; renderNGMonth();
+}
+async function ngmScrapDel(id){
+  const r = SCRAP.find(x => String(x.id) === String(id)); if (!r) return;
+  if (!confirm(`폐기 기록을 삭제할까요?\n${r.date} ${r.name} ${r.qty} ${r.unit||''}`)) return;
+  const res = await retrySafe(() => api('deleteScrap', {id}));
+  if (!res || !res.ok) { alert('삭제 실패: ' + ((res && res.error) || '')); return; }
+  SCRAP = SCRAP.filter(x => String(x.id) !== String(id)); renderNGMonth();
+}
 function ngmExcel(){
   if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.'); return; }
   const rows = ngmRows(); if (!rows.length) { alert(`이 달 ${ngmTitle()} 기록이 없습니다.`); return; }
-  const ws = XLSX.utils.json_to_sheet(rows.map(r => ({'일시': r.dt, '구분': r.typeL, '모델': r.model, '코드': r.code, '품명': r.name, '수량': r.qty, '단위': r.unit, [NGM.kind === 'out' ? '출고 사유' : '사유']: r.reason, '비고': r.note, '등록자': r.user})));
+  const ws = XLSX.utils.json_to_sheet(rows.map(r => ({'일시': r.dt, '구분': r.typeL, '모델': r.model, '코드': r.code, '품명': r.name, '수량': r.qty, '단위': r.unit, [NGM.kind === 'out' ? '출고 사유' : '사유']: r.reason, '비고': r.note, '등록자': r.user, ...(NGM.kind === 'out' ? {'재고 반영': r.noStock ? '미차감' : '차감'} : {})})));
   ws['!cols'] = [{wch:12},{wch:11},{wch:14},{wch:18},{wch:30},{wch:9},{wch:6},{wch:28},{wch:30},{wch:10}];
   const sum = {}; rows.forEach(r => { (sum[r.code] = sum[r.code] || {'구분': r.typeL, '모델': r.model, '코드': r.code, '품명': r.name, '건수': 0, '합계 수량': 0, '단위': r.unit}); sum[r.code]['건수']++; sum[r.code]['합계 수량'] += r.qty; });
   const ws2 = XLSX.utils.json_to_sheet(Object.values(sum).sort((a,b) => b['합계 수량'] - a['합계 수량']));
@@ -8203,8 +8252,8 @@ function ngmPrint(){
     <div style="display:flex;justify-content:space-between;align-items:flex-end"><div><h1>${ngmTitle()} / ${ngmTitleVi()} — ${NGM.m.slice(0,4)}년 ${+NGM.m.slice(5)}월</h1><div class="sub">THE GAUSS VINA CO., LTD · 구분: ${tpL} · ${rows.length}건</div></div>
     <table class="sign"><tr><th>작성</th><th>검토</th><th>승인</th></tr><tr><td></td><td></td><td></td></tr></table></div>
     ${NGM.kind === 'out' && NGM.rs === '폐기' ? '<div style="font-size:10px;color:#555;margin-bottom:4px">폐기 방법·업체: ____________________ &nbsp; 폐기일: __________ &nbsp; 입회자: __________</div>' : ''}
-    <table><thead><tr><th>No</th><th>일시</th><th>구분</th><th>모델</th><th>코드</th><th>품명</th><th>수량</th><th>단위</th><th>${NGM.kind === 'out' ? '출고 사유' : '사유'}</th><th>비고</th><th>등록자</th></tr></thead><tbody>${
-      rows.map((r,i) => `<tr><td class="r">${i+1}</td><td>${esc(r.dt)}</td><td>${esc(r.typeL)}</td><td>${esc(r.model)}</td><td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="r">${n(r.qty)}</td><td>${esc(r.unit)}</td><td>${esc(r.reason)}</td><td>${esc(r.note)}</td><td>${esc(r.user)}</td></tr>`).join('')}</tbody></table>
+    <table><thead><tr><th>No</th><th>일시</th><th>구분</th><th>모델</th><th>코드</th><th>품명</th><th>수량</th><th>단위</th><th>${NGM.kind === 'out' ? '출고 사유' : '사유'}</th><th>비고</th><th>등록자</th>${NGM.kind === 'out' ? '<th>재고</th>' : ''}</tr></thead><tbody>${
+      rows.map((r,i) => `<tr><td class="r">${i+1}</td><td>${esc(r.dt)}</td><td>${esc(r.typeL)}</td><td>${esc(r.model)}</td><td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="r">${n(r.qty)}</td><td>${esc(r.unit)}</td><td>${esc(r.reason)}</td><td>${esc(r.note)}</td><td>${esc(r.user)}</td>${NGM.kind === 'out' ? `<td>${r.noStock ? '미차감' : '차감'}</td>` : ''}</tr>`).join('')}</tbody></table>
     <h2>품목별 합계</h2><table><thead><tr><th>구분</th><th>모델</th><th>코드</th><th>품명</th><th>건수</th><th>합계 수량</th><th>단위</th></tr></thead><tbody>${
       Object.values(sum).sort((a,b) => b.qty - a.qty).map(s => `<tr><td>${esc(s.typeL)}</td><td>${esc(s.model)}</td><td>${esc(s.code)}</td><td>${esc(s.name)}</td><td class="r">${s.cnt}</td><td class="r">${n(s.qty)}</td><td>${esc(s.unit)}</td></tr>`).join('')}</tbody></table>
     <div style="color:#888;font-size:9px">출력 ${esc(new Date().toLocaleString())}</div></body></html>`);
