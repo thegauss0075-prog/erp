@@ -163,3 +163,7 @@ end $$;
 --   ('floor1@thegauss.vn','floor',  '현장 태블릿 1'),
 --   ('tv@thegauss.vn',    'viewer', '공장 TV')
 -- on conflict (email) do update set role = excluded.role, name = excluded.name;
+
+-- ── [보안 보강] 로그인 안 한 사람은 권한 확인 함수를 직접 부를 수 없게
+revoke execute on function public.my_role() from anon, public;
+grant execute on function public.my_role() to authenticated;
