@@ -8097,20 +8097,53 @@ async function printQCLotQR(id) {
   document.body.removeChild(holder);
   if (!src) { alert('QR 코드 생성에 실패했습니다.'); return; }
 
-  const w = window.open('', '_blank', 'width=420,height=560');
+  // ✅ 라벨 프린터용: 장수·라벨 크기를 고르고 한 번에 인쇄 (라벨 1장 = 인쇄 1페이지, 박스 번호 n/N)
+  const w = window.open('', '_blank', 'width=560,height=720');
   if (!w) { alert('팝업이 차단되었습니다. 브라우저의 팝업 차단을 해제해주세요.'); return; }
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>LOT QR 라벨 - ${r.lot||''}</title>
-    <style>body{font-family:-apple-system,"Malgun Gothic",sans-serif;text-align:center;padding:24px}
-    img{width:220px;height:220px;margin:12px auto}
-    .t1{font-size:18px;font-weight:800;margin-top:6px}
-    .t2{font-size:14px;color:#444;margin-top:4px}
-    .t3{font-size:18px;font-weight:800;color:#000;font-family:monospace;margin-top:6px}
-    @media print{body{padding:0}}</style></head><body>
-    <img src="${src}">
-    <div class="t1">${r.name||''}</div>
-    <div class="t2">${r.code||''}</div>
-    <div class="t3">LOT ${r.lot||''}</div>
-    <script>window.onload=()=>{setTimeout(()=>window.print(),200)}<\/script>
+  const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const info = {src, name: esc(r.name), code: esc(r.code), lot: esc(r.lot), qty: r.totalQty ? Number(r.totalQty).toLocaleString() : '', date: esc(String(r.inspDate || '').slice(0, 10))};
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>LOT 라벨 - ${info.lot}</title>
+    <style id="pg"></style>
+    <style>body{margin:0;font-family:-apple-system,"Malgun Gothic",sans-serif}
+    .ctl{padding:14px;background:#F3F6F9;border-bottom:1px solid #D9E1E8;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:14px}
+    .ctl input,.ctl select{padding:6px 8px;font-size:14px;border:1px solid #C9D3DC;border-radius:6px}
+    .ctl button{padding:8px 16px;font-size:15px;font-weight:700;border:none;border-radius:8px;background:#185FA5;color:#fff;cursor:pointer}
+    #labels{padding:14px;display:flex;flex-wrap:wrap;gap:10px}
+    .lb{box-sizing:border-box;border:1px dashed #AAB;display:flex;gap:2.5mm;align-items:center;padding:2mm 2.5mm;overflow:hidden;background:#fff}
+    .lb img{flex:none}
+    .tx{min-width:0;line-height:1.2}
+    .nm{font-weight:800;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+    .cd{color:#333}
+    .lt{font-weight:900;font-family:monospace;margin-top:1mm;word-break:break-all}
+    .bx{font-weight:800;margin-top:1mm}
+    @media print{.ctl{display:none}#labels{padding:0;display:block;gap:0}.lb{border:none;page-break-after:always;break-after:page}.lb:last-child{page-break-after:auto;break-after:auto}}</style></head><body>
+    <div class="ctl">
+      <label>장수 <input id="n" type="number" min="1" max="500" value="1" style="width:70px"></label>
+      <label>라벨 크기 <select id="sz"><option value="100x50">100×50mm</option><option value="80x50">80×50mm</option><option value="70x40">70×40mm</option><option value="60x40">60×40mm</option><option value="50x30">50×30mm</option></select></label>
+      <label><input id="bx" type="checkbox" checked> 박스 번호 (1/N)</label>
+      <button onclick="window.print()">🖨 인쇄</button>
+      <div style="width:100%;color:#667;font-size:12px">프린터 설정에서 용지를 같은 크기로, 여백 "없음", 배율 100%로 맞추세요.</div>
+    </div>
+    <div id="labels"></div>
+    <script>
+      const I = ${JSON.stringify(info)};
+      function draw(){
+        const n = Math.max(1, Math.min(500, +document.getElementById('n').value || 1)), [W, H] = document.getElementById('sz').value.split('x').map(Number), bx = document.getElementById('bx').checked;
+        try { localStorage.setItem('lotlbl_sz', document.getElementById('sz').value); } catch (e) {}
+        document.getElementById('pg').textContent = '@page{size:' + W + 'mm ' + H + 'mm;margin:0}';
+        const q = Math.min(H - 4, W * 0.45), f = Math.max(7, Math.min(13, H / 4.2));
+        let h = '';
+        for (let i = 1; i <= n; i++) h += '<div class="lb" style="width:' + W + 'mm;height:' + H + 'mm;font-size:' + (f * 0.8).toFixed(1) + 'pt"><img src="' + I.src + '" style="width:' + q + 'mm;height:' + q + 'mm"><div class="tx">'
+          + '<div class="nm" style="font-size:' + f.toFixed(1) + 'pt">' + I.name + '</div><div class="cd">' + I.code + '</div>'
+          + '<div class="lt" style="font-size:' + (f * (H > 30 ? 1.15 : 0.95)).toFixed(1) + 'pt">LOT ' + I.lot + '</div>'
+          + ((I.qty || I.date) && H > 30 ? '<div class="cd">' + (I.date ? '입고 ' + I.date : '') + (I.qty ? ' · 총 ' + I.qty : '') + '</div>' : '')
+          + (bx && n > 1 ? '<div class="bx" style="font-size:' + f.toFixed(1) + 'pt">BOX ' + i + ' / ' + n + '</div>' : '') + '</div></div>';
+        document.getElementById('labels').innerHTML = h;
+      }
+      try { const v = localStorage.getItem('lotlbl_sz'); if (v) document.getElementById('sz').value = v; } catch (e) {}
+      ['n','sz','bx'].forEach(id => document.getElementById(id).addEventListener('input', draw));
+      draw(); setTimeout(() => { const e = document.getElementById('n'); e.focus(); e.select(); }, 50);
+    <\/script>
     </body></html>`);
   w.document.close();
 }
