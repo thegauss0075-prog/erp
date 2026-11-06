@@ -142,15 +142,17 @@ function erpCall(action, data, token){
     window[cb] = d => { clearTimeout(t); delete window[cb]; s.remove(); res(d); };
     s.src = ERP_API + '?' + new URLSearchParams({action, data: JSON.stringify(data || {}), callback: cb, ...(token ? {token, user: ME.name || ''} : {})}); s.onerror = () => { clearTimeout(t); res({ok:false, error:'network'}); }; document.body.appendChild(s); });
 }
+// MES 적용 범위: 200kW PCDU 제품만 (다른 제품은 ERP 실적 입력을 그대로 씀)
+const inScope = (code, name) => /PCDU/i.test(String(code || '') + ' ' + String(name || ''));
 async function syncWO(silent){
   const r = await erpCall('getWorkOrders', {});
   if (!r || !r.ok) { if (!silent) alert('ERP 작업지시를 받지 못했습니다: ' + (r && r.error)); return; }
-  const rows = (r.data || []).filter(w => w.status === '대기' || w.status === '진행중' || (w.status === '완료' && Date.now() - (+w.id||0) < 30*864e5))
+  const rows = (r.data || []).filter(w => inScope(w.code, w.name)).filter(w => w.status === '대기' || w.status === '진행중' || (w.status === '완료' && Date.now() - (+w.id||0) < 30*864e5))
     .map(w => ({wo_id: String(w.id), order_no: w.orderNo, code: w.code, name: w.name, cat: w.cat, unit: w.unit || 'Ea', plan_qty: +w.planQty || 0, lot: w.lot || '', status: w.status || '대기', due_date: w.dueDate ? String(w.dueDate).slice(0,10) : null, synced_at: new Date().toISOString()}));
   if (rows.length) { const u = await sb.from('work_orders').upsert(rows, {onConflict: 'wo_id'});
     if (u.error) { if (!silent) alert('작업지시 저장 실패: ' + u.error.message); return; } }
   // ERP에서 지운 작업지시는 MES에서도 "삭제됨"으로 바꿔 현장 목록에서 뺀다 (실적 기록은 그대로 남김)
-  const erpIds = new Set((r.data || []).map(w => String(w.id)));
+  const erpIds = new Set((r.data || []).filter(w => inScope(w.code, w.name)).map(w => String(w.id)));
   const gone = M.wo.filter(w => !erpIds.has(w.wo_id) && w.status !== '삭제됨').map(w => w.wo_id);
   if (gone.length) await sb.from('work_orders').update({status: '삭제됨', synced_at: new Date().toISOString()}).in('wo_id', gone);
   if (!silent) toast(`🔄 ERP 작업지시 ${rows.length}건을 받았습니다.` + (gone.length ? ` (ERP에서 삭제된 ${gone.length}건 정리)` : ''));
@@ -186,7 +188,7 @@ function woOther(){
       <div class="muted">공정 ${E(r.map(p => p.name || procName(p.code)).join(' → ') || '-')}</div></button>`; }).join('');
 }
 function isFinalFor(w, proc){ const r = routeOf(w).find(p => p.code === proc); return !!(r && r.is_final); }
-const activeWO = () => M.wo.filter(w => w.status !== '완료' && w.status !== '취소' && w.status !== '삭제됨');
+const activeWO = () => M.wo.filter(w => w.status !== '완료' && w.status !== '취소' && w.status !== '삭제됨' && inScope(w.code, w.name));
 function machState(code){ const e = M.ev.filter(x => x.machine_code === code).sort((a,b) => String(b.started_at).localeCompare(String(a.started_at)))[0]; return e && !e.ended_at ? e : (e ? {...e, state: 'idle', reason_code: null, started_at: e.ended_at} : null); }
 
 // ── 로그인
@@ -294,11 +296,9 @@ async function startJob(){
 // 공정 고르기: 공정 순서가 있는 품목은 그 순서대로 묶어서, 나머지는 "기본 공정"으로
 function procGroups(){
   const groups = [], seen = new Map();
-  M.route.forEach(r => { const k = r.item_code + '|' + r.cat; if (!seen.has(k)) { const w = M.wo.find(x => x.code === r.item_code && String(x.cat||'TP').toUpperCase() === String(r.cat).toUpperCase()); seen.set(k, {title: (w ? w.name : r.item_code) + (String(r.cat).toUpperCase() === 'BTP' ? '' : ''), routed: true, procs: []}); groups.push(seen.get(k)); }
+  M.route.filter(r => inScope(r.item_code)).forEach(r => { const k = r.item_code + '|' + r.cat; if (!seen.has(k)) { const w = M.wo.find(x => x.code === r.item_code && String(x.cat||'TP').toUpperCase() === String(r.cat).toUpperCase()); seen.set(k, {title: (w ? w.name : r.item_code) + (String(r.cat).toUpperCase() === 'BTP' ? '' : ''), routed: true, procs: []}); groups.push(seen.get(k)); }
     const p = M.proc.find(x => x.code === r.process_code); if (p && p.active !== false) seen.get(k).procs.push({...p, seq: r.seq}); });
   groups.forEach(g => g.procs.sort((a,b) => a.seq - b.seq));
-  const def = M.proc.filter(p => p.active !== false && p.in_default !== false);
-  if (def.length) groups.push({title: '기본 공정 (30KW·50KW·3.2KW 등)', routed: false, procs: def});
   return groups;
 }
 // 앞 공정 실적 확인: 공정 순서상 바로 앞 공정의 누계 양품보다 많이 하려면 한 번 묻는다
@@ -548,11 +548,11 @@ const AD_DEF = {
   stop_reasons: {l:'비가동 사유', key:'code', f:[['code','코드'],['name','이름'],['name_vi','이름(VN)'],['planned','계획 정지','bool'],['seq','순서','number']]}};
 const AD_DATA = () => ({processes: M.proc, machines: M.mach, workers: M.work, stop_reasons: M.reasons})[AD.t];
 function routeAdmin(){
-  const items = [...new Map([...M.wo.map(w => [w.code + '|' + w.cat, {code: w.code, cat: w.cat || 'TP', name: w.name}]), ...M.route.map(r => [r.item_code + '|' + r.cat, {code: r.item_code, cat: r.cat, name: r.item_code}])]).values()];
+  const items = [...new Map([...M.wo.filter(w => inScope(w.code, w.name)).map(w => [w.code + '|' + w.cat, {code: w.code, cat: w.cat || 'TP', name: w.name}]), ...M.route.filter(r => inScope(r.item_code)).map(r => [r.item_code + '|' + r.cat, {code: r.item_code, cat: r.cat, name: r.item_code}])]).values()];
   items.sort((a,b) => (M.route.some(r => r.item_code === b.code && r.cat === b.cat) - M.route.some(r => r.item_code === a.code && r.cat === a.cat)) || String(a.name).localeCompare(String(b.name)));
   if (!AD.item && items[0]) AD.item = items[0].code + '|' + items[0].cat;
   const [code, cat] = (AD.item || '|').split('|'), rows = M.route.filter(r => r.item_code === code && r.cat === cat).sort((a,b) => a.seq - b.seq);
-  return adminTabs() + `<div class="card"><h2>품목별 공정 순서 <span class="muted">작업지시를 고르면 이 순서대로 공정이 나옵니다. 등록 안 된 품목은 "기본 공정"(공정 탭에서 체크된 것)을 씁니다.</span></h2>
+  return adminTabs() + `<div class="card"><h2>품목별 공정 순서 <span class="muted">작업지시를 고르면 이 순서대로 공정이 나옵니다. MES는 PCDU 제품 작업지시만 받습니다.</span></h2>
     <select onchange="AD.item=this.value;render()" style="padding:8px;border-radius:8px;border:1px solid var(--line);margin-bottom:10px;min-width:320px">${items.map(i => `<option value="${E(i.code + '|' + i.cat)}" ${AD.item === i.code + '|' + i.cat ? 'selected' : ''}>[${E(i.cat)}] ${E(i.name)} (${E(i.code)})</option>`).join('')}</select>
     <div style="overflow:auto"><table><thead><tr><th>순서</th><th>공정</th><th>마지막(완성)</th><th>자재 LOT 필수</th><th>관리기준·메모 (현장 화면에 표시)</th><th></th></tr></thead><tbody>
       ${rows.map((r, i) => `<tr><td><input id="rt-seq-${i}" type="number" value="${r.seq}" style="width:70px;padding:6px"></td><td><b>${E(procName(r.process_code))}</b> <span class="muted">${E(r.process_code)}</span></td><td><input id="rt-fin-${i}" type="checkbox" ${r.is_final ? 'checked' : ''} style="width:20px;height:20px"></td><td><input id="rt-lot-${i}" type="checkbox" ${r.lot_required ? 'checked' : ''} style="width:20px;height:20px"></td>
@@ -595,7 +595,7 @@ async function rtDel(i){
 function adminView(){
   if (AD.t === 'route') return routeAdmin();
   if (AD.t === 'wo') return adminTabs() + `<div class="card"><h2>ERP 작업지시 <span class="muted">${M.wo.length}건 · 진행 ${activeWO().length}건${M.wo[0] ? ' · 받은 시각 ' + new Date(M.wo.map(w => w.synced_at).sort().pop()).toLocaleString('ko-KR') : ''}</span></h2>
-    <div style="overflow:auto"><table><thead><tr><th>지시번호</th><th>품목</th><th>구분</th><th>LOT</th><th class="r">계획</th><th>마감일</th><th>상태</th></tr></thead><tbody>${M.wo.map(w => `<tr style="${w.status === '완료' ? 'color:var(--sub)' : w.status === '삭제됨' ? 'color:var(--sub);text-decoration:line-through' : ''}"><td style="font-family:monospace">${E(w.order_no)}</td><td><b>${E(w.name)}</b><div class="muted">${E(w.code)}</div></td><td>${E(w.cat||'')}</td><td style="font-family:monospace">${E(w.lot||'')}</td><td class="r">${N(w.plan_qty)} ${E(w.unit||'')}</td><td>${E(w.due_date||'')}</td><td><span class="tag ${w.status === '진행중' ? 'm-run' : w.status === '완료' || w.status === '삭제됨' ? 'm-idle' : 'm-setup'}">${E(w.status)}</span></td></tr>`).join('') || '<tr><td colspan="7" class="muted">아직 받은 작업지시가 없습니다.</td></tr>'}</tbody></table></div>
+    <div style="overflow:auto"><table><thead><tr><th>지시번호</th><th>품목</th><th>구분</th><th>LOT</th><th class="r">계획</th><th>마감일</th><th>상태</th></tr></thead><tbody>${M.wo.filter(w => inScope(w.code, w.name)).map(w => `<tr style="${w.status === '완료' ? 'color:var(--sub)' : w.status === '삭제됨' ? 'color:var(--sub);text-decoration:line-through' : ''}"><td style="font-family:monospace">${E(w.order_no)}</td><td><b>${E(w.name)}</b><div class="muted">${E(w.code)}</div></td><td>${E(w.cat||'')}</td><td style="font-family:monospace">${E(w.lot||'')}</td><td class="r">${N(w.plan_qty)} ${E(w.unit||'')}</td><td>${E(w.due_date||'')}</td><td><span class="tag ${w.status === '진행중' ? 'm-run' : w.status === '완료' || w.status === '삭제됨' ? 'm-idle' : 'm-setup'}">${E(w.status)}</span></td></tr>`).join('') || '<tr><td colspan="7" class="muted">아직 받은 작업지시가 없습니다.</td></tr>'}</tbody></table></div>
     <p class="muted" style="margin-top:8px">현장(📝 실적 입력)에는 대기·진행중 작업지시만 보입니다. ERP에서 새로 발행하면 위 "🔄 ERP 작업지시 받기"를 다시 누르세요 (30분마다 자동으로도 받습니다).</p></div>`;
   const d = AD_DEF[AD.t], rows = AD_DATA();
   return adminTabs() + `
