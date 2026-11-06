@@ -551,7 +551,7 @@ function routeAdmin(){
       ${rows.map((r, i) => `<tr><td><input id="rt-seq-${i}" type="number" value="${r.seq}" style="width:70px;padding:6px"></td><td><b>${E(procName(r.process_code))}</b> <span class="muted">${E(r.process_code)}</span></td><td><input id="rt-fin-${i}" type="checkbox" ${r.is_final ? 'checked' : ''} style="width:20px;height:20px"></td>
         <td><input id="rt-note-${i}" value="${E(r.note||'')}" style="padding:6px;width:100%;min-width:260px"></td><td style="white-space:nowrap"><button class="btn" style="padding:6px 10px" onclick="rtSave(${i})">저장</button> <button class="btn" style="padding:6px 10px;color:var(--bad)" onclick="rtDel(${i})">빼기</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">아직 공정 순서가 없습니다. 아래에서 추가하세요.</td></tr>'}
       <tr style="background:#F8FAFB"><td><input id="rt-seq-new" type="number" value="${(rows.length ? rows[rows.length-1].seq : 0) + 10}" style="width:70px;padding:6px"></td><td><select id="rt-proc-new" style="padding:6px">${M.proc.filter(p => !rows.some(r => r.process_code === p.code)).map(p => `<option value="${E(p.code)}">${E(p.name)}</option>`).join('')}${rows.length ? `<optgroup label="같은 공정 한 번 더 (2차·3차)">${rows.map(r => `<option value="rep:${E(r.process_code)}">↻ ${E(procName(r.process_code))} 한 번 더</option>`).join('')}</optgroup>` : ''}</select></td><td><input id="rt-fin-new" type="checkbox" style="width:20px;height:20px"></td><td><input id="rt-note-new" style="padding:6px;width:100%"></td><td><button class="btn pri" style="padding:6px 10px" onclick="rtSave(-1)">＋ 추가</button></td></tr></tbody></table></div>
-    <p class="muted">새 공정 이름이 필요하면 "공정" 탭에서 먼저 만드세요.</p></div>`;
+    <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">${rows.length ? `<button class="btn pri" onclick="rtSaveAll()">💾 전체 저장</button><span class="muted">위 표의 순서·마지막·관리기준을 한 번에 저장합니다.</span>` : ''}<span style="flex:1"></span><span class="muted">새 공정 이름이 필요하면 "공정" 탭에서 먼저 만드세요.</span></div></div>`;
 }
 async function rtSave(i){
   const [code, cat] = AD.item.split('|'), rows = M.route.filter(r => r.item_code === code && r.cat === cat).sort((a,b) => a.seq - b.seq), k = i < 0 ? 'new' : i;
@@ -571,6 +571,14 @@ async function procRepeat(base){
   const np = {code: rootC + n, name: nm.trim(), name_vi: b.name_vi ? String(b.name_vi).replace(/\s*\d+$/, '') + ' ' + n : null, seq: b.seq || 0, is_final: false, active: true, in_default: false};
   const r = await sb.from('processes').insert(np); if (r.error) { alert('공정 만들기 실패: ' + r.error.message); return null; }
   M.proc.push(np); return np.code;
+}
+async function rtSaveAll(){
+  const [code, cat] = AD.item.split('|'), rows = M.route.filter(r => r.item_code === code && r.cat === cat).sort((a,b) => a.seq - b.seq);
+  const all = rows.map((r0, i) => ({item_code: code, cat, process_code: r0.process_code, seq: +$('rt-seq-' + i).value || 0, is_final: $('rt-fin-' + i).checked, note: $('rt-note-' + i).value.trim() || null}));
+  const seqs = all.map(x => x.seq); if (new Set(seqs).size !== seqs.length && !confirm('순서 번호가 겹치는 공정이 있습니다. 그래도 저장할까요?')) return;
+  if (!all.some(x => x.is_final) && !confirm('"마지막(완성)"으로 체크한 공정이 없습니다. 완성 수량과 ERP 보내기가 이 공정 기준입니다.\n그래도 저장할까요?')) return;
+  const r = await sb.from('routings').upsert(all, {onConflict: 'item_code,cat,process_code'}); if (r.error) { alert('저장 실패: ' + r.error.message); return; }
+  await loadMaster(); render(); toast(`💾 ${all.length}개 공정을 저장했습니다`);
 }
 async function rtDel(i){
   const [code, cat] = AD.item.split('|'), r0 = M.route.filter(r => r.item_code === code && r.cat === cat).sort((a,b) => a.seq - b.seq)[i]; if (!r0 || !confirm(`${procName(r0.process_code)} 공정을 이 품목 순서에서 뺄까요?`)) return;
