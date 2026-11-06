@@ -13401,19 +13401,20 @@ async function loadHQ(force){
   if (HQ.loaded && !force) return;
   const [a, b] = await Promise.all([api('getHQCPO', {}), api('getHQPR', {}), loadSupplyPO(true).catch(()=>{}), (BOM && BOM.length) ? null : loadBOM().catch(()=>{})]);
   if (a && a.ok) HQ.cpo = a.data || [];
+  try { await loadHQS(true); } catch(e) {}
   if (b && b.ok) HQ.pr = b.data || [];
   HQ.err = (a && !a.ok && /unknown action/i.test(a.error||'')) ? 'server' : '';
   HQ.loaded = true;
 }
 // 부서별 탭 — 영업부: 고객 PO / 구매부: 자재 소요·구매요청·발주·선적 / 품질부: 검사 현황·불합격
 const HQ_DEPTS = [
-  {k:'sales', l:'💼 영업부', vi:'Kinh doanh', col:'#5b21b6', tabs:[['cpo','📥 고객 PO 접수']]},
+  {k:'sales', l:'💼 영업부', vi:'Kinh doanh', col:'#5b21b6', tabs:[['quote','📝 견적서'],['cpo','📥 주문서 (고객 PO)'],['sale','🧾 판매'],['ar','💰 수금·채권'],['cust','🏷️ 거래처']]},
   {k:'buy',   l:'🛒 구매부', vi:'Mua hàng',   col:'#b45309', tabs:[['mrp','🧮 자재 소요 계산'],['pr','📝 구매요청·승인'],['ship','🚢 발주·선적·입고']]},
   {k:'qa',    l:'🔬 품질부', vi:'Chất lượng', col:'#0f766e', tabs:[['qadr','📈 월별 불량률'],['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]}];
 function hqSetDept(k){ const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0]; HQ.dept = d.k; HQ.tab = d.tabs[0][0]; HQ.q = ''; HQ.st = ''; try { localStorage.setItem('hq_dept', d.k); } catch(e) {} renderHQ(); }
 function hqNav(){
   const d = HQ_DEPTS.find(x => x.k === HQ.dept) || HQ_DEPTS[0];
-  const cnt = {sales: HQ.cpo.filter(c => (c.status || '접수') === '접수').length, buy: HQ.pr.filter(p => p.status === '요청' || p.status === '승인').length, qa: 0};
+  const cnt = {sales: HQ.cpo.filter(c => (c.status || '접수') === '접수').length + (HQS.quote||[]).filter(q => q.status === '제출').length, buy: HQ.pr.filter(p => p.status === '요청' || p.status === '승인').length, qa: 0};
   const de = document.getElementById('hq-depts'), te = document.getElementById('hq-tabs'); if (!de || !te) return;
   de.innerHTML = HQ_DEPTS.map(x => { const on = x.k === d.k;
     return `<button onclick="hqSetDept('${x.k}')" style="padding:9px 18px;border-radius:10px;border:2px solid ${x.col};background:${on ? x.col : '#fff'};color:${on ? '#fff' : x.col};font-weight:700;font-size:14px;cursor:pointer">${x.l} <span style="font-weight:400;font-size:11.5px;opacity:.85">${x.vi}</span>${cnt[x.k] ? ` <span style="background:${on ? '#fff' : x.col};color:${on ? x.col : '#fff'};border-radius:999px;padding:0 7px;font-size:11.5px;margin-left:2px">${cnt[x.k]}</span>` : ''}</button>`; }).join('');
@@ -13424,6 +13425,7 @@ async function renderHQ(opts){
   if (!HQ._deptInit) { HQ._deptInit = true; try { const k = localStorage.getItem('hq_dept'); if (k && HQ_DEPTS.some(x => x.k === k)) { HQ.dept = k; HQ.tab = HQ_DEPTS.find(x => x.k === k).tabs[0][0]; } } catch(e) {} }
   if (!HQ.loaded || (opts && opts.reload)) { el.innerHTML = '<div class="empty">⏳ 불러오는 중… / Đang tải…</div>'; await loadHQ(true); }
   if ((HQ.dept === 'qa') && (!_loadedAt.qc || (opts && opts.reload))) { el.innerHTML = '<div class="empty">⏳ 품질검사 기록 불러오는 중…</div>'; await loadQC().catch(()=>{}); }
+  if (HQ.tab === 'sale' && !txLog.length) { try { const b = await api('getFullSyncBundle', {}); const arr = v => Array.isArray(v) ? v : (v && v.data) || []; if (!txLog.length) txLog = arr(b.tx).map(r => ({...r, id:+r.id||0, qty:+r.qty||0})); } catch(e) {} }
   // 불량률은 입출고·불량 이력이 필요 — 아직 동기화 전이면(본사 열람 화면 등) 직접 받아온다
   if (HQ.tab === 'qadr' && (!txLog.length || !ngLog.length)) { el.innerHTML = '<div class="empty">⏳ 입출고·불량 이력 불러오는 중…</div>';
     try { const b = await api('getFullSyncBundle', {}); const arr = v => Array.isArray(v) ? v : (v && v.data) || [];
@@ -13432,7 +13434,8 @@ async function renderHQ(opts){
       if (!(DB.ng||[]).length) DB.ng = arr(b.ngItems).map(r => ({...r, prev:+r.prev||0, inng:+r.inng||0, cur:+r.cur||0})); } catch(e) {} }
   hqNav();
   const warn = HQ.err === 'server' ? '<div style="background:#FEF3C7;color:#92400e;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:13px">⚠️ 서버(Code.gs)를 새 버전으로 배포해야 본사 업무 데이터가 저장·조회됩니다.</div>' : '';
-  el.innerHTML = warn + (HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'qadr' ? hqDefectView() : hqQAView(HQ.tab === 'qang'));
+  HQS._bal = null;
+  el.innerHTML = warn + (HQ.tab === 'quote' ? hqQuoteView() : HQ.tab === 'sale' ? hqSaleView() : HQ.tab === 'ar' ? hqARView() : HQ.tab === 'cust' ? hqCustView() : HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'qadr' ? hqDefectView() : hqQAView(HQ.tab === 'qang'));
 }
 function hqSetTab(k){ HQ.tab = k; const d = HQ_DEPTS.find(x => x.tabs.some(t => t[0] === k)); if (d) HQ.dept = d.k; HQ.q = ''; HQ.st = ''; renderHQ(); }
 
@@ -13520,7 +13523,7 @@ function hqCPOEdit(id){
 function hqCPORender(){
   const r = HQ_EDIT, isNew = !HQ.cpo.some(x => String(x.id) === String(r.id));
   const al = isNew ? {} : (hqCPOAlloc()[r.id] || {});
-  const custs = [...new Set(['솔루엠비나 (Solum Vina)','현대자동차','THE GAUSS INC.', ...HQ.cpo.map(c => c.customer).filter(Boolean)])];
+  const custs = hqsCustNames();
   const items = allRows().filter(x => x.cat === 'TP' || x.cat === 'BTP');
   const set = (k) => `oninput="HQ_EDIT.${k}=this.value"`;
   const total = (r.lines||[]).reduce((a,l) => a + (+l.qty||0) * (+l.price||0), 0);
@@ -13603,6 +13606,7 @@ async function hqCPOSave(){
   if (!res || !res.ok) { btn.disabled = false; btn.textContent = '💾 저장 / Lưu'; err.textContent = '저장 실패: ' + ((res && res.error) || '서버 응답 없음') + (/unknown action/i.test(res && res.error || '') ? ' — 서버(Code.gs)를 새 버전으로 배포해야 합니다.' : ''); return; }
   const i = HQ.cpo.findIndex(x => String(x.id) === String(r.id)); if (i >= 0) HQ.cpo[i] = r; else HQ.cpo.push(r);
   hqClose('hq-ed');
+  if (r.quoteId) { const q = HQS.quote.find(x => x.id === r.quoteId); if (q && q.status !== '수주') { const q2 = {...q, status: '수주', cpoId: r.id, cpoNo: r.cpoNo}; await hqsSave('quote', q2); } }
   if (autoPR) {
     autoPR.prNo = hqNextNo('PR', HQ.pr, 'prNo', autoPR.date); autoPR.createdBy = CURRENT_USER || ''; autoPR.createdAt = new Date().toISOString();
     autoPR.history = [{at: autoPR.createdAt, by: '자동 (' + (CURRENT_USER||'') + ')', status: '요청'}];
@@ -13827,6 +13831,382 @@ async function hqPRToPOGo(){
   }
   await hqPRSave('발주완료', {poNo: [...new Set(Object.values(nos))].join(', ')});
   hqClose('hq-po'); hqClose('hq-pr'); HQ.tab = 'ship'; HQ.dept = 'buy'; renderHQ();
+}
+
+// ════════════════════════════════════════════════════════════
+//  💼 본사 영업관리 (2026-11-06) — 이카운트 영업관리 흐름을 따른다
+//   견적서 → 주문서(고객 PO) → 출고 → 판매(매출) → 수금 → 거래처별 채권
+//   저장: HQ_CUST(거래처) · HQ_QUOTE(견적서) · HQ_SALE(판매) · HQ_PAY(수금)
+// ════════════════════════════════════════════════════════════
+const HQS = {cust: [], quote: [], sale: [], pay: [], loaded: false, sm: '', ed: null};
+const HQ_Q_ST = ['작성','제출','수주','실주'];
+const HQ_Q_COL = {'작성':['#6b7280','#F3F4F6'],'제출':['#185FA5','#E8F0F8'],'수주':['#166534','#DCFCE7'],'실주':['#b91c1c','#FEE2E2']};
+async function loadHQS(force){
+  if (HQS.loaded && !force) return;
+  const rs = await Promise.all(['cust','quote','sale','pay'].map(k => api('getHQStore', {store: k})));
+  ['cust','quote','sale','pay'].forEach((k, i) => { if (rs[i] && rs[i].ok) HQS[k] = rs[i].data || []; });
+  HQS.loaded = true;
+}
+async function hqsSave(store, rec){
+  const res = await retrySafe(() => api('saveHQStore', {store, rec}));
+  if (!res || !res.ok) { alert('저장 실패: ' + ((res && res.error) || '서버 응답 없음') + (/unknown action/i.test(res && res.error || '') ? '\n서버(Code.gs)를 새 버전으로 배포해야 합니다.' : '')); return false; }
+  const arr = HQS[store], i = arr.findIndex(x => String(x.id) === String(rec.id)); if (i >= 0) arr[i] = rec; else arr.push(rec);
+  return true;
+}
+async function hqsDelete(store, id, label){
+  if (!isMaster) { alert('삭제는 마스터만 할 수 있습니다.'); return false; }
+  if (!confirm(`${label}을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return false;
+  const res = await retrySafe(() => api('deleteHQStore', {store, id}));
+  if (!res || !res.ok) { alert('삭제 실패: ' + ((res && res.error) || '')); return false; }
+  HQS[store] = HQS[store].filter(x => String(x.id) !== String(id)); return true;
+}
+function hqsCustNames(){ return [...new Set([...HQS.cust.map(c => c.name), '솔루엠비나 (Solum Vina)', '현대자동차', 'THE GAUSS INC.', ...HQ.cpo.map(c => c.customer), ...HQS.sale.map(s => s.customer)].filter(Boolean))]; }
+function hqsCust(name){ return HQS.cust.find(c => c.name === name) || null; }
+function hqsLineTot(lines){ return (lines||[]).reduce((a,l) => a + (+l.qty||0) * (+l.price||0), 0); }
+function hqsToolbar(btns, ph, extra){
+  return `<div class="toolbar" style="gap:6px;flex-wrap:wrap">${btns}
+    <div class="sw"><span class="si">🔍</span><input placeholder="${ph}" value="${hqE(HQ.q)}" oninput="HQ.q=this.value;clearTimeout(window._hqT);window._hqT=setTimeout(()=>{renderHQ();const i=document.querySelector('#hq-body .sw input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>${extra||''}</div>`;
+}
+const hqsBtn = (t, fn, col, solid) => `<button onclick="${fn}" style="padding:7px 14px;border-radius:8px;border:1px solid ${col};background:${solid ? col : '#fff'};color:${solid ? '#fff' : col};font-weight:600;cursor:pointer;white-space:nowrap">${t}</button>`;
+function hqsMonthBar(){
+  if (!HQS.sm) HQS.sm = hqToday().slice(0,7);
+  const sh = k => { let [y,m] = HQS.sm.split('-').map(Number); m += k; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } return `${y}-${String(m).padStart(2,'0')}`; };
+  return `<button class="period-btn" onclick="HQS.sm='${sh(-1)}';renderHQ()">‹</button><strong style="white-space:nowrap">${HQS.sm === 'all' ? '전체 기간' : HQS.sm.slice(0,4) + '년 ' + (+HQS.sm.slice(5)) + '월'}</strong><button class="period-btn" onclick="HQS.sm='${sh(1)}';renderHQ()">›</button>`;
+}
+// 공용 품목 라인 편집 (견적서·판매)
+function hqsLinesHtml(obj, path, cur, opts){
+  const o = opts || {};
+  return `<div class="tw"><table><thead><tr><th style="min-width:230px">품목 *</th><th>수량 *</th><th>단가 (${hqE(cur)})</th>${o.due ? '<th>납기</th>' : ''}<th style="text-align:right">공급가액</th><th></th></tr></thead><tbody>${
+    (obj.lines||[]).map((l, i) => `<tr>
+      <td><input list="hq-items" value="${hqE(l.code ? l.code + (l.name ? ' — ' + l.name : '') : '')}" onchange="hqsLine('${path}',${i},'item',this.value)" style="${HQ_IN}"></td>
+      <td><input type="number" value="${hqE(l.qty)}" oninput="hqsLine('${path}',${i},'qty',this.value)" style="${HQ_IN};width:90px"></td>
+      <td><input type="number" step="0.0001" value="${hqE(l.price)}" oninput="hqsLine('${path}',${i},'price',this.value)" style="${HQ_IN};width:100px"></td>
+      ${o.due ? `<td><input type="date" value="${hqE(l.due||'')}" oninput="hqsLine('${path}',${i},'due',this.value)" style="${HQ_IN}"></td>` : ''}
+      <td style="text-align:right;white-space:nowrap" id="${path}-amt-${i}">${(+l.qty||0) && (+l.price||0) ? hqM((+l.qty)*(+l.price), cur) : '-'}</td>
+      <td><button onclick="HQS.ed.lines.splice(${i},1);hqsReRender()" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></td></tr>`).join('')}</tbody></table></div>
+    <button onclick="HQS.ed.lines.push({code:'',name:'',qty:'',price:''});hqsReRender()" style="margin-top:6px;padding:5px 12px;border-radius:7px;border:1px dashed #5b21b6;background:#fff;color:#5b21b6;cursor:pointer">＋ 품목 추가</button>`;
+}
+function hqsLine(path, i, k, v){
+  const l = HQS.ed.lines[i]; if (!l) return;
+  if (k === 'item') { const code = String(v).split(' — ')[0].trim(), it = allRows().find(x => x.code === code && (x.cat === 'TP' || x.cat === 'BTP')) || allRows().find(x => x.code === code);
+    if (it) { l.code = it.code; l.name = it.name; l.cat = it.cat; l.unit = it.unit; if (l.price === '' || l.price == null) { const p = hqsLastPrice(HQS.ed.customer, it.code); if (p !== '') l.price = p; } } else { l.code = code; l.name = ''; }
+    setTimeout(hqsReRender, 0); return; }
+  l[k] = v;
+  const a = document.getElementById(`${path}-amt-${i}`); if (a) a.textContent = (+l.qty||0) && (+l.price||0) ? hqM((+l.qty)*(+l.price), HQS.ed.cur) : '-';
+  const t = document.getElementById(`${path}-tot`); if (t) t.innerHTML = hqsTotHtml(HQS.ed);
+}
+// 같은 거래처에 마지막으로 쓴 단가 (판매 → 주문서 → 견적서 순)
+function hqsLastPrice(cust, code){
+  const pick = arr => { const l = arr.filter(x => !cust || x.customer === cust).sort((a,b) => String(b.date || b.recvDate || '').localeCompare(String(a.date || a.recvDate || '')))
+    .flatMap(x => (x.lines||[]).filter(y => y.code === code && y.price !== '' && y.price != null)); return l.length ? +l[0].price : ''; };
+  const v = pick(HQS.sale); if (v !== '') return v; const w = pick(HQ.cpo); if (w !== '') return w; return pick(HQS.quote);
+}
+function hqsTotHtml(r){ const sup = hqsLineTot(r.lines), vat = sup * (+r.vatRate||0) / 100; return `공급가액 ${hqM(sup, r.cur)}${+r.vatRate ? ` · 부가세 ${hqM(vat, r.cur)} · <b>합계 ${hqM(sup + vat, r.cur)}</b>` : ` · <b>합계 ${hqM(sup, r.cur)}</b>`}`; }
+let _hqsRender = null; function hqsReRender(){ if (_hqsRender) _hqsRender(); }
+function hqsDatalists(){
+  const items = allRows().filter(x => x.cat === 'TP' || x.cat === 'BTP');
+  return `<datalist id="hq-custs">${hqsCustNames().map(c => `<option value="${hqE(c)}">`).join('')}</datalist><datalist id="hq-items">${items.map(x => `<option value="${hqE(x.code)} — ${hqE(x.name)}">`).join('')}</datalist>`;
+}
+function hqsCheckLines(r, err){
+  r.lines = (r.lines||[]).filter(l => l.code || l.qty);
+  if (!String(r.customer||'').trim()) { err.textContent = '거래처를 넣어주세요.'; return false; }
+  if (!r.lines.length || r.lines.some(l => !l.code || !(+l.qty > 0))) { err.textContent = '품목과 수량을 확인해주세요.'; return false; }
+  if (!hqItemOK(r.lines)) { err.textContent = '목록에 없는 품목 코드가 있습니다. 목록에서 골라주세요.'; return false; }
+  r.lines.forEach(l => { l.qty = +l.qty || 0; l.price = l.price === '' || l.price == null ? '' : +l.price; });
+  return true;
+}
+function hqsStamp(r, isNew){ r.updatedAt = new Date().toISOString(); r.updatedBy = CURRENT_USER||''; if (isNew) { r.createdAt = r.updatedAt; r.createdBy = r.updatedBy; } }
+// 공용 인쇄 (견적서·거래명세서)
+function hqsPrintDoc(title, en, no, r, metaRows, note){
+  const e = hqE, sup = hqsLineTot(r.lines), vat = sup * (+r.vatRate||0) / 100;
+  const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단됐습니다. 팝업을 허용해주세요.'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e(title)} ${e(no)}</title><style>
+    @page{size:A4;margin:0} body{font-family:'Malgun Gothic','Noto Sans KR',sans-serif;font-size:11.5px;color:#111;margin:0;padding:14mm;width:210mm;box-sizing:border-box}
+    h1{text-align:center;font-size:22px;letter-spacing:6px;margin:0} .en{text-align:center;color:#555;margin:2px 0 14px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #444;padding:5px 7px} th{background:#f1f1f1}
+    .meta td{border:none;padding:2px 4px} .r{text-align:right} .tot td{font-weight:700;background:#fafafa}
+  </style></head><body><h1>${e(title)}</h1><div class="en">${e(en)} · No. ${e(no)}</div>
+  <div style="display:flex;gap:16px;margin-bottom:10px"><table class="meta" style="flex:1">${metaRows.map(([k,v]) => `<tr><td style="width:90px;color:#555">${e(k)}</td><td>${e(v)}</td></tr>`).join('')}</table>
+    <table class="meta" style="flex:1"><tr><td style="color:#555;width:70px">공급자</td><td><b>THE GAUSS INC.</b></td></tr><tr><td></td><td>THE GAUSS VINA CO., LTD (Hai Phong, Vietnam)</td></tr></table></div>
+  <table><thead><tr><th style="width:32px">No</th><th>품목코드</th><th>품명</th><th>수량</th><th>단가 (${e(r.cur)})</th><th>공급가액</th>${(r.lines||[]).some(l => l.due) ? '<th>납기</th>' : ''}</tr></thead><tbody>${
+    (r.lines||[]).map((l, i) => `<tr><td class="r">${i+1}</td><td>${e(l.code)}</td><td>${e(l.name)}</td><td class="r">${hqN(l.qty)}</td><td class="r">${l.price === '' ? '' : (+l.price).toLocaleString(undefined,{maximumFractionDigits:4})}</td><td class="r">${l.price === '' ? '' : hqM((+l.qty)*(+l.price), r.cur)}</td>${(r.lines||[]).some(x => x.due) ? `<td>${e(l.due||'')}</td>` : ''}</tr>`).join('')}
+    <tr class="tot"><td colspan="5" class="r">공급가액</td><td class="r">${hqM(sup, r.cur)}</td>${(r.lines||[]).some(l => l.due) ? '<td></td>' : ''}</tr>
+    ${+r.vatRate ? `<tr class="tot"><td colspan="5" class="r">부가세 (${+r.vatRate}%)</td><td class="r">${hqM(vat, r.cur)}</td>${(r.lines||[]).some(l => l.due) ? '<td></td>' : ''}</tr><tr class="tot"><td colspan="5" class="r">합계</td><td class="r">${hqM(sup + vat, r.cur)}</td>${(r.lines||[]).some(l => l.due) ? '<td></td>' : ''}</tr>` : ''}
+  </tbody></table>${note ? `<div style="margin-top:10px;white-space:pre-wrap">${e(note)}</div>` : ''}
+  <div style="margin-top:28px;text-align:right">THE GAUSS INC. &nbsp; (인)</div></body></html>`);
+  w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch(x){} }, 400);
+}
+
+// ── 🏷️ 거래처 ───────────────────────────────────────────
+function hqCustView(){
+  const q = HQ.q.trim().toLowerCase();
+  const ar = hqARData();
+  const rows = HQS.cust.filter(c => !q || [c.name, c.bizNo, c.contact, c.email, c.country].join(' ').toLowerCase().includes(q)).sort((a,b) => String(a.name).localeCompare(String(b.name)));
+  const unreg = hqsCustNames().filter(n => !hqsCust(n));
+  return hqsToolbar(hqsBtn('➕ 거래처 등록', 'hqCustEdit(null)', '#5b21b6', true), '거래처명·사업자번호·담당자 검색') +
+    (rows.length ? `<div class="tw"><table><thead><tr><th>거래처명</th><th>국가</th><th>사업자번호</th><th>통화</th><th>결제조건</th><th>담당자</th><th>연락처</th><th style="text-align:right">미수 잔액</th></tr></thead><tbody>${
+      rows.map(c => { const a = ar.find(x => x.customer === c.name); return `<tr style="cursor:pointer" onclick="hqCustEdit('${c.id}')"><td><b>${hqE(c.name)}</b></td><td>${hqE(c.country||'')}</td><td style="font-family:monospace;font-size:12px">${hqE(c.bizNo||'')}</td><td>${hqE(c.cur||'')}</td>
+        <td>${c.payTerms ? hqE(c.payTerms) + '일' : '-'}</td><td>${hqE(c.contact||'')}</td><td style="font-size:12px">${hqE([c.phone, c.email].filter(Boolean).join(' · '))}</td>
+        <td style="text-align:right">${a ? Object.entries(a.bal).filter(([,v]) => Math.abs(v) > 0.005).map(([k,v]) => hqM(v, k)).join('<br>') || '-' : '-'}</td></tr>`; }).join('')}</tbody></table></div>`
+      : '<div class="empty">등록된 거래처가 없습니다.</div>') +
+    (unreg.length ? `<div style="font-size:12.5px;color:#5D6977;margin-top:10px">주문서·판매에만 있고 거래처로 등록 안 된 이름: ${unreg.map(n => `<a href="#" onclick="event.preventDefault();hqCustEdit(null,'${hqE(n).replace(/'/g,"\\'")}')">${hqE(n)}</a>`).join(', ')}</div>` : '');
+}
+function hqCustEdit(id, name){
+  const r = id ? HQS.cust.find(x => String(x.id) === String(id)) : null;
+  HQS.ed = r ? JSON.parse(JSON.stringify(r)) : {id: String(Date.now()), name: name || '', cur: 'USD', payTerms: 30, country: ''};
+  const c = HQS.ed, isNew = !r, f = (k, ph, type) => `<input ${type ? `type="${type}"` : ''} value="${hqE(c[k] ?? '')}" placeholder="${ph||''}" oninput="HQS.ed.${k}=this.value" style="${HQ_IN}">`;
+  hqModal('hq-cu', `<h3 style="margin:0 0 12px;font-size:16px">${isNew ? '➕ 거래처 등록' : '✏️ ' + hqE(c.name)}</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+      ${hqFld('거래처명 *','Tên KH', f('name'))}${hqFld('국가','Quốc gia', f('country','한국 / 베트남'))}${hqFld('사업자번호','MST', f('bizNo'))}
+      ${hqFld('거래 통화','Tiền tệ', `<select onchange="HQS.ed.cur=this.value" style="${HQ_IN}">${['USD','KRW','VND'].map(x => `<option ${c.cur===x?'selected':''}>${x}</option>`).join('')}</select>`)}
+      ${hqFld('결제조건 (일)','Hạn TT', f('payTerms','30','number'))}${hqFld('부가세율 (%)','VAT', f('vatRate','국내 10 / 수출 0','number'))}
+      ${hqFld('담당자','Người LH', f('contact'))}${hqFld('전화','ĐT', f('phone'))}${hqFld('이메일','Email', f('email'))}
+      ${hqFld('주소','Địa chỉ', f('addr'), true)}${hqFld('비고','Ghi chú', f('note'), true)}
+    </div><div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('cust','${c.id}','${hqE(c.name)}').then(ok=>{if(ok){hqClose('hq-cu');renderHQ()}})`, '#b91c1c') : ''}</div>
+      <div style="display:flex;gap:6px">${hqsBtn('닫기', "hqClose('hq-cu')", '#64748b')}${hqsBtn('💾 저장', 'hqCustSave()', '#5b21b6', true)}</div></div>`, 760);
+}
+async function hqCustSave(){
+  const c = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite()) return;
+  c.name = String(c.name||'').trim(); if (!c.name) { err.textContent = '거래처명을 넣어주세요.'; return; }
+  if (HQS.cust.some(x => x.id !== c.id && x.name === c.name)) { err.textContent = '같은 이름의 거래처가 이미 있습니다.'; return; }
+  c.payTerms = c.payTerms === '' ? '' : +c.payTerms || 0; c.vatRate = c.vatRate === '' || c.vatRate == null ? '' : +c.vatRate || 0;
+  hqsStamp(c, !HQS.cust.some(x => x.id === c.id));
+  if (await hqsSave('cust', c)) { hqClose('hq-cu'); renderHQ(); }
+}
+
+// ── 📝 견적서 ──────────────────────────────────────────
+function hqQuoteView(){
+  const q = HQ.q.trim().toLowerCase(), today = hqToday();
+  const rows = HQS.quote.filter(r => (!HQ.st || (HQ.st === '미주문' ? r.status === '제출' : r.status === HQ.st)) && (!q || [r.qNo, r.customer, ...(r.lines||[]).map(l => l.code + ' ' + l.name)].join(' ').toLowerCase().includes(q)))
+    .sort((a,b) => String(b.date||'').localeCompare(String(a.date||'')));
+  const sent = HQS.quote.filter(r => r.status === '제출'), won = HQS.quote.filter(r => r.status === '수주').length, lost = HQS.quote.filter(r => r.status === '실주').length;
+  return hqsToolbar(hqsBtn('➕ 견적서 작성', 'hqQuoteEdit(null)', '#5b21b6', true), '견적번호·거래처·품목 검색',
+      `<select onchange="HQ.st=this.value;renderHQ()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px"><option value="">상태 전체</option><option value="미주문" ${HQ.st==='미주문'?'selected':''}>미주문 (제출 후 주문 전)</option>${HQ_Q_ST.map(s => `<option ${HQ.st===s?'selected':''}>${s}</option>`).join('')}</select>
+      <span style="font-size:12px;color:#5D6977">미주문 ${sent.length}건 · 수주율 ${won + lost ? Math.round(won / (won + lost) * 100) + '%' : '-'}</span>`) +
+    (rows.length ? `<div class="tw"><table><thead><tr><th>견적일</th><th>견적번호</th><th>거래처</th><th>품목</th><th style="text-align:right">금액</th><th>유효기간</th><th>상태</th><th>주문서</th><th></th></tr></thead><tbody>${
+      rows.map(r => `<tr><td style="white-space:nowrap">${hqE(r.date)}</td><td style="font-family:monospace;font-size:12px;cursor:pointer;color:#185FA5" onclick="hqQuoteEdit('${r.id}')">${hqE(r.qNo)}</td><td>${hqE(r.customer)}</td>
+        <td>${hqE(((r.lines||[])[0]||{}).name || '-')}${(r.lines||[]).length > 1 ? ` <span style="color:#8A95A3">외 ${r.lines.length-1}</span>` : ''}</td><td style="text-align:right;white-space:nowrap">${hqM(hqsLineTot(r.lines), r.cur)}</td>
+        <td style="white-space:nowrap;${r.status === '제출' && r.validUntil && r.validUntil < today ? 'color:#b91c1c' : ''}">${hqE(r.validUntil||'-')}</td><td>${hqPill(r.status, HQ_Q_COL[r.status])}</td><td style="font-family:monospace;font-size:12px">${hqE(r.cpoNo||'')}</td>
+        <td style="white-space:nowrap"><button class="edit-btn" onclick="hqQuoteEdit('${r.id}')" title="수정">✏️</button><button class="edit-btn" onclick="hqQuotePrint('${r.id}')" title="견적서 인쇄">🖨️</button>${r.status !== '수주' && r.status !== '실주' ? `<button class="edit-btn" onclick="hqQuoteToCPO('${r.id}')" title="주문서로 전환">📥</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+      : `<div class="empty">${HQS.quote.length ? '조건에 맞는 견적서가 없습니다.' : '아직 견적서가 없습니다.'}</div>`);
+}
+function hqQuoteEdit(id){
+  const r = id ? HQS.quote.find(x => String(x.id) === String(id)) : null;
+  HQS.ed = r ? JSON.parse(JSON.stringify(r)) : {id: String(Date.now()), date: hqToday(), validUntil: hqAddDays(hqToday(), 30), status: '작성', cur: 'USD', lines: [{code:'', name:'', qty:'', price:''}]};
+  _hqsRender = hqQuoteRender; hqQuoteRender();
+}
+function hqQuoteRender(){
+  const r = HQS.ed, isNew = !HQS.quote.some(x => x.id === r.id), set = k => `oninput="HQS.ed.${k}=this.value"`;
+  hqModal('hq-q', `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h3 style="margin:0;font-size:16px">${isNew ? '📝 견적서 작성' : '📝 ' + hqE(r.qNo)}</h3>${hqPill(r.status, HQ_Q_COL[r.status])}</div>${hqsDatalists()}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:12px">
+      ${hqFld('거래처 *','Khách hàng', `<input list="hq-custs" value="${hqE(r.customer||'')}" onchange="HQS.ed.customer=this.value;const c=hqsCust(this.value);if(c){if(c.cur)HQS.ed.cur=c.cur;if(c.vatRate!==''&&c.vatRate!=null)HQS.ed.vatRate=c.vatRate;hqQuoteRender()}" style="${HQ_IN}">`)}
+      ${hqFld('견적일','Ngày', `<input type="date" value="${hqE(r.date)}" ${set('date')} style="${HQ_IN}">`)}
+      ${hqFld('유효기간','Hiệu lực', `<input type="date" value="${hqE(r.validUntil||'')}" ${set('validUntil')} style="${HQ_IN}">`)}
+      ${hqFld('상태','', `<select onchange="HQS.ed.status=this.value" style="${HQ_IN}">${HQ_Q_ST.map(s => `<option ${r.status===s?'selected':''}>${s}</option>`).join('')}</select>`)}
+      ${hqFld('통화','', `<select onchange="HQS.ed.cur=this.value;hqQuoteRender()" style="${HQ_IN}">${['USD','KRW','VND'].map(c => `<option ${r.cur===c?'selected':''}>${c}</option>`).join('')}</select>`)}
+      ${hqFld('부가세율 (%)','VAT', `<input type="number" value="${hqE(r.vatRate ?? '')}" oninput="HQS.ed.vatRate=this.value;document.getElementById('hqq-tot').innerHTML=hqsTotHtml(HQS.ed)" style="${HQ_IN}">`)}
+      ${hqFld('인도조건','Incoterm', `<input value="${hqE(r.incoterm||'')}" ${set('incoterm')} style="${HQ_IN}">`)}
+      ${hqFld('결제조건','Thanh toán', `<input value="${hqE(r.payment||'')}" placeholder="예: T/T 30 days" ${set('payment')} style="${HQ_IN}">`)}
+    </div>${hqsLinesHtml(r, 'hqq', r.cur, {due: true})}
+    <div id="hqq-tot" style="text-align:right;margin-top:6px">${hqsTotHtml(r)}</div>
+    ${hqFld('비고 (견적서에 인쇄)','Ghi chú', `<textarea rows="2" ${set('note')} style="${HQ_IN};font-family:inherit">${hqE(r.note||'')}</textarea>`, true)}
+    ${r.status === '실주' ? hqFld('실주 사유','', `<input value="${hqE(r.lostReason||'')}" ${set('lostReason')} style="${HQ_IN}">`, true) : ''}
+    <div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:space-between;gap:6px;margin-top:12px;flex-wrap:wrap"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('quote','${r.id}','${hqE(r.qNo)}').then(ok=>{if(ok){hqClose('hq-q');renderHQ()}})`, '#b91c1c') : ''}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${hqsBtn('닫기', "hqClose('hq-q')", '#64748b')}${!isNew ? hqsBtn('🖨️ 인쇄', `hqQuotePrint('${r.id}')`, '#185FA5') : ''}${hqsBtn('💾 저장', 'hqQuoteSave()', '#5b21b6', true)}</div></div>`, 1000);
+}
+async function hqQuoteSave(){
+  const r = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite() || !hqsCheckLines(r, err)) return false;
+  if (!r.qNo) r.qNo = hqNextNo('QT', HQS.quote, 'qNo', r.date);
+  r.vatRate = r.vatRate === '' || r.vatRate == null ? '' : +r.vatRate || 0;
+  hqsStamp(r, !HQS.quote.some(x => x.id === r.id));
+  if (await hqsSave('quote', r)) { hqClose('hq-q'); renderHQ(); return true; } return false;
+}
+function hqQuotePrint(id){ const r = HQS.quote.find(x => String(x.id) === String(id)); if (!r) return;
+  hqsPrintDoc('견 적 서', 'QUOTATION', r.qNo, r, [['수신', r.customer], ['견적일', r.date], ['유효기간', r.validUntil || ''], ['인도조건', r.incoterm || ''], ['결제조건', r.payment || '']], r.note); }
+// 견적 → 주문서(고객 PO) 전환: 주문서 창을 내용이 채워진 채로 연다. 저장하면 견적은 "수주"가 된다
+function hqQuoteToCPO(id){
+  const q = HQS.quote.find(x => String(x.id) === String(id)); if (!q) return;
+  HQ_EDIT = {id: String(Date.now()), recvDate: hqToday(), status: '접수', cur: q.cur, customer: q.customer, incoterm: q.incoterm || '', quoteId: q.id, quoteNo: q.qNo, custPoNo: '',
+    lines: (q.lines||[]).map(l => ({code: l.code, name: l.name, cat: l.cat, unit: l.unit, qty: l.qty, price: l.price, due: l.due || ''})), history: [], note: `견적 ${q.qNo}에서 전환`};
+  HQ.dept = 'sales'; HQ.tab = 'cpo'; renderHQ(); hqCPORender();
+}
+
+// ── 🧾 판매(매출) ──────────────────────────────────────
+// 아직 판매로 잡지 않은 완제품 출고 (불량 이동 제외)
+function hqUnsoldShip(){
+  const used = new Set(HQS.sale.flatMap(s => (s.lines||[]).flatMap(l => l.txIds || [])).map(String));
+  const since = Date.now() - 120 * 864e5;
+  return (txLog||[]).filter(t => t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && t.dest !== 'NG' && bdTime(t) > since && !used.has(String(t.id)))
+    .sort((a,b) => bdTime(b) - bdTime(a));
+}
+function hqSaleView(){
+  const q = HQ.q.trim().toLowerCase(), m = HQS.sm || (HQS.sm = hqToday().slice(0,7));
+  const inM = s => m === 'all' || String(s.date||'').slice(0,7) === m;
+  const rows = HQS.sale.filter(s => inM(s) && (!q || [s.sNo, s.customer, s.cpoNo, s.invNo, ...(s.lines||[]).map(l => l.code + ' ' + l.name)].join(' ').toLowerCase().includes(q))).sort((a,b) => String(b.date||'').localeCompare(String(a.date||'')));
+  const tot = {}; rows.forEach(s => { const t = hqsSaleTotals(s); tot[s.cur] = (tot[s.cur]||0) + t.total; });
+  const byC = {}; rows.forEach(s => { const t = hqsSaleTotals(s); const o = byC[s.customer] = byC[s.customer] || {}; o[s.cur] = (o[s.cur]||0) + t.total; });
+  const byI = {}; rows.forEach(s => (s.lines||[]).forEach(l => { const o = byI[l.code] = byI[l.code] || {name: l.name, q: 0, amt: {}}; o.q += +l.qty||0; o.amt[s.cur] = (o.amt[s.cur]||0) + (+l.qty||0) * (+l.price||0); }));
+  const unsold = hqUnsoldShip();
+  const money = o => Object.entries(o).map(([k,v]) => hqM(v, k)).join(' / ') || '-';
+  return hqsToolbar(hqsBtn('➕ 판매 입력', 'hqSaleEdit(null)', '#5b21b6', true) + hqsBtn(`📦 출고에서 불러오기${unsold.length ? ' (' + unsold.length + ')' : ''}`, 'hqSaleFromShip()', '#0f766e'), '판매번호·거래처·품목·인보이스 검색',
+      `<div style="display:flex;gap:4px;align-items:center">${hqsMonthBar()}<button class="period-btn ${m==='all'?'on':''}" onclick="HQS.sm='all';renderHQ()">전체</button></div>${hqsBtn('📊 엑셀', 'hqSaleExcel()', '#166534')}`) +
+    `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="flex:1;min-width:180px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${m === 'all' ? '전체' : +m.slice(5) + '월'} 매출 합계</div><div style="font-size:19px;font-weight:700">${money(tot)}</div><div style="font-size:11px;color:#8A95A3">${rows.length}건</div></div>
+      <div style="flex:2;min-width:260px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px;font-size:12.5px"><div style="font-size:12px;color:#5D6977;margin-bottom:4px">거래처별</div>${Object.entries(byC).map(([c,o]) => `<div style="display:flex;justify-content:space-between"><span>${hqE(c)}</span><b>${money(o)}</b></div>`).join('') || '-'}</div>
+    </div>` +
+    (rows.length ? `<div class="tw"><table><thead><tr><th>판매일</th><th>판매번호</th><th>거래처</th><th>품목</th><th style="text-align:right">수량</th><th style="text-align:right">공급가액</th><th style="text-align:right">부가세</th><th style="text-align:right">합계</th><th>주문서</th><th>인보이스</th><th style="text-align:right">미수</th><th></th></tr></thead><tbody>${
+      rows.map(s => { const t = hqsSaleTotals(s), b = hqSaleBal(s); return `<tr><td style="white-space:nowrap">${hqE(s.date)}</td><td style="font-family:monospace;font-size:12px;cursor:pointer;color:#185FA5" onclick="hqSaleEdit('${s.id}')">${hqE(s.sNo)}</td><td>${hqE(s.customer)}</td>
+        <td>${hqE(((s.lines||[])[0]||{}).name || '-')}${(s.lines||[]).length > 1 ? ` <span style="color:#8A95A3">외 ${s.lines.length-1}</span>` : ''}</td><td style="text-align:right">${hqN((s.lines||[]).reduce((a,l) => a + (+l.qty||0), 0))}</td>
+        <td style="text-align:right;white-space:nowrap">${hqM(t.sup, s.cur)}</td><td style="text-align:right;white-space:nowrap">${t.vat ? hqM(t.vat, s.cur) : '-'}</td><td style="text-align:right;white-space:nowrap;font-weight:700">${hqM(t.total, s.cur)}</td>
+        <td style="font-family:monospace;font-size:12px">${hqE(s.cpoNo||'')}</td><td style="font-size:12px">${hqE(s.invNo||'')}</td>
+        <td style="text-align:right;white-space:nowrap;color:${b > 0.005 ? '#b45309' : '#166534'}">${b > 0.005 ? hqM(b, s.cur) : '완납'}</td>
+        <td style="white-space:nowrap"><button class="edit-btn" onclick="hqSaleEdit('${s.id}')" title="수정">✏️</button><button class="edit-btn" onclick="hqSalePrint('${s.id}')" title="거래명세서 인쇄">🖨️</button></td></tr>`; }).join('')}</tbody></table></div>`
+      : '<div class="empty">이 기간 판매 기록이 없습니다.</div>') +
+    (Object.keys(byI).length ? `<div style="font-size:13px;font-weight:700;margin:14px 0 6px">품목별 판매현황</div><div class="tw"><table><thead><tr><th>품목</th><th>코드</th><th style="text-align:right">수량</th><th style="text-align:right">공급가액</th></tr></thead><tbody>${
+      Object.entries(byI).sort((a,b) => b[1].q - a[1].q).map(([c,o]) => `<tr><td>${hqE(o.name)}</td><td style="font-family:monospace;font-size:12px">${hqE(c)}</td><td style="text-align:right">${hqN(o.q)}</td><td style="text-align:right">${money(o.amt)}</td></tr>`).join('')}</tbody></table></div>` : '');
+}
+function hqsSaleTotals(s){ const sup = hqsLineTot(s.lines), vat = Math.round(sup * (+s.vatRate||0)) / 100; return {sup, vat, total: sup + vat}; }
+function hqSaleEdit(id, preset){
+  const r = id ? HQS.sale.find(x => String(x.id) === String(id)) : null;
+  HQS.ed = r ? JSON.parse(JSON.stringify(r)) : Object.assign({id: String(Date.now()), date: hqToday(), cur: 'USD', vatRate: '', lines: [{code:'', name:'', qty:'', price:''}]}, preset || {});
+  _hqsRender = hqSaleRender; hqSaleRender();
+}
+function hqSaleRender(){
+  const r = HQS.ed, isNew = !HQS.sale.some(x => x.id === r.id), set = k => `oninput="HQS.ed.${k}=this.value"`;
+  const cpos = hqCPORows().filter(c => (!r.customer || c.customer === r.customer) && !['취소'].includes(c.st));
+  const c = hqsCust(r.customer);
+  hqModal('hq-s', `<h3 style="margin:0 0 10px;font-size:16px">${isNew ? '🧾 판매 입력' : '🧾 ' + hqE(r.sNo)} <span style="font-weight:400;color:#5D6977;font-size:12.5px">/ Doanh thu</span></h3>${hqsDatalists()}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:12px">
+      ${hqFld('거래처 *','Khách hàng', `<input list="hq-custs" value="${hqE(r.customer||'')}" onchange="HQS.ed.customer=this.value;const c=hqsCust(this.value);if(c){if(c.cur)HQS.ed.cur=c.cur;if(c.vatRate!==''&&c.vatRate!=null)HQS.ed.vatRate=c.vatRate}hqSaleRender()" style="${HQ_IN}">`)}
+      ${hqFld('판매일 *','Ngày bán', `<input type="date" value="${hqE(r.date)}" ${set('date')} style="${HQ_IN}">`)}
+      ${hqFld('결제 예정일','Hạn TT', `<input type="date" value="${hqE(r.dueDate || (c && c.payTerms ? hqAddDays(r.date || hqToday(), +c.payTerms) : ''))}" ${set('dueDate')} style="${HQ_IN}">`)}
+      ${hqFld('주문서','PO', `<select onchange="HQS.ed.cpoId=this.value;const x=HQ.cpo.find(c=>c.id===this.value);HQS.ed.cpoNo=x?x.cpoNo:'';if(x&&!HQS.ed.customer){HQS.ed.customer=x.customer;HQS.ed.cur=x.cur}hqSaleRender()" style="${HQ_IN}"><option value="">(선택 안 함)</option>${cpos.map(x => `<option value="${x.id}" ${r.cpoId===x.id?'selected':''}>${hqE(x.cpoNo)} · ${hqE(x.custPoNo)}</option>`).join('')}</select>`)}
+      ${hqFld('통화','', `<select onchange="HQS.ed.cur=this.value;hqSaleRender()" style="${HQ_IN}">${['USD','KRW','VND'].map(x => `<option ${r.cur===x?'selected':''}>${x}</option>`).join('')}</select>`)}
+      ${hqFld('부가세율 (%)','VAT', `<input type="number" value="${hqE(r.vatRate ?? '')}" placeholder="국내 10 / 수출 0" oninput="HQS.ed.vatRate=this.value;document.getElementById('hqs-tot').innerHTML=hqsTotHtml(HQS.ed)" style="${HQ_IN}">`)}
+      ${hqFld('인보이스·세금계산서 No','Số HĐ', `<input value="${hqE(r.invNo||'')}" ${set('invNo')} style="${HQ_IN}">`)}
+    </div>${hqsLinesHtml(r, 'hqs', r.cur)}
+    <div id="hqs-tot" style="text-align:right;margin-top:6px">${hqsTotHtml(r)}</div>
+    ${(r.lines||[]).some(l => (l.txIds||[]).length) ? '<div style="font-size:11.5px;color:#0f766e;margin-top:4px">📦 법인 출고 기록과 연결된 판매입니다 (같은 출고가 두 번 매출로 잡히지 않음).</div>' : ''}
+    ${hqFld('비고','Ghi chú', `<textarea rows="2" ${set('note')} style="${HQ_IN};font-family:inherit">${hqE(r.note||'')}</textarea>`, true)}
+    <div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:space-between;gap:6px;margin-top:12px;flex-wrap:wrap"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('sale','${r.id}','${hqE(r.sNo)}').then(ok=>{if(ok){hqClose('hq-s');renderHQ()}})`, '#b91c1c') : ''}</div>
+      <div style="display:flex;gap:6px">${hqsBtn('닫기', "hqClose('hq-s')", '#64748b')}${!isNew ? hqsBtn('🖨️ 거래명세서', `hqSalePrint('${r.id}')`, '#185FA5') : ''}${hqsBtn('💾 저장', 'hqSaleSave()', '#5b21b6', true)}</div></div>`, 1000);
+}
+async function hqSaleSave(){
+  const r = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite() || !hqsCheckLines(r, err)) return;
+  if (!r.date) { err.textContent = '판매일을 넣어주세요.'; return; }
+  if (r.lines.some(l => l.price === '')) { if (!confirm('단가가 비어 있는 품목이 있습니다. 0원으로 저장할까요?')) return; }
+  const c = hqsCust(r.customer); if (!r.dueDate && c && c.payTerms) r.dueDate = hqAddDays(r.date, +c.payTerms);
+  if (!r.sNo) r.sNo = hqNextNo('SL', HQS.sale, 'sNo', r.date);
+  r.vatRate = r.vatRate === '' || r.vatRate == null ? '' : +r.vatRate || 0;
+  const t = hqsSaleTotals(r); r.supply = t.sup; r.vat = t.vat; r.total = t.total;
+  hqsStamp(r, !HQS.sale.some(x => x.id === r.id));
+  if (await hqsSave('sale', r)) { hqClose('hq-s'); renderHQ(); }
+}
+function hqSalePrint(id){ const r = HQS.sale.find(x => String(x.id) === String(id)); if (!r) return;
+  hqsPrintDoc('거 래 명 세 서', 'STATEMENT OF TRANSACTION', r.sNo, r, [['공급받는자', r.customer], ['거래일', r.date], ['주문서', [r.cpoNo, (HQ.cpo.find(c => c.id === r.cpoId) || {}).custPoNo].filter(Boolean).join(' · ')], ['인보이스', r.invNo || ''], ['결제 예정일', r.dueDate || '']], r.note); }
+// 출고에서 불러오기: 아직 판매로 안 잡은 완제품 출고를 골라 판매 입력 창을 채운다
+function hqSaleFromShip(){
+  const list = hqUnsoldShip();
+  const destL = d => d === 'KR' ? '한국(본사)' : /sol/i.test(String(d||'')) ? '솔루엠비나' : (d || '-');
+  hqModal('hq-ship', `<h3 style="margin:0 0 6px;font-size:16px">📦 출고에서 불러오기 <span style="font-weight:400;color:#5D6977;font-size:12.5px">최근 120일 · 아직 판매로 잡지 않은 완제품 출고</span></h3>
+    ${list.length ? `<div class="tw" style="max-height:55vh;overflow:auto"><table><thead><tr><th></th><th>출고일</th><th>출고처</th><th>품목</th><th style="text-align:right">수량</th><th>LOT</th><th>비고</th></tr></thead><tbody>${
+      list.map(t => `<tr><td><input type="checkbox" class="hqsh-cb" value="${hqE(t.id)}" style="width:auto;margin:0"></td><td style="white-space:nowrap">${hqE(ncrDtSafe(t.dt))}</td><td>${hqE(destL(t.dest))}</td><td>${hqE(t.name||t.code)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(t.code)}</div></td>
+        <td style="text-align:right">${hqN(t.qty)}</td><td style="font-size:12px">${hqE(t.lot||'')}</td><td style="font-size:12px;color:#5D6977;max-width:240px;white-space:normal">${hqE(t.note||'')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">판매로 잡지 않은 출고가 없습니다.</div>'}
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px">${hqsBtn('닫기', "hqClose('hq-ship')", '#64748b')}${list.length ? hqsBtn('선택한 출고로 판매 입력', 'hqSaleFromShipGo()', '#0f766e', true) : ''}</div>`, 900);
+}
+function ncrDtSafe(dt){ const d = new Date(dt); return isNaN(d) ? String(dt||'') : new Date(d.getTime() + 7*3600e3).toISOString().slice(0,10); }
+function hqSaleFromShipGo(){
+  const ids = [...document.querySelectorAll('#hq-ship .hqsh-cb:checked')].map(i => i.value); if (!ids.length) { alert('출고를 선택해주세요.'); return; }
+  const tx = (txLog||[]).filter(t => ids.includes(String(t.id)));
+  const by = {}; tx.forEach(t => { const o = by[t.code] = by[t.code] || {code: t.code, name: t.name, cat: 'TP', unit: t.unit, qty: 0, price: '', txIds: [], lots: []}; o.qty += +t.qty||0; o.txIds.push(String(t.id)); if (t.lot) o.lots.push(t.lot); });
+  const dest = tx[0].dest, cust = dest === 'KR' ? '' : /sol/i.test(String(dest||'')) ? (hqsCustNames().find(n => /sol|솔루엠/i.test(n)) || '솔루엠비나 (Solum Vina)') : '';
+  const c = hqsCust(cust);
+  // 같은 거래처의 진행 중 주문서에서 단가·주문서를 찾는다
+  const cpo = hqCPORows().filter(x => (!cust || x.customer === cust) && ['확정','출하중','완료'].includes(x.st) && x.ls.some(l => by[l.code])).sort((a,b) => String(a.recvDate).localeCompare(String(b.recvDate)))[0];
+  const lines = Object.values(by).map(l => { const pl = cpo && cpo.ls.find(x => x.code === l.code); return {...l, price: pl && pl.price !== '' ? pl.price : hqsLastPrice(cust, l.code), lots: undefined}; });
+  const date = tx.map(t => ncrDtSafe(t.dt)).sort().pop();
+  hqClose('hq-ship');
+  hqSaleEdit(null, {customer: cust || (cpo ? cpo.customer : ''), cur: (cpo && cpo.cur) || (c && c.cur) || 'USD', vatRate: c && c.vatRate !== '' && c.vatRate != null ? c.vatRate : '', date, cpoId: cpo ? cpo.id : '', cpoNo: cpo ? cpo.cpoNo : '', lines,
+    note: '출고 ' + [...new Set(tx.map(t => t.lot).filter(Boolean))].join(', ')});
+}
+function hqSaleExcel(){
+  if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
+  const m = HQS.sm, out = [];
+  HQS.sale.filter(s => m === 'all' || String(s.date||'').slice(0,7) === m).sort((a,b) => String(a.date).localeCompare(String(b.date))).forEach(s => (s.lines||[]).forEach(l => out.push({'판매일': s.date, '판매번호': s.sNo, '거래처': s.customer, '품목코드': l.code, '품명': l.name, '수량': +l.qty||0, '단가': l.price === '' ? '' : +l.price, '공급가액': (+l.qty||0) * (+l.price||0), '부가세율(%)': s.vatRate === '' ? '' : +s.vatRate, '통화': s.cur, '주문서': s.cpoNo||'', '인보이스': s.invNo||'', '결제 예정일': s.dueDate||''})));
+  const ws = XLSX.utils.json_to_sheet(out.length ? out : [{'판매일':'기록 없음'}]); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '판매현황');
+  XLSX.writeFile(wb, `판매현황_${m === 'all' ? '전체' : m.replace('-','')}.xlsx`);
+}
+
+// ── 💰 수금·거래처별 채권 ─────────────────────────────────
+// 수금은 같은 거래처·통화의 판매에 오래된 것부터 채운다 (판매번호를 지정한 수금은 그 판매에 먼저)
+function hqARAlloc(){
+  const bal = {}; HQS.sale.forEach(s => bal[s.id] = hqsSaleTotals(s).total);
+  const pays = [...HQS.pay].sort((a,b) => String(a.date||'').localeCompare(String(b.date||'')));
+  pays.forEach(p => { let left = +p.amount || 0;
+    const target = HQS.sale.filter(s => s.customer === p.customer && s.cur === p.cur).sort((a,b) => (a.sNo === p.saleNo ? -1 : b.sNo === p.saleNo ? 1 : 0) || String(a.date).localeCompare(String(b.date)));
+    for (const s of target) { if (left <= 0) break; const take = Math.min(left, bal[s.id]); if (take > 0) { bal[s.id] -= take; left -= take; } } });
+  return bal;
+}
+function hqSaleBal(s){ return (HQS._bal || (HQS._bal = hqARAlloc()))[s.id] || 0; }
+function hqARData(){
+  HQS._bal = hqARAlloc(); const today = hqToday(), out = {};
+  const g = c => out[c] = out[c] || {customer: c, sales: {}, paid: {}, bal: {}, age: {}};
+  HQS.sale.forEach(s => { const o = g(s.customer), t = hqsSaleTotals(s).total, b = HQS._bal[s.id] || 0; o.sales[s.cur] = (o.sales[s.cur]||0) + t; o.bal[s.cur] = (o.bal[s.cur]||0) + b;
+    if (b > 0.005) { const due = s.dueDate || s.date, d = ncrDaysSafe(due, today); const k = d <= 0 ? '미도래' : d <= 30 ? '1~30일' : d <= 60 ? '31~60일' : d <= 90 ? '61~90일' : '90일 초과';
+      const a = o.age[s.cur] = o.age[s.cur] || {}; a[k] = (a[k]||0) + b; } });
+  HQS.pay.forEach(p => { const o = g(p.customer); o.paid[p.cur] = (o.paid[p.cur]||0) + (+p.amount||0); });
+  return Object.values(out).sort((a,b) => String(a.customer).localeCompare(String(b.customer)));
+}
+function ncrDaysSafe(a, b){ return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 864e5); }
+function hqARView(){
+  const ar = hqARData(), q = HQ.q.trim().toLowerCase(), AG = ['미도래','1~30일','31~60일','61~90일','90일 초과'];
+  const money = o => Object.entries(o||{}).filter(([,v]) => Math.abs(v) > 0.005).map(([k,v]) => hqM(v, k)).join('<br>') || '-';
+  const pays = HQS.pay.filter(p => !q || [p.customer, p.saleNo, p.method, p.note].join(' ').toLowerCase().includes(q)).sort((a,b) => String(b.date||'').localeCompare(String(a.date||'')));
+  const overdue = {}; ar.forEach(o => Object.entries(o.age).forEach(([cur, a]) => Object.entries(a).forEach(([k, v]) => { if (k !== '미도래') overdue[cur] = (overdue[cur]||0) + v; })));
+  const totBal = {}; ar.forEach(o => Object.entries(o.bal).forEach(([k,v]) => totBal[k] = (totBal[k]||0) + v));
+  return hqsToolbar(hqsBtn('➕ 수금 입력', 'hqPayEdit(null)', '#166534', true), '거래처·판매번호 검색') +
+    `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="flex:1;min-width:180px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">미수 잔액 합계</div><div style="font-size:18px;font-weight:700">${money(totBal)}</div></div>
+      <div style="flex:1;min-width:180px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#991b1b">결제일 지난 미수</div><div style="font-size:18px;font-weight:700;color:#b91c1c">${money(overdue)}</div></div>
+    </div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px">거래처별 채권 / Công nợ theo KH</div>
+    ${ar.length ? `<div class="tw" style="margin-bottom:14px"><table><thead><tr><th>거래처</th><th style="text-align:right">매출</th><th style="text-align:right">수금</th><th style="text-align:right">잔액</th>${AG.map(a => `<th style="text-align:right">${a}</th>`).join('')}</tr></thead><tbody>${
+      ar.filter(o => !q || o.customer.toLowerCase().includes(q)).map(o => `<tr><td><b>${hqE(o.customer)}</b></td><td style="text-align:right;white-space:nowrap">${money(o.sales)}</td><td style="text-align:right;white-space:nowrap">${money(o.paid)}</td><td style="text-align:right;white-space:nowrap;font-weight:700">${money(o.bal)}</td>
+        ${AG.map(a => `<td style="text-align:right;white-space:nowrap;${a !== '미도래' ? 'color:#b91c1c' : ''}">${money(Object.fromEntries(Object.entries(o.age).map(([c, x]) => [c, x[a] || 0])))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<div class="empty" style="margin-bottom:14px">판매 기록이 없습니다.</div>'}
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px">수금 내역</div>
+    ${pays.length ? `<div class="tw"><table><thead><tr><th>수금일</th><th>거래처</th><th style="text-align:right">금액</th><th>방법</th><th>판매번호</th><th>비고</th><th>입력</th></tr></thead><tbody>${
+      pays.map(p => `<tr style="cursor:pointer" onclick="hqPayEdit('${p.id}')"><td style="white-space:nowrap">${hqE(p.date)}</td><td>${hqE(p.customer)}</td><td style="text-align:right;white-space:nowrap;font-weight:700">${hqM(p.amount, p.cur)}</td><td>${hqE(p.method||'')}</td><td style="font-family:monospace;font-size:12px">${hqE(p.saleNo||'')}</td><td style="font-size:12px;color:#5D6977">${hqE(p.note||'')}</td><td style="font-size:12px">${hqE(p.createdBy||'')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">수금 기록이 없습니다.</div>'}
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">수금은 같은 거래처·통화의 판매 중 지정한 판매번호부터, 없으면 오래된 판매부터 차감합니다. 경과일은 결제 예정일(없으면 판매일) 기준입니다.</div>`;
+}
+function hqPayEdit(id){
+  const r = id ? HQS.pay.find(x => String(x.id) === String(id)) : null;
+  HQS.ed = r ? JSON.parse(JSON.stringify(r)) : {id: String(Date.now()), date: hqToday(), cur: 'USD', method: 'T/T'};
+  hqPayRender();
+}
+function hqPayRender(){
+  const p = HQS.ed, isNew = !HQS.pay.some(x => x.id === p.id);
+  const sales = HQS.sale.filter(s => (!p.customer || s.customer === p.customer));
+  HQS._bal = hqARAlloc();
+  hqModal('hq-p', `<h3 style="margin:0 0 12px;font-size:16px">${isNew ? '➕ 수금 입력' : '✏️ 수금 수정'}</h3>${hqsDatalists()}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+      ${hqFld('거래처 *','KH', `<input list="hq-custs" value="${hqE(p.customer||'')}" onchange="HQS.ed.customer=this.value;const c=hqsCust(this.value);if(c&&c.cur)HQS.ed.cur=c.cur;hqPayRender()" style="${HQ_IN}">`)}
+      ${hqFld('수금일 *','Ngày', `<input type="date" value="${hqE(p.date)}" oninput="HQS.ed.date=this.value" style="${HQ_IN}">`)}
+      ${hqFld('금액 *','Số tiền', `<input type="number" step="0.01" value="${hqE(p.amount ?? '')}" oninput="HQS.ed.amount=this.value" style="${HQ_IN}">`)}
+      ${hqFld('통화','', `<select onchange="HQS.ed.cur=this.value" style="${HQ_IN}">${['USD','KRW','VND'].map(x => `<option ${p.cur===x?'selected':''}>${x}</option>`).join('')}</select>`)}
+      ${hqFld('수금 방법','', `<select onchange="HQS.ed.method=this.value" style="${HQ_IN}">${['T/T','현금','어음','카드','상계','기타'].map(x => `<option ${p.method===x?'selected':''}>${x}</option>`).join('')}</select>`)}
+      ${hqFld('판매번호 (선택)','', `<select onchange="HQS.ed.saleNo=this.value" style="${HQ_IN}"><option value="">(오래된 판매부터 자동)</option>${sales.map(s => `<option value="${hqE(s.sNo)}" ${p.saleNo===s.sNo?'selected':''}>${hqE(s.sNo)} · ${hqE(s.date)} · 미수 ${hqM(HQS._bal[s.id]||0, s.cur)}</option>`).join('')}</select>`)}
+      ${hqFld('비고','', `<input value="${hqE(p.note||'')}" oninput="HQS.ed.note=this.value" style="${HQ_IN}">`, true)}
+    </div><div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('pay','${p.id}','수금 ${hqE(p.date)}').then(ok=>{if(ok){hqClose('hq-p');renderHQ()}})`, '#b91c1c') : ''}</div>
+      <div style="display:flex;gap:6px">${hqsBtn('닫기', "hqClose('hq-p')", '#64748b')}${hqsBtn('💾 저장', 'hqPaySave()', '#166534', true)}</div></div>`, 760);
+}
+async function hqPaySave(){
+  const p = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite()) return;
+  if (!String(p.customer||'').trim() || !p.date || !(+p.amount > 0)) { err.textContent = '거래처·수금일·금액을 넣어주세요.'; return; }
+  p.amount = +p.amount; hqsStamp(p, !HQS.pay.some(x => x.id === p.id));
+  if (await hqsSave('pay', p)) { HQS._bal = null; hqClose('hq-p'); renderHQ(); }
 }
 
 // ── 품질부: 수입·출하검사 현황 ─────────────────────────────
