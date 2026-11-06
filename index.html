@@ -13849,17 +13849,24 @@ function hqQAView(ngOnly){
     ${byRows.length && !ngOnly ? `<div style="font-size:13px;font-weight:700;margin-bottom:6px">품목별 불량 (이번 달)</div><div class="tw" style="margin-bottom:12px"><table><thead><tr><th>품목</th><th style="text-align:right">검사</th><th style="text-align:right">시료</th><th style="text-align:right">불량</th><th style="text-align:right">불량률</th><th style="text-align:right">불합격·조건부</th></tr></thead><tbody>${
       byRows.map(o => `<tr><td>${hqE(o.name)}</td><td style="text-align:right">${o.n}</td><td style="text-align:right">${hqN(o.smp)}</td><td style="text-align:right;color:#b91c1c">${hqN(o.def)}</td><td style="text-align:right;font-weight:700">${o.smp ? (Math.round(o.def / o.smp * 10000) / 100) + '%' : '-'}</td><td style="text-align:right">${o.ng}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <div style="font-size:13px;font-weight:700;margin-bottom:6px">${ngOnly ? '불합격·조건부합격 목록' : '검사 기록'} <span style="font-weight:400;color:#5D6977">${rows.length}건</span></div>
-    ${rows.length ? `<div class="tw"><table><thead><tr><th>검사일</th><th>구분</th><th>품목</th><th>LOT</th><th style="text-align:right">검사 수량</th><th style="text-align:right">시료</th><th style="text-align:right">불량</th><th>판정</th><th>검사자</th><th>비고</th></tr></thead><tbody>${
+    ${rows.length ? `<div class="tw"><table><thead><tr><th>검사일</th><th>구분</th><th>품목</th><th>LOT</th><th style="text-align:right">검사 수량</th><th style="text-align:right">시료</th><th style="text-align:right">불량</th><th>판정</th><th>검사자</th><th>첨부<span class="vi">File</span></th><th>비고</th></tr></thead><tbody>${
       rows.map(r => `<tr><td style="white-space:nowrap">${hqE(fmtDt(r.inspDate))}</td><td style="white-space:nowrap">${hqE(r.inspType)}</td><td>${hqE(r.name||r.code)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(r.code)}</div></td>
         <td style="font-size:12px">${hqE(r.lot||'')}</td><td style="text-align:right">${hqN(r.totalQty)}</td><td style="text-align:right">${hqN(r.sampleQty)}</td><td style="text-align:right;color:${(+r.defectQty||0) ? '#b91c1c' : ''}">${hqN(r.defectQty)}</td>
-        <td>${hqPill(r.result||'', rc[r.result])}</td><td>${hqE(r.inspector||'')}</td><td style="white-space:normal;font-size:12px;color:#5D6977;max-width:260px">${hqE(r.note||'')}</td></tr>`).join('')}</tbody></table></div>`
+        <td>${hqPill(r.result||'', rc[r.result])}</td><td>${hqE(r.inspector||'')}</td><td style="white-space:nowrap">${hqQAFiles(r)}</td><td style="white-space:normal;font-size:12px;color:#5D6977;max-width:260px">${hqE(r.note||'')}</td></tr>`).join('')}</tbody></table></div>`
       : `<div class="empty">${ngOnly ? '✅ 이 달 불합격·조건부합격이 없습니다.' : '이 달 검사 기록이 없습니다.'}</div>`}
     <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">법인 품질검사 탭에 등록된 기록을 그대로 보여줍니다 (조회 전용).</div>`;
+}
+// 검사 첨부(특성 데이터·출하검사 성적서) — 링크를 누르면 ERP 안 보기 창(엑셀·CSV·accdb)이나 드라이브로 열린다
+function hqQAFiles(r){
+  const a = [];
+  if (r.attachmentUrl) a.push(`<a href="${hqE(r.attachmentUrl)}" target="_blank" rel="noopener" title="${hqE(r.attachmentName || '첨부파일')}" style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:6px;background:#ECFDF5;color:#166534;font-size:12px;text-decoration:none;margin-right:4px">📎 ${r.inspType === '출하검사' ? '특성 데이터' : '첨부'}</a>`);
+  if (r.attachmentUrl2) a.push(`<a href="${hqE(r.attachmentUrl2)}" target="_blank" rel="noopener" title="${hqE(r.attachmentName2 || '출하검사 성적서')}" style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:6px;background:#F3E8FF;color:#6d28d9;font-size:12px;text-decoration:none">📄 성적서</a>`);
+  return a.join('') || '<span style="color:#C0C7D0">-</span>';
 }
 function hqQAExcel(ngOnly){
   if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
   const rows = (QC||[]).filter(q => hqQAYM(q) === HQ.qm && (!HQ.qt || q.inspType === HQ.qt) && (!ngOnly || q.result !== '합격')).sort((a,b) => String(a.inspDate||'').localeCompare(String(b.inspDate||'')));
-  const ws = XLSX.utils.json_to_sheet(rows.map(r => ({'검사일': fmtDt(r.inspDate), '구분': r.inspType, '품목코드': r.code, '품명': r.name, 'LOT': r.lot||'', '검사 수량': +r.totalQty||0, '시료': +r.sampleQty||0, '불량': +r.defectQty||0, '판정': r.result, '검사자': r.inspector||'', '비고': r.note||''})));
+  const ws = XLSX.utils.json_to_sheet(rows.map(r => ({'검사일': fmtDt(r.inspDate), '구분': r.inspType, '품목코드': r.code, '품명': r.name, 'LOT': r.lot||'', '검사 수량': +r.totalQty||0, '시료': +r.sampleQty||0, '불량': +r.defectQty||0, '판정': r.result, '검사자': r.inspector||'', '첨부': r.attachmentUrl || '', '성적서': r.attachmentUrl2 || '', '비고': r.note||''})));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, ngOnly ? '불합격·조건부' : '검사 현황'); XLSX.writeFile(wb, `품질검사_${HQ.qm.replace('-','')}${ngOnly ? '_불합격' : ''}.xlsx`);
 }
 // ── ④ 발주·선적 ────────────────────────────────────────────
