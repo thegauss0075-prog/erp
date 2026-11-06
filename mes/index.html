@@ -95,7 +95,7 @@ const ERP_API = 'https://script.google.com/macros/s/AKfycbyo_eOJACEPPqV-CHA9rUnY
 const SB_URL_DEFAULT = 'https://dorbfjtgnjnsnyamgnxy.supabase.co', SB_KEY_DEFAULT = 'sb_publishable_3f-9RqobsZ2Na6tUI8ruNg_eshe2vF2';
 const LS = { get(k, d){ try { const v = localStorage.getItem(k); return v === null ? d : v; } catch(e){ return d; } }, set(k, v){ try { localStorage.setItem(k, v); } catch(e){} }, del(k){ try { localStorage.removeItem(k); } catch(e){} } };
 const SB_URL = LS.get('mes_sb_url', SB_URL_DEFAULT), SB_KEY = LS.get('mes_sb_key', SB_KEY_DEFAULT);
-let sb = null, ME = {email: '', role: ''}, M = {proc: [], mach: [], work: [], reasons: [], wo: [], rec: [], ev: [], route: [], gauge: [], chkItem: [], chk: []};
+let sb = null, ME = {email: '', role: ''}, M = {proc: [], mach: [], work: [], reasons: [], wo: [], rec: [], ev: [], route: [], gauge: [], chkItem: [], chk: [], skill: [], c4: []};
 const S = {view: '', worker: LS.get('mes_worker',''), proc: LS.get('mes_proc',''), device: LS.get('mes_device','') || ('태블릿-' + Math.random().toString(36).slice(2,6).toUpperCase()), wo: ''};
 LS.set('mes_device', S.device);
 const $ = id => document.getElementById(id);
@@ -177,9 +177,9 @@ function woAutoSync(){
 }
 // ── 데이터 읽기
 async function loadMaster(){
-  const [p, m, w, r, o, rt, g, ci] = await Promise.all([sb.from('processes').select('*').order('seq'), sb.from('machines').select('*').order('code'), sb.from('workers').select('*').order('name'), sb.from('stop_reasons').select('*').order('seq'), sb.from('work_orders').select('*').order('order_no', {ascending: false}), sb.from('routings').select('*').order('seq'), sb.from('gauges').select('*').order('code'), sb.from('check_items').select('*').order('seq')]);
+  const [p, m, w, r, o, rt, g, ci, sk, c4] = await Promise.all([sb.from('processes').select('*').order('seq'), sb.from('machines').select('*').order('code'), sb.from('workers').select('*').order('name'), sb.from('stop_reasons').select('*').order('seq'), sb.from('work_orders').select('*').order('order_no', {ascending: false}), sb.from('routings').select('*').order('seq'), sb.from('gauges').select('*').order('code'), sb.from('check_items').select('*').order('seq'), sb.from('worker_skills').select('*'), sb.from('changes_4m').select('*').order('created_at', {ascending: false}).limit(500)]);
   M.proc = p.data || []; M.mach = m.data || []; M.work = w.data || []; M.reasons = r.data || []; M.wo = o.data || []; M.route = rt.data || [];
-  M.gauge = g.data || []; M.chkItem = ci.data || [];
+  M.gauge = g.data || []; M.chkItem = ci.data || []; M.skill = sk.data || []; M.c4 = c4.data || [];
 }
 async function loadLive(fromIso){
   const since = fromIso || new Date(today0().getTime() - 0).toISOString();
@@ -278,6 +278,8 @@ function floorView(){
             <div class="muted">${E(procName(S.proc))} ${N(done)} / ${N(w.plan_qty)} ${E(w.unit||'')}</div><div class="bar" style="margin-top:6px"><i style="width:${pct}%"></i></div></button>`; }).join('') || woOther()}</div></div>
       <div class="card">${sel ? `<h2>${E(sel.name)}</h2><div class="muted" style="margin-bottom:10px">${E(sel.order_no)} · LOT ${E(sel.lot||'-')} · 계획 ${N(sel.plan_qty)} ${E(sel.unit||'')}</div>
         ${curNote ? `<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;padding:8px 12px;margin-bottom:10px;font-size:14px"><b>📋 ${E(procName(S.proc))} 관리기준</b><br>${E(curNote)}</div>` : ''}
+        ${c4Open(S.proc).map(c => `<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:9px;padding:8px 12px;margin-bottom:10px;font-size:14px"><b>🔁 4M 변경 적용 중 — 초품 검사 필요</b> <span class="vi">Thay đổi 4M — kiểm tra sản phẩm đầu</span><br>${E(C4K[c.kind])} · ${E(c.title)}${c.doc_no ? ' · ' + E(c.doc_no) : ''}</div>`).join('')}
+        ${skillOn(S.proc) ? (k => `<div class="muted" style="margin-bottom:8px">🎓 ${E(workName(S.worker))} 자격: ${k && !k.expired ? `<b style="color:${SKL[k.level][3]}">${SKL[k.level][0]}</b>${k.valid_until ? ' (~' + E(k.valid_until) + ')' : ''}` : '<b style="color:var(--bad)">없음</b>'}</div>`)(skillOf(S.worker, S.proc)) : ''}
         <div class="grid" style="grid-template-columns:1fr 1fr;margin-bottom:12px"><button class="btn pri big" onclick="startJob()">▶ 작업 시작<span class="vi" style="color:#DCEBF5">Bắt đầu</span></button><button class="btn big" onclick="finishDlg(null)">＋ 실적만 입력<span class="vi">Nhập kết quả</span></button></div>
         <table><thead><tr><th>공정</th><th class="r">양품 누계</th><th class="r">불량</th></tr></thead><tbody>${routeOf(sel).map(p => { const rs = M.rec.filter(r => r.wo_id === sel.wo_id && r.process_code === p.code && r.status === 'done');
           return `<tr onclick="S.proc='${E(p.code)}';LS.set('mes_proc',S.proc);render();toast('🔧 ${E(p.name)} 공정으로 바꿨습니다')" title="눌러서 이 공정으로 바꾸기" style="cursor:pointer;${p.code === S.proc ? 'background:#E7F1F8;font-weight:700' : ''}"><td>${p._r ? `<span class="muted">${p.seq}</span> ` : ''}${E(p.name)}${p.is_final ? ' <span class="tag m-run">완성</span>' : ''}</td><td class="r">${N(rs.reduce((a,r) => a + (+r.good_qty||0), 0))}</td><td class="r" style="color:var(--bad)">${(v => v ? N(v) : '-')(rs.reduce((a,r) => a + (+r.ng_qty||0), 0))}</td></tr>`; }).join('')}</tbody></table>
@@ -331,6 +333,7 @@ async function checkPrev(w, addQty){
   return mine + addQty <= pv || confirm(`이 공정 누계(${N(mine + addQty)})가 앞 공정 "${prev.name}" 양품(${N(pv)})보다 많아집니다. 그래도 저장할까요?`);
 }
 async function startJob2(w){
+  if (!skillGate()) return;
   if (!(await checkPrev(w, null))) return;
   const sd = await startDlg(w); if (!sd) return;
   const mach = sd.mach, lots = sd.lots;
@@ -412,6 +415,7 @@ async function fdSave(){
   if (u.per > 1 && rawG % u.per && !confirm(`양품 ${N(rawG)}${u.name}은 ${N(u.per)}${u.name}씩 맞지 않습니다 (단품 ${N(good)}개).\n그래도 저장할까요?`)) return;
   const rawNote = u.per > 1 ? `입력: 양품 ${rawG}${u.name}${rawN ? ' · 불량 ' + rawN + u.name : ''} (${u.per}${u.name}=1)` : null;
   if (ng && !f.reason) { alert('불량 사유를 골라주세요.'); return; }
+  if (!f.id && !skillGate()) return;
   if (!f.lots.length && lotReq(f.wo)) { alert('이 공정은 투입 자재 LOT이 필수입니다.\nCông đoạn này bắt buộc quét LOT NVL.'); setTimeout(() => $('fd-lot') && $('fd-lot').focus(), 30); return; }
   const w = woOf(f.wo.wo_id), plan = w ? +w.plan_qty || 0 : 0;
   const done = M.rec.filter(r => r.wo_id === f.wo.wo_id && r.process_code === S.proc && r.status === 'done').reduce((a,r) => a + (+r.good_qty||0), 0);
@@ -442,6 +446,21 @@ function machineView(){
         <div><div style="font-size:16px;font-weight:700">${lbl[st]}${rs ? ' · ' + E(rs) : ''}</div><div style="opacity:.9;font-size:12.5px">${s && s.started_at ? dur(Date.now() - new Date(s.started_at)) + ' 째' : ''}${w ? ' · ' + E(w.name) : ''}</div></div></button>
         ${ci.length ? `<button class="btn" style="width:100%;margin-top:4px;${ck ? (ck.all_ok ? 'color:var(--ok)' : 'color:var(--bad);border-color:var(--bad)') : 'color:var(--warn,#B45309);border-color:#F59E0B'}" onclick="checkDlg('${E(m.code)}')">📋 일상점검 ${ck ? (ck.all_ok ? '✔ ' + hm(ck.created_at) : '✕ 이상 ' + hm(ck.created_at)) : '— 미점검'}</button>` : ''}</div>`; }).join('')}</div>`;
 }
+// ════════ 🎓 작업자 자격 ════════
+// 1 교육 중 · 2 감독하 작업 · 3 단독 작업 · 4 강사(교육 가능). 한 공정에 자격 기록이 하나라도 있으면 그 공정부터 자격 관리를 켭니다.
+const SKL = {1: ['교육 중', 'Đang đào tạo', '#FDE2E2', '#991B1B'], 2: ['감독하 작업', 'Có giám sát', '#FEF3C7', '#92400E'], 3: ['단독 작업', 'Tự làm', '#DCFCE7', '#166534'], 4: ['강사', 'Hướng dẫn', '#DBEAFE', '#1E40AF']};
+const skillOf = (wk, pc) => { const k = M.skill.find(x => x.worker_code === wk && x.process_code === pc); if (!k) return null; return {...k, expired: !!(k.valid_until && k.valid_until < ymd(new Date()))}; };
+const skillOn = pc => M.skill.some(x => x.process_code === pc);
+function skillGate(){   // true = 진행 가능
+  if (!skillOn(S.proc)) return true;
+  const k = skillOf(S.worker, S.proc), pn = procName(S.proc), wn = workName(S.worker);
+  if (!k || k.expired || k.level < 2) { alert(`${wn}은(는) "${pn}" 공정 ${!k ? '자격이 없습니다' : k.expired ? `자격 유효기간(${k.valid_until})이 지났습니다` : '교육 중입니다'}.\nChưa đủ điều kiện làm công đoạn này.\n\n자격이 있는 작업자로 바꾸거나, 관리자가 🛠 기준정보 → 작업자 자격에서 등록하세요.`); return false; }
+  if (k.level === 2) return confirm(`${wn}은(는) "${pn}" 공정 "감독하 작업" 단계입니다.\nLàm việc có giám sát.\n\n감독자(단독 작업 이상)가 옆에 있으면 [확인]을 누르세요.`);
+  return true;
+}
+// ════════ 🔁 4M 변경 ════════
+const C4K = {Man: '사람 Man', Machine: '설비 Machine', Material: '자재 Material', Method: '방법 Method'};
+const c4Open = pc => M.c4.filter(c => c.status === '적용' && (!c.process_code || c.process_code === pc) && !c.fa_result);
 // ════════ 📋 설비 일상점검 · 📏 계측기 교정 ════════
 // 점검 항목: 설비 지정 > 공정 지정 > 전체 공통 순으로 적용
 const chkItemsFor = m => M.chkItem.filter(i => i.active !== false && (i.machine_code ? i.machine_code === m.code : (!i.process_code || i.process_code === m.process_code))).sort((a,b) => (a.seq||0) - (b.seq||0));
@@ -569,13 +588,14 @@ async function loadReport(){
     if (!RP.lot) { el.innerHTML = '<p class="muted">완제품 LOT 또는 자재 LOT을 넣으세요. 완제품 LOT이면 그 LOT의 공정별 이력과 투입 자재 LOT을, 자재 LOT이면 그 자재가 들어간 작업을 보여줍니다.</p>'; RPD = {cols: [], rows: []}; return; }
     const [a, b] = await Promise.all([sb.from('prod_records').select('*').eq('lot_out', RP.lot).neq('status','void').order('created_at').limit(5000), sb.from('prod_records').select('*').contains('lots_in', [{lot: RP.lot}]).neq('status','void').order('created_at').limit(5000)]);
     const all = [...(a.data||[]).map(x => ['이 LOT 생산', x]), ...(b.data||[]).map(x => ['이 자재 LOT 투입', x])];
+    RP._c4 = M.c4.filter(c => c.applied_at && all.some(([, x]) => (!c.process_code || c.process_code === x.process_code) && String(x.created_at) >= String(c.applied_at)));
     cols = ['구분','일시','작업지시','품목','공정','작업자','설비','양품','불량','투입 자재 LOT'];
     rows = all.map(([k, x]) => [k, ymd(x.created_at) + ' ' + hm(x.start_at || x.created_at), x.order_no, x.item_name, procName(x.process_code), workName(x.worker_code), x.machine_code ? machName(x.machine_code) : '', +x.good_qty||0, +x.ng_qty||0, (x.lots_in || []).map(l => l.lot + (l.code ? ` (${l.code})` : '')).join(', ')]);
   }
   RPD = {cols, rows};
   const numC = i => rows.length && typeof rows[0][i] === 'number';
   el.innerHTML = rows.length ? `<div class="muted" style="margin-bottom:6px">${rows.length}건</div><div style="overflow:auto"><table><thead><tr>${cols.map((c, i) => `<th class="${numC(i) ? 'r' : ''}">${E(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map((v, i) => `<td class="${typeof v === 'number' ? 'r' : ''}">${typeof v === 'number' ? N(v) : E(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
-    ${RP.tab === 'erp' ? erpPushBar() : ''}` : (RP.tab === 'erp' ? erpPushBar() : '') + '<p class="muted">이 기간 자료가 없습니다.</p>';
+    ${RP.tab === 'erp' ? erpPushBar() : ''}${RP.tab === 'lot' && (RP._c4 || []).length ? `<h2 style="margin-top:14px">🔁 이 LOT에 해당하는 4M 변경</h2><table><thead><tr><th>구분</th><th>내용</th><th>공정</th><th>문서</th><th>고객 승인</th><th>적용</th><th>초품</th></tr></thead><tbody>${RP._c4.map(c => `<tr><td>${E(C4K[c.kind])}</td><td>${E(c.title)}</td><td>${E(c.process_code ? procName(c.process_code) : '전체')}</td><td>${E(c.doc_no||'')}</td><td>${E(c.cust_approval||'미승인')}</td><td>${E(ymd(c.applied_at))}</td><td>${E(c.fa_result||'-')}</td></tr>`).join('')}</tbody></table>` : ''}` : (RP.tab === 'erp' ? erpPushBar() : '') + '<p class="muted">이 기간 자료가 없습니다.</p>';
 }
 // ── MES 완성 수량 → ERP 작업지시 생산 실적
 //    마지막 공정(완성)의 양품만, 아직 안 보낸 것만 보낸다. 보내기 전에 erp_sent_at을 먼저 찍어
@@ -710,6 +730,8 @@ async function rtDel(i){
 function adminView(){
   if (AD.t === 'route') return routeAdmin();
   if (AD.t === 'chkitem') return chkItemAdmin();
+  if (AD.t === 'skill') return skillAdmin();
+  if (AD.t === 'c4') return c4Admin();
   if (AD.t === 'wo') return adminTabs() + `<div class="card"><h2>ERP 작업지시 <span class="muted">${M.wo.length}건 · 진행 ${activeWO().length}건${M.wo[0] ? ' · 받은 시각 ' + new Date(M.wo.map(w => w.synced_at).sort().pop()).toLocaleString('ko-KR') : ''}</span></h2>
     <div style="overflow:auto"><table><thead><tr><th>지시번호</th><th>품목</th><th>구분</th><th>LOT</th><th class="r">계획</th><th>마감일</th><th>상태</th></tr></thead><tbody>${M.wo.filter(w => inScope(w.code, w.name)).map(w => `<tr style="${w.status === '완료' ? 'color:var(--sub)' : w.status === '삭제됨' ? 'color:var(--sub);text-decoration:line-through' : ''}"><td style="font-family:monospace">${E(w.order_no)}</td><td><b>${E(w.name)}</b><div class="muted">${E(w.code)}</div></td><td>${E(w.cat||'')}</td><td style="font-family:monospace">${E(w.lot||'')}</td><td class="r">${N(w.plan_qty)} ${E(w.unit||'')}</td><td>${E(w.due_date||'')}</td><td><span class="tag ${w.status === '진행중' ? 'm-run' : w.status === '완료' || w.status === '삭제됨' ? 'm-idle' : 'm-setup'}">${E(w.status)}</span></td></tr>`).join('') || '<tr><td colspan="7" class="muted">아직 받은 작업지시가 없습니다.</td></tr>'}</tbody></table></div>
     <p class="muted" style="margin-top:8px">현장(📝 실적 입력)에는 대기·진행중 작업지시만 보입니다. ERP에서 새로 발행하면 위 "🔄 ERP 작업지시 받기"를 다시 누르세요 (화면이 열려 있으면 2분마다 자동으로도 받습니다).</p></div>`;
@@ -731,7 +753,7 @@ function adminView(){
       <p class="muted" style="margin-top:8px">코드는 WIND-01, WIND-02 …, 이름은 권선기 1호기, 2호기 … 로 만들어집니다. 이미 있는 코드는 건너뜁니다.</p></div>` : ''}
     <div class="card" style="margin-top:12px"><h2>이 기기</h2><div class="muted">기기 이름: <b>${E(S.device)}</b> <button class="btn" style="padding:4px 10px" onclick="const n=prompt('기기 이름',S.device);if(n){S.device=n;LS.set('mes_device',n);render()}">바꾸기</button> · 로그인: ${E(ME.email)} (${E(ME.role)})</div></div>`;
 }
-function adminTabs(){ return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn ${AD.t === 'wo' ? 'pri' : ''}" onclick="AD.t='wo';render()">작업지시</button><button class="btn ${AD.t === 'route' ? 'pri' : ''}" onclick="AD.t='route';render()">공정 순서(품목별)</button><button class="btn ${AD.t === 'chkitem' ? 'pri' : ''}" onclick="AD.t='chkitem';render()">점검 항목</button>${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
+function adminTabs(){ return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn ${AD.t === 'wo' ? 'pri' : ''}" onclick="AD.t='wo';render()">작업지시</button><button class="btn ${AD.t === 'route' ? 'pri' : ''}" onclick="AD.t='route';render()">공정 순서(품목별)</button><button class="btn ${AD.t === 'chkitem' ? 'pri' : ''}" onclick="AD.t='chkitem';render()">점검 항목</button><button class="btn ${AD.t === 'skill' ? 'pri' : ''}" onclick="AD.t='skill';render()">작업자 자격</button><button class="btn ${AD.t === 'c4' ? 'pri' : ''}" onclick="AD.t='c4';render()">4M 변경</button>${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
       <button class="btn ok" onclick="syncWO(false).then(()=>{AD.t='wo';render()})">🔄 ERP 작업지시 받기</button></div>`; }
 function adCell(f, v, rid){ const id = `ad-${rid}-${f[0]}`;
   if (f[2] === 'bool') return `<input type="checkbox" id="${id}" ${v ? 'checked' : ''} style="width:20px;height:20px">`;
@@ -812,6 +834,106 @@ async function ciSave(id){
   if (r.error) { alert('저장 실패: ' + r.error.message); return; } await loadMaster(); render(); toast('저장했습니다');
 }
 async function ciDel(id){ if (!confirm('이 점검 항목을 삭제할까요? (지난 점검 기록은 그대로 남습니다)')) return; const r = await sb.from('check_items').delete().match({id}); if (r.error) { alert('삭제 실패: ' + r.error.message); return; } await loadMaster(); render(); }
+// ── 작업자 자격표 (작업자 × 공정)
+function skillProcs(){ const codes = [...new Set(M.route.filter(r => inScope(r.item_code)).sort((a,b) => a.seq - b.seq).map(r => r.process_code))]; return codes.map(c => M.proc.find(p => p.code === c)).filter(p => p && p.active !== false); }
+function skillAdmin(){
+  const ps = skillProcs(), ws = M.work.filter(w => w.active !== false), t = ymd(new Date()), soon = addMonths(t, 1);
+  const cell = (w, p) => { const k = skillOf(w.code, p.code); if (!k) return `<td style="text-align:center;cursor:pointer" onclick="skillDlg('${E(w.code)}','${E(p.code)}')"><span class="muted">－</span></td>`;
+    const c = SKL[k.level], warn = k.expired ? 'outline:2px solid var(--bad)' : (k.valid_until && k.valid_until <= soon ? 'outline:2px solid #F59E0B' : '');
+    return `<td style="text-align:center;cursor:pointer;padding:4px" onclick="skillDlg('${E(w.code)}','${E(p.code)}')"><span style="display:inline-block;min-width:34px;padding:4px 6px;border-radius:6px;background:${c[2]};color:${c[3]};font-weight:800;${warn}" title="${E(c[0])}${k.valid_until ? ' ~' + E(k.valid_until) : ''}">${k.level}</span></td>`; };
+  return adminTabs() + `<div class="card"><h2>🎓 작업자 자격표 <span class="muted">칸을 눌러 자격을 등록·수정합니다. 공정에 자격이 하나라도 등록되면 그 공정은 자격 없는 작업자가 시작할 수 없습니다.</span></h2>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;font-size:13px">${Object.entries(SKL).map(([k, v]) => `<span><span style="display:inline-block;padding:2px 8px;border-radius:6px;background:${v[2]};color:${v[3]};font-weight:800">${k}</span> ${v[0]}${+k === 1 ? ' (작업 불가)' : +k === 2 ? ' (감독자 확인 후)' : ''}</span>`).join('')}<span><span style="outline:2px solid #F59E0B;padding:0 6px">　</span> 30일 내 만료</span><span><span style="outline:2px solid var(--bad);padding:0 6px">　</span> 만료</span></div>
+    <div style="overflow:auto" id="skill-mx"><table style="font-size:13px"><thead><tr><th>작업자</th>${ps.map(p => `<th style="text-align:center;white-space:nowrap;padding:6px 4px">${E(p.name)}${skillOn(p.code) ? '' : '<div class="muted" style="font-weight:400">관리 안 함</div>'}</th>`).join('')}</tr></thead>
+    <tbody>${ws.map(w => `<tr><td style="white-space:nowrap"><b>${E(w.name)}</b> <span class="muted">${E(w.code)}${w.team ? ' · ' + E(w.team) : ''}</span></td>${ps.map(p => cell(w, p)).join('')}</tr>`).join('') || `<tr><td colspan="${ps.length + 1}" class="muted">작업자 탭에서 작업자를 먼저 등록하세요.</td></tr>`}</tbody></table></div>
+    <div style="margin-top:10px"><button class="btn" onclick="skillPrint()">🖨 자격 인증 현황표 출력</button></div>
+    <p class="muted">교육 일지·평가지 원본은 문서로 보관하고, 평가자와 문서 번호를 비고에 적어 두세요.</p></div>`;
+}
+function skillDlg(wk, pc){
+  const k = M.skill.find(x => x.worker_code === wk && x.process_code === pc) || {}, t = ymd(new Date());
+  const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+  ov.innerHTML = `<div class="box"><h2>🎓 ${E(workName(wk))} — ${E(procName(pc))}</h2>
+    <div class="pick" style="margin-bottom:10px">${Object.entries(SKL).map(([n, v]) => `<button data-l="${n}" class="${+k.level === +n ? 'on' : ''}"><b>${n}</b> ${v[0]}<span class="vi">${v[1]}</span></button>`).join('')}</div>
+    <div class="grid" style="grid-template-columns:1fr 1fr"><label class="field"><span>인증일</span><input id="sk-c" type="date" value="${E(k.certified_on || t)}"></label><label class="field"><span>유효기간 (비우면 무기한)</span><input id="sk-v" type="date" value="${E(k.valid_until || addMonths(t, 12))}"></label>
+    <label class="field"><span>평가자</span><input id="sk-e" value="${E(k.evaluator || '')}"></label><label class="field"><span>비고 (평가 문서 번호 등)</span><input id="sk-n" value="${E(k.note || '')}"></label></div>
+    <div style="display:flex;gap:8px;margin-top:12px">${k.level ? '<button class="btn" style="color:var(--bad)" data-del="1">자격 삭제</button>' : ''}<span style="flex:1"></span><button class="btn" data-x="1">취소</button><button class="btn ok" data-go="1">저장</button></div></div>`;
+  let lv = k.level || 0;
+  ov.onclick = async e => { const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.l) { lv = +b.dataset.l; ov.querySelectorAll('[data-l]').forEach(x => x.classList.toggle('on', +x.dataset.l === lv)); return; }
+    if (b.dataset.x) { ov.remove(); return; }
+    if (b.dataset.del) { if (!confirm('이 자격 기록을 삭제할까요?')) return; const r = await sb.from('worker_skills').delete().match({worker_code: wk, process_code: pc}); if (r.error) { alert(r.error.message); return; } ov.remove(); await loadMaster(); render(); return; }
+    if (b.dataset.go) { if (!lv) { alert('단계를 고르세요.'); return; }
+      const row = {worker_code: wk, process_code: pc, level: lv, certified_on: $('sk-c').value || null, valid_until: $('sk-v').value || null, evaluator: $('sk-e').value.trim() || null, note: $('sk-n').value.trim() || null, updated_at: new Date().toISOString()};
+      const r = await sb.from('worker_skills').upsert(row, {onConflict: 'worker_code,process_code'}); if (r.error) { alert('저장 실패: ' + r.error.message); return; }
+      ov.remove(); await loadMaster(); render(); toast('자격을 저장했습니다'); } };
+}
+function skillPrint(){
+  const mx = $('skill-mx'); if (!mx) return; const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>작업자 자격 인증 현황표</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:"Malgun Gothic",sans-serif;font-size:11px}h1{font-size:17px;text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:4px 3px;text-align:center}td:first-child{text-align:left}.sg{float:right;margin-bottom:6px}.sg td{width:66px;height:42px;vertical-align:top}.muted{color:#777;font-size:9px}</style></head><body>
+    <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr></table><h1 style="clear:both">작업자 자격 인증 현황표 (Skill Matrix)</h1><div style="margin-bottom:6px">THE GAUSS VINA · 200kW PCDU · 기준일 ${ymd(new Date())} · ${Object.entries(SKL).map(([k, v]) => k + ' ' + v[0]).join(' / ')}</div>
+    ${mx.innerHTML}<script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
+}
+// ── 4M 변경 대장: 문서(변경 신청서·고객 승인)가 원본, 여기서는 적용 시점·LOT과 초품 결과를 연결
+function c4Admin(){
+  const st = {'계획': 'm-idle', '승인대기': 'm-setup', '적용': 'm-run', '종료': 'm-idle'};
+  return adminTabs() + `<div class="card"><h2>🔁 4M 변경 대장 <span class="muted">문서 번호로 원본(변경 신청서·고객 승인)과 연결하고, "적용"을 누른 시각 이후 실적이 이 변경으로 만들어진 것으로 추적됩니다.</span></h2>
+    <div style="margin-bottom:10px;display:flex;gap:8px"><button class="btn pri" onclick="c4Dlg(null)">＋ 4M 변경 등록</button><button class="btn" onclick="c4Print()">🖨 4M 변경 대장 출력</button></div>
+    <div style="overflow:auto"><table><thead><tr><th>구분</th><th>변경 내용</th><th>공정</th><th>문서 번호</th><th>고객 통보 / 승인</th><th>적용 시각 · 첫 LOT</th><th>초품 검사</th><th>상태</th><th></th></tr></thead><tbody>
+    ${M.c4.map(c => `<tr><td><b>${E(C4K[c.kind] || c.kind)}</b></td><td><b>${E(c.title)}</b><div class="muted">${E(c.detail || '')}</div></td><td>${E(c.process_code ? procName(c.process_code) : '전체')}</td><td>${E(c.doc_no || '')}</td>
+      <td>${E(c.cust_notice || '-')} / ${c.cust_approval ? '<b>' + E(c.cust_approval) + '</b>' : '<span style="color:var(--bad)">미승인</span>'}</td>
+      <td>${c.applied_at ? E(ymd(c.applied_at) + ' ' + hm(c.applied_at)) + '<div class="muted">' + E([c.start_order_no, c.start_lot].filter(Boolean).join(' · ')) + '</div>' : '-'}</td>
+      <td>${c.fa_result ? E(c.fa_result) + '<div class="muted">' + E(c.fa_date || '') + '</div>' : (c.status === '적용' ? '<span style="color:var(--bad)">필요</span>' : '-')}</td><td><span class="tag ${st[c.status] || 'm-idle'}">${E(c.status)}</span></td>
+      <td style="white-space:nowrap"><button class="btn" style="padding:6px 10px" onclick="c4Dlg(${c.id})">수정</button>${c.status !== '적용' && c.status !== '종료' ? ` <button class="btn ok" style="padding:6px 10px" onclick="c4Apply(${c.id})">▶ 적용</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">등록된 4M 변경이 없습니다.</td></tr>'}</tbody></table></div>
+    <p class="muted">"적용"을 누르면 그 공정 현장 화면에 "초품 검사 필요" 안내가 뜨고, 초품 검사 결과를 넣으면 사라집니다. LOT 추적 보고서에도 해당 변경이 함께 표시됩니다.</p></div>`;
+}
+function c4Dlg(id){
+  const c = id ? M.c4.find(x => x.id === id) || {} : {kind: 'Material', status: '계획', chg_date: ymd(new Date())};
+  const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+  const ps = skillProcs();
+  ov.innerHTML = `<div class="box" style="max-width:720px"><h2>🔁 4M 변경 ${id ? '수정' : '등록'}</h2><div class="grid" style="grid-template-columns:1fr 1fr">
+    <label class="field"><span>구분</span><select id="c4-k">${Object.entries(C4K).map(([k, v]) => `<option value="${k}" ${c.kind === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+    <label class="field"><span>공정</span><select id="c4-p"><option value="">(전체)</option>${ps.map(p => `<option value="${E(p.code)}" ${c.process_code === p.code ? 'selected' : ''}>${E(p.name)}</option>`).join('')}</select></label>
+    <label class="field" style="grid-column:1/-1"><span>변경 내용 (제목)</span><input id="c4-t" value="${E(c.title || '')}" placeholder="예) 코아 공급사 변경 A사 → B사"></label>
+    <label class="field" style="grid-column:1/-1"><span>상세 (변경 전 → 후, 사유)</span><input id="c4-d" value="${E(c.detail || '')}"></label>
+    <label class="field"><span>문서 번호 (변경 신청서)</span><input id="c4-doc" value="${E(c.doc_no || '')}"></label>
+    <label class="field"><span>변경 예정일</span><input id="c4-cd" type="date" value="${E(c.chg_date || '')}"></label>
+    <label class="field"><span>고객 통보일</span><input id="c4-cn" type="date" value="${E(c.cust_notice || '')}"></label>
+    <label class="field"><span>고객 승인일</span><input id="c4-ca" type="date" value="${E(c.cust_approval || '')}"></label>
+    <label class="field"><span>적용 첫 작업지시</span><input id="c4-wo" value="${E(c.start_order_no || '')}"></label>
+    <label class="field"><span>적용 첫 LOT</span><input id="c4-lot" value="${E(c.start_lot || '')}"></label>
+    <label class="field"><span>초품 검사 결과</span><select id="c4-fa"><option value="">(아직)</option>${['합격','불합격'].map(v => `<option ${c.fa_result === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+    <label class="field"><span>초품 검사일</span><input id="c4-fd" type="date" value="${E(c.fa_date || '')}"></label>
+    <label class="field"><span>상태</span><select id="c4-s">${['계획','승인대기','적용','종료'].map(v => `<option ${c.status === v ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+    <label class="field"><span>비고</span><input id="c4-n" value="${E(c.note || '')}"></label></div>
+    <div style="display:flex;gap:8px;margin-top:12px">${id ? '<button class="btn" style="color:var(--bad)" id="c4-del">삭제</button>' : ''}<span style="flex:1"></span><button class="btn" id="c4-x">취소</button><button class="btn ok" id="c4-go">저장</button></div></div>`;
+  $('c4-x').onclick = () => ov.remove();
+  if (id) $('c4-del').onclick = async () => { if (!confirm('이 4M 변경 기록을 삭제할까요?')) return; await sb.from('changes_4m').delete().match({id}); ov.remove(); await loadMaster(); render(); };
+  $('c4-go').onclick = async () => {
+    const v = k => $(k).value.trim() || null;
+    const row = {kind: $('c4-k').value, process_code: v('c4-p'), item_code: 'PCDU INDUCTOR', title: v('c4-t'), detail: v('c4-d'), doc_no: v('c4-doc'), chg_date: v('c4-cd'), cust_notice: v('c4-cn'), cust_approval: v('c4-ca'), start_order_no: v('c4-wo'), start_lot: v('c4-lot'), fa_result: v('c4-fa'), fa_date: v('c4-fd') || (v('c4-fa') ? ymd(new Date()) : null), status: $('c4-s').value, note: v('c4-n'), updated_at: new Date().toISOString()};
+    if (!row.title) { alert('변경 내용을 넣어주세요.'); return; }
+    if (row.status === '적용' && !c.applied_at) row.applied_at = new Date().toISOString();
+    if (row.status === '적용' && !row.cust_approval && !confirm('고객 승인일이 비어 있습니다. 승인 없이 적용할까요?')) return;
+    const r = id ? await sb.from('changes_4m').update(row).match({id}) : await sb.from('changes_4m').insert(row);
+    if (r.error) { alert('저장 실패: ' + r.error.message); return; } ov.remove(); await loadMaster(); render(); toast('저장했습니다');
+  };
+}
+async function c4Apply(id){
+  const c = M.c4.find(x => x.id === id); if (!c) return;
+  if (!c.cust_approval && !confirm('고객 승인일이 비어 있습니다. 승인 없이 적용할까요?')) return;
+  const lot = prompt('적용하는 첫 작업지시 번호 또는 LOT (모르면 비워 두세요)', c.start_order_no || c.start_lot || '');
+  if (lot === null) return;
+  const w = lot ? M.wo.find(x => x.order_no === lot.trim() || x.lot === lot.trim()) : null;
+  const r = await sb.from('changes_4m').update({status: '적용', applied_at: new Date().toISOString(), start_order_no: w ? w.order_no : (/^WO/i.test(lot.trim()) ? lot.trim() : c.start_order_no), start_lot: w ? w.lot : (lot.trim() && !/^WO/i.test(lot.trim()) ? lot.trim() : c.start_lot), updated_at: new Date().toISOString()}).match({id});
+  if (r.error) { alert(r.error.message); return; } await loadMaster(); render(); toast('▶ 적용했습니다 — 현장에 초품 검사 안내가 표시됩니다');
+}
+function c4Print(){
+  const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
+  const rows = M.c4.map((c, i) => `<tr><td>${M.c4.length - i}</td><td>${E(C4K[c.kind] || c.kind)}</td><td style="text-align:left">${E(c.title)}<br><small>${E(c.detail || '')}</small></td><td>${E(c.process_code ? procName(c.process_code) : '전체')}</td><td>${E(c.doc_no || '')}</td><td>${E(c.chg_date || '')}</td><td>${E(c.cust_notice || '')}</td><td>${E(c.cust_approval || '')}</td><td>${c.applied_at ? E(ymd(c.applied_at)) : ''}</td><td>${E([c.start_order_no, c.start_lot].filter(Boolean).join(' / '))}</td><td>${E(c.fa_result || '')} ${E(c.fa_date || '')}</td><td>${E(c.status)}</td></tr>`).join('');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>4M 변경 관리 대장</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:"Malgun Gothic",sans-serif;font-size:10.5px}h1{font-size:17px;text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:4px 4px;text-align:center}th{background:#EEE}.sg{float:right;margin-bottom:6px}.sg td{width:66px;height:42px;vertical-align:top}</style></head><body>
+    <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr></table><h1 style="clear:both">4M 변경 관리 대장</h1><div style="margin-bottom:6px">THE GAUSS VINA · 200kW PCDU · 기준일 ${ymd(new Date())}</div>
+    <table><thead><tr><th>No</th><th>구분</th><th>변경 내용</th><th>공정</th><th>문서 번호</th><th>변경 예정일</th><th>고객 통보</th><th>고객 승인</th><th>적용일</th><th>첫 작업지시 / LOT</th><th>초품 검사</th><th>상태</th></tr></thead><tbody>${rows || '<tr><td colspan="12">기록 없음</td></tr>'}</tbody></table>
+    <script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
+}
 async function machBulk(){
   const cp = $('mb-code').value.trim().toUpperCase(), np = $('mb-name').value.trim(), pc = $('mb-proc').value, a = +$('mb-from').value || 1, n = Math.min(50, +$('mb-n').value || 0);
   if (!cp || !np || !n) { alert('코드 앞부분, 이름 앞부분, 대수를 넣어주세요.'); return; }
