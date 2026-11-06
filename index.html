@@ -524,7 +524,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <button class="tb" id="tb-ship" onclick="go('ship')">🚚 출고<span class="vi">Xuất hàng</span></button>
   <button class="tb" id="tb-shipstat" onclick="go('shipstat')">📊 출고 실적<span class="vi">Kết quả xuất</span></button>
   <button class="tb" id="tb-cost" onclick="go('cost')" style="display:none">💰 제조원가<span class="vi">Giá thành SX</span></button>
-  <button class="tb" id="tb-hq" onclick="go('hq')">🏢 본사 업무<span class="vi">Trụ sở</span></button>
+  <button class="tb" id="tb-hq" onclick="go('hq')" style="display:none">🏢 본사 업무<span class="vi">Trụ sở</span></button>
 </div>
 
 <!-- DASHBOARD -->
@@ -8920,6 +8920,7 @@ function setMaster(on){
   try { _dsCostTried = false; } catch(e){}
   try { _invCostTried = false; } catch(e){}
   if (!isMaster && USER_ROLE !== 'viewer') { try { COST = {price:{}, month:{}, model:{}, out:{}}; COST_SERVER_OK = null; } catch(e){} }
+  try { if (typeof applyCostTabUI === 'function') applyCostTabUI(); } catch(e){}
 }
 var syncTimer    = null;
 var USER_ROLE    = 'viewer';
@@ -10015,6 +10016,10 @@ function applyCostTabUI() {
   const sec = document.getElementById('tab-cost');
   if (!show && sec && sec.classList.contains('on')) go('dashboard');
   else if (show && sec && sec.classList.contains('on')) renderCostBody();
+  // 🏢 본사 업무 탭은 마스터 화면에서만 보인다
+  const hb = document.getElementById('tb-hq'), hs = document.getElementById('tab-hq');
+  if (hb) hb.style.display = isMaster ? '' : 'none';
+  if (!isMaster && hs && hs.classList.contains('on')) go('dashboard');
 }
 
 // ── 동기화 배지
@@ -13431,9 +13436,9 @@ async function loadHQ(force){
 }
 // 부서별 탭 — 영업부: 고객 PO / 구매부: 자재 소요·구매요청·발주·선적 / 품질부: 검사 현황·불합격
 const HQ_DEPTS = [
-  {k:'sales', l:'💼 영업부', vi:'Kinh doanh', col:'#5b21b6', tabs:[['quote','📝 견적서'],['cpo','📥 주문서 (고객 PO)'],['sale','🧾 판매'],['ar','💰 수금·채권'],['cust','🏷️ 거래처']]},
-  {k:'buy',   l:'🛒 구매부', vi:'Mua hàng',   col:'#b45309', tabs:[['mrp','🧮 자재 소요 계산'],['pr','📝 구매요청·승인'],['ship','🚢 발주서·선적·입고'],['purch','🧾 구매(매입)'],['ap','💸 지급·채무'],['sup','🏭 공급사']]},
-  {k:'qa',    l:'🔬 품질부', vi:'Chất lượng', col:'#0f766e', tabs:[['qain','📥 본사 수입검사'],['qadr','📈 월별 불량률'],['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]},
+  {k:'sales', l:'💼 영업', vi:'Kinh doanh', col:'#5b21b6', tabs:[['quote','📝 견적서'],['cpo','📥 주문서 (고객 PO)'],['sale','🧾 판매'],['ar','💰 수금·채권'],['cust','🏷️ 거래처']]},
+  {k:'buy',   l:'🛒 구매', vi:'Mua hàng',   col:'#b45309', tabs:[['mrp','🧮 자재 소요 계산'],['pr','📝 구매요청·승인'],['ship','🚢 발주서·선적·입고'],['purch','🧾 구매(매입)'],['ap','💸 지급·채무'],['sup','🏭 공급사']]},
+  {k:'qa',    l:'🔬 품질', vi:'Chất lượng', col:'#0f766e', tabs:[['qain','📥 본사 수입검사'],['qadr','📈 월별 불량률'],['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]},
   {k:'rep',   l:'📑 출력물', vi:'Báo cáo',    col:'#334155', tabs:[['rep','📑 출력물']]}];
 function hqSetDept(k){ const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0]; HQ.dept = d.k; HQ.tab = d.tabs[0][0]; HQ.q = ''; HQ.st = ''; try { localStorage.setItem('hq_dept', d.k); } catch(e) {} renderHQ(); }
 function hqNav(){
@@ -13635,8 +13640,8 @@ async function hqCPOSave(){
     autoPR.prNo = hqNextNo('PR', HQ.pr, 'prNo', autoPR.date); autoPR.createdBy = CURRENT_USER || ''; autoPR.createdAt = new Date().toISOString();
     autoPR.history = [{at: autoPR.createdAt, by: '자동 (' + (CURRENT_USER||'') + ')', status: '요청'}];
     const pr = await retrySafe(() => api('saveHQPR', {rec: autoPR}));
-    if (pr && pr.ok) { HQ.pr.push(autoPR); alert(`✅ ${r.cpoNo} 확정\n부족 자재 ${autoPR.lines.length}건으로 구매요청 ${autoPR.prNo}를 자동으로 만들었습니다.\n구매부 → 구매요청·승인에서 수량·공급사를 확인하세요.`); }
-    else alert('PO는 저장됐지만 구매요청 자동 생성에 실패했습니다: ' + ((pr && pr.error) || '') + '\n구매부 → 자재 소요 계산에서 직접 만들어 주세요.');
+    if (pr && pr.ok) { HQ.pr.push(autoPR); alert(`✅ ${r.cpoNo} 확정\n부족 자재 ${autoPR.lines.length}건으로 구매요청 ${autoPR.prNo}를 자동으로 만들었습니다.\n구매 → 구매요청·승인에서 수량·공급사를 확인하세요.`); }
+    else alert('PO는 저장됐지만 구매요청 자동 생성에 실패했습니다: ' + ((pr && pr.error) || '') + '\n구매 → 자재 소요 계산에서 직접 만들어 주세요.');
   } else if (nowConfirmed) alert(`✅ ${r.cpoNo} 확정 — ${r.mrpNote}`);
   renderHQ();
 }
