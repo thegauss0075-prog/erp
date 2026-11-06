@@ -92,7 +92,7 @@ body.tv .bar i{background:#38BDF8}
 // ════════════════════════════════════════════════════════════
 const ERP_API = 'https://script.google.com/macros/s/AKfycbyo_eOJACEPPqV-CHA9rUnYK1ncJbr3EXmFrKPYgNlncHtwI5N5sChHs-wOUmVV-Jgiwg/exec';
 // Supabase 프로젝트 주소·공개키(anon). 공개용이라 화면 코드에 있어도 되고, 실제 보호는 DB 권한(RLS)이 한다.
-const SB_URL_DEFAULT = '', SB_KEY_DEFAULT = '';
+const SB_URL_DEFAULT = 'https://dorbfjtgnjnsnyamgnxy.supabase.co', SB_KEY_DEFAULT = '';
 const LS = { get(k, d){ try { const v = localStorage.getItem(k); return v === null ? d : v; } catch(e){ return d; } }, set(k, v){ try { localStorage.setItem(k, v); } catch(e){} }, del(k){ try { localStorage.removeItem(k); } catch(e){} } };
 const SB_URL = LS.get('mes_sb_url', SB_URL_DEFAULT), SB_KEY = LS.get('mes_sb_key', SB_KEY_DEFAULT);
 let sb = null, ME = {email: '', role: ''}, M = {proc: [], mach: [], work: [], reasons: [], wo: [], rec: [], ev: []};
