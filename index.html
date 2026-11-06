@@ -13410,11 +13410,12 @@ async function loadHQ(force){
 const HQ_DEPTS = [
   {k:'sales', l:'💼 영업부', vi:'Kinh doanh', col:'#5b21b6', tabs:[['quote','📝 견적서'],['cpo','📥 주문서 (고객 PO)'],['sale','🧾 판매'],['ar','💰 수금·채권'],['cust','🏷️ 거래처']]},
   {k:'buy',   l:'🛒 구매부', vi:'Mua hàng',   col:'#b45309', tabs:[['mrp','🧮 자재 소요 계산'],['pr','📝 구매요청·승인'],['ship','🚢 발주서·선적·입고'],['purch','🧾 구매(매입)'],['ap','💸 지급·채무'],['sup','🏭 공급사']]},
-  {k:'qa',    l:'🔬 품질부', vi:'Chất lượng', col:'#0f766e', tabs:[['qadr','📈 월별 불량률'],['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]}];
+  {k:'qa',    l:'🔬 품질부', vi:'Chất lượng', col:'#0f766e', tabs:[['qadr','📈 월별 불량률'],['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]},
+  {k:'rep',   l:'📑 출력물', vi:'Báo cáo',    col:'#334155', tabs:[['rep','📑 출력물']]}];
 function hqSetDept(k){ const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0]; HQ.dept = d.k; HQ.tab = d.tabs[0][0]; HQ.q = ''; HQ.st = ''; try { localStorage.setItem('hq_dept', d.k); } catch(e) {} renderHQ(); }
 function hqNav(){
   const d = HQ_DEPTS.find(x => x.k === HQ.dept) || HQ_DEPTS[0];
-  const cnt = {sales: HQ.cpo.filter(c => (c.status || '접수') === '접수').length + (HQS.quote||[]).filter(q => q.status === '제출').length, buy: HQ.pr.filter(p => p.status === '요청' || p.status === '승인').length, qa: 0};
+  const cnt = {rep: 0, sales: HQ.cpo.filter(c => (c.status || '접수') === '접수').length + (HQS.quote||[]).filter(q => q.status === '제출').length, buy: HQ.pr.filter(p => p.status === '요청' || p.status === '승인').length, qa: 0};
   const de = document.getElementById('hq-depts'), te = document.getElementById('hq-tabs'); if (!de || !te) return;
   de.innerHTML = HQ_DEPTS.map(x => { const on = x.k === d.k;
     return `<button onclick="hqSetDept('${x.k}')" style="padding:9px 18px;border-radius:10px;border:2px solid ${x.col};background:${on ? x.col : '#fff'};color:${on ? '#fff' : x.col};font-weight:700;font-size:14px;cursor:pointer">${x.l} <span style="font-weight:400;font-size:11.5px;opacity:.85">${x.vi}</span>${cnt[x.k] ? ` <span style="background:${on ? '#fff' : x.col};color:${on ? x.col : '#fff'};border-radius:999px;padding:0 7px;font-size:11.5px;margin-left:2px">${cnt[x.k]}</span>` : ''}</button>`; }).join('');
@@ -13425,7 +13426,7 @@ async function renderHQ(opts){
   if (!HQ._deptInit) { HQ._deptInit = true; try { const k = localStorage.getItem('hq_dept'); if (k && HQ_DEPTS.some(x => x.k === k)) { HQ.dept = k; HQ.tab = HQ_DEPTS.find(x => x.k === k).tabs[0][0]; } } catch(e) {} }
   if (!HQ.loaded || (opts && opts.reload)) { el.innerHTML = '<div class="empty">⏳ 불러오는 중… / Đang tải…</div>'; await loadHQ(true); }
   if ((HQ.dept === 'qa') && (!_loadedAt.qc || (opts && opts.reload))) { el.innerHTML = '<div class="empty">⏳ 품질검사 기록 불러오는 중…</div>'; await loadQC().catch(()=>{}); }
-  if (HQ.tab === 'sale' && !txLog.length) { try { const b = await api('getFullSyncBundle', {}); const arr = v => Array.isArray(v) ? v : (v && v.data) || []; if (!txLog.length) txLog = arr(b.tx).map(r => ({...r, id:+r.id||0, qty:+r.qty||0})); } catch(e) {} }
+  if ((HQ.tab === 'sale' || HQ.tab === 'rep') && !txLog.length) { try { const b = await api('getFullSyncBundle', {}); const arr = v => Array.isArray(v) ? v : (v && v.data) || []; if (!txLog.length) txLog = arr(b.tx).map(r => ({...r, id:+r.id||0, qty:+r.qty||0})); } catch(e) {} }
   // 불량률은 입출고·불량 이력이 필요 — 아직 동기화 전이면(본사 열람 화면 등) 직접 받아온다
   if (HQ.tab === 'qadr' && (!txLog.length || !ngLog.length)) { el.innerHTML = '<div class="empty">⏳ 입출고·불량 이력 불러오는 중…</div>';
     try { const b = await api('getFullSyncBundle', {}); const arr = v => Array.isArray(v) ? v : (v && v.data) || [];
@@ -13435,7 +13436,7 @@ async function renderHQ(opts){
   hqNav();
   const warn = HQ.err === 'server' ? '<div style="background:#FEF3C7;color:#92400e;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:13px">⚠️ 서버(Code.gs)를 새 버전으로 배포해야 본사 업무 데이터가 저장·조회됩니다.</div>' : '';
   HQS._bal = null;
-  el.innerHTML = warn + (HQ.tab === 'purch' ? hqPurchView() : HQ.tab === 'ap' ? hqAPView() : HQ.tab === 'sup' ? hqSupView() : HQ.tab === 'quote' ? hqQuoteView() : HQ.tab === 'sale' ? hqSaleView() : HQ.tab === 'ar' ? hqARView() : HQ.tab === 'cust' ? hqCustView() : HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'qadr' ? hqDefectView() : hqQAView(HQ.tab === 'qang'));
+  el.innerHTML = warn + (HQ.tab === 'rep' ? hqRepView() : HQ.tab === 'purch' ? hqPurchView() : HQ.tab === 'ap' ? hqAPView() : HQ.tab === 'sup' ? hqSupView() : HQ.tab === 'quote' ? hqQuoteView() : HQ.tab === 'sale' ? hqSaleView() : HQ.tab === 'ar' ? hqARView() : HQ.tab === 'cust' ? hqCustView() : HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'qadr' ? hqDefectView() : hqQAView(HQ.tab === 'qang'));
 }
 function hqSetTab(k){ HQ.tab = k; const d = HQ_DEPTS.find(x => x.tabs.some(t => t[0] === k)); if (d) HQ.dept = d.k; HQ.q = ''; HQ.st = ''; renderHQ(); }
 
@@ -14431,6 +14432,190 @@ async function hqPPaySave(){
   if (!String(p.supplier||'').trim() || !p.date || !(+p.amount > 0)) { err.textContent = '공급사·지급일·금액을 넣어주세요.'; return; }
   p.amount = +p.amount; hqsStamp(p, !HQS.ppay.some(x => x.id === p.id));
   if (await hqsSave('ppay', p)) { hqClose('hq-pp'); renderHQ(); }
+}
+
+// ════════════════════════════════════════════════════════════
+//  📑 출력물 (2026-11-06) — 이카운트 "출력물" 메뉴 배치
+//   이미 있는 화면은 바로가기, 나머지는 여기서 표로 만들어 엑셀·인쇄
+// ════════════════════════════════════════════════════════════
+const HQR = {id: '', from: '', to: '', m: '', ent: '', item: '', cat: ''};
+const HQ_REP_MENU = [
+  {g:'재고현황', items:[['재고현황','go:inv'],['재고수불부','go:hist'],['재고변동표','r:stockMove'],['일별재고현황','r:stockDaily'],['일보','r:dayReport'],['재고안정분석표','r:safety'],['BOM환산재고현황 (생산 가능 수량)','fn:openCapacity()'],['재고실사·조정현황','r:adjust']]},
+  {g:'영업관리현황', items:[['견적서현황 · 미주문현황','t:quote'],['주문서현황','t:cpo'],['출하현황','r:shipped'],['미출하현황','r:unshipped'],['판매현황 · 거래명세서','t:sale'],['미판매현황 (매출 미등록 출고)','fn:hqSetTab(\'sale\');setTimeout(hqSaleFromShip,300)'],['수금현황 · 거래처별채권','t:ar'],['월별 채권증감내역','r:arMonth'],['거래처관리대장 I (채권)','r:arLedger'],['매출 계산서현황','r:saleInv']]},
+  {g:'구매관리현황', items:[['발주계획현황 (자재 소요)','t:mrp'],['발주요청현황 (구매요청)','t:pr'],['발주서현황','t:ship'],['구매현황','t:purch'],['미구매현황','fn:hqSetTab(\'purch\');setTimeout(hqPurchFromPO,300)'],['지급현황 · 거래처별채무','t:ap'],['월별 채무증감내역','r:apMonth'],['거래처관리대장 I (채무)','r:apLedger'],['매입 계산서현황','r:purchInv']]},
+  {g:'생산현황', items:[['작업지시서현황','go:wo'],['작업지시서별 진행현황','r:woProg'],['생산입고현황','r:prodIn'],['생산 불출(자재 투입)현황','r:woIssue']]},
+  {g:'기타이동·품질', items:[['불량처리현황','go:ng'],['폐기현황 (월별 폐기관리 대장)','fn:go(\'ng\');setTimeout(()=>openNGMonth(\'out\'),400)'],['불량률 파악보고서','t:qadr'],['검사 현황','t:qa']]},
+  {g:'기타', items:[['판매·구매 집계표','r:sumSB'],['단가변동표','r:price'],['거래이력조회','r:history'],['채권·채무현황','r:arap']]}];
+function hqRepView(){
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px">${HQ_REP_MENU.map(g => `<div style="background:#fff;border:1px solid #E6EAEF;border-radius:10px;padding:12px 14px">
+    <div style="font-weight:700;font-size:14px;margin-bottom:8px;color:#18212B">${hqE(g.g)}</div>${g.items.map(([l, a]) => {
+      const fn = a.startsWith('go:') ? `go('${a.slice(3)}')` : a.startsWith('t:') ? `hqSetTab('${a.slice(2)}')` : a.startsWith('r:') ? `hqRepOpen('${a.slice(2)}')` : a.slice(3);
+      const tag = a.startsWith('r:') ? '' : '<span style="font-size:10.5px;color:#8A95A3;margin-left:4px">↗</span>';
+      return `<a href="#" onclick="event.preventDefault();${fn.replace(/"/g,'&quot;')}" style="display:block;padding:4px 2px;color:#185FA5;text-decoration:none;font-size:13px">${hqE(l)}${tag}</a>`; }).join('')}</div>`).join('')}</div>
+  <div style="font-size:11.5px;color:#8A95A3;margin-top:10px">↗ 표시는 해당 화면으로 이동합니다. 나머지는 여기서 바로 표로 만들어 엑셀·인쇄할 수 있습니다.</div>`;
+}
+function hqRepItems(){ return allRows(); }
+async function hqRepOpen(id){
+  if (id === 'woIssue') { try { await loadWOMaterials(); } catch(e) {} }
+  if (id === 'woProg' || id === 'woIssue') { try { if (!(WO||[]).length) await loadWO(); } catch(e) {} }
+  HQR.id = id; const t = hqToday();
+  if (!HQR.from) { HQR.from = t.slice(0,8) + '01'; HQR.to = t; }
+  if (!HQR.m) HQR.m = t.slice(0,7);
+  hqRepRender();
+}
+function hqRepDefs(){ return {
+  stockMove: {t:'재고변동표', p:['range','cat']}, stockDaily: {t:'일별재고현황', p:['range','item']}, dayReport: {t:'일보', p:['day']}, safety: {t:'재고안정분석표', p:['cat']}, adjust: {t:'재고실사·조정현황', p:['range']},
+  shipped: {t:'출하현황', p:['ent']}, unshipped: {t:'미출하현황', p:['ent']}, arMonth: {t:'월별 채권증감내역', p:['month']}, arLedger: {t:'거래처관리대장 I (채권)', p:['range','cust']}, saleInv: {t:'매출 계산서현황', p:['range']},
+  apMonth: {t:'월별 채무증감내역', p:['month']}, apLedger: {t:'거래처관리대장 I (채무)', p:['range','sup']}, purchInv: {t:'매입 계산서현황', p:['range']},
+  woProg: {t:'작업지시서별 진행현황', p:['range']}, prodIn: {t:'생산입고현황', p:['range']}, woIssue: {t:'생산 불출(자재 투입)현황', p:['range']},
+  sumSB: {t:'판매·구매 집계표', p:[]}, price: {t:'단가변동표', p:['item2']}, history: {t:'거래이력조회', p:['kw']}, arap: {t:'채권·채무현황', p:[]}}; }
+const hqRYM = t => { const d = new Date(t); return isNaN(d) ? '' : new Date(d.getTime() + 7*3600e3).toISOString().slice(0,10); };
+function hqRepData(id){
+  const F = HQR.from, T = HQR.to, inR = d => d >= F && d <= T, money = o => Object.entries(o||{}).filter(([,v]) => Math.abs(v) > 0.005).map(([k,v]) => hqM(v, k)).join(' / ');
+  const tx = (txLog||[]), N = v => +v || 0;
+  if (id === 'stockMove' || id === 'safety') {
+    const items = hqRepItems().filter(x => !HQR.cat || x.cat === HQR.cat);
+    if (id === 'safety') { const rows = items.filter(x => +x.min > 0).map(x => { const c = +x.cur||0, m = +x.min||0; return [x.cat, x.code, x.name, x.unit||'', c, m, c - m, c < m ? '⚠️ 부족' : c < m * 1.2 ? '주의' : '안정']; }).sort((a,b) => (a[6]) - (b[6]));
+      return {cols:['구분','코드','품명','단위','현재고','안전재고','차이','판정'], rows, num:[4,5,6], note: rows.length ? '' : '안전재고(min)가 입력된 품목이 없습니다. 품목 수정에서 안전재고를 넣으면 여기서 분석됩니다.'}; }
+    const e = bdVNStart(T) + 864e5, s = bdVNStart(F);
+    const rows = items.map(x => { const ts = tx.filter(t => t.code === x.code && (!t.cat || String(t.cat).toUpperCase() === x.cat));
+      const after = ts.filter(t => bdTime(t) >= e).reduce((a,t) => a + bdDelta(t), 0), end = (+x.cur||0) - after;
+      const inr = ts.filter(t => { const m = bdTime(t); return m >= s && m < e; }); const inQ = inr.filter(t => bdDelta(t) > 0 && t.type !== 'adjust').reduce((a,t) => a + bdDelta(t), 0);
+      const outQ = -inr.filter(t => bdDelta(t) < 0 && t.type !== 'adjust').reduce((a,t) => a + bdDelta(t), 0), adj = inr.filter(t => t.type === 'adjust' || t.type === 'sync-fix').reduce((a,t) => a + bdDelta(t), 0);
+      const beg = end - inQ + outQ - adj; return [x.cat, x.code, x.name, x.unit||'', beg, inQ, outQ, adj, end]; }).filter(r => r[4] || r[5] || r[6] || r[7] || r[8]);
+    return {cols:['구분','코드','품명','단위','기초','입고','출고','조정','기말'], rows, num:[4,5,6,7,8]};
+  }
+  if (id === 'stockDaily') {
+    const it = hqRepItems().find(x => x.code === HQR.item); if (!it) return {cols:[], rows:[], note:'품목을 골라주세요.'};
+    const ts = tx.filter(t => t.code === it.code && (!t.cat || String(t.cat).toUpperCase() === it.cat)), e = bdVNStart(T) + 864e5;
+    let bal = (+it.cur||0) - ts.filter(t => bdTime(t) >= e).reduce((a,t) => a + bdDelta(t), 0);
+    const days = []; for (let d = T; d >= F; d = hqAddDays(d, -1)) days.push(d);
+    const rows = days.map(d => { const s = bdVNStart(d), dt = ts.filter(t => { const m = bdTime(t); return m >= s && m < s + 864e5; });
+      const i = dt.filter(t => bdDelta(t) > 0).reduce((a,t) => a + bdDelta(t), 0), o = -dt.filter(t => bdDelta(t) < 0).reduce((a,t) => a + bdDelta(t), 0), r = [d, bal + o - i, i, o, bal]; bal = bal - i + o; return r; })
+      .filter(r => r[2] || r[3] || r[0] === T || r[0] === F).reverse();
+    return {cols:['일자','전일 재고','입고(+조정)','출고(−조정)','재고'], rows, num:[1,2,3,4], sub: `${it.name} (${it.code}) · ${it.unit||''}`};
+  }
+  if (id === 'dayReport') {
+    const s = bdVNStart(F), lbl = {'in':'자재 입고','omt':'자재 출고','tp-in':'완제품·반제품 입고','otp':'완제품·반제품 출고','adjust':'재고조정','sync-fix':'동기화 보정'};
+    const rows = tx.filter(t => { const m = bdTime(t); return m >= s && m < s + 864e5; }).sort((a,b) => bdTime(a) - bdTime(b))
+      .map(t => [new Date(bdTime(t) + 7*3600e3).toISOString().slice(11,16), lbl[t.type] || t.type, t.code, t.name || '', N(t.qty), t.unit||'', t.lot||'', t.dest||'', t.note||'', t.user||'']);
+    const ng = (ngLog||[]).filter(l => hqYM(l.dt) && ncrYMDsafe(l.dt) === F).map(l => ['', l.type === 'ng-in' ? '불량 입고' : '불량 출고', l.code, l.name||'', N(l.qty), l.unit||'', '', '', [l.reason, l.note].filter(Boolean).join(' · '), l.user||'']);
+    return {cols:['시각','구분','코드','품명','수량','단위','LOT','출고처','비고','등록자'], rows: rows.concat(ng), num:[4]};
+  }
+  if (id === 'adjust') { const s = bdVNStart(F), e = bdVNStart(T) + 864e5;
+    const rows = tx.filter(t => (t.type === 'adjust' || t.type === 'sync-fix') && bdTime(t) >= s && bdTime(t) < e).sort((a,b) => bdTime(a) - bdTime(b)).map(t => [hqRYM(t.dt), t.type === 'adjust' ? '재고조정' : '동기화 보정', t.cat||'', t.code, t.name||'', N(t.qty), t.note||'', t.user||'']);
+    return {cols:['일자','구분','분류','코드','품명','증감','사유','등록자'], rows, num:[5]}; }
+  if (id === 'shipped' || id === 'unshipped') {
+    const rows = hqCPORows().filter(r => ['확정','출하중','완료'].includes(r.st) && (!HQR.ent || r.customer === HQR.ent)).flatMap(r => r.ls.filter(l => id === 'shipped' ? l.sh > 0 : l.rem > 0).map(l => [r.cpoNo, r.customer, r.custPoNo, l.code, l.name, N(l.qty), l.sh, l.rem, l.replyDue || l.due || '', r.st]));
+    return {cols:['주문서','거래처','고객 PO','코드','품명','주문','출하','잔량','납기','상태'], rows, num:[5,6,7]}; }
+  if (id === 'arMonth' || id === 'apMonth') {
+    const isAR = id === 'arMonth', docs = isAR ? HQS.sale : HQS.purch, pays = isAR ? HQS.pay : HQS.ppay, key = isAR ? 'customer' : 'supplier', tot = isAR ? (s => hqsSaleTotals(s).total) : (p => hqPurchTotals(p).total);
+    const m0 = HQR.m + '-01';
+    const nextM = +HQR.m.slice(5) === 12 ? (+HQR.m.slice(0,4) + 1) + '-01-01' : HQR.m.slice(0,5) + String(+HQR.m.slice(5) + 1).padStart(2,'0') + '-01';
+    const g = {}; const k = (n, c) => (g[n + '|' + c] = g[n + '|' + c] || {n, c, beg:0, add:0, sub:0});
+    docs.forEach(d => { const o = k(d[key], d.cur), a = tot(d); if (d.date < m0) o.beg += a; else if (d.date < nextM) o.add += a; });
+    pays.forEach(p => { const o = k(p[key], p.cur), a = N(p.amount); if (p.date < m0) o.beg -= a; else if (p.date < nextM) o.sub += a; });
+    const rows = Object.values(g).map(o => [o.n, o.c, o.beg, o.add, o.sub, o.beg + o.add - o.sub]).filter(r => r[2] || r[3] || r[4] || r[5]).sort((a,b) => String(a[0]).localeCompare(String(b[0])));
+    return {cols:[isAR ? '거래처' : '공급사','통화','전월 이월', isAR ? '당월 매출' : '당월 구매', isAR ? '당월 수금' : '당월 지급','월말 잔액'], rows, num:[2,3,4,5], cur:1}; }
+  if (id === 'arLedger' || id === 'apLedger') {
+    const isAR = id === 'arLedger', who = HQR.ent; if (!who) return {cols:[], rows:[], note: (isAR ? '거래처' : '공급사') + '를 골라주세요.'};
+    const docs = (isAR ? HQS.sale : HQS.purch).filter(d => d[isAR ? 'customer' : 'supplier'] === who), pays = (isAR ? HQS.pay : HQS.ppay).filter(p => p[isAR ? 'customer' : 'supplier'] === who);
+    const ev = [...docs.map(d => ({date: d.date, kind: isAR ? '판매' : '구매', no: d[isAR ? 'sNo' : 'pNo'], memo: (d.lines||[]).map(l => `${l.name} ${hqN(l.qty)}`).join(', '), cur: d.cur, plus: isAR ? hqsSaleTotals(d).total : hqPurchTotals(d).total, minus: 0})),
+      ...pays.map(p => ({date: p.date, kind: isAR ? '수금' : '지급', no: p[isAR ? 'saleNo' : 'purchNo'] || '', memo: [p.method, p.note].filter(Boolean).join(' · '), cur: p.cur, plus: 0, minus: N(p.amount)}))].sort((a,b) => String(a.date).localeCompare(String(b.date)) || (b.plus - a.plus));
+    const bal = {}, rows = [];
+    ev.forEach(e => { bal[e.cur] = (bal[e.cur]||0) + e.plus - e.minus; if (e.date < F) return; if (e.date > T) return;
+      rows.push([e.date, e.kind, e.no, e.memo, e.cur, e.plus || '', e.minus || '', bal[e.cur]]); });
+    const begin = {}; ev.filter(e => e.date < F).forEach(e => begin[e.cur] = (begin[e.cur]||0) + e.plus - e.minus);
+    if (Object.keys(begin).length) rows.unshift(...Object.entries(begin).map(([c, v]) => [F, '이월', '', '전기 이월', c, '', '', v]));
+    return {cols:['일자','구분','번호','적요','통화', isAR ? '매출' : '구매', isAR ? '수금' : '지급','잔액'], rows, num:[5,6,7], cur:4, sub: who}; }
+  if (id === 'saleInv' || id === 'purchInv') {
+    const isS = id === 'saleInv', rows = (isS ? HQS.sale : HQS.purch).filter(d => inR(d.date)).sort((a,b) => String(a.date).localeCompare(String(b.date)))
+      .map(d => { const t = isS ? hqsSaleTotals(d) : hqPurchTotals(d); return [d.date, d[isS ? 'sNo' : 'pNo'], d[isS ? 'customer' : 'supplier'], d.invNo || '(미발행)', d.cur, t.sup, t.vat, t.total]; });
+    return {cols:['일자', isS ? '판매번호' : '구매번호', isS ? '거래처' : '공급사','계산서·Invoice No','통화','공급가액','부가세','합계'], rows, num:[5,6,7], cur:4}; }
+  if (id === 'woProg') { const rows = (WO||[]).filter(w => { const d = woYMD(w.dueDate) || ''; return !d || inR(d) || (w.status !== '완료' && w.status !== '취소'); })
+      .map(w => [w.orderNo, w.name, w.cat, w.lot||'', N(w.planQty), N(w.producedQty), N(w.planQty) ? Math.round(N(w.producedQty) / N(w.planQty) * 100) + '%' : '-', woYMD(w.dueDate)||'', w.status||'대기']);
+    return {cols:['지시번호','품목','구분','LOT','계획','실적','진행률','마감일','상태'], rows, num:[4,5]}; }
+  if (id === 'prodIn') { const s = bdVNStart(F), e = bdVNStart(T) + 864e5;
+    const rows = tx.filter(t => t.type === 'tp-in' && bdTime(t) >= s && bdTime(t) < e).sort((a,b) => bdTime(a) - bdTime(b)).map(t => [hqRYM(t.dt), String(t.cat||'').toUpperCase() === 'BTP' ? '반제품' : '완제품', t.code, t.name||'', N(t.qty), t.lot||'', t.note||'']);
+    return {cols:['일자','구분','코드','품명','수량','LOT','비고'], rows, num:[4]}; }
+  if (id === 'woIssue') { const rows = (typeof WO_MAT !== 'undefined' ? WO_MAT : []).filter(m => { const d = hqRYM(m.issuedAt || m.dt || m.createdAt || ''); return !d || inR(d); })
+      .map(m => { const w = (WO||[]).find(x => String(x.id) === String(m.workOrderId)) || {}; return [hqRYM(m.issuedAt || m.dt || m.createdAt || ''), w.orderNo || '', w.name || '', m.code, m.name || '', N(m.qty), m.unit || '', m.lot || '', m.user || m.issuedBy || '']; });
+    return {cols:['일자','작업지시','제품','자재코드','자재명','투입 수량','단위','자재 LOT','담당'], rows, num:[5]}; }
+  if (id === 'sumSB') { const ms = []; let [y, m] = hqToday().slice(0,7).split('-').map(Number); for (let i = 0; i < 12; i++) { ms.unshift(`${y}-${String(m).padStart(2,'0')}`); m--; if (m < 1) { m = 12; y--; } }
+    const curs = [...new Set([...HQS.sale.map(s => s.cur), ...HQS.purch.map(p => p.cur)])].filter(Boolean).sort();
+    const rows = ms.map(k => { const r = [k]; curs.forEach(c => { r.push(HQS.sale.filter(s => s.cur === c && String(s.date).slice(0,7) === k).reduce((a,s) => a + hqsSaleTotals(s).total, 0)); r.push(HQS.purch.filter(p => p.cur === c && String(p.date).slice(0,7) === k).reduce((a,p) => a + hqPurchTotals(p).total, 0)); }); return r; });
+    return {cols:['월', ...curs.flatMap(c => [`매출 (${c})`, `구매 (${c})`])], rows, num: curs.flatMap((_, i) => [1 + i*2, 2 + i*2])}; }
+  if (id === 'price') { const code = HQR.item; if (!code) return {cols:[], rows:[], note:'품목·자재를 골라주세요.'};
+    const ev = [...HQS.sale.flatMap(s => (s.lines||[]).filter(l => l.code === code && l.price !== '').map(l => [s.date, '판매', s.customer, s.sNo, s.cur, +l.price, N(l.qty)])),
+      ...HQS.quote.flatMap(s => (s.lines||[]).filter(l => l.code === code && l.price !== '').map(l => [s.date, '견적', s.customer, s.qNo, s.cur, +l.price, N(l.qty)])),
+      ...HQ.cpo.flatMap(s => (s.lines||[]).filter(l => l.code === code && l.price !== '' && l.price != null).map(l => [s.recvDate, '주문', s.customer, s.cpoNo, s.cur, +l.price, N(l.qty)])),
+      ...HQS.purch.flatMap(s => (s.lines||[]).filter(l => l.code === code && l.price !== '').map(l => [s.date, '구매', s.supplier, s.pNo, s.cur, +l.price, N(l.qty)])),
+      ...SPO.filter(p => p.code === code && p.price !== '' && p.price != null).map(p => [p.orderDate, '발주', p.supplier, p.poNo, p.cur, +p.price, N(p.qty)])].sort((a,b) => String(a[0]).localeCompare(String(b[0])));
+    const last = {}; const rows = ev.map(r => { const k = r[1] + r[2] + r[4], pv = last[k]; last[k] = r[5]; return [...r, pv === undefined ? '' : (r[5] - pv === 0 ? '-' : (r[5] > pv ? '▲ ' : '▼ ') + Math.abs(Math.round((r[5] - pv) / pv * 1000) / 10) + '%')]; });
+    return {cols:['일자','구분','거래처','번호','통화','단가','수량','직전 대비'], rows, num:[5,6], sub: (hqRepItems().find(x => x.code === code) || {}).name || code}; }
+  if (id === 'history') { const kw = HQR.ent.trim().toLowerCase(); if (!kw) return {cols:[], rows:[], note:'품목 코드·품명 또는 거래처·공급사 이름을 넣어주세요.'};
+    const hit = (...a) => a.join(' ').toLowerCase().includes(kw), rows = [];
+    HQS.quote.forEach(d => (d.lines||[]).forEach(l => { if (hit(d.customer, l.code, l.name)) rows.push([d.date, '견적', d.qNo, d.customer, l.code, l.name, N(l.qty), l.price, d.cur]); }));
+    HQ.cpo.forEach(d => (d.lines||[]).forEach(l => { if (hit(d.customer, l.code, l.name)) rows.push([d.recvDate, '주문', d.cpoNo, d.customer, l.code, l.name, N(l.qty), l.price, d.cur]); }));
+    HQS.sale.forEach(d => (d.lines||[]).forEach(l => { if (hit(d.customer, l.code, l.name)) rows.push([d.date, '판매', d.sNo, d.customer, l.code, l.name, N(l.qty), l.price, d.cur]); }));
+    HQS.pay.forEach(p => { if (hit(p.customer)) rows.push([p.date, '수금', p.saleNo||'', p.customer, '', '', '', p.amount, p.cur]); });
+    SPO.forEach(p => { if (hit(p.supplier, p.code, p.name)) rows.push([p.orderDate, '발주', p.poNo, p.supplier, p.code, p.name, N(p.qty), p.price ?? '', p.cur||'']); });
+    HQS.purch.forEach(d => (d.lines||[]).forEach(l => { if (hit(d.supplier, l.code, l.name)) rows.push([d.date, '구매', d.pNo, d.supplier, l.code, l.name, N(l.qty), l.price, d.cur]); }));
+    HQS.ppay.forEach(p => { if (hit(p.supplier)) rows.push([p.date, '지급', p.purchNo||'', p.supplier, '', '', '', p.amount, p.cur]); });
+    tx.forEach(t => { if (hit(t.code, t.name, t.dest)) rows.push([hqRYM(t.dt), {'in':'자재 입고','omt':'자재 출고','tp-in':'생산 입고','otp':'출고','adjust':'재고조정'}[t.type] || t.type, t.lot||'', t.dest||'', t.code, t.name||'', N(t.qty), '', '']); });
+    rows.sort((a,b) => String(b[0]).localeCompare(String(a[0])));
+    return {cols:['일자','구분','번호·LOT','거래처','코드','품명','수량','단가·금액','통화'], rows, num:[6]}; }
+  if (id === 'arap') { const ar = hqARData(), ap = hqAPData(), curs = [...new Set([...ar.flatMap(o => Object.keys(o.bal)), ...ap.flatMap(o => Object.keys(o.bal))])].sort();
+    const rows = curs.map(c => { const a = ar.reduce((s,o) => s + (o.bal[c]||0), 0), b = ap.reduce((s,o) => s + (o.bal[c]||0), 0); return [c, a, b, a - b]; });
+    return {cols:['통화','받을 돈 (채권)','줄 돈 (채무)','차액'], rows, num:[1,2,3], cur:0}; }
+  return {cols:[], rows:[]};
+}
+function ncrYMDsafe(v){ const s = String(v||''); if (/^\d{2}\/\d{2}/.test(s)) { const y = new Date().getFullYear(); return `${y}-${s.slice(0,2)}-${s.slice(3,5)}`; } return hqRYM(s); }
+function hqRepRender(){
+  const def = hqRepDefs()[HQR.id]; if (!def) return;
+  const d = hqRepData(HQR.id), st = 'padding:5px 8px;border:1px solid #DCE1E7;border-radius:7px;font-size:13px';
+  const p = def.p, items = hqRepItems();
+  const pr = [
+    p.includes('range') ? `<label style="font-size:12px">기간 <input type="date" value="${HQR.from}" onchange="HQR.from=this.value;hqRepRender()" style="${st}"> ~ <input type="date" value="${HQR.to}" onchange="HQR.to=this.value;hqRepRender()" style="${st}"></label>` : '',
+    p.includes('day') ? `<label style="font-size:12px">일자 <input type="date" value="${HQR.from}" onchange="HQR.from=this.value;hqRepRender()" style="${st}"></label>` : '',
+    p.includes('month') ? `<label style="font-size:12px">월 <input type="month" value="${HQR.m}" onchange="HQR.m=this.value;hqRepRender()" style="${st}"></label>` : '',
+    p.includes('cat') ? `<select onchange="HQR.cat=this.value;hqRepRender()" style="${st}"><option value="">전체 구분</option>${['TP','BTP','KR','VN','VTTH'].map(c => `<option ${HQR.cat===c?'selected':''}>${c}</option>`).join('')}</select>` : '',
+    p.includes('item') || p.includes('item2') ? `<select onchange="HQR.item=this.value;hqRepRender()" style="${st};max-width:320px"><option value="">품목 선택</option>${items.map(x => `<option value="${hqE(x.code)}" ${HQR.item===x.code?'selected':''}>[${x.cat}] ${hqE(x.name)} (${hqE(x.code)})</option>`).join('')}</select>` : '',
+    p.includes('cust') ? `<select onchange="HQR.ent=this.value;hqRepRender()" style="${st}"><option value="">거래처 선택</option>${hqsCustNames().map(n => `<option ${HQR.ent===n?'selected':''}>${hqE(n)}</option>`).join('')}</select>` : '',
+    p.includes('sup') ? `<select onchange="HQR.ent=this.value;hqRepRender()" style="${st}"><option value="">공급사 선택</option>${hqsSupNames().map(n => `<option ${HQR.ent===n?'selected':''}>${hqE(n)}</option>`).join('')}</select>` : '',
+    p.includes('ent') ? `<select onchange="HQR.ent=this.value;hqRepRender()" style="${st}"><option value="">거래처 전체</option>${hqsCustNames().map(n => `<option ${HQR.ent===n?'selected':''}>${hqE(n)}</option>`).join('')}</select>` : '',
+    p.includes('kw') ? `<input value="${hqE(HQR.ent)}" placeholder="품목 코드·품명 / 거래처·공급사" onchange="HQR.ent=this.value;hqRepRender()" style="${st};min-width:260px"> <button class="period-btn" onclick="hqRepRender()">조회</button>` : ''].filter(Boolean).join(' ');
+  const fmt = (v, i, r) => d.num && d.num.includes(i) && typeof v === 'number' ? (d.cur !== undefined ? hqM(v, r[d.cur]) : hqN(v)) : hqE(v ?? '');
+  const tot = d.num && d.rows.length && d.cur === undefined ? d.cols.map((_, i) => d.num.includes(i) && !['일자'].includes(d.cols[i]) && !/재고|잔액|기초|기말|단가|전일/.test(d.cols[i]) ? d.rows.reduce((a,r) => a + (typeof r[i] === 'number' ? r[i] : 0), 0) : null) : null;
+  hqModal('hq-rep', `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <h3 style="margin:0;font-size:16px">📑 ${hqE(def.t)}${d.sub ? ` <span style="font-weight:400;color:#5D6977;font-size:13px">${hqE(d.sub)}</span>` : ''}</h3>
+      <div style="display:flex;gap:6px">${hqsBtn('📊 엑셀', 'hqRepExcel()', '#166534')}${hqsBtn('🖨️ 인쇄', 'hqRepPrint()', '#185FA5')}${hqsBtn('닫기', "hqClose('hq-rep')", '#64748b')}</div></div>
+    ${pr ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">${pr}</div>` : ''}
+    ${d.note ? `<div class="empty">${hqE(d.note)}</div>` : d.rows.length ? `<div style="font-size:12px;color:#5D6977;margin-bottom:4px">${d.rows.length}건</div><div class="tw" style="max-height:62vh;overflow:auto"><table style="font-size:12.5px"><thead><tr>${d.cols.map((c, i) => `<th style="${d.num && d.num.includes(i) ? 'text-align:right' : ''}">${hqE(c)}</th>`).join('')}</tr></thead><tbody>${
+      d.rows.map(r => `<tr>${r.map((v, i) => `<td style="${d.num && d.num.includes(i) ? 'text-align:right;' : ''}white-space:${/적요|비고|사유|품명/.test(d.cols[i]) ? 'normal' : 'nowrap'}">${fmt(v, i, r)}</td>`).join('')}</tr>`).join('')}
+      ${tot ? `<tr style="font-weight:700;background:#F6F8FA">${tot.map((v, i) => `<td style="text-align:right">${i === 0 ? '합계' : v === null ? '' : hqN(v)}</td>`).join('')}</tr>` : ''}</tbody></table></div>` : '<div class="empty">조건에 맞는 자료가 없습니다.</div>'}`, 1180);
+  HQR._last = {def, d, tot};
+}
+function hqRepExcel(){
+  if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
+  const {def, d} = HQR._last || {}; if (!d || !d.rows.length) { alert('내보낼 자료가 없습니다.'); return; }
+  const ws = XLSX.utils.aoa_to_sheet([[def.t + (d.sub ? ' — ' + d.sub : '')], [], d.cols, ...d.rows]);
+  ws['!cols'] = d.cols.map(c => ({wch: /품명|적요|비고|사유|거래처|공급사/.test(c) ? 30 : 13}));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, def.t.slice(0, 28).replace(/[\\/?*[\]:]/g,''));
+  XLSX.writeFile(wb, `${def.t.replace(/[^\w가-힣]+/g,'_')}_${hqToday().replace(/-/g,'')}.xlsx`);
+}
+function hqRepPrint(){
+  const {def, d, tot} = HQR._last || {}; if (!d || !d.rows.length) { alert('인쇄할 자료가 없습니다.'); return; }
+  const e = hqE, fmt = (v, i, r) => d.num && d.num.includes(i) && typeof v === 'number' ? (d.cur !== undefined ? hqM(v, r[d.cur]) : hqN(v)) : e(v ?? '');
+  const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단됐습니다. 팝업을 허용해주세요.'); return; }
+  const land = d.cols.length > 7;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e(def.t)}</title><style>
+    @page{size:A4 ${land ? 'landscape' : 'portrait'};margin:0} body{font-family:'Malgun Gothic','Noto Sans KR',sans-serif;font-size:10.5px;color:#111;margin:0;padding:10mm;width:${land ? '297mm' : '210mm'};box-sizing:border-box}
+    h1{font-size:16px;margin:0 0 2px} .sub{color:#555;margin-bottom:8px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #555;padding:3px 5px} th{background:#eee} td.r{text-align:right} thead{display:table-header-group} tr{page-break-inside:avoid}
+  </style></head><body><h1>${e(def.t)}</h1><div class="sub">THE GAUSS INC. / THE GAUSS VINA${d.sub ? ' · ' + e(d.sub) : ''}${def.p.includes('range') ? ` · ${e(HQR.from)} ~ ${e(HQR.to)}` : def.p.includes('month') ? ' · ' + e(HQR.m) : def.p.includes('day') ? ' · ' + e(HQR.from) : ''}</div>
+    <table><thead><tr>${d.cols.map(c => `<th>${e(c)}</th>`).join('')}</tr></thead><tbody>${d.rows.map(r => `<tr>${r.map((v, i) => `<td class="${d.num && d.num.includes(i) ? 'r' : ''}">${fmt(v, i, r)}</td>`).join('')}</tr>`).join('')}
+    ${tot ? `<tr style="font-weight:700">${tot.map((v, i) => `<td class="r">${i === 0 ? '합계' : v === null ? '' : hqN(v)}</td>`).join('')}</tr>` : ''}</tbody></table></body></html>`);
+  w.document.close(); setTimeout(() => { try { w.focus(); w.print(); } catch(x){} }, 400);
 }
 
 // ── 품질부: 수입·출하검사 현황 ─────────────────────────────
