@@ -1773,12 +1773,8 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <h2 style="margin:0;font-size:18px">🏢 본사 업무 <span style="font-weight:400;color:#5D6977;font-size:13px">/ Nghiệp vụ trụ sở</span></h2>
     <button onclick="renderHQ({reload:true})" style="padding:7px 14px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">🔄 새로고침</button>
   </div>
-  <div id="hq-tabs" class="period-btns" style="margin-bottom:12px;flex-wrap:wrap">
-    <button class="period-btn on" data-k="cpo" onclick="hqSetTab('cpo')">📥 ① 고객 PO 접수</button>
-    <button class="period-btn" data-k="mrp" onclick="hqSetTab('mrp')">🧮 ② 자재 소요 계산</button>
-    <button class="period-btn" data-k="pr" onclick="hqSetTab('pr')">📝 ③ 구매요청·승인</button>
-    <button class="period-btn" data-k="ship" onclick="hqSetTab('ship')">🚢 ④ 발주·선적·입고</button>
-  </div>
+  <div id="hq-depts" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
+  <div id="hq-tabs" class="period-btns" style="margin-bottom:12px;flex-wrap:wrap"></div>
   <div id="hq-body"></div>
 </div>
 <div id="tab-po" class="sec">
@@ -13382,7 +13378,7 @@ function exportBondedExcel(){
 //   ③ 구매요청(HQ_PR) → 마스터 승인/반려 → 공급사 발주로 전환
 //   ④ 발주·선적: 기존 SUPPLY_PO에 단가·통화·선적 단계(출항→도착→통관→입고)·B/L·Invoice를 더해 관리
 // ════════════════════════════════════════════════════════════
-let HQ = {cpo: [], pr: [], loaded: false, tab: 'cpo', q: '', st: '', mrpFc: false, mrpTpStock: true, mrpSel: {}, mrpQty: {}, mrpSup: {}};
+let HQ = {cpo: [], pr: [], loaded: false, dept: 'sales', tab: 'cpo', qm: '', qt: '', q: '', st: '', mrpFc: false, mrpTpStock: true, mrpSel: {}, mrpQty: {}, mrpSup: {}};
 const HQ_CPO_ST = ['접수','회신','확정','출하중','완료','취소'];
 const HQ_CPO_VI = {'접수':'Tiếp nhận','회신':'Đã phản hồi','확정':'Xác nhận','출하중':'Đang giao','완료':'Hoàn tất','취소':'Hủy'};
 const HQ_CPO_COL = {'접수':['#b45309','#FEF3C7'],'회신':['#185FA5','#E8F0F8'],'확정':['#5b21b6','#EDE9FE'],'출하중':['#0f766e','#CCFBF1'],'완료':['#166534','#DCFCE7'],'취소':['#6b7280','#F3F4F6']};
@@ -13409,14 +13405,30 @@ async function loadHQ(force){
   HQ.err = (a && !a.ok && /unknown action/i.test(a.error||'')) ? 'server' : '';
   HQ.loaded = true;
 }
+// 부서별 탭 — 영업부: 고객 PO / 구매부: 자재 소요·구매요청·발주·선적 / 품질부: 검사 현황·불합격
+const HQ_DEPTS = [
+  {k:'sales', l:'💼 영업부', vi:'Kinh doanh', col:'#5b21b6', tabs:[['cpo','📥 고객 PO 접수']]},
+  {k:'buy',   l:'🛒 구매부', vi:'Mua hàng',   col:'#b45309', tabs:[['mrp','🧮 자재 소요 계산'],['pr','📝 구매요청·승인'],['ship','🚢 발주·선적·입고']]},
+  {k:'qa',    l:'🔬 품질부', vi:'Chất lượng', col:'#0f766e', tabs:[['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]}];
+function hqSetDept(k){ const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0]; HQ.dept = d.k; HQ.tab = d.tabs[0][0]; HQ.q = ''; HQ.st = ''; try { localStorage.setItem('hq_dept', d.k); } catch(e) {} renderHQ(); }
+function hqNav(){
+  const d = HQ_DEPTS.find(x => x.k === HQ.dept) || HQ_DEPTS[0];
+  const cnt = {sales: HQ.cpo.filter(c => (c.status || '접수') === '접수').length, buy: HQ.pr.filter(p => p.status === '요청' || p.status === '승인').length, qa: 0};
+  const de = document.getElementById('hq-depts'), te = document.getElementById('hq-tabs'); if (!de || !te) return;
+  de.innerHTML = HQ_DEPTS.map(x => { const on = x.k === d.k;
+    return `<button onclick="hqSetDept('${x.k}')" style="padding:9px 18px;border-radius:10px;border:2px solid ${x.col};background:${on ? x.col : '#fff'};color:${on ? '#fff' : x.col};font-weight:700;font-size:14px;cursor:pointer">${x.l} <span style="font-weight:400;font-size:11.5px;opacity:.85">${x.vi}</span>${cnt[x.k] ? ` <span style="background:${on ? '#fff' : x.col};color:${on ? x.col : '#fff'};border-radius:999px;padding:0 7px;font-size:11.5px;margin-left:2px">${cnt[x.k]}</span>` : ''}</button>`; }).join('');
+  te.innerHTML = d.tabs.length > 1 ? d.tabs.map(([k, l]) => `<button class="period-btn ${HQ.tab === k ? 'on' : ''}" onclick="hqSetTab('${k}')">${l}</button>`).join('') : '';
+}
 async function renderHQ(opts){
   const el = document.getElementById('hq-body'); if (!el) return;
+  if (!HQ._deptInit) { HQ._deptInit = true; try { const k = localStorage.getItem('hq_dept'); if (k && HQ_DEPTS.some(x => x.k === k)) { HQ.dept = k; HQ.tab = HQ_DEPTS.find(x => x.k === k).tabs[0][0]; } } catch(e) {} }
   if (!HQ.loaded || (opts && opts.reload)) { el.innerHTML = '<div class="empty">⏳ 불러오는 중… / Đang tải…</div>'; await loadHQ(true); }
-  document.querySelectorAll('#hq-tabs button').forEach(b => b.classList.toggle('on', b.dataset.k === HQ.tab));
+  if ((HQ.dept === 'qa') && (!_loadedAt.qc || (opts && opts.reload))) { el.innerHTML = '<div class="empty">⏳ 품질검사 기록 불러오는 중…</div>'; await loadQC().catch(()=>{}); }
+  hqNav();
   const warn = HQ.err === 'server' ? '<div style="background:#FEF3C7;color:#92400e;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:13px">⚠️ 서버(Code.gs)를 새 버전으로 배포해야 본사 업무 데이터가 저장·조회됩니다.</div>' : '';
-  el.innerHTML = warn + (HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : hqShipView());
+  el.innerHTML = warn + (HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : hqQAView(HQ.tab === 'qang'));
 }
-function hqSetTab(k){ HQ.tab = k; HQ.q = ''; HQ.st = ''; renderHQ(); }
+function hqSetTab(k){ HQ.tab = k; const d = HQ_DEPTS.find(x => x.tabs.some(t => t[0] === k)); if (d) HQ.dept = d.k; HQ.q = ''; HQ.st = ''; renderHQ(); }
 
 // ── ① 고객 PO ──────────────────────────────────────────────
 // 완제품 출고(otp, 불량 이동 제외)를 같은 품목의 확정 PO 라인에 접수일 순으로 채운다. 라인에 수동 출하 수량이 있으면 그 값을 쓴다.
@@ -13736,7 +13748,7 @@ async function hqPRDecide(st){
   let note = '';
   if (st === '반려') { note = prompt('반려 사유를 입력해주세요 / Lý do từ chối'); if (note === null) return; }
   const ok = await hqPRSave(st, st === '승인' ? {approver: CURRENT_USER||'', approvedAt: new Date().toISOString()} : {rejectNote: note, approver: CURRENT_USER||'', approvedAt: new Date().toISOString()});
-  if (ok) { if (st === '승인') hqPRRender(); else { hqClose('hq-pr'); } HQ.tab = 'pr'; renderHQ(); }
+  if (ok) { if (st === '승인') hqPRRender(); else { hqClose('hq-pr'); } HQ.tab = 'pr'; HQ.dept = 'buy'; renderHQ(); }
 }
 async function hqPRDelete(id){
   const r = HQ.pr.find(x => String(x.id) === String(id)); if (!r || !confirm(`${r.prNo} 구매요청을 삭제할까요?`)) return;
@@ -13785,9 +13797,48 @@ async function hqPRToPOGo(){
     SPO.push(rec); made.push(rec);
   }
   await hqPRSave('발주완료', {poNo: [...new Set(Object.values(nos))].join(', ')});
-  hqClose('hq-po'); hqClose('hq-pr'); HQ.tab = 'ship'; renderHQ();
+  hqClose('hq-po'); hqClose('hq-pr'); HQ.tab = 'ship'; HQ.dept = 'buy'; renderHQ();
 }
 
+// ── 품질부: 수입·출하검사 현황 ─────────────────────────────
+function hqQAYM(q){ const d = new Date(q.inspDate || ''); return isNaN(d) ? '' : new Date(d.getTime() + 7*3600e3).toISOString().slice(0,7); }
+function hqQAView(ngOnly){
+  if (!HQ.qm) HQ.qm = hqToday().slice(0,7);
+  const shift = k => { let [y,m] = HQ.qm.split('-').map(Number); m += k; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } return `${y}-${String(m).padStart(2,'0')}`; };
+  const all = (QC||[]).filter(q => hqQAYM(q) === HQ.qm && (!HQ.qt || q.inspType === HQ.qt));
+  const types = ['수입검사','공정검사','출하검사'];
+  const stat = t => { const l = all.filter(q => q.inspType === t), ok = l.filter(q => q.result === '합격').length; return {n: l.length, ok, rate: l.length ? Math.round(ok / l.length * 1000) / 10 : null, ng: l.filter(q => q.result !== '합격').length}; };
+  const tile = (t) => { const s = stat(t); return `<div style="flex:1;min-width:150px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${t}</div><div style="font-size:21px;font-weight:700;color:${s.rate === null ? '#8A95A3' : s.rate >= 98 ? '#166534' : s.rate >= 90 ? '#b45309' : '#b91c1c'}">${s.rate === null ? '-' : s.rate + '%'}</div><div style="font-size:11px;color:#8A95A3">${s.n}건 · 합격 ${s.ok} · 불합격/조건부 ${s.ng}</div></div>`; };
+  const q = HQ.q.trim().toLowerCase();
+  const rows = all.filter(r => (!ngOnly || r.result !== '합격') && (!q || [r.code, r.name, r.lot, r.inspector, r.note, r.supplier, r.workOrderNo].join(' ').toLowerCase().includes(q)))
+    .sort((a,b) => String(b.inspDate||'').localeCompare(String(a.inspDate||'')));
+  const rc = {'합격':['#166534','#DCFCE7'],'불합격':['#b91c1c','#FEE2E2'],'조건부합격':['#b45309','#FEF3C7']};
+  // 품목별 불량률 (해당 월)
+  const by = {}; all.forEach(r => { const k = r.code; const o = by[k] = by[k] || {name: r.name || r.code, n:0, smp:0, def:0, ng:0}; o.n++; o.smp += +r.sampleQty||0; o.def += +r.defectQty||0; if (r.result !== '합격') o.ng++; });
+  const byRows = Object.values(by).filter(o => o.def > 0 || o.ng > 0).sort((a,b) => (b.def / (b.smp||1)) - (a.def / (a.smp||1)));
+  return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <button class="period-btn" onclick="HQ.qm='${shift(-1)}';renderHQ()">‹</button><strong>${HQ.qm.slice(0,4)}년 ${+HQ.qm.slice(5)}월</strong><button class="period-btn" onclick="HQ.qm='${shift(1)}';renderHQ()">›</button>
+      <select onchange="HQ.qt=this.value;renderHQ()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px;margin-left:6px"><option value="">검사 구분 전체</option>${types.map(t => `<option ${HQ.qt===t?'selected':''}>${t}</option>`).join('')}</select>
+      <div class="sw" style="flex:1;min-width:200px"><span class="si">🔍</span><input placeholder="품목·LOT·검사자 검색" value="${hqE(HQ.q)}" oninput="HQ.q=this.value;clearTimeout(window._hqT);window._hqT=setTimeout(()=>{renderHQ();const i=document.querySelector('#hq-body .sw input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>
+      <button onclick="hqQAExcel(${ngOnly ? 'true' : 'false'})" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer">📊 엑셀</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${types.map(tile).join('')}</div>
+    ${byRows.length && !ngOnly ? `<div style="font-size:13px;font-weight:700;margin-bottom:6px">품목별 불량 (이번 달)</div><div class="tw" style="margin-bottom:12px"><table><thead><tr><th>품목</th><th style="text-align:right">검사</th><th style="text-align:right">시료</th><th style="text-align:right">불량</th><th style="text-align:right">불량률</th><th style="text-align:right">불합격·조건부</th></tr></thead><tbody>${
+      byRows.map(o => `<tr><td>${hqE(o.name)}</td><td style="text-align:right">${o.n}</td><td style="text-align:right">${hqN(o.smp)}</td><td style="text-align:right;color:#b91c1c">${hqN(o.def)}</td><td style="text-align:right;font-weight:700">${o.smp ? (Math.round(o.def / o.smp * 10000) / 100) + '%' : '-'}</td><td style="text-align:right">${o.ng}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px">${ngOnly ? '불합격·조건부합격 목록' : '검사 기록'} <span style="font-weight:400;color:#5D6977">${rows.length}건</span></div>
+    ${rows.length ? `<div class="tw"><table><thead><tr><th>검사일</th><th>구분</th><th>품목</th><th>LOT</th><th style="text-align:right">검사 수량</th><th style="text-align:right">시료</th><th style="text-align:right">불량</th><th>판정</th><th>검사자</th><th>비고</th></tr></thead><tbody>${
+      rows.map(r => `<tr><td style="white-space:nowrap">${hqE(fmtDt(r.inspDate))}</td><td style="white-space:nowrap">${hqE(r.inspType)}</td><td>${hqE(r.name||r.code)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(r.code)}</div></td>
+        <td style="font-size:12px">${hqE(r.lot||'')}</td><td style="text-align:right">${hqN(r.totalQty)}</td><td style="text-align:right">${hqN(r.sampleQty)}</td><td style="text-align:right;color:${(+r.defectQty||0) ? '#b91c1c' : ''}">${hqN(r.defectQty)}</td>
+        <td>${hqPill(r.result||'', rc[r.result])}</td><td>${hqE(r.inspector||'')}</td><td style="white-space:normal;font-size:12px;color:#5D6977;max-width:260px">${hqE(r.note||'')}</td></tr>`).join('')}</tbody></table></div>`
+      : `<div class="empty">${ngOnly ? '✅ 이 달 불합격·조건부합격이 없습니다.' : '이 달 검사 기록이 없습니다.'}</div>`}
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">법인 품질검사 탭에 등록된 기록을 그대로 보여줍니다 (조회 전용).</div>`;
+}
+function hqQAExcel(ngOnly){
+  if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
+  const rows = (QC||[]).filter(q => hqQAYM(q) === HQ.qm && (!HQ.qt || q.inspType === HQ.qt) && (!ngOnly || q.result !== '합격')).sort((a,b) => String(a.inspDate||'').localeCompare(String(b.inspDate||'')));
+  const ws = XLSX.utils.json_to_sheet(rows.map(r => ({'검사일': fmtDt(r.inspDate), '구분': r.inspType, '품목코드': r.code, '품명': r.name, 'LOT': r.lot||'', '검사 수량': +r.totalQty||0, '시료': +r.sampleQty||0, '불량': +r.defectQty||0, '판정': r.result, '검사자': r.inspector||'', '비고': r.note||''})));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, ngOnly ? '불합격·조건부' : '검사 현황'); XLSX.writeFile(wb, `품질검사_${HQ.qm.replace('-','')}${ngOnly ? '_불합격' : ''}.xlsx`);
+}
 // ── ④ 발주·선적 ────────────────────────────────────────────
 function hqShipGroups(){
   const a = spoAlloc(), g = {};
