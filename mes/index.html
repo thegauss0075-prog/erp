@@ -159,6 +159,22 @@ async function syncWO(silent){
   await loadMaster();
 }
 
+// ERP에서 새로 발행한 작업지시를 자동으로 받아온다: 화면이 열려 있는 동안 2분마다, 태블릿 화면을 다시 켤 때마다
+let _woSyncAt = 0, _woSyncOn = false;
+function woAutoSync(){
+  if (_woSyncOn) return; _woSyncOn = true;
+  const tick = async (force) => {
+    if (document.hidden || (!force && Date.now() - _woSyncAt < 100e3)) return;
+    _woSyncAt = Date.now();
+    const before = M.wo.map(w => w.wo_id + w.status).join();
+    await syncWO(true);
+    const after = M.wo.map(w => w.wo_id + w.status).join();
+    const busy = document.querySelector('.ov') || (document.activeElement && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName));
+    if (before !== after && !busy) { render(); const n = activeWO().length; toast(`🆕 작업지시 목록이 바뀌었습니다 (진행 ${n}건)`); }
+  };
+  setInterval(() => tick(false), 120e3);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(false); });
+}
 // ── 데이터 읽기
 async function loadMaster(){
   const [p, m, w, r, o, rt] = await Promise.all([sb.from('processes').select('*').order('seq'), sb.from('machines').select('*').order('code'), sb.from('workers').select('*').order('name'), sb.from('stop_reasons').select('*').order('seq'), sb.from('work_orders').select('*').order('order_no', {ascending: false}), sb.from('routings').select('*').order('seq')]);
@@ -643,7 +659,7 @@ async function boot(){
   if (!ME.role) { $('app').innerHTML = `<div class="card" style="max-width:520px;margin:30px auto"><h2>권한 없음</h2><p>${E(u.email)} 계정이 MES 사용자(app_users)에 등록되지 않았습니다. 관리자에게 요청하세요.</p><button class="btn" onclick="logout()">로그아웃</button></div>`; return; }
   $('who').textContent = `👤 ${r.data.name || u.email} · ${ME.role}`;
   await loadMaster(); await loadLive(); setNet(true); realtime(); flushQ();
-  if (ME.role !== 'viewer' && (!M.wo.length || M.wo.every(w => Date.now() - new Date(w.synced_at) > 30*60000))) syncWO(true).then(render);
+  if (ME.role !== 'viewer') { syncWO(true).then(render); woAutoSync(); }
   render();
 }
 boot();
