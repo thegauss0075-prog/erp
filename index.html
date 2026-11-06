@@ -13409,7 +13409,7 @@ async function loadHQ(force){
 // 부서별 탭 — 영업부: 고객 PO / 구매부: 자재 소요·구매요청·발주·선적 / 품질부: 검사 현황·불합격
 const HQ_DEPTS = [
   {k:'sales', l:'💼 영업부', vi:'Kinh doanh', col:'#5b21b6', tabs:[['quote','📝 견적서'],['cpo','📥 주문서 (고객 PO)'],['sale','🧾 판매'],['ar','💰 수금·채권'],['cust','🏷️ 거래처']]},
-  {k:'buy',   l:'🛒 구매부', vi:'Mua hàng',   col:'#b45309', tabs:[['mrp','🧮 자재 소요 계산'],['pr','📝 구매요청·승인'],['ship','🚢 발주·선적·입고']]},
+  {k:'buy',   l:'🛒 구매부', vi:'Mua hàng',   col:'#b45309', tabs:[['mrp','🧮 자재 소요 계산'],['pr','📝 구매요청·승인'],['ship','🚢 발주서·선적·입고'],['purch','🧾 구매(매입)'],['ap','💸 지급·채무'],['sup','🏭 공급사']]},
   {k:'qa',    l:'🔬 품질부', vi:'Chất lượng', col:'#0f766e', tabs:[['qadr','📈 월별 불량률'],['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]}];
 function hqSetDept(k){ const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0]; HQ.dept = d.k; HQ.tab = d.tabs[0][0]; HQ.q = ''; HQ.st = ''; try { localStorage.setItem('hq_dept', d.k); } catch(e) {} renderHQ(); }
 function hqNav(){
@@ -13435,7 +13435,7 @@ async function renderHQ(opts){
   hqNav();
   const warn = HQ.err === 'server' ? '<div style="background:#FEF3C7;color:#92400e;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:13px">⚠️ 서버(Code.gs)를 새 버전으로 배포해야 본사 업무 데이터가 저장·조회됩니다.</div>' : '';
   HQS._bal = null;
-  el.innerHTML = warn + (HQ.tab === 'quote' ? hqQuoteView() : HQ.tab === 'sale' ? hqSaleView() : HQ.tab === 'ar' ? hqARView() : HQ.tab === 'cust' ? hqCustView() : HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'qadr' ? hqDefectView() : hqQAView(HQ.tab === 'qang'));
+  el.innerHTML = warn + (HQ.tab === 'purch' ? hqPurchView() : HQ.tab === 'ap' ? hqAPView() : HQ.tab === 'sup' ? hqSupView() : HQ.tab === 'quote' ? hqQuoteView() : HQ.tab === 'sale' ? hqSaleView() : HQ.tab === 'ar' ? hqARView() : HQ.tab === 'cust' ? hqCustView() : HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'qadr' ? hqDefectView() : hqQAView(HQ.tab === 'qang'));
 }
 function hqSetTab(k){ HQ.tab = k; const d = HQ_DEPTS.find(x => x.tabs.some(t => t[0] === k)); if (d) HQ.dept = d.k; HQ.q = ''; HQ.st = ''; renderHQ(); }
 
@@ -13725,7 +13725,7 @@ function hqPREdit(id, preset){
 function hqPRRender(){
   const r = HQ_PR, isNew = !HQ.pr.some(x => String(x.id) === String(r.id)), editable = r.status === '요청' || r.status === '반려';
   const items = allRows().filter(x => ['KR','VN','VTTH','BTP'].includes(x.cat));
-  const sups = [...new Set(SPO.map(p => p.supplier).filter(Boolean))];
+  const sups = hqsSupNames();
   const ro = editable ? '' : 'disabled';
   hqModal('hq-pr', `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
@@ -13838,13 +13838,14 @@ async function hqPRToPOGo(){
 //   견적서 → 주문서(고객 PO) → 출고 → 판매(매출) → 수금 → 거래처별 채권
 //   저장: HQ_CUST(거래처) · HQ_QUOTE(견적서) · HQ_SALE(판매) · HQ_PAY(수금)
 // ════════════════════════════════════════════════════════════
-const HQS = {cust: [], quote: [], sale: [], pay: [], loaded: false, sm: '', ed: null};
+const HQS = {cust: [], quote: [], sale: [], pay: [], sup: [], purch: [], ppay: [], loaded: false, sm: '', ed: null};
 const HQ_Q_ST = ['작성','제출','수주','실주'];
 const HQ_Q_COL = {'작성':['#6b7280','#F3F4F6'],'제출':['#185FA5','#E8F0F8'],'수주':['#166534','#DCFCE7'],'실주':['#b91c1c','#FEE2E2']};
 async function loadHQS(force){
   if (HQS.loaded && !force) return;
-  const rs = await Promise.all(['cust','quote','sale','pay'].map(k => api('getHQStore', {store: k})));
-  ['cust','quote','sale','pay'].forEach((k, i) => { if (rs[i] && rs[i].ok) HQS[k] = rs[i].data || []; });
+  const ks = ['cust','quote','sale','pay','sup','purch','ppay'];
+  const rs = await Promise.all(ks.map(k => api('getHQStore', {store: k})));
+  ks.forEach((k, i) => { if (rs[i] && rs[i].ok) HQS[k] = rs[i].data || []; });
   HQS.loaded = true;
 }
 async function hqsSave(store, rec){
@@ -13876,9 +13877,10 @@ function hqsMonthBar(){
 // 공용 품목 라인 편집 (견적서·판매)
 function hqsLinesHtml(obj, path, cur, opts){
   const o = opts || {};
-  return `<div class="tw"><table><thead><tr><th style="min-width:230px">품목 *</th><th>수량 *</th><th>단가 (${hqE(cur)})</th>${o.due ? '<th>납기</th>' : ''}<th style="text-align:right">공급가액</th><th></th></tr></thead><tbody>${
+  return `<div class="tw"><table><thead><tr><th style="min-width:230px">품목 *</th>${o.po ? '<th>발주번호</th>' : ''}<th>수량 *</th><th>단가 (${hqE(cur)})</th>${o.due ? '<th>납기</th>' : ''}<th style="text-align:right">공급가액</th><th></th></tr></thead><tbody>${
     (obj.lines||[]).map((l, i) => `<tr>
-      <td><input list="hq-items" value="${hqE(l.code ? l.code + (l.name ? ' — ' + l.name : '') : '')}" onchange="hqsLine('${path}',${i},'item',this.value)" style="${HQ_IN}"></td>
+      <td><input list="${o.list || 'hq-items'}" value="${hqE(l.code ? l.code + (l.name ? ' — ' + l.name : '') : '')}" onchange="hqsLine('${path}',${i},'item',this.value)" style="${HQ_IN}"></td>
+      ${o.po ? `<td style="font-family:monospace;font-size:12px;white-space:nowrap">${hqE(l.poNo||'')}</td>` : ''}
       <td><input type="number" value="${hqE(l.qty)}" oninput="hqsLine('${path}',${i},'qty',this.value)" style="${HQ_IN};width:90px"></td>
       <td><input type="number" step="0.0001" value="${hqE(l.price)}" oninput="hqsLine('${path}',${i},'price',this.value)" style="${HQ_IN};width:100px"></td>
       ${o.due ? `<td><input type="date" value="${hqE(l.due||'')}" oninput="hqsLine('${path}',${i},'due',this.value)" style="${HQ_IN}"></td>` : ''}
@@ -13889,6 +13891,7 @@ function hqsLinesHtml(obj, path, cur, opts){
 function hqsLine(path, i, k, v){
   const l = HQS.ed.lines[i]; if (!l) return;
   if (k === 'item') { const code = String(v).split(' — ')[0].trim(), it = allRows().find(x => x.code === code && (x.cat === 'TP' || x.cat === 'BTP')) || allRows().find(x => x.code === code);
+    if (HQS.ed._kind === 'purch') { const m = allRows().find(x => x.code === code && ['KR','VN','VTTH','BTP'].includes(x.cat)); if (m) { l.code = m.code; l.name = m.name; l.cat = m.cat; l.unit = m.unit; if (l.price === '' || l.price == null) { const pp = hqsLastBuyPrice(HQS.ed.supplier, m.code); if (pp !== '') l.price = pp; } } else { l.code = code; l.name = ''; } setTimeout(hqsReRender, 0); return; }
     if (it) { l.code = it.code; l.name = it.name; l.cat = it.cat; l.unit = it.unit; if (l.price === '' || l.price == null) { const p = hqsLastPrice(HQS.ed.customer, it.code); if (p !== '') l.price = p; } } else { l.code = code; l.name = ''; }
     setTimeout(hqsReRender, 0); return; }
   l[k] = v;
@@ -13900,6 +13903,12 @@ function hqsLastPrice(cust, code){
   const pick = arr => { const l = arr.filter(x => !cust || x.customer === cust).sort((a,b) => String(b.date || b.recvDate || '').localeCompare(String(a.date || a.recvDate || '')))
     .flatMap(x => (x.lines||[]).filter(y => y.code === code && y.price !== '' && y.price != null)); return l.length ? +l[0].price : ''; };
   const v = pick(HQS.sale); if (v !== '') return v; const w = pick(HQ.cpo); if (w !== '') return w; return pick(HQS.quote);
+}
+function hqsLastBuyPrice(sup, code){
+  const l = HQS.purch.filter(x => !sup || x.supplier === sup).sort((a,b) => String(b.date||'').localeCompare(String(a.date||''))).flatMap(x => (x.lines||[]).filter(y => y.code === code && y.price !== '' && y.price != null));
+  if (l.length) return +l[0].price;
+  const s2 = [...SPO].filter(p => p.code === code && (!sup || p.supplier === sup) && p.price !== '' && p.price != null).sort((a,b) => String(b.orderDate||'').localeCompare(String(a.orderDate||'')));
+  return s2.length ? +s2[0].price : '';
 }
 function hqsTotHtml(r){ const sup = hqsLineTot(r.lines), vat = sup * (+r.vatRate||0) / 100; return `공급가액 ${hqM(sup, r.cur)}${+r.vatRate ? ` · 부가세 ${hqM(vat, r.cur)} · <b>합계 ${hqM(sup + vat, r.cur)}</b>` : ` · <b>합계 ${hqM(sup, r.cur)}</b>`}`; }
 let _hqsRender = null; function hqsReRender(){ if (_hqsRender) _hqsRender(); }
@@ -14207,6 +14216,221 @@ async function hqPaySave(){
   if (!String(p.customer||'').trim() || !p.date || !(+p.amount > 0)) { err.textContent = '거래처·수금일·금액을 넣어주세요.'; return; }
   p.amount = +p.amount; hqsStamp(p, !HQS.pay.some(x => x.id === p.id));
   if (await hqsSave('pay', p)) { HQS._bal = null; hqClose('hq-p'); renderHQ(); }
+}
+
+// ════════════════════════════════════════════════════════════
+//  🛒 본사 구매관리 (2026-11-06) — 이카운트 구매관리 흐름
+//   발주서(발주·선적) → 구매(매입) 입력 → 지급 → 공급사별 채무
+//   저장: HQ_SUP(공급사) · HQ_PURCH(구매) · HQ_PPAY(지급). 발주는 기존 SUPPLY_PO
+// ════════════════════════════════════════════════════════════
+function hqsSupNames(){ return [...new Set([...HQS.sup.map(c => c.name), ...SPO.map(p => p.supplier), ...HQS.purch.map(p => p.supplier)].filter(Boolean))]; }
+function hqsSup(name){ return HQS.sup.find(c => c.name === name) || null; }
+function hqsBuyDatalists(){
+  const items = allRows().filter(x => ['KR','VN','VTTH','BTP'].includes(x.cat));
+  return `<datalist id="hq-sups2">${hqsSupNames().map(c => `<option value="${hqE(c)}">`).join('')}</datalist><datalist id="hq-mats2">${items.map(x => `<option value="${hqE(x.code)} — ${hqE(x.name)}">`).join('')}</datalist>`;
+}
+// 발주 행별 이미 구매(매입)로 잡은 수량
+function hqPurchedBySpo(){ const m = {}; HQS.purch.forEach(p => (p.lines||[]).forEach(l => { if (l.spoId) m[l.spoId] = (m[l.spoId]||0) + (+l.qty||0); })); return m; }
+function hqUnpurchased(){
+  const pm = hqPurchedBySpo(), a = spoAlloc();
+  return SPO.map(p => { const r = spoRow(p, a), done = pm[p.id] || 0; return {...r, purched: done, left: Math.max(0, r.q - done)}; }).filter(r => r.left > 0)
+    .sort((x,y) => String(x.orderDate||'').localeCompare(String(y.orderDate||'')));
+}
+function hqPurchTotals(p){ const sup = hqsLineTot(p.lines), vat = Math.round(sup * (+p.vatRate||0)) / 100; return {sup, vat, total: sup + vat}; }
+
+// ── 🏭 공급사 ──────────────────────────────────────────
+function hqSupView(){
+  const q = HQ.q.trim().toLowerCase(), ap = hqAPData();
+  const rows = HQS.sup.filter(c => !q || [c.name, c.bizNo, c.contact, c.email, c.country, c.items].join(' ').toLowerCase().includes(q)).sort((a,b) => String(a.name).localeCompare(String(b.name)));
+  const unreg = hqsSupNames().filter(n => !hqsSup(n));
+  return hqsToolbar(hqsBtn('➕ 공급사 등록', 'hqSupEdit(null)', '#b45309', true), '공급사명·사업자번호·담당자·취급품목 검색') +
+    (rows.length ? `<div class="tw"><table><thead><tr><th>공급사</th><th>국가</th><th>사업자번호</th><th>통화</th><th>결제조건</th><th>취급 품목</th><th>담당자</th><th>연락처</th><th style="text-align:right">미지급 잔액</th></tr></thead><tbody>${
+      rows.map(c => { const a = ap.find(x => x.supplier === c.name); return `<tr style="cursor:pointer" onclick="hqSupEdit('${c.id}')"><td><b>${hqE(c.name)}</b></td><td>${hqE(c.country||'')}</td><td style="font-family:monospace;font-size:12px">${hqE(c.bizNo||'')}</td><td>${hqE(c.cur||'')}</td>
+        <td>${c.payTerms ? hqE(c.payTerms) + '일' : '-'}</td><td style="font-size:12px">${hqE(c.items||'')}</td><td>${hqE(c.contact||'')}</td><td style="font-size:12px">${hqE([c.phone, c.email].filter(Boolean).join(' · '))}</td>
+        <td style="text-align:right">${a ? Object.entries(a.bal).filter(([,v]) => Math.abs(v) > 0.005).map(([k,v]) => hqM(v, k)).join('<br>') || '-' : '-'}</td></tr>`; }).join('')}</tbody></table></div>`
+      : '<div class="empty">등록된 공급사가 없습니다.</div>') +
+    (unreg.length ? `<div style="font-size:12.5px;color:#5D6977;margin-top:10px">발주·구매에만 있고 공급사로 등록 안 된 이름: ${unreg.map(n => `<a href="#" onclick="event.preventDefault();hqSupEdit(null,'${hqE(n).replace(/'/g,"\\'")}')">${hqE(n)}</a>`).join(', ')}</div>` : '');
+}
+function hqSupEdit(id, name){
+  const r = id ? HQS.sup.find(x => String(x.id) === String(id)) : null;
+  HQS.ed = r ? JSON.parse(JSON.stringify(r)) : {id: String(Date.now()), name: name || '', cur: 'KRW', payTerms: 30, country: '한국', vatRate: 10};
+  const c = HQS.ed, isNew = !r, f = (k, ph, type) => `<input ${type ? `type="${type}"` : ''} value="${hqE(c[k] ?? '')}" placeholder="${ph||''}" oninput="HQS.ed.${k}=this.value" style="${HQ_IN}">`;
+  hqModal('hq-su', `<h3 style="margin:0 0 12px;font-size:16px">${isNew ? '➕ 공급사 등록' : '✏️ ' + hqE(c.name)}</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+      ${hqFld('공급사명 *','NCC', f('name'))}${hqFld('국가','', f('country','한국 / 중국 / 베트남'))}${hqFld('사업자번호','', f('bizNo'))}
+      ${hqFld('거래 통화','', `<select onchange="HQS.ed.cur=this.value" style="${HQ_IN}">${['KRW','USD','VND','CNY','JPY'].map(x => `<option ${c.cur===x?'selected':''}>${x}</option>`).join('')}</select>`)}
+      ${hqFld('결제조건 (일)','', f('payTerms','30','number'))}${hqFld('부가세율 (%)','', f('vatRate','국내 10 / 수입 0','number'))}
+      ${hqFld('취급 품목','', f('items','예: 코어, 동선, 베이스'), true)}
+      ${hqFld('담당자','', f('contact'))}${hqFld('전화','', f('phone'))}${hqFld('이메일','', f('email'))}
+      ${hqFld('주소','', f('addr'), true)}${hqFld('비고','', f('note'), true)}
+    </div><div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('sup','${c.id}','${hqE(c.name)}').then(ok=>{if(ok){hqClose('hq-su');renderHQ()}})`, '#b91c1c') : ''}</div>
+      <div style="display:flex;gap:6px">${hqsBtn('닫기', "hqClose('hq-su')", '#64748b')}${hqsBtn('💾 저장', 'hqSupSave()', '#b45309', true)}</div></div>`, 760);
+}
+async function hqSupSave(){
+  const c = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite()) return;
+  c.name = String(c.name||'').trim(); if (!c.name) { err.textContent = '공급사명을 넣어주세요.'; return; }
+  if (HQS.sup.some(x => x.id !== c.id && x.name === c.name)) { err.textContent = '같은 이름의 공급사가 이미 있습니다.'; return; }
+  c.payTerms = c.payTerms === '' ? '' : +c.payTerms || 0; c.vatRate = c.vatRate === '' || c.vatRate == null ? '' : +c.vatRate || 0;
+  hqsStamp(c, !HQS.sup.some(x => x.id === c.id));
+  if (await hqsSave('sup', c)) { hqClose('hq-su'); renderHQ(); }
+}
+
+// ── 🧾 구매(매입) ──────────────────────────────────────
+function hqPurchView(){
+  const q = HQ.q.trim().toLowerCase(), m = HQS.sm || (HQS.sm = hqToday().slice(0,7));
+  const rows = HQS.purch.filter(s => (m === 'all' || String(s.date||'').slice(0,7) === m) && (!q || [s.pNo, s.supplier, s.invNo, ...(s.lines||[]).map(l => l.code + ' ' + l.name + ' ' + (l.poNo||''))].join(' ').toLowerCase().includes(q))).sort((a,b) => String(b.date||'').localeCompare(String(a.date||'')));
+  const money = o => Object.entries(o).map(([k,v]) => hqM(v, k)).join(' / ') || '-';
+  const tot = {}, byS = {}, byI = {}; HQS._pbal = hqAPAlloc();
+  rows.forEach(p => { const t = hqPurchTotals(p); tot[p.cur] = (tot[p.cur]||0) + t.total; const o = byS[p.supplier] = byS[p.supplier] || {}; o[p.cur] = (o[p.cur]||0) + t.total;
+    (p.lines||[]).forEach(l => { const x = byI[l.code] = byI[l.code] || {name: l.name, unit: l.unit, q: 0, amt: {}}; x.q += +l.qty||0; x.amt[p.cur] = (x.amt[p.cur]||0) + (+l.qty||0) * (+l.price||0); }); });
+  const un = hqUnpurchased();
+  return hqsToolbar(hqsBtn('➕ 구매 입력', 'hqPurchEdit(null)', '#b45309', true) + hqsBtn(`📋 발주에서 불러오기${un.length ? ' (' + un.length + ')' : ''}`, 'hqPurchFromPO()', '#0f766e'), '구매번호·공급사·자재·발주번호 검색',
+      `<div style="display:flex;gap:4px;align-items:center">${hqsMonthBar()}<button class="period-btn ${m==='all'?'on':''}" onclick="HQS.sm='all';renderHQ()">전체</button></div>${hqsBtn('📊 엑셀', 'hqPurchExcel()', '#166534')}`) +
+    `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="flex:1;min-width:180px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${m === 'all' ? '전체' : +m.slice(5) + '월'} 구매 합계</div><div style="font-size:19px;font-weight:700">${money(tot)}</div><div style="font-size:11px;color:#8A95A3">${rows.length}건</div></div>
+      <div style="flex:2;min-width:260px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px;font-size:12.5px"><div style="font-size:12px;color:#5D6977;margin-bottom:4px">공급사별</div>${Object.entries(byS).map(([c,o]) => `<div style="display:flex;justify-content:space-between"><span>${hqE(c)}</span><b>${money(o)}</b></div>`).join('') || '-'}</div>
+      <div style="flex:1;min-width:180px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#92400e">미구매 발주 (매입 미등록)</div><div style="font-size:19px;font-weight:700;color:#b45309">${un.length}건</div><div style="font-size:11px;color:#8A95A3">발주했지만 구매(매입)로 안 잡은 자재</div></div>
+    </div>` +
+    (rows.length ? `<div class="tw"><table><thead><tr><th>구매일</th><th>구매번호</th><th>공급사</th><th>자재</th><th>발주번호</th><th style="text-align:right">공급가액</th><th style="text-align:right">부가세</th><th style="text-align:right">합계</th><th>세금계산서·Invoice</th><th style="text-align:right">미지급</th><th></th></tr></thead><tbody>${
+      rows.map(p => { const t = hqPurchTotals(p), b = HQS._pbal[p.id] || 0; return `<tr><td style="white-space:nowrap">${hqE(p.date)}</td><td style="font-family:monospace;font-size:12px;cursor:pointer;color:#185FA5" onclick="hqPurchEdit('${p.id}')">${hqE(p.pNo)}</td><td>${hqE(p.supplier)}</td>
+        <td>${hqE(((p.lines||[])[0]||{}).name || '-')}${(p.lines||[]).length > 1 ? ` <span style="color:#8A95A3">외 ${p.lines.length-1}</span>` : ''}</td><td style="font-family:monospace;font-size:12px">${hqE([...new Set((p.lines||[]).map(l => l.poNo).filter(Boolean))].join(', '))}</td>
+        <td style="text-align:right;white-space:nowrap">${hqM(t.sup, p.cur)}</td><td style="text-align:right;white-space:nowrap">${t.vat ? hqM(t.vat, p.cur) : '-'}</td><td style="text-align:right;white-space:nowrap;font-weight:700">${hqM(t.total, p.cur)}</td>
+        <td style="font-size:12px">${hqE(p.invNo||'')}</td><td style="text-align:right;white-space:nowrap;color:${b > 0.005 ? '#b45309' : '#166534'}">${b > 0.005 ? hqM(b, p.cur) : '지급 완료'}</td>
+        <td><button class="edit-btn" onclick="hqPurchEdit('${p.id}')" title="수정">✏️</button></td></tr>`; }).join('')}</tbody></table></div>`
+      : '<div class="empty">이 기간 구매 기록이 없습니다.</div>') +
+    (Object.keys(byI).length ? `<div style="font-size:13px;font-weight:700;margin:14px 0 6px">자재별 구매현황</div><div class="tw"><table><thead><tr><th>자재</th><th>코드</th><th style="text-align:right">수량</th><th style="text-align:right">금액</th><th style="text-align:right">평균 단가</th></tr></thead><tbody>${
+      Object.entries(byI).sort((a,b) => b[1].q - a[1].q).map(([c,o]) => `<tr><td>${hqE(o.name)}</td><td style="font-family:monospace;font-size:12px">${hqE(c)}</td><td style="text-align:right">${hqN(o.q)} ${hqE(o.unit||'')}</td><td style="text-align:right">${money(o.amt)}</td>
+        <td style="text-align:right">${Object.entries(o.amt).map(([k,v]) => o.q ? (v / o.q).toLocaleString(undefined,{maximumFractionDigits:4}) + ' ' + k : '-').join(' / ')}</td></tr>`).join('')}</tbody></table></div>` : '');
+}
+function hqPurchEdit(id, preset){
+  const r = id ? HQS.purch.find(x => String(x.id) === String(id)) : null;
+  HQS.ed = r ? JSON.parse(JSON.stringify(r)) : Object.assign({id: String(Date.now()), date: hqToday(), cur: 'KRW', vatRate: '', lines: [{code:'', name:'', qty:'', price:''}]}, preset || {});
+  HQS.ed._kind = 'purch'; _hqsRender = hqPurchRender; hqPurchRender();
+}
+function hqPurchRender(){
+  const r = HQS.ed, isNew = !HQS.purch.some(x => x.id === r.id), set = k => `oninput="HQS.ed.${k}=this.value"`, c = hqsSup(r.supplier);
+  hqModal('hq-pu', `<h3 style="margin:0 0 10px;font-size:16px">${isNew ? '🧾 구매 입력' : '🧾 ' + hqE(r.pNo)} <span style="font-weight:400;color:#5D6977;font-size:12.5px">/ Mua hàng</span></h3>${hqsBuyDatalists()}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:12px">
+      ${hqFld('공급사 *','NCC', `<input list="hq-sups2" value="${hqE(r.supplier||'')}" onchange="HQS.ed.supplier=this.value;const c=hqsSup(this.value);if(c){if(c.cur)HQS.ed.cur=c.cur;if(c.vatRate!==''&&c.vatRate!=null)HQS.ed.vatRate=c.vatRate}hqPurchRender()" style="${HQ_IN}">`)}
+      ${hqFld('구매일 *','Ngày', `<input type="date" value="${hqE(r.date)}" ${set('date')} style="${HQ_IN}">`)}
+      ${hqFld('지급 예정일','Hạn TT', `<input type="date" value="${hqE(r.dueDate || (c && c.payTerms ? hqAddDays(r.date || hqToday(), +c.payTerms) : ''))}" ${set('dueDate')} style="${HQ_IN}">`)}
+      ${hqFld('통화','', `<select onchange="HQS.ed.cur=this.value;hqPurchRender()" style="${HQ_IN}">${['KRW','USD','VND','CNY','JPY'].map(x => `<option ${r.cur===x?'selected':''}>${x}</option>`).join('')}</select>`)}
+      ${hqFld('부가세율 (%)','VAT', `<input type="number" value="${hqE(r.vatRate ?? '')}" placeholder="국내 10 / 수입 0" oninput="HQS.ed.vatRate=this.value;document.getElementById('hqp-tot').innerHTML=hqsTotHtml(HQS.ed)" style="${HQ_IN}">`)}
+      ${hqFld('세금계산서·Invoice No','', `<input value="${hqE(r.invNo||'')}" ${set('invNo')} style="${HQ_IN}">`)}
+    </div>${hqsLinesHtml(r, 'hqp', r.cur, {list: 'hq-mats2', po: true})}
+    <div id="hqp-tot" style="text-align:right;margin-top:6px">${hqsTotHtml(r)}</div>
+    ${hqFld('비고','', `<textarea rows="2" ${set('note')} style="${HQ_IN};font-family:inherit">${hqE(r.note||'')}</textarea>`, true)}
+    <div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:space-between;gap:6px;margin-top:12px"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('purch','${r.id}','${hqE(r.pNo)}').then(ok=>{if(ok){hqClose('hq-pu');renderHQ()}})`, '#b91c1c') : ''}</div>
+      <div style="display:flex;gap:6px">${hqsBtn('닫기', "hqClose('hq-pu')", '#64748b')}${hqsBtn('💾 저장', 'hqPurchSave()', '#b45309', true)}</div></div>`, 1000);
+}
+async function hqPurchSave(){
+  const r = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite()) return;
+  r.customer = r.supplier;   // 공용 검사 함수(hqsCheckLines)가 customer를 본다
+  if (!String(r.supplier||'').trim()) { err.textContent = '공급사를 넣어주세요.'; return; }
+  if (!hqsCheckLines(r, err)) return; delete r.customer;
+  if (!r.date) { err.textContent = '구매일을 넣어주세요.'; return; }
+  if (r.lines.some(l => l.price === '') && !confirm('단가가 비어 있는 자재가 있습니다. 0원으로 저장할까요?')) return;
+  const c = hqsSup(r.supplier); if (!r.dueDate && c && c.payTerms) r.dueDate = hqAddDays(r.date, +c.payTerms);
+  if (!r.pNo) r.pNo = hqNextNo('PU', HQS.purch, 'pNo', r.date);
+  r.vatRate = r.vatRate === '' || r.vatRate == null ? '' : +r.vatRate || 0; delete r._kind;
+  const t = hqPurchTotals(r); r.supply = t.sup; r.vat = t.vat; r.total = t.total;
+  hqsStamp(r, !HQS.purch.some(x => x.id === r.id));
+  if (await hqsSave('purch', r)) { hqClose('hq-pu'); renderHQ(); }
+}
+// 발주에서 불러오기 (미구매현황): 발주했지만 구매(매입)로 안 잡은 수량
+function hqPurchFromPO(){
+  const list = hqUnpurchased();
+  hqModal('hq-unp', `<h3 style="margin:0 0 6px;font-size:16px">📋 미구매 발주 <span style="font-weight:400;color:#5D6977;font-size:12.5px">발주했지만 아직 구매(매입)로 잡지 않은 자재 — 같은 공급사끼리 골라 주세요</span></h3>
+    ${list.length ? `<div class="tw" style="max-height:55vh;overflow:auto"><table><thead><tr><th></th><th>발주일</th><th>발주번호</th><th>공급사</th><th>자재</th><th style="text-align:right">발주</th><th style="text-align:right">입고</th><th style="text-align:right">구매 완료</th><th style="text-align:right">미구매</th><th>단가</th></tr></thead><tbody>${
+      list.map(r => `<tr><td><input type="checkbox" class="hqu-cb" value="${hqE(r.id)}" style="width:auto;margin:0"></td><td style="white-space:nowrap">${hqE(r.orderDate||'')}</td><td style="font-family:monospace;font-size:12px">${hqE(r.poNo||'')}</td><td>${hqE(r.supplier||'-')}</td>
+        <td>${hqE(r.name)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(r.code)}</div></td><td style="text-align:right">${hqN(r.q)} ${hqE(r.unit||'')}</td><td style="text-align:right">${hqN(Math.min(r.q, r.got))}</td><td style="text-align:right">${r.purched ? hqN(r.purched) : '-'}</td>
+        <td style="text-align:right;font-weight:700;color:#b45309">${hqN(r.left)}</td><td style="white-space:nowrap">${r.price === '' || r.price == null ? '-' : hqE(r.price) + ' ' + hqE(r.cur||'')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">✅ 미구매 발주가 없습니다.</div>'}
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px">${hqsBtn('닫기', "hqClose('hq-unp')", '#64748b')}${list.length ? hqsBtn('선택한 발주로 구매 입력', 'hqPurchFromPOGo()', '#0f766e', true) : ''}</div>`, 1000);
+}
+function hqPurchFromPOGo(){
+  const ids = [...document.querySelectorAll('#hq-unp .hqu-cb:checked')].map(i => i.value); if (!ids.length) { alert('발주를 선택해주세요.'); return; }
+  const rows = hqUnpurchased().filter(r => ids.includes(String(r.id)));
+  const sups = [...new Set(rows.map(r => r.supplier || ''))];
+  if (sups.length > 1 && !confirm(`공급사가 ${sups.length}곳 섞여 있습니다 (${sups.join(', ')}). 구매는 공급사별로 따로 입력하는 게 좋습니다.\n첫 공급사(${sups[0] || '미정'})로 그대로 만들까요?`)) return;
+  const sup = sups[0] || '', c = hqsSup(sup);
+  const lines = rows.filter(r => (r.supplier || '') === sup).map(r => ({code: r.code, name: r.name, cat: r.cat, unit: r.unit, qty: r.left, price: r.price === undefined ? '' : r.price, spoId: r.id, poNo: r.poNo || ''}));
+  hqClose('hq-unp');
+  hqPurchEdit(null, {supplier: sup, cur: rows[0].cur || (c && c.cur) || 'KRW', vatRate: c && c.vatRate !== '' && c.vatRate != null ? c.vatRate : '', lines, invNo: rows[0].invNo || ''});
+}
+function hqPurchExcel(){
+  if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
+  const m = HQS.sm, out = [];
+  HQS.purch.filter(s => m === 'all' || String(s.date||'').slice(0,7) === m).sort((a,b) => String(a.date).localeCompare(String(b.date))).forEach(s => (s.lines||[]).forEach(l => out.push({'구매일': s.date, '구매번호': s.pNo, '공급사': s.supplier, '자재코드': l.code, '자재명': l.name, '수량': +l.qty||0, '단위': l.unit||'', '단가': l.price === '' ? '' : +l.price, '공급가액': (+l.qty||0) * (+l.price||0), '부가세율(%)': s.vatRate === '' ? '' : +s.vatRate, '통화': s.cur, '발주번호': l.poNo||'', '세금계산서·Invoice': s.invNo||'', '지급 예정일': s.dueDate||''})));
+  const ws = XLSX.utils.json_to_sheet(out.length ? out : [{'구매일':'기록 없음'}]); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '구매현황');
+  XLSX.writeFile(wb, `구매현황_${m === 'all' ? '전체' : m.replace('-','')}.xlsx`);
+}
+
+// ── 💸 지급·공급사별 채무 ─────────────────────────────────
+function hqAPAlloc(){
+  const bal = {}; HQS.purch.forEach(p => bal[p.id] = hqPurchTotals(p).total);
+  [...HQS.ppay].sort((a,b) => String(a.date||'').localeCompare(String(b.date||''))).forEach(y => { let left = +y.amount || 0;
+    HQS.purch.filter(p => p.supplier === y.supplier && p.cur === y.cur).sort((a,b) => (a.pNo === y.purchNo ? -1 : b.pNo === y.purchNo ? 1 : 0) || String(a.date).localeCompare(String(b.date)))
+      .forEach(p => { if (left <= 0) return; const take = Math.min(left, bal[p.id]); if (take > 0) { bal[p.id] -= take; left -= take; } }); });
+  return bal;
+}
+function hqAPData(){
+  const bal = hqAPAlloc(), today = hqToday(), out = {};
+  const g = c => out[c] = out[c] || {supplier: c, buy: {}, paid: {}, bal: {}, age: {}};
+  HQS.purch.forEach(p => { const o = g(p.supplier), t = hqPurchTotals(p).total, b = bal[p.id] || 0; o.buy[p.cur] = (o.buy[p.cur]||0) + t; o.bal[p.cur] = (o.bal[p.cur]||0) + b;
+    if (b > 0.005) { const d = ncrDaysSafe(p.dueDate || p.date, today), k = d <= 0 ? '미도래' : d <= 30 ? '1~30일' : d <= 60 ? '31~60일' : d <= 90 ? '61~90일' : '90일 초과'; const a = o.age[p.cur] = o.age[p.cur] || {}; a[k] = (a[k]||0) + b; } });
+  HQS.ppay.forEach(y => { const o = g(y.supplier); o.paid[y.cur] = (o.paid[y.cur]||0) + (+y.amount||0); });
+  return Object.values(out).sort((a,b) => String(a.supplier).localeCompare(String(b.supplier)));
+}
+function hqAPView(){
+  const ap = hqAPData(), q = HQ.q.trim().toLowerCase(), AG = ['미도래','1~30일','31~60일','61~90일','90일 초과'];
+  const money = o => Object.entries(o||{}).filter(([,v]) => Math.abs(v) > 0.005).map(([k,v]) => hqM(v, k)).join('<br>') || '-';
+  const pays = HQS.ppay.filter(p => !q || [p.supplier, p.purchNo, p.method, p.note].join(' ').toLowerCase().includes(q)).sort((a,b) => String(b.date||'').localeCompare(String(a.date||'')));
+  const totBal = {}, overdue = {}, soon = {}; const today = hqToday(), wk = hqAddDays(today, 7), bal = hqAPAlloc();
+  ap.forEach(o => { Object.entries(o.bal).forEach(([k,v]) => totBal[k] = (totBal[k]||0) + v); Object.entries(o.age).forEach(([cur, a]) => Object.entries(a).forEach(([k, v]) => { if (k !== '미도래') overdue[cur] = (overdue[cur]||0) + v; })); });
+  HQS.purch.forEach(p => { const b = bal[p.id] || 0, due = p.dueDate || p.date; if (b > 0.005 && due >= today && due <= wk) soon[p.cur] = (soon[p.cur]||0) + b; });
+  return hqsToolbar(hqsBtn('➕ 지급 입력', 'hqPPayEdit(null)', '#b45309', true), '공급사·구매번호 검색') +
+    `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="flex:1;min-width:170px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">미지급 잔액 합계</div><div style="font-size:18px;font-weight:700">${money(totBal)}</div></div>
+      <div style="flex:1;min-width:170px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#92400e">7일 안에 지급할 금액</div><div style="font-size:18px;font-weight:700;color:#b45309">${money(soon)}</div></div>
+      <div style="flex:1;min-width:170px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#991b1b">지급일 지난 금액</div><div style="font-size:18px;font-weight:700;color:#b91c1c">${money(overdue)}</div></div>
+    </div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px">공급사별 채무 / Công nợ NCC</div>
+    ${ap.length ? `<div class="tw" style="margin-bottom:14px"><table><thead><tr><th>공급사</th><th style="text-align:right">구매</th><th style="text-align:right">지급</th><th style="text-align:right">잔액</th>${AG.map(a => `<th style="text-align:right">${a}</th>`).join('')}</tr></thead><tbody>${
+      ap.filter(o => !q || o.supplier.toLowerCase().includes(q)).map(o => `<tr><td><b>${hqE(o.supplier)}</b></td><td style="text-align:right;white-space:nowrap">${money(o.buy)}</td><td style="text-align:right;white-space:nowrap">${money(o.paid)}</td><td style="text-align:right;white-space:nowrap;font-weight:700">${money(o.bal)}</td>
+        ${AG.map(a => `<td style="text-align:right;white-space:nowrap;${a !== '미도래' ? 'color:#b91c1c' : ''}">${money(Object.fromEntries(Object.entries(o.age).map(([c, x]) => [c, x[a] || 0])))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<div class="empty" style="margin-bottom:14px">구매 기록이 없습니다.</div>'}
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px">지급 내역</div>
+    ${pays.length ? `<div class="tw"><table><thead><tr><th>지급일</th><th>공급사</th><th style="text-align:right">금액</th><th>방법</th><th>구매번호</th><th>비고</th><th>입력</th></tr></thead><tbody>${
+      pays.map(p => `<tr style="cursor:pointer" onclick="hqPPayEdit('${p.id}')"><td style="white-space:nowrap">${hqE(p.date)}</td><td>${hqE(p.supplier)}</td><td style="text-align:right;white-space:nowrap;font-weight:700">${hqM(p.amount, p.cur)}</td><td>${hqE(p.method||'')}</td><td style="font-family:monospace;font-size:12px">${hqE(p.purchNo||'')}</td><td style="font-size:12px;color:#5D6977">${hqE(p.note||'')}</td><td style="font-size:12px">${hqE(p.createdBy||'')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">지급 기록이 없습니다.</div>'}
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">지급은 같은 공급사·통화의 구매 중 지정한 구매번호부터, 없으면 오래된 구매부터 차감합니다. 경과일은 지급 예정일(없으면 구매일) 기준입니다.</div>`;
+}
+function hqPPayEdit(id){
+  const r = id ? HQS.ppay.find(x => String(x.id) === String(id)) : null;
+  HQS.ed = r ? JSON.parse(JSON.stringify(r)) : {id: String(Date.now()), date: hqToday(), cur: 'KRW', method: '계좌이체'};
+  hqPPayRender();
+}
+function hqPPayRender(){
+  const p = HQS.ed, isNew = !HQS.ppay.some(x => x.id === p.id), bal = hqAPAlloc();
+  const list = HQS.purch.filter(s => !p.supplier || s.supplier === p.supplier);
+  hqModal('hq-pp', `<h3 style="margin:0 0 12px;font-size:16px">${isNew ? '➕ 지급 입력' : '✏️ 지급 수정'}</h3>${hqsBuyDatalists()}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+      ${hqFld('공급사 *','NCC', `<input list="hq-sups2" value="${hqE(p.supplier||'')}" onchange="HQS.ed.supplier=this.value;const c=hqsSup(this.value);if(c&&c.cur)HQS.ed.cur=c.cur;hqPPayRender()" style="${HQ_IN}">`)}
+      ${hqFld('지급일 *','Ngày', `<input type="date" value="${hqE(p.date)}" oninput="HQS.ed.date=this.value" style="${HQ_IN}">`)}
+      ${hqFld('금액 *','Số tiền', `<input type="number" step="0.01" value="${hqE(p.amount ?? '')}" oninput="HQS.ed.amount=this.value" style="${HQ_IN}">`)}
+      ${hqFld('통화','', `<select onchange="HQS.ed.cur=this.value" style="${HQ_IN}">${['KRW','USD','VND','CNY','JPY'].map(x => `<option ${p.cur===x?'selected':''}>${x}</option>`).join('')}</select>`)}
+      ${hqFld('지급 방법','', `<select onchange="HQS.ed.method=this.value" style="${HQ_IN}">${['계좌이체','T/T','어음','카드','현금','상계','기타'].map(x => `<option ${p.method===x?'selected':''}>${x}</option>`).join('')}</select>`)}
+      ${hqFld('구매번호 (선택)','', `<select onchange="HQS.ed.purchNo=this.value" style="${HQ_IN}"><option value="">(오래된 구매부터 자동)</option>${list.map(s => `<option value="${hqE(s.pNo)}" ${p.purchNo===s.pNo?'selected':''}>${hqE(s.pNo)} · ${hqE(s.date)} · 미지급 ${hqM(bal[s.id]||0, s.cur)}</option>`).join('')}</select>`)}
+      ${hqFld('비고','', `<input value="${hqE(p.note||'')}" oninput="HQS.ed.note=this.value" style="${HQ_IN}">`, true)}
+    </div><div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('ppay','${p.id}','지급 ${hqE(p.date)}').then(ok=>{if(ok){hqClose('hq-pp');renderHQ()}})`, '#b91c1c') : ''}</div>
+      <div style="display:flex;gap:6px">${hqsBtn('닫기', "hqClose('hq-pp')", '#64748b')}${hqsBtn('💾 저장', 'hqPPaySave()', '#b45309', true)}</div></div>`, 760);
+}
+async function hqPPaySave(){
+  const p = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite()) return;
+  if (!String(p.supplier||'').trim() || !p.date || !(+p.amount > 0)) { err.textContent = '공급사·지급일·금액을 넣어주세요.'; return; }
+  p.amount = +p.amount; hqsStamp(p, !HQS.ppay.some(x => x.id === p.id));
+  if (await hqsSave('ppay', p)) { hqClose('hq-pp'); renderHQ(); }
 }
 
 // ── 품질부: 수입·출하검사 현황 ─────────────────────────────
