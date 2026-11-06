@@ -330,14 +330,42 @@ async function checkPrev(w, addQty){
 }
 async function startJob2(w){
   if (!(await checkPrev(w, null))) return;
-  const ms = M.mach.filter(m => m.active !== false && (!m.process_code || m.process_code === S.proc));
-  let mach = '';
-  if (ms.length) { mach = await new Promise(res => { const ov = document.createElement('div'); ov.className = 'ov'; ov.innerHTML = `<div class="box"><h2>설비 선택 <span class="vi">Chọn máy</span></h2><div class="pick">${ms.map(m => `<button data-c="${E(m.code)}">${E(m.name)}</button>`).join('')}<button data-c="">설비 없음</button></div><button class="btn" style="margin-top:10px" data-x="1">취소</button></div>`; document.body.appendChild(ov);
-    ov.onclick = e => { const b = e.target.closest('button'); if (!b) return; ov.remove(); res(b.dataset.x ? null : b.dataset.c); }; }); if (mach === null) return; }
-  const row = {wo_id: w.wo_id, order_no: w.order_no, item_code: w.code, item_name: w.name, process_code: S.proc, machine_code: mach || null, worker_code: S.worker, start_at: new Date().toISOString(), status: 'running', lot_out: w.lot || null, device: S.device};
+  const sd = await startDlg(w); if (!sd) return;
+  const mach = sd.mach, lots = sd.lots;
+  lotMemSet(w, lots);
+  const row = {wo_id: w.wo_id, order_no: w.order_no, item_code: w.code, item_name: w.name, process_code: S.proc, machine_code: mach || null, worker_code: S.worker, start_at: new Date().toISOString(), status: 'running', lots_in: lots.map(l => ({lot: l})), lot_out: w.lot || null, device: S.device};
   const r = await dbWrite({t: 'insert', table: 'prod_records', row});
   if (r && !r.queued) { M.rec.unshift(r); if (mach) await setMachine(mach, 'run', null, w.wo_id, true); }
   render(); toast('▶ 작업 시작');
+}
+// 작업 시작 창: 설비 고르기 + 투입 자재 LOT 스캔 (자재를 올릴 때 찍는다)
+function startDlg(w){
+  const ms = M.mach.filter(m => m.active !== false && (!m.process_code || m.process_code === S.proc)), req = lotReq(w);
+  const st = {mach: ms.length ? undefined : '', lots: lotMem(w)};
+  return new Promise(res => {
+    const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'sd'; document.body.appendChild(ov);
+    const add = v => { v = String(v||'').trim(); if (v && !st.lots.includes(v)) st.lots.push(v); draw(); setTimeout(() => $('sd-lot') && $('sd-lot').focus(), 30); };
+    const draw = () => { ov.innerHTML = `<div class="box"><h2>▶ 작업 시작 <span class="vi">Bắt đầu</span></h2><div class="muted" style="margin-bottom:10px">${E(w.order_no)} · ${E(w.name)} · ${E(procName(S.proc))} · ${E(workName(S.worker))}</div>
+      ${ms.length ? `<div style="font-weight:700;margin-bottom:4px">설비 / Máy</div><div class="pick">${ms.map(m => `<button data-c="${E(m.code)}" class="${st.mach === m.code ? 'on' : ''}">${E(m.name)}</button>`).join('')}<button data-c="" class="${st.mach === '' ? 'on' : ''}">설비 없음</button></div>` : ''}
+      <div style="margin-top:12px;font-weight:700">투입 자재 LOT ${req ? '<span style="color:var(--bad)">(필수)</span>' : '<span class="muted">(선택)</span>'} <span class="muted">· 지금 올리는 자재 라벨을 찍으세요. 지난번 LOT이 들어 있으면 같은 자재인지 확인하세요.</span></div>
+      <div style="display:flex;gap:6px;margin-top:4px"><input id="sd-lot" placeholder="자재 LOT 스캔 / Quét LOT NVL" style="flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px">${'BarcodeDetector' in window ? `<button class="btn" data-cam="1">📷</button>` : ''}</div>
+      <div style="margin-top:6px">${st.lots.map((l, i) => `<span class="tag m-idle" style="margin:2px">${E(l)} <a href="#" data-del="${i}">✕</a></span>`).join('') || '<span class="muted">찍은 LOT 없음</span>'}</div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn big" data-x="1">취소</button><button class="btn pri big" data-go="1">▶ 시작 / Bắt đầu</button></div></div>`;
+      const inp = $('sd-lot'); inp.onkeydown = e => { if (e.key === 'Enter') { add(inp.value); inp.value = ''; } }; };
+    ov.onclick = e => {
+      const a = e.target.closest('[data-del]'); if (a) { e.preventDefault(); st.lots.splice(+a.dataset.del, 1); draw(); return; }
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.cam) { window._camTarget = v => { add(v); window._camTarget = null; }; camScan(); return; }
+      if (b.dataset.x) { ov.remove(); res(null); return; }
+      if (b.dataset.c !== undefined) { st.mach = b.dataset.c; draw(); if (ms.length && !st.lots.length && !req) {} return; }
+      if (b.dataset.go) {
+        const pend = $('sd-lot').value.trim(); if (pend) add(pend);
+        if (st.mach === undefined) { alert('설비를 고르세요. (없으면 "설비 없음")\nChọn máy.'); return; }
+        if (req && !st.lots.length) { alert('이 공정은 투입 자재 LOT이 필수입니다.\nCông đoạn này bắt buộc quét LOT NVL.'); $('sd-lot').focus(); return; }
+        ov.remove(); res({mach: st.mach, lots: st.lots});
+      } };
+    draw(); setTimeout(() => $('sd-lot') && $('sd-lot').focus(), 50);
+  });
 }
 let FD = null;
 // 공정·품목별로 마지막에 찍은 자재 LOT을 태블릿이 기억 → 다음 실적에 자동으로 넣는다 (LOT이 바뀔 때만 다시 찍음)
@@ -347,7 +375,7 @@ function lotMemSet(w, lots){ try { localStorage.setItem(lotKey(w), JSON.stringif
 const lotReq = w => !!(routeOf(w).find(p => p.code === S.proc) || {}).lot_required;
 function finishDlg(id){
   const r = id ? M.rec.find(x => x.id === id) : null, w = r ? woOf(r.wo_id) : woOf(S.wo); if (!w && !r) return;
-  FD = {id, wo: w || {wo_id: r.wo_id, order_no: r.order_no, code: r.item_code, name: r.item_name, lot: r.lot_out}, good: '', ng: '', reason: '', lots: lotMem(w || {code: r && r.item_code}), f: 'good', mach: r ? r.machine_code : ''};
+  FD = {id, wo: w || {wo_id: r.wo_id, order_no: r.order_no, code: r.item_code, name: r.item_name, lot: r.lot_out}, good: '', ng: '', reason: '', lots: r && (r.lots_in || []).length ? r.lots_in.map(l => l.lot) : lotMem(w || {code: r && r.item_code}), f: 'good', mach: r ? r.machine_code : ''};
   const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'fd'; document.body.appendChild(ov); fdRender();
 }
 function fdRender(){
@@ -360,7 +388,7 @@ function fdRender(){
     <div class="pad">${[1,2,3,4,5,6,7,8,9,'C',0,'⌫'].map(k => `<button onclick="fdKey('${k}')">${k}</button>`).join('')}</div>
     ${+f.ng > 0 ? `<div style="margin-top:10px;font-weight:700">불량 사유 / Lý do lỗi</div><div class="pick" style="margin-top:4px">${reasons.map(x => `<button class="${f.reason === x ? 'on' : ''}" style="min-height:46px" onclick="FD.reason='${x}';fdRender()">${x}</button>`).join('')}</div>` : ''}
     ${f.id ? '' : machPicker(f.mach)}
-    <div style="margin-top:10px;font-weight:700">투입 자재 LOT ${lotReq(f.wo) ? '<span style="color:var(--bad)">(필수)</span>' : '<span class="muted">(선택)</span>'} <span class="muted">· 지난번 LOT이 자동으로 들어 있습니다. 새 자재를 뜯었으면 ✕로 빼고 새로 찍으세요.</span></div>
+    <div style="margin-top:10px;font-weight:700">투입 자재 LOT ${lotReq(f.wo) ? '<span style="color:var(--bad)">(필수)</span>' : '<span class="muted">(선택)</span>'} <span class="muted">· ${f.id ? '시작할 때 찍은 LOT이 들어 있습니다. 중간에 자재를 바꿨으면 새 LOT을 추가로 찍으세요.' : '지난번 LOT이 자동으로 들어 있습니다. 새 자재를 뜯었으면 ✕로 빼고 새로 찍으세요.'}</span></div>
     <div style="display:flex;gap:6px;margin-top:4px"><input id="fd-lot" placeholder="자재 LOT 스캔 / Quét LOT NVL" onkeydown="if(event.key==='Enter'){fdLot(this.value);this.value=''}" style="flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px">${'BarcodeDetector' in window ? `<button class="btn" onclick="window._camTarget=v=>{fdLot(v);window._camTarget=null};camScan()">📷</button>` : ''}</div>
     <div style="margin-top:6px">${f.lots.map((l, i) => `<span class="tag m-idle" style="margin:2px">${E(l)} <a href="#" onclick="event.preventDefault();FD.lots.splice(${i},1);fdRender()">✕</a></span>`).join('')}</div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn big" onclick="$('fd').remove()">취소</button><button class="btn ok big" onclick="fdSave()">✔ 저장 / Lưu</button></div></div>`;
