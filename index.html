@@ -1294,6 +1294,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <!-- ✅ [사용자 요청] 지금 몇 개 첨부됐는지(기존 첨부 + 새로 고른 파일 포함) 모달
          안에서 바로 확인. updateQCAttachCountLabel()이 갱신한다. -->
     <div id="qc-attach-count-label" style="font-size:12px;color:#555;font-weight:600;margin:-6px 0 10px 2px"></div>
+    <div class="ov-fr" id="qc-hq-extra" style="display:none"><label>🏢 공급사 · 발주번호 (본사 수입검사)</label><div style="display:flex;gap:6px"><input id="qc-supplier" list="qc-sup-list" placeholder="공급사" style="flex:1"><input id="qc-pono" list="qc-po-list" placeholder="발주번호 (PO-…)" style="flex:1"></div><datalist id="qc-sup-list"></datalist><datalist id="qc-po-list"></datalist></div>
     <div class="ov-fr"><label>비고 (선택)</label><input id="qc-note" placeholder="선택사항"></div>
     <div id="qc-add-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div class="ov-actions">
@@ -4812,7 +4813,7 @@ function _renderQCBody() {
     //    (실사용 사고: TP 출하검사 합격인데 서버 혼잡으로 자동입고가 조용히 실패했던 건).
     const inboundFailedBadge = r.inboundFailed ? `<div style="color:#b91c1c;font-weight:700;font-size:11px;margin-bottom:2px">⚠️ 재고 미반영</div>` : '';
     return `<tr>
-    <td>${r.inspType||'-'}</td>
+    <td>${r.inspType||'-'}${r.site === 'HQ' ? '<div style="font-size:10.5px;font-weight:700;color:#0f766e">🏢 본사</div>' : ''}</td>
     <td>${r.name||''} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
     <td style="font-family:monospace;font-size:11px;color:#1d4ed8">${attachIcon}${attachIcon2}${r.lot||'-'}</td>
     <td style="font-family:monospace;font-size:11px">${r.workOrderNo||'-'}</td>
@@ -4952,7 +4953,21 @@ function acPickQCWO(i) {
 }
 
 // ── 추가/수정 모달 ──────────────────────────────
-async function openAddQC(presetType) {
+// 🏢 [2026-11-06] 본사 품질부 수입검사: 같은 검사 화면을 쓰되 검사처를 "본사"로 남기고 법인 재고는 바꾸지 않는다
+let QC_SITE = '';
+function qcSiteUI(){
+  const hq = QC_SITE === 'HQ', ex = document.getElementById('qc-hq-extra'); if (ex) ex.style.display = hq ? '' : 'none';
+  if (hq) {
+    const sl = document.getElementById('qc-sup-list'), pl = document.getElementById('qc-po-list');
+    const sups = typeof hqsSupNames === 'function' ? hqsSupNames() : [...new Set((SPO||[]).map(p => p.supplier).filter(Boolean))];
+    if (sl) sl.innerHTML = sups.map(x => `<option value="${String(x).replace(/"/g,'&quot;')}">`).join('');
+    if (pl) pl.innerHTML = [...new Set((SPO||[]).map(p => p.poNo).filter(Boolean))].map(x => `<option value="${String(x).replace(/"/g,'&quot;')}">`).join('');
+  }
+  const t = document.getElementById('qc-add-title');
+  if (t && hq) t.textContent = (qcEditTarget ? '✏️ ' : '➕ ') + '🏢 본사 수입검사 — 법인 재고는 바뀌지 않습니다';
+}
+async function openAddQC(presetType, site) {
+  QC_SITE = site === 'HQ' ? 'HQ' : '';
   await loadWO();
   qcEditTarget = null;
   qcSelectedItem = null;
@@ -4983,6 +4998,8 @@ async function openAddQC(presetType) {
   document.getElementById('qc-note').value = '';
   document.getElementById('qc-add-err').style.display = 'none';
   onQCTypeChange();
+  document.getElementById('qc-supplier').value = ''; document.getElementById('qc-pono').value = '';
+  qcSiteUI();
   document.getElementById('qc-add-ov').classList.add('show');
 }
 
@@ -5064,6 +5081,9 @@ async function openEditQC(id) {
   qcSelectedItem = {code:r.code, name:r.name, cat:r.cat};
   qcSelectedWorkOrder = null;
   document.getElementById('qc-add-title').textContent = '✏️ 품질검사 기록 수정';
+  QC_SITE = r.site === 'HQ' ? 'HQ' : '';
+  document.getElementById('qc-supplier').value = r.supplier || ''; document.getElementById('qc-pono').value = r.poNo || '';
+  setTimeout(qcSiteUI, 0);
   document.getElementById('qc-type').value = r.inspType || '수입검사';
   document.getElementById('qc-item-q').value = (r.code||'') + ' — ' + (r.name||'');
   document.getElementById('qc-wo-search-q').value = r.workOrderNo || '';
@@ -5213,6 +5233,7 @@ async function submitQC() {
     note: noteVal,
     token: ADMIN_TOKEN, user: CURRENT_USER || ''
   };
+  if (QC_SITE === 'HQ') { body.site = 'HQ'; body.supplier = document.getElementById('qc-supplier').value.trim(); body.poNo = document.getElementById('qc-pono').value.trim(); }
   if (attachment) {
     body.attachmentBase64 = attachment.base64;
     body.attachmentMime = attachment.mimeType;
@@ -5277,7 +5298,7 @@ async function submitQC() {
     // ✅ 수입검사/출하검사 + 합격 + 신규 등록일 때만 자동 입고 (수정 시엔 중복 반영 방지를 위해 하지 않음)
     let inboundOk = null;
     let consumeResult = null;
-    if (isNew && !qcSkipInbound && (inspType === '수입검사' || inspType === '출하검사') && result === '합격') {
+    if (isNew && !qcSkipInbound && QC_SITE !== 'HQ' && (inspType === '수입검사' || inspType === '출하검사') && result === '합격') {
       inboundOk = await autoInboundFromQC(body, totalQty, qcSelectedItem.unit);
 
       // ✅ 반제품(BTP) 출하검사 합격 시, BOM(자재 소요량) 설정 기준으로 투입 자재를
@@ -5299,6 +5320,8 @@ async function submitQC() {
     qcEditTarget = null;
     closeOv('qc-add-ov');
     await renderQC();
+    if (document.getElementById('tab-hq') && document.getElementById('tab-hq').classList.contains('on')) { try { await loadQC(); renderHQ(); } catch(e) {} }
+    if (QC_SITE === 'HQ' && isNew) alert('✅ 본사 수입검사를 저장했습니다 (법인 재고는 바뀌지 않음).');
     if (inboundOk === true) {
       const label = inspType === '출하검사' ? '완제품입고' : '자재입고';
       let msg = `✅ 품질검사 등록 완료 + ${label} ${totalQty.toLocaleString()} ${qcSelectedItem.unit||''} 자동 반영되었습니다.`;
@@ -13410,7 +13433,7 @@ async function loadHQ(force){
 const HQ_DEPTS = [
   {k:'sales', l:'💼 영업부', vi:'Kinh doanh', col:'#5b21b6', tabs:[['quote','📝 견적서'],['cpo','📥 주문서 (고객 PO)'],['sale','🧾 판매'],['ar','💰 수금·채권'],['cust','🏷️ 거래처']]},
   {k:'buy',   l:'🛒 구매부', vi:'Mua hàng',   col:'#b45309', tabs:[['mrp','🧮 자재 소요 계산'],['pr','📝 구매요청·승인'],['ship','🚢 발주서·선적·입고'],['purch','🧾 구매(매입)'],['ap','💸 지급·채무'],['sup','🏭 공급사']]},
-  {k:'qa',    l:'🔬 품질부', vi:'Chất lượng', col:'#0f766e', tabs:[['qadr','📈 월별 불량률'],['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]},
+  {k:'qa',    l:'🔬 품질부', vi:'Chất lượng', col:'#0f766e', tabs:[['qain','📥 본사 수입검사'],['qadr','📈 월별 불량률'],['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]},
   {k:'rep',   l:'📑 출력물', vi:'Báo cáo',    col:'#334155', tabs:[['rep','📑 출력물']]}];
 function hqSetDept(k){ const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0]; HQ.dept = d.k; HQ.tab = d.tabs[0][0]; HQ.q = ''; HQ.st = ''; try { localStorage.setItem('hq_dept', d.k); } catch(e) {} renderHQ(); }
 function hqNav(){
@@ -13436,7 +13459,7 @@ async function renderHQ(opts){
   hqNav();
   const warn = HQ.err === 'server' ? '<div style="background:#FEF3C7;color:#92400e;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:13px">⚠️ 서버(Code.gs)를 새 버전으로 배포해야 본사 업무 데이터가 저장·조회됩니다.</div>' : '';
   HQS._bal = null;
-  el.innerHTML = warn + (HQ.tab === 'rep' ? hqRepView() : HQ.tab === 'purch' ? hqPurchView() : HQ.tab === 'ap' ? hqAPView() : HQ.tab === 'sup' ? hqSupView() : HQ.tab === 'quote' ? hqQuoteView() : HQ.tab === 'sale' ? hqSaleView() : HQ.tab === 'ar' ? hqARView() : HQ.tab === 'cust' ? hqCustView() : HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'qadr' ? hqDefectView() : hqQAView(HQ.tab === 'qang'));
+  el.innerHTML = warn + (HQ.tab === 'rep' ? hqRepView() : HQ.tab === 'purch' ? hqPurchView() : HQ.tab === 'ap' ? hqAPView() : HQ.tab === 'sup' ? hqSupView() : HQ.tab === 'quote' ? hqQuoteView() : HQ.tab === 'sale' ? hqSaleView() : HQ.tab === 'ar' ? hqARView() : HQ.tab === 'cust' ? hqCustView() : HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'qadr' ? hqDefectView() : HQ.tab === 'qain' ? hqQAView(false, true) : hqQAView(HQ.tab === 'qang'));
 }
 function hqSetTab(k){ HQ.tab = k; const d = HQ_DEPTS.find(x => x.tabs.some(t => t[0] === k)); if (d) HQ.dept = d.k; HQ.q = ''; HQ.st = ''; renderHQ(); }
 
@@ -14620,11 +14643,11 @@ function hqRepPrint(){
 
 // ── 품질부: 수입·출하검사 현황 ─────────────────────────────
 function hqQAYM(q){ const d = new Date(q.inspDate || ''); return isNaN(d) ? '' : new Date(d.getTime() + 7*3600e3).toISOString().slice(0,7); }
-function hqQAView(ngOnly){
+function hqQAView(ngOnly, hqOnly){
   if (!HQ.qm) HQ.qm = hqToday().slice(0,7);
   const shift = k => { let [y,m] = HQ.qm.split('-').map(Number); m += k; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } return `${y}-${String(m).padStart(2,'0')}`; };
-  const all = (QC||[]).filter(q => hqQAYM(q) === HQ.qm && (!HQ.qt || q.inspType === HQ.qt));
-  const types = ['수입검사','공정검사','출하검사'];
+  const all = (QC||[]).filter(q => hqQAYM(q) === HQ.qm && (hqOnly ? q.site === 'HQ' && q.inspType === '수입검사' : (!HQ.qt || q.inspType === HQ.qt)) && (hqOnly || !HQ.qs || (HQ.qs === 'HQ' ? q.site === 'HQ' : q.site !== 'HQ')));
+  const types = hqOnly ? ['수입검사'] : ['수입검사','공정검사','출하검사'];
   const stat = t => { const l = all.filter(q => q.inspType === t), ok = l.filter(q => q.result === '합격').length; return {n: l.length, ok, rate: l.length ? Math.round(ok / l.length * 1000) / 10 : null, ng: l.filter(q => q.result !== '합격').length}; };
   const tile = (t) => { const s = stat(t); return `<div style="flex:1;min-width:150px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${t}</div><div style="font-size:21px;font-weight:700;color:${s.rate === null ? '#8A95A3' : s.rate >= 98 ? '#166534' : s.rate >= 90 ? '#b45309' : '#b91c1c'}">${s.rate === null ? '-' : s.rate + '%'}</div><div style="font-size:11px;color:#8A95A3">${s.n}건 · 합격 ${s.ok} · 불합격/조건부 ${s.ng}</div></div>`; };
   const q = HQ.q.trim().toLowerCase();
@@ -14636,7 +14659,8 @@ function hqQAView(ngOnly){
   const byRows = Object.values(by).filter(o => o.def > 0 || o.ng > 0).sort((a,b) => (b.def / (b.smp||1)) - (a.def / (a.smp||1)));
   return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
       <button class="period-btn" onclick="HQ.qm='${shift(-1)}';renderHQ()">‹</button><strong>${HQ.qm.slice(0,4)}년 ${+HQ.qm.slice(5)}월</strong><button class="period-btn" onclick="HQ.qm='${shift(1)}';renderHQ()">›</button>
-      <select onchange="HQ.qt=this.value;renderHQ()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px;margin-left:6px"><option value="">검사 구분 전체</option>${types.map(t => `<option ${HQ.qt===t?'selected':''}>${t}</option>`).join('')}</select>
+      ${hqOnly ? `<button onclick="hqQAInAdd()" style="padding:7px 14px;border-radius:8px;border:1px solid #0f766e;background:#0f766e;color:#fff;font-weight:600;cursor:pointer;margin-left:6px">➕ 본사 수입검사 등록</button>` : `<select onchange="HQ.qt=this.value;renderHQ()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px;margin-left:6px"><option value="">검사 구분 전체</option>${types.map(t => `<option ${HQ.qt===t?'selected':''}>${t}</option>`).join('')}</select>
+      <select onchange="HQ.qs=this.value;renderHQ()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px"><option value="">검사처 전체</option><option value="HQ" ${HQ.qs==='HQ'?'selected':''}>🏢 본사</option><option value="VN" ${HQ.qs==='VN'?'selected':''}>🇻🇳 법인</option></select>`}
       <div class="sw" style="flex:1;min-width:200px"><span class="si">🔍</span><input placeholder="품목·LOT·검사자 검색" value="${hqE(HQ.q)}" oninput="HQ.q=this.value;clearTimeout(window._hqT);window._hqT=setTimeout(()=>{renderHQ();const i=document.querySelector('#hq-body .sw input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>
       <button onclick="hqQAExcel(${ngOnly ? 'true' : 'false'})" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer">📊 엑셀</button>
     </div>
@@ -14644,12 +14668,16 @@ function hqQAView(ngOnly){
     ${byRows.length && !ngOnly ? `<div style="font-size:13px;font-weight:700;margin-bottom:6px">품목별 불량 (이번 달)</div><div class="tw" style="margin-bottom:12px"><table><thead><tr><th>품목</th><th style="text-align:right">검사</th><th style="text-align:right">시료</th><th style="text-align:right">불량</th><th style="text-align:right">불량률</th><th style="text-align:right">불합격·조건부</th></tr></thead><tbody>${
       byRows.map(o => `<tr><td>${hqE(o.name)}</td><td style="text-align:right">${o.n}</td><td style="text-align:right">${hqN(o.smp)}</td><td style="text-align:right;color:#b91c1c">${hqN(o.def)}</td><td style="text-align:right;font-weight:700">${o.smp ? (Math.round(o.def / o.smp * 10000) / 100) + '%' : '-'}</td><td style="text-align:right">${o.ng}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <div style="font-size:13px;font-weight:700;margin-bottom:6px">${ngOnly ? '불합격·조건부합격 목록' : '검사 기록'} <span style="font-weight:400;color:#5D6977">${rows.length}건</span></div>
-    ${rows.length ? `<div class="tw"><table><thead><tr><th>검사일</th><th>구분</th><th>품목</th><th>LOT</th><th style="text-align:right">검사 수량</th><th style="text-align:right">시료</th><th style="text-align:right">불량</th><th>판정</th><th>검사자</th><th>첨부<span class="vi">File</span></th><th>비고</th></tr></thead><tbody>${
+    ${rows.length ? `<div class="tw"><table><thead><tr><th>검사일</th><th>구분</th><th>품목</th><th>LOT</th><th style="text-align:right">검사 수량</th><th style="text-align:right">시료</th><th style="text-align:right">불량</th><th>판정</th><th>검사자</th>${hqOnly ? '<th>공급사 · 발주</th>' : '<th>검사처</th>'}<th>첨부<span class="vi">File</span></th><th>비고</th></tr></thead><tbody>${
       rows.map(r => `<tr><td style="white-space:nowrap">${hqE(fmtDt(r.inspDate))}</td><td style="white-space:nowrap">${hqE(r.inspType)}</td><td>${hqE(r.name||r.code)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(r.code)}</div></td>
         <td style="font-size:12px">${hqE(r.lot||'')}</td><td style="text-align:right">${hqN(r.totalQty)}</td><td style="text-align:right">${hqN(r.sampleQty)}</td><td style="text-align:right;color:${(+r.defectQty||0) ? '#b91c1c' : ''}">${hqN(r.defectQty)}</td>
-        <td>${hqPill(r.result||'', rc[r.result])}</td><td>${hqE(r.inspector||'')}</td><td style="white-space:nowrap">${hqQAFiles(r)}</td><td style="white-space:normal;font-size:12px;color:#5D6977;max-width:260px">${hqE(r.note||'')}</td></tr>`).join('')}</tbody></table></div>`
+        <td>${hqPill(r.result||'', rc[r.result])}</td><td>${hqE(r.inspector||'')}</td>${hqOnly ? `<td style="font-size:12px">${hqE(r.supplier||'')}${r.poNo ? `<div style="font-family:monospace;color:#5D6977">${hqE(r.poNo)}</div>` : ''}</td>` : `<td style="white-space:nowrap">${r.site === 'HQ' ? '🏢 본사' : '🇻🇳 법인'}</td>`}<td style="white-space:nowrap">${hqQAFiles(r)}${hqOnly && isAdmin ? ` <button class="edit-btn" onclick="openEditQC(${+r.id})" title="수정">✏️</button>` : ''}</td><td style="white-space:normal;font-size:12px;color:#5D6977;max-width:260px">${hqE(r.note||'')}</td></tr>`).join('')}</tbody></table></div>`
       : `<div class="empty">${ngOnly ? '✅ 이 달 불합격·조건부합격이 없습니다.' : '이 달 검사 기록이 없습니다.'}</div>`}
-    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">법인 품질검사 탭에 등록된 기록을 그대로 보여줍니다 (조회 전용).</div>`;
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">${hqOnly ? '본사에서 한 수입검사입니다. 법인 수입검사와 같은 양식(시료·불량·판정·첨부)이고, 법인 재고에는 반영되지 않습니다. 법인 품질검사 탭에도 "🏢 본사" 표시로 함께 보입니다.' : '법인 품질검사 기록과 본사 수입검사를 함께 보여줍니다.'}</div>`;
+}
+async function hqQAInAdd(){
+  if (!hqCanWrite()) return;
+  await openAddQC('수입검사', 'HQ');
 }
 // 검사 첨부(특성 데이터·출하검사 성적서) — 링크를 누르면 ERP 안 보기 창(엑셀·CSV·accdb)이나 드라이브로 열린다
 function hqQAFiles(r){
@@ -14676,7 +14704,7 @@ function hqDefectData(){
   (ngLog||[]).forEach(l => { if (l.type !== 'ng-in') return; const k = hqYM(l.dt); if (!(k in prod)) return; const ty = ngType(l.code), q = +l.qty || 0;
     if (ty === 'TP') { ngTP[k] += q; const md = ngModel(l.code) || '기타'; ((nm[md] = nm[md] || z())[k]) += q; }
     else if (ty === 'copper') ngCu[k] += q; else { ngMat[k] += q; ngMatN[k]++; } });
-  (QC||[]).forEach(q => { const k = hqYM(q.inspDate); if (!(k in prod)) return;
+  (QC||[]).forEach(q => { const k = hqYM(q.inspDate); if (!(k in prod) || q.site === 'HQ') return;   // 법인 불량률이므로 본사 수입검사는 뺀다
     if (q.inspType === '수입검사') { insS[k] += +q.sampleQty||0; insD[k] += +q.defectQty||0; } else if (q.inspType === '출하검사') { shpS[k] += +q.sampleQty||0; shpD[k] += +q.defectQty||0; } });
   const rate = (a, b) => b > 0 ? a / b * 100 : null;
   const proc = months.map(k => rate(ngTP[k], prod[k] + ngTP[k]));
