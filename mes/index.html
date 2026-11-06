@@ -222,7 +222,7 @@ function floorView(){
   const procs = M.proc.filter(p => p.active !== false), workers = M.work.filter(w => w.active !== false);
   if (!S.worker || !S.proc) {
     return `<div class="card" style="margin-bottom:12px"><h2>① 작업자 <span class="vi">Công nhân</span></h2>${workers.length ? `<div class="pick">${workers.map(w => `<button class="${S.worker === w.code ? 'on' : ''}" onclick="S.worker='${E(w.code)}';LS.set('mes_worker',S.worker);render()">${E(w.name)}<span class="vi">${E(w.team||w.code)}</span></button>`).join('')}</div>` : '<p class="muted">등록된 작업자가 없습니다. 🛠 기준정보에서 추가하세요.</p>'}</div>
-      <div class="card"><h2>② 공정 <span class="vi">Công đoạn</span></h2><div class="pick">${procs.map(p => `<button class="${S.proc === p.code ? 'on' : ''}" onclick="S.proc='${E(p.code)}';LS.set('mes_proc',S.proc);render()">${E(p.name)}<span class="vi">${E(p.name_vi||'')}</span></button>`).join('')}</div></div>`;
+      <div class="card"><h2>② 공정 <span class="vi">Công đoạn</span></h2>${procGroups().map(g => `<div style="margin:6px 0 4px;font-weight:700;color:var(--sub)">${E(g.title)}</div><div class="pick" style="margin-bottom:8px">${g.procs.map(p => `<button class="${S.proc === p.code ? 'on' : ''}" onclick="S.proc='${E(p.code)}';LS.set('mes_proc',S.proc);render()">${p.seq && g.routed ? `<span class="muted" style="font-weight:400">${p.seq}</span> ` : ''}${E(p.name)}<span class="vi">${E(p.name_vi||'')}</span></button>`).join('')}</div>`).join('')}</div>`;
   }
   const t0 = today0().toISOString();
   const mine = M.rec.filter(r => r.process_code === S.proc && r.created_at >= t0);
@@ -280,7 +280,29 @@ async function startJob(){
   if (dup) { toast(`⏱ 이미 ${hm(dup.start_at)}에 시작한 작업이 있습니다. 위 "진행 중"에서 종료하세요.`, 3500); return; }
   _starting = true; try { await startJob2(w); } finally { _starting = false; }
 }
+// 공정 고르기: 공정 순서가 있는 품목은 그 순서대로 묶어서, 나머지는 "기본 공정"으로
+function procGroups(){
+  const groups = [], seen = new Map();
+  M.route.forEach(r => { const k = r.item_code + '|' + r.cat; if (!seen.has(k)) { const w = M.wo.find(x => x.code === r.item_code && String(x.cat||'TP').toUpperCase() === String(r.cat).toUpperCase()); seen.set(k, {title: (w ? w.name : r.item_code) + (String(r.cat).toUpperCase() === 'BTP' ? '' : ''), routed: true, procs: []}); groups.push(seen.get(k)); }
+    const p = M.proc.find(x => x.code === r.process_code); if (p && p.active !== false) seen.get(k).procs.push({...p, seq: r.seq}); });
+  groups.forEach(g => g.procs.sort((a,b) => a.seq - b.seq));
+  const def = M.proc.filter(p => p.active !== false && p.in_default !== false);
+  if (def.length) groups.push({title: '기본 공정 (30KW·50KW·3.2KW 등)', routed: false, procs: def});
+  return groups;
+}
+// 앞 공정 실적 확인: 공정 순서상 바로 앞 공정의 누계 양품보다 많이 하려면 한 번 묻는다
+async function checkPrev(w, addQty){
+  const rt = routeOf(w); if (!rt.some(p => p._r)) return true;
+  const i = rt.findIndex(p => p.code === S.proc); if (i <= 0) return true;
+  const prev = rt[i - 1];
+  const r = await sb.from('prod_records').select('process_code,good_qty').eq('wo_id', w.wo_id).eq('status','done').limit(5000);
+  const sum = c => (r.data || []).filter(x => x.process_code === c).reduce((a,x) => a + (+x.good_qty||0), 0);
+  const pv = sum(prev.code), mine = sum(S.proc);
+  if (addQty === null) return pv > mine || confirm(`앞 공정 "${prev.name}" 실적이 ${pv ? N(pv) + '개로 이미 이 공정(' + N(mine) + ')만큼 했습니다' : '아직 없습니다'}.\n순서상 ${prev.name}을 먼저 해야 합니다. 그래도 시작할까요?\nCông đoạn trước "${prev.name}" chưa có kết quả.`);
+  return mine + addQty <= pv || confirm(`이 공정 누계(${N(mine + addQty)})가 앞 공정 "${prev.name}" 양품(${N(pv)})보다 많아집니다. 그래도 저장할까요?`);
+}
 async function startJob2(w){
+  if (!(await checkPrev(w, null))) return;
   const ms = M.mach.filter(m => m.active !== false && (!m.process_code || m.process_code === S.proc));
   let mach = '';
   if (ms.length) { mach = await new Promise(res => { const ov = document.createElement('div'); ov.className = 'ov'; ov.innerHTML = `<div class="box"><h2>설비 선택 <span class="vi">Chọn máy</span></h2><div class="pick">${ms.map(m => `<button data-c="${E(m.code)}">${E(m.name)}</button>`).join('')}<button data-c="">설비 없음</button></div><button class="btn" style="margin-top:10px" data-x="1">취소</button></div>`; document.body.appendChild(ov);
@@ -319,6 +341,7 @@ async function fdSave(){
   if (ng && !f.reason) { alert('불량 사유를 골라주세요.'); return; }
   const w = woOf(f.wo.wo_id), plan = w ? +w.plan_qty || 0 : 0;
   const done = M.rec.filter(r => r.wo_id === f.wo.wo_id && r.process_code === S.proc && r.status === 'done').reduce((a,r) => a + (+r.good_qty||0), 0);
+  if (w && !(await checkPrev(w, good))) return;
   if (plan && done + good > plan * 1.1 && !confirm(`이 공정 양품 누계가 계획(${N(plan)})보다 많아집니다 (${N(done + good)}). 그래도 저장할까요?`)) return;
   const lots = f.lots.map(l => ({lot: l}));
   const mach = $('f-mach') ? $('f-mach').value : f.mach;
