@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MES · THE GAUSS VINA</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+:root{--ink:#14202B;--sub:#5B6875;--line:#DDE3E9;--bg:#F3F5F7;--card:#fff;--brand:#0F5C8C;--ok:#15803D;--warn:#B45309;--bad:#B91C1C;--run:#16A34A;--stop:#DC2626;--setup:#D97706;--idle:#64748B}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;color:var(--ink);background:var(--bg);-webkit-tap-highlight-color:transparent}
+button{font:inherit;cursor:pointer}
+input,select,textarea{font:inherit}
+.top{display:flex;align-items:center;gap:10px;padding:10px 16px;background:#0B2A3F;color:#fff;position:sticky;top:0;z-index:20;flex-wrap:wrap}
+.top b{font-size:17px;letter-spacing:.2px}
+.top .sp{flex:1}
+.nav{display:flex;gap:4px;flex-wrap:wrap}
+.nav a{color:#CFE0EC;text-decoration:none;padding:7px 12px;border-radius:8px;font-size:14px}
+.nav a.on{background:#fff;color:#0B2A3F;font-weight:700}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);font-size:13.5px}
+.dot{width:9px;height:9px;border-radius:50%;background:#22C55E;display:inline-block}
+.dot.off{background:#F87171}
+main{padding:16px;max-width:1400px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.grid{display:grid;gap:12px}
+h2{font-size:18px;margin:0 0 10px}
+.vi{display:block;font-size:11px;color:var(--sub);font-weight:400}
+.btn{padding:12px 18px;border-radius:10px;border:1px solid var(--line);background:#fff;font-weight:600;font-size:15px}
+.btn.big{padding:18px 22px;font-size:19px;border-radius:12px}
+.btn.pri{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.bad{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn.warn{background:var(--warn);border-color:var(--warn);color:#fff}
+.btn:disabled{opacity:.45}
+.pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.pick button{padding:14px 10px;border-radius:10px;border:2px solid var(--line);background:#fff;font-size:15px;font-weight:600;text-align:center;min-height:64px}
+.pick button.on{border-color:var(--brand);background:#E7F1F8;color:var(--brand)}
+.wo{border:2px solid var(--line);border-radius:12px;padding:12px 14px;background:#fff;text-align:left;width:100%}
+.wo.on{border-color:var(--brand);box-shadow:0 0 0 3px #CFE3F1}
+.wo .no{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:var(--sub)}
+.wo .nm{font-weight:700;font-size:16px;margin:2px 0}
+.bar{height:8px;border-radius:4px;background:#E6EBF0;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--brand)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:8px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:12px;color:var(--sub);font-weight:600;background:#F8FAFB}
+td.r,th.r{text-align:right}
+.muted{color:var(--sub);font-size:12.5px}
+.ov{position:fixed;inset:0;background:rgba(10,20,30,.55);z-index:50;display:flex;align-items:center;justify-content:center;padding:14px}
+.ov .box{background:#fff;border-radius:14px;padding:18px 20px;width:min(720px,100%);max-height:94vh;overflow:auto}
+.num{font-size:34px;font-weight:700;text-align:right;padding:10px 14px;border:2px solid var(--line);border-radius:10px;width:100%}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.pad button{padding:16px;font-size:22px;font-weight:700;border-radius:10px;border:1px solid var(--line);background:#F8FAFB}
+.field{display:block;margin-bottom:10px}
+.field>span{display:block;font-size:13px;font-weight:600;margin-bottom:4px}
+.field input,.field select,.field textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px}
+.tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700}
+.m-run{background:#DCFCE7;color:#166534}.m-stop{background:#FEE2E2;color:#991B1B}.m-setup{background:#FEF3C7;color:#92400E}.m-idle{background:#E2E8F0;color:#334155}
+.mtile{border-radius:12px;padding:14px;color:#fff;min-height:118px;display:flex;flex-direction:column;justify-content:space-between;border:none;text-align:left;width:100%}
+.s-run{background:var(--run)}.s-stop{background:var(--stop)}.s-setup{background:var(--setup)}.s-idle{background:var(--idle)}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#0B2A3F;color:#fff;padding:12px 20px;border-radius:10px;z-index:60;font-size:15px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+/* TV */
+body.tv{background:#0A1621;color:#E7EEF4}
+body.tv .top{background:#06101A}
+body.tv .card{background:#0F2131;border-color:#1E3446}
+body.tv th{background:#0F2131;color:#8FA6B8;border-color:#1E3446}
+body.tv td{border-color:#1E3446}
+body.tv .muted{color:#8FA6B8}
+body.tv .bar{background:#1E3446}
+body.tv .bar i{background:#38BDF8}
+.kpi{font-size:44px;font-weight:800;line-height:1.05}
+.kpi small{font-size:15px;font-weight:500;color:#8FA6B8;display:block;margin-bottom:4px}
+@media (max-width:700px){main{padding:10px}.btn.big{padding:14px 16px;font-size:17px}.kpi{font-size:32px}}
+</style>
+</head>
+<body>
+<div class="top" id="top">
+  <b>🏭 MES</b><span class="muted" style="color:#9FB7C8">THE GAUSS VINA</span>
+  <nav class="nav" id="nav"></nav>
+  <span class="sp"></span>
+  <span class="chip" id="net"><span class="dot"></span><span id="net-t">연결됨</span></span>
+  <span class="chip" id="clock"></span>
+  <span class="chip" id="who" style="cursor:pointer" onclick="logout()"></span>
+</div>
+<main id="app"><div class="card">⏳ 불러오는 중… / Đang tải…</div></main>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  MES · THE GAUSS VINA (2026-11-06)
+//  데이터는 ERP(구글 시트)와 따로 Supabase(PostgreSQL)에 저장한다.
+//  ERP에서는 작업지시만 받아오고, 실적은 나중에 ERP로 넘긴다.
+// ════════════════════════════════════════════════════════════
+const ERP_API = 'https://script.google.com/macros/s/AKfycbyo_eOJACEPPqV-CHA9rUnYK1ncJbr3EXmFrKPYgNlncHtwI5N5sChHs-wOUmVV-Jgiwg/exec';
+// Supabase 프로젝트 주소·공개키(anon). 공개용이라 화면 코드에 있어도 되고, 실제 보호는 DB 권한(RLS)이 한다.
+const SB_URL_DEFAULT = '', SB_KEY_DEFAULT = '';
+const LS = { get(k, d){ try { const v = localStorage.getItem(k); return v === null ? d : v; } catch(e){ return d; } }, set(k, v){ try { localStorage.setItem(k, v); } catch(e){} }, del(k){ try { localStorage.removeItem(k); } catch(e){} } };
+const SB_URL = LS.get('mes_sb_url', SB_URL_DEFAULT), SB_KEY = LS.get('mes_sb_key', SB_KEY_DEFAULT);
+let sb = null, ME = {email: '', role: ''}, M = {proc: [], mach: [], work: [], reasons: [], wo: [], rec: [], ev: []};
+const S = {view: '', worker: LS.get('mes_worker',''), proc: LS.get('mes_proc',''), device: LS.get('mes_device','') || ('태블릿-' + Math.random().toString(36).slice(2,6).toUpperCase()), wo: ''};
+LS.set('mes_device', S.device);
+const $ = id => document.getElementById(id);
+const E = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const N = v => (Math.round((+v||0)*1000)/1000).toLocaleString();
+const today0 = () => { const d = new Date(); d.setHours(0,0,0,0); return d; };   // 기기 시간대(베트남) 기준 오늘 0시
+const hm = t => { const d = new Date(t); return isNaN(d) ? '' : d.toTimeString().slice(0,5); };
+const ymd = t => { const d = new Date(t); if (isNaN(d)) return ''; const z = new Date(d.getTime() - d.getTimezoneOffset()*60000); return z.toISOString().slice(0,10); };
+const dur = ms => { ms = Math.max(0, ms|0); const h = Math.floor(ms/3600e3), m = Math.floor(ms%3600e3/60e3); return h ? `${h}시간 ${m}분` : `${m}분`; };
+function toast(t, ms){ const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), ms || 2600); }
+
+// ── 끊김 대비: 저장 실패하면 기기에 쌓아 두고 연결되면 다시 보낸다
+const Q = { load(){ try { return JSON.parse(LS.get('mes_q','[]')); } catch(e){ return []; } }, save(q){ LS.set('mes_q', JSON.stringify(q)); } };
+async function dbWrite(op){
+  // op = {t:'insert'|'update', table, row, match}
+  try {
+    let r;
+    if (op.t === 'insert') r = await sb.from(op.table).insert(op.row).select().single();
+    else r = await sb.from(op.table).update(op.row).match(op.match).select();
+    if (r.error) throw r.error;
+    return r.data;
+  } catch (e) {
+    const msg = String(e && (e.message || e)), net = /fetch|network|Failed|timeout|offline/i.test(msg) || !navigator.onLine;
+    if (net) { const q = Q.load(); q.push({...op, at: Date.now()}); Q.save(q); setNet(false); toast('📶 연결이 끊겨 기기에 저장했습니다. 연결되면 자동으로 보냅니다.'); return {queued: true}; }
+    alert('저장 실패: ' + msg); return null;
+  }
+}
+async function flushQ(){
+  const q = Q.load(); if (!q.length || !sb) return;
+  const left = [];
+  for (const op of q) { try { const r = op.t === 'insert' ? await sb.from(op.table).insert(op.row) : await sb.from(op.table).update(op.row).match(op.match); if (r.error) throw r.error; } catch(e) { left.push(op); } }
+  Q.save(left); setNet(!left.length);
+  if (q.length !== left.length) { toast(`📤 밀린 기록 ${q.length - left.length}건을 보냈습니다.`); await loadLive(); render(); }
+}
+function setNet(ok){ const q = Q.load().length; $('net').querySelector('.dot').className = 'dot' + (ok && navigator.onLine ? '' : ' off'); $('net-t').textContent = (ok && navigator.onLine ? '연결됨' : '오프라인') + (q ? ` · 대기 ${q}` : ''); }
+window.addEventListener('online', () => { setNet(true); flushQ(); }); window.addEventListener('offline', () => setNet(false));
+setInterval(flushQ, 15000);
+setInterval(() => { $('clock').textContent = new Date().toLocaleString('ko-KR', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'}); }, 1000);
+
+// ── ERP 작업지시 받아오기 (JSONP, 읽기 전용)
+function erpCall(action, data){
+  return new Promise(res => { const cb = 'mescb_' + Date.now() + Math.random().toString(36).slice(2,6); const s = document.createElement('script');
+    const t = setTimeout(() => { delete window[cb]; s.remove(); res({ok:false, error:'timeout'}); }, 20000);
+    window[cb] = d => { clearTimeout(t); delete window[cb]; s.remove(); res(d); };
+    s.src = ERP_API + '?' + new URLSearchParams({action, data: JSON.stringify(data || {}), callback: cb}); s.onerror = () => { clearTimeout(t); res({ok:false, error:'network'}); }; document.body.appendChild(s); });
+}
+async function syncWO(silent){
+  const r = await erpCall('getWorkOrders', {});
+  if (!r || !r.ok) { if (!silent) alert('ERP 작업지시를 받지 못했습니다: ' + (r && r.error)); return; }
+  const rows = (r.data || []).filter(w => w.status === '대기' || w.status === '진행중' || (w.status === '완료' && Date.now() - (+w.id||0) < 30*864e5))
+    .map(w => ({wo_id: String(w.id), order_no: w.orderNo, code: w.code, name: w.name, cat: w.cat, unit: w.unit || 'Ea', plan_qty: +w.planQty || 0, lot: w.lot || '', status: w.status || '대기', due_date: w.dueDate ? String(w.dueDate).slice(0,10) : null, synced_at: new Date().toISOString()}));
+  if (!rows.length) return;
+  const u = await sb.from('work_orders').upsert(rows, {onConflict: 'wo_id'});
+  if (u.error) { if (!silent) alert('작업지시 저장 실패: ' + u.error.message); return; }
+  if (!silent) toast(`🔄 ERP 작업지시 ${rows.length}건을 받았습니다.`);
+  await loadMaster();
+}
+
+// ── 데이터 읽기
+async function loadMaster(){
+  const [p, m, w, r, o] = await Promise.all([sb.from('processes').select('*').order('seq'), sb.from('machines').select('*').order('code'), sb.from('workers').select('*').order('name'), sb.from('stop_reasons').select('*').order('seq'), sb.from('work_orders').select('*').order('order_no', {ascending: false})]);
+  M.proc = p.data || []; M.mach = m.data || []; M.work = w.data || []; M.reasons = r.data || []; M.wo = o.data || [];
+}
+async function loadLive(fromIso){
+  const since = fromIso || new Date(today0().getTime() - 0).toISOString();
+  const [a, b, c] = await Promise.all([sb.from('prod_records').select('*').gte('created_at', since).neq('status','void').order('created_at', {ascending: false}).limit(2000),
+    sb.from('prod_records').select('*').eq('status','running').limit(200),
+    sb.from('machine_events').select('*').or(`ended_at.is.null,started_at.gte.${since}`).order('started_at', {ascending: false}).limit(2000)]);
+  const map = {}; [...(a.data||[]), ...(b.data||[])].forEach(x => map[x.id] = x); M.rec = Object.values(map).sort((x,y) => String(y.created_at).localeCompare(String(x.created_at)));
+  M.ev = c.data || [];
+}
+const procName = c => (M.proc.find(p => p.code === c) || {}).name || c || '-';
+const workName = c => (M.work.find(p => p.code === c) || {}).name || c || '-';
+const machName = c => (M.mach.find(p => p.code === c) || {}).name || c || '-';
+const woOf = id => M.wo.find(w => w.wo_id === String(id)) || null;
+const activeWO = () => M.wo.filter(w => w.status !== '완료' && w.status !== '취소');
+function machState(code){ const e = M.ev.filter(x => x.machine_code === code).sort((a,b) => String(b.started_at).localeCompare(String(a.started_at)))[0]; return e && !e.ended_at ? e : (e ? {...e, state: 'idle', reason_code: null, started_at: e.ended_at} : null); }
+
+// ── 로그인
+function cfgView(){
+  return `<div class="card" style="max-width:560px;margin:30px auto"><h2>⚙️ MES 서버 연결</h2>
+    <p class="muted">Supabase 프로젝트의 <b>Project URL</b>과 <b>anon public key</b>를 넣으세요 (Settings → API). <b>service_role key나 DB 비밀번호는 넣지 마세요.</b></p>
+    <label class="field"><span>Project URL</span><input id="c-url" value="${E(SB_URL)}" placeholder="https://xxxx.supabase.co"></label>
+    <label class="field"><span>anon public key</span><input id="c-key" value="${E(SB_KEY)}" placeholder="sb_publishable_… 또는 eyJhbGciOi…"></label>
+    <button class="btn pri" onclick="saveCfg()">저장하고 연결</button></div>`;
+}
+function saveCfg(){ const u = $('c-url').value.trim(), k = $('c-key').value.trim(); if (!/^https:\/\/.+/.test(u) || k.length < 20) { alert('URL과 키를 확인해주세요.'); return; } let bad = /^sb_secret_/.test(k); try { bad = bad || /service_role/.test(atob((k.split('.')[1]||'').replace(/-/g,'+').replace(/_/g,'/'))); } catch(e) {} if (bad) { alert('비밀(secret/service_role) 키입니다. 공개용 anon(또는 sb_publishable_) 키를 넣어주세요.'); return; } LS.set('mes_sb_url', u); LS.set('mes_sb_key', k); location.reload(); }
+function loginView(){
+  return `<div class="card" style="max-width:420px;margin:40px auto"><h2>🔐 MES 로그인 <span class="vi">Đăng nhập</span></h2>
+    <p class="muted">이 기기에서 한 번만 로그인하면 계속 유지됩니다.</p>
+    <label class="field"><span>이메일 / Email</span><input id="l-em" type="email" autocomplete="username"></label>
+    <label class="field"><span>비밀번호 / Mật khẩu</span><input id="l-pw" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></label>
+    <button class="btn pri big" style="width:100%" onclick="doLogin()">로그인</button>
+    <div id="l-err" style="color:var(--bad);margin-top:8px"></div>
+    <p class="muted" style="margin-top:14px"><a href="#" onclick="event.preventDefault();LS.del('mes_sb_url');LS.del('mes_sb_key');location.reload()">서버 연결 다시 설정</a></p></div>`;
+}
+async function doLogin(){
+  const r = await sb.auth.signInWithPassword({email: $('l-em').value.trim(), password: $('l-pw').value});
+  if (r.error) { $('l-err').textContent = '로그인 실패: ' + r.error.message; return; }
+  $('l-pw').value = ''; boot();
+}
+async function logout(){ if (!ME.email || !confirm(`${ME.email}에서 로그아웃할까요?`)) return; await sb.auth.signOut(); location.reload(); }
+
+// ── 화면 전환
+const VIEWS = [['floor','📝 실적 입력'],['machine','⚙️ 설비'],['tv','📺 현황판'],['report','📊 보고서'],['admin','🛠 기준정보']];
+function go(v){ location.hash = v; }
+window.addEventListener('hashchange', () => render());
+function render(){
+  const v = (location.hash || '').slice(1) || (ME.role === 'viewer' ? 'tv' : 'floor');
+  S.view = v; document.body.classList.toggle('tv', v === 'tv');
+  $('nav').innerHTML = VIEWS.filter(([k]) => ME.role === 'viewer' ? ['tv','report'].includes(k) : k !== 'admin' || ME.role === 'admin').map(([k,l]) => `<a href="#${k}" class="${k === v ? 'on' : ''}">${l}</a>`).join('');
+  const app = $('app');
+  if (v === 'floor') app.innerHTML = floorView(); else if (v === 'machine') app.innerHTML = machineView(); else if (v === 'tv') app.innerHTML = tvView();
+  else if (v === 'report') app.innerHTML = reportView(); else if (v === 'admin') app.innerHTML = adminView();
+  if (v === 'floor') setTimeout(() => { const i = $('scan'); if (i && !document.querySelector('.ov')) i.focus(); }, 50);
+}
+
+// ════════ 📝 실적 입력 (태블릿) ════════
+function floorView(){
+  const procs = M.proc.filter(p => p.active !== false), workers = M.work.filter(w => w.active !== false);
+  if (!S.worker || !S.proc) {
+    return `<div class="card" style="margin-bottom:12px"><h2>① 작업자 <span class="vi">Công nhân</span></h2>${workers.length ? `<div class="pick">${workers.map(w => `<button class="${S.worker === w.code ? 'on' : ''}" onclick="S.worker='${E(w.code)}';LS.set('mes_worker',S.worker);render()">${E(w.name)}<span class="vi">${E(w.team||w.code)}</span></button>`).join('')}</div>` : '<p class="muted">등록된 작업자가 없습니다. 🛠 기준정보에서 추가하세요.</p>'}</div>
+      <div class="card"><h2>② 공정 <span class="vi">Công đoạn</span></h2><div class="pick">${procs.map(p => `<button class="${S.proc === p.code ? 'on' : ''}" onclick="S.proc='${E(p.code)}';LS.set('mes_proc',S.proc);render()">${E(p.name)}<span class="vi">${E(p.name_vi||'')}</span></button>`).join('')}</div></div>`;
+  }
+  const t0 = today0().toISOString();
+  const mine = M.rec.filter(r => r.process_code === S.proc && r.created_at >= t0);
+  const running = M.rec.filter(r => r.status === 'running' && r.process_code === S.proc);
+  const wos = activeWO();
+  const sel = woOf(S.wo);
+  const procSum = id => { const o = {}; M.rec.filter(r => r.wo_id === id && r.status === 'done').forEach(r => { o[r.process_code] = (o[r.process_code]||0) + (+r.good_qty||0); }); return o; };
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      <button class="btn" onclick="S.worker='';LS.del('mes_worker');render()">👷 ${E(workName(S.worker))} <span class="muted">바꾸기</span></button>
+      <button class="btn" onclick="S.proc='';LS.del('mes_proc');render()">🔧 ${E(procName(S.proc))} <span class="muted">바꾸기</span></button>
+      <input id="scan" placeholder="📷 작업지시·LOT 바코드 스캔 / Quét mã" onkeydown="if(event.key==='Enter'){scanWO(this.value);this.value=''}" style="flex:1;min-width:220px;padding:12px 14px;border:2px solid var(--brand);border-radius:10px;font-size:16px">
+      ${'BarcodeDetector' in window ? '<button class="btn" onclick="camScan()">📷 카메라</button>' : ''}
+    </div>
+    ${running.length ? `<div class="card" style="margin-bottom:12px;border-color:#86EFAC;background:#F0FDF4"><h2>⏱ 진행 중 <span class="vi">Đang làm</span></h2>${running.map(r => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #D1FAE5;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px"><b>${E(r.item_name||'')}</b> <span class="muted">${E(r.order_no||'')} · ${E(workName(r.worker_code))}${r.machine_code ? ' · ' + E(machName(r.machine_code)) : ''}</span><div class="muted">시작 ${hm(r.start_at)} · ${dur(Date.now() - new Date(r.start_at))} 경과</div></div>
+        <button class="btn ok big" onclick="finishDlg(${r.id})">■ 종료·실적 입력</button></div>`).join('')}</div>` : ''}
+    <div class="grid" style="grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)">
+      <div class="card"><h2>작업지시 <span class="vi">Lệnh sản xuất</span></h2>
+        <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">${wos.map(w => { const ps = procSum(w.wo_id), done = ps[S.proc] || 0, pct = w.plan_qty ? Math.min(100, done / w.plan_qty * 100) : 0;
+          return `<button class="wo ${S.wo === w.wo_id ? 'on' : ''}" onclick="S.wo='${E(w.wo_id)}';render()"><div class="no">${E(w.order_no)} · ${E(w.lot||'')}</div><div class="nm">${E(w.name)}</div>
+            <div class="muted">${E(procName(S.proc))} ${N(done)} / ${N(w.plan_qty)} ${E(w.unit||'')}</div><div class="bar" style="margin-top:6px"><i style="width:${pct}%"></i></div></button>`; }).join('') || '<p class="muted">진행 중인 작업지시가 없습니다. 관리자가 🛠 기준정보에서 "ERP 작업지시 받기"를 누르세요.</p>'}</div></div>
+      <div class="card">${sel ? `<h2>${E(sel.name)}</h2><div class="muted" style="margin-bottom:10px">${E(sel.order_no)} · LOT ${E(sel.lot||'-')} · 계획 ${N(sel.plan_qty)} ${E(sel.unit||'')}</div>
+        <div class="grid" style="grid-template-columns:1fr 1fr;margin-bottom:12px"><button class="btn pri big" onclick="startJob()">▶ 작업 시작<span class="vi" style="color:#DCEBF5">Bắt đầu</span></button><button class="btn big" onclick="finishDlg(null)">＋ 실적만 입력<span class="vi">Nhập kết quả</span></button></div>
+        <table><thead><tr><th>공정</th><th class="r">양품 누계</th><th class="r">불량</th></tr></thead><tbody>${M.proc.filter(p => p.active !== false).map(p => { const rs = M.rec.filter(r => r.wo_id === sel.wo_id && r.process_code === p.code && r.status === 'done');
+          return `<tr style="${p.code === S.proc ? 'background:#E7F1F8;font-weight:700' : ''}"><td>${E(p.name)}</td><td class="r">${N(rs.reduce((a,r) => a + (+r.good_qty||0), 0))}</td><td class="r" style="color:var(--bad)">${(v => v ? N(v) : '-')(rs.reduce((a,r) => a + (+r.ng_qty||0), 0))}</td></tr>`; }).join('')}</tbody></table>
+        <div class="muted" style="margin-top:6px">누계는 오늘 이 기기가 받은 기록 기준입니다. 전체 누계는 📊 보고서에서 보세요.</div>`
+        : '<p class="muted" style="font-size:16px">← 작업지시를 고르거나 바코드를 스캔하세요.<br>Chọn lệnh sản xuất hoặc quét mã.</p>'}</div>
+    </div>
+    <div class="card" style="margin-top:12px"><h2>오늘 ${E(procName(S.proc))} 실적 <span class="muted">${mine.filter(r => r.status === 'done').length}건 · 양품 ${N(mine.reduce((a,r) => a + (r.status === 'done' ? +r.good_qty||0 : 0), 0))} · 불량 ${N(mine.reduce((a,r) => a + (+r.ng_qty||0), 0))}</span></h2>
+      <div style="overflow:auto"><table><thead><tr><th>시간</th><th>작업지시</th><th>품목</th><th>작업자</th><th>설비</th><th class="r">양품</th><th class="r">불량</th><th>불량 사유</th><th></th></tr></thead><tbody>${mine.filter(r => r.status === 'done').slice(0, 50).map(r => `<tr><td>${hm(r.start_at || r.created_at)}${r.end_at ? '~' + hm(r.end_at) : ''}</td><td class="muted">${E(r.order_no||'')}</td><td>${E(r.item_name||'')}</td><td>${E(workName(r.worker_code))}</td><td>${E(r.machine_code ? machName(r.machine_code) : '')}</td><td class="r"><b>${N(r.good_qty)}</b></td><td class="r" style="color:var(--bad)">${+r.ng_qty ? N(r.ng_qty) : ''}</td><td class="muted">${E(r.ng_reason||'')}</td>
+        <td>${r.created_by === ME.email && Date.now() - new Date(r.created_at) < 864e5 ? `<button class="btn" style="padding:4px 10px" onclick="voidRec(${r.id})">취소</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">아직 실적이 없습니다.</td></tr>'}</tbody></table></div></div>`;
+}
+function scanWO(v){
+  v = String(v || '').trim(); if (!v) return;
+  const w = M.wo.find(x => x.order_no === v || x.lot === v || x.wo_id === v) || M.wo.find(x => v.includes(x.order_no) || (x.lot && v.includes(x.lot)));
+  if (!w) { toast(`❓ ${v} — 작업지시를 찾지 못했습니다`); return; }
+  S.wo = w.wo_id; render(); toast(`✅ ${w.order_no} ${w.name}`);
+}
+async function camScan(){
+  try {
+    const st = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}}); const det = new BarcodeDetector();
+    const ov = document.createElement('div'); ov.className = 'ov'; ov.innerHTML = '<div class="box" style="text-align:center"><video id="cam" autoplay playsinline style="width:100%;border-radius:10px"></video><button class="btn" style="margin-top:10px" id="cam-x">닫기</button></div>'; document.body.appendChild(ov);
+    const vd = $('cam'); vd.srcObject = st; let on = true; const stop = () => { on = false; st.getTracks().forEach(t => t.stop()); ov.remove(); }; $('cam-x').onclick = stop;
+    const loop = async () => { if (!on) return; try { const r = await det.detect(vd); if (r.length) { stop(); (window._camTarget || scanWO)(r[0].rawValue); return; } } catch(e){} requestAnimationFrame(loop); }; vd.onloadeddata = loop;
+  } catch (e) { alert('카메라를 열 수 없습니다: ' + e.message); }
+}
+function machPicker(sel){ const ms = M.mach.filter(m => m.active !== false && (!m.process_code || m.process_code === S.proc)); return ms.length ? `<label class="field"><span>설비 / Máy</span><select id="f-mach"><option value="">(선택 안 함)</option>${ms.map(m => `<option value="${E(m.code)}" ${sel === m.code ? 'selected' : ''}>${E(m.name)}</option>`).join('')}</select></label>` : ''; }
+async function startJob(){
+  const w = woOf(S.wo); if (!w) return;
+  const ms = M.mach.filter(m => m.active !== false && (!m.process_code || m.process_code === S.proc));
+  let mach = '';
+  if (ms.length) { mach = await new Promise(res => { const ov = document.createElement('div'); ov.className = 'ov'; ov.innerHTML = `<div class="box"><h2>설비 선택 <span class="vi">Chọn máy</span></h2><div class="pick">${ms.map(m => `<button data-c="${E(m.code)}">${E(m.name)}</button>`).join('')}<button data-c="">설비 없음</button></div><button class="btn" style="margin-top:10px" data-x="1">취소</button></div>`; document.body.appendChild(ov);
+    ov.onclick = e => { const b = e.target.closest('button'); if (!b) return; ov.remove(); res(b.dataset.x ? null : b.dataset.c); }; }); if (mach === null) return; }
+  const row = {wo_id: w.wo_id, order_no: w.order_no, item_code: w.code, item_name: w.name, process_code: S.proc, machine_code: mach || null, worker_code: S.worker, start_at: new Date().toISOString(), status: 'running', lot_out: w.lot || null, device: S.device};
+  const r = await dbWrite({t: 'insert', table: 'prod_records', row});
+  if (r && !r.queued) { M.rec.unshift(r); if (mach) await setMachine(mach, 'run', null, w.wo_id, true); }
+  render(); toast('▶ 작업 시작');
+}
+let FD = null;
+function finishDlg(id){
+  const r = id ? M.rec.find(x => x.id === id) : null, w = r ? woOf(r.wo_id) : woOf(S.wo); if (!w && !r) return;
+  FD = {id, wo: w || {wo_id: r.wo_id, order_no: r.order_no, code: r.item_code, name: r.item_name, lot: r.lot_out}, good: '', ng: '', reason: '', lots: [], f: 'good', mach: r ? r.machine_code : ''};
+  const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'fd'; document.body.appendChild(ov); fdRender();
+}
+function fdRender(){
+  const f = FD, reasons = ['권선 불량','L값 불량','내전압 불량','외관 불량','치수 불량','납땜 불량','자재 불량','기타'];
+  $('fd').innerHTML = `<div class="box"><h2>■ 실적 입력 <span class="vi">Nhập kết quả</span></h2><div class="muted" style="margin-bottom:10px">${E(f.wo.order_no)} · ${E(f.wo.name)} · ${E(procName(S.proc))} · ${E(workName(S.worker))}</div>
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <div><div style="font-weight:700;margin-bottom:4px">양품 / Đạt</div><input class="num" id="fd-good" value="${E(f.good)}" readonly onclick="FD.f='good';fdRender()" style="${f.f === 'good' ? 'border-color:var(--ok)' : ''}"></div>
+      <div><div style="font-weight:700;margin-bottom:4px;color:var(--bad)">불량 / Lỗi</div><input class="num" id="fd-ng" value="${E(f.ng)}" readonly onclick="FD.f='ng';fdRender()" style="${f.f === 'ng' ? 'border-color:var(--bad)' : ''}"></div>
+    </div>
+    <div class="pad">${[1,2,3,4,5,6,7,8,9,'C',0,'⌫'].map(k => `<button onclick="fdKey('${k}')">${k}</button>`).join('')}</div>
+    ${+f.ng > 0 ? `<div style="margin-top:10px;font-weight:700">불량 사유 / Lý do lỗi</div><div class="pick" style="margin-top:4px">${reasons.map(x => `<button class="${f.reason === x ? 'on' : ''}" style="min-height:46px" onclick="FD.reason='${x}';fdRender()">${x}</button>`).join('')}</div>` : ''}
+    ${f.id ? '' : machPicker(f.mach)}
+    <div style="margin-top:10px;font-weight:700">투입 자재 LOT <span class="muted">(선택 · 스캔)</span></div>
+    <div style="display:flex;gap:6px;margin-top:4px"><input id="fd-lot" placeholder="자재 LOT 스캔 / Quét LOT NVL" onkeydown="if(event.key==='Enter'){fdLot(this.value);this.value=''}" style="flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px">${'BarcodeDetector' in window ? `<button class="btn" onclick="window._camTarget=v=>{fdLot(v);window._camTarget=null};camScan()">📷</button>` : ''}</div>
+    <div style="margin-top:6px">${f.lots.map((l, i) => `<span class="tag m-idle" style="margin:2px">${E(l)} <a href="#" onclick="event.preventDefault();FD.lots.splice(${i},1);fdRender()">✕</a></span>`).join('')}</div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn big" onclick="$('fd').remove()">취소</button><button class="btn ok big" onclick="fdSave()">✔ 저장 / Lưu</button></div></div>`;
+}
+function fdKey(k){ const f = FD, cur = String(f[f.f] || ''); f[f.f] = k === 'C' ? '' : k === '⌫' ? cur.slice(0, -1) : (cur === '0' ? '' : cur) + k; if (k === 'C' || k === '⌫' || +f.ng === 0) {} fdRender(); }
+function fdLot(v){ v = String(v||'').trim(); if (v && !FD.lots.includes(v)) FD.lots.push(v); fdRender(); setTimeout(() => $('fd-lot') && $('fd-lot').focus(), 30); }
+async function fdSave(){
+  const f = FD, good = +f.good || 0, ng = +f.ng || 0;
+  if (!good && !ng) { alert('양품 또는 불량 수량을 넣어주세요.'); return; }
+  if (ng && !f.reason) { alert('불량 사유를 골라주세요.'); return; }
+  const w = woOf(f.wo.wo_id), plan = w ? +w.plan_qty || 0 : 0;
+  const done = M.rec.filter(r => r.wo_id === f.wo.wo_id && r.process_code === S.proc && r.status === 'done').reduce((a,r) => a + (+r.good_qty||0), 0);
+  if (plan && done + good > plan * 1.1 && !confirm(`이 공정 양품 누계가 계획(${N(plan)})보다 많아집니다 (${N(done + good)}). 그래도 저장할까요?`)) return;
+  const lots = f.lots.map(l => ({lot: l}));
+  const mach = $('f-mach') ? $('f-mach').value : f.mach;
+  let r;
+  if (f.id) r = await dbWrite({t: 'update', table: 'prod_records', match: {id: f.id}, row: {end_at: new Date().toISOString(), good_qty: good, ng_qty: ng, ng_reason: f.reason || null, lots_in: lots, status: 'done', updated_at: new Date().toISOString()}});
+  else r = await dbWrite({t: 'insert', table: 'prod_records', row: {wo_id: f.wo.wo_id, order_no: f.wo.order_no, item_code: f.wo.code, item_name: f.wo.name, process_code: S.proc, worker_code: S.worker, machine_code: mach || null, start_at: new Date().toISOString(), end_at: new Date().toISOString(), good_qty: good, ng_qty: ng, ng_reason: f.reason || null, lots_in: lots, lot_out: f.wo.lot || null, status: 'done', device: S.device}});
+  if (!r) return;
+  $('fd').remove(); await loadLive(); render(); toast(`✔ 양품 ${N(good)}${ng ? ' · 불량 ' + N(ng) : ''} 저장`);
+}
+async function voidRec(id){ if (!confirm('이 실적을 취소할까요? (기록은 "취소"로 남습니다)')) return; const r = await dbWrite({t: 'update', table: 'prod_records', match: {id}, row: {status: 'void', updated_at: new Date().toISOString()}}); if (r) { await loadLive(); render(); } }
+
+// ════════ ⚙️ 설비 ════════
+function machineView(){
+  const ms = M.mach.filter(m => m.active !== false);
+  if (!ms.length) return '<div class="card"><p class="muted">등록된 설비가 없습니다. 🛠 기준정보에서 설비를 추가하세요.</p></div>';
+  const lbl = {run: '가동 / Chạy', stop: '정지 / Dừng', setup: '셋업 / Cài đặt', idle: '대기 / Chờ'};
+  return `<div class="muted" style="margin-bottom:8px">설비를 누르고 상태를 바꾸세요. 정지는 사유를 꼭 고릅니다. · Chạm vào máy để đổi trạng thái.</div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">${ms.map(m => { const s = machState(m.code), st = s ? s.state : 'idle', rs = s && s.reason_code ? (M.reasons.find(r => r.code === s.reason_code) || {}).name : '';
+      const w = s && s.wo_id ? woOf(s.wo_id) : null;
+      return `<button class="mtile s-${st}" onclick="machDlg('${E(m.code)}')"><div><div style="font-size:18px;font-weight:800">${E(m.name)}</div><div style="opacity:.85;font-size:12.5px">${E(procName(m.process_code))}</div></div>
+        <div><div style="font-size:16px;font-weight:700">${lbl[st]}${rs ? ' · ' + E(rs) : ''}</div><div style="opacity:.9;font-size:12.5px">${s && s.started_at ? dur(Date.now() - new Date(s.started_at)) + ' 째' : ''}${w ? ' · ' + E(w.name) : ''}</div></div></button>`; }).join('')}</div>`;
+}
+function machDlg(code){
+  const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'md';
+  ov.innerHTML = `<div class="box"><h2>${E(machName(code))}</h2>
+    <div class="grid" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:12px"><button class="btn ok big" data-s="run">▶ 가동<span class="vi" style="color:#DCFCE7">Chạy</span></button><button class="btn warn big" data-s="setup">🔧 셋업<span class="vi" style="color:#FEF3C7">Cài đặt</span></button><button class="btn big" data-s="idle">⏸ 대기<span class="vi">Chờ</span></button></div>
+    <div style="font-weight:700;margin-bottom:6px;color:var(--bad)">■ 정지 사유 / Lý do dừng</div>
+    <div class="pick">${M.reasons.map(r => `<button data-s="stop" data-r="${E(r.code)}" style="${r.planned ? 'border-style:dashed' : ''}">${E(r.name)}<span class="vi">${E(r.name_vi||'')}${r.planned ? ' · 계획' : ''}</span></button>`).join('')}</div>
+    <button class="btn" style="margin-top:12px" data-x="1">닫기</button></div>`;
+  document.body.appendChild(ov);
+  ov.onclick = async e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.x) { ov.remove(); return; } ov.remove(); await setMachine(code, b.dataset.s, b.dataset.r || null, S.wo || null); };
+}
+async function setMachine(code, state, reason, wo, quiet){
+  const cur = M.ev.find(x => x.machine_code === code && !x.ended_at);
+  if (cur && cur.state === state && (cur.reason_code || null) === (reason || null)) { if (!quiet) toast('이미 같은 상태입니다'); return; }
+  const now = new Date().toISOString();
+  if (cur) await dbWrite({t: 'update', table: 'machine_events', match: {id: cur.id}, row: {ended_at: now}});
+  if (state !== 'idle') await dbWrite({t: 'insert', table: 'machine_events', row: {machine_code: code, state, reason_code: reason, wo_id: wo || null, started_at: now}});
+  await loadLive(); render(); if (!quiet) toast(`${machName(code)} → ${({run:'가동',stop:'정지',setup:'셋업',idle:'대기'})[state]}`);
+}
+
+// ════════ 📺 현황판 (공장 TV) ════════
+function availability(code, fromMs, toMs){
+  const evs = M.ev.filter(e => e.machine_code === code); let run = 0, unplanned = 0;
+  evs.forEach(e => { const a = Math.max(fromMs, new Date(e.started_at).getTime()), b = Math.min(toMs, e.ended_at ? new Date(e.ended_at).getTime() : toMs); if (b <= a) return;
+    const planned = e.state === 'stop' && (M.reasons.find(r => r.code === e.reason_code) || {}).planned; if (e.state === 'run') run += b - a; else if (!planned) unplanned += b - a; });
+  return run + unplanned ? run / (run + unplanned) * 100 : null;
+}
+function tvView(){
+  const t0 = today0().toISOString(), recs = M.rec.filter(r => r.status === 'done' && r.created_at >= t0);
+  const fin = M.proc.filter(p => p.is_final).map(p => p.code), finRecs = recs.filter(r => fin.includes(r.process_code));
+  const good = finRecs.reduce((a,r) => a + (+r.good_qty||0), 0), ngAll = recs.reduce((a,r) => a + (+r.ng_qty||0), 0), goodAll = recs.reduce((a,r) => a + (+r.good_qty||0), 0);
+  const ngRate = goodAll + ngAll ? ngAll / (goodAll + ngAll) * 100 : 0;
+  const ms = M.mach.filter(m => m.active !== false), now = Date.now(), runN = ms.filter(m => (machState(m.code) || {}).state === 'run').length;
+  const avs = ms.map(m => availability(m.code, today0().getTime(), now)).filter(v => v !== null), av = avs.length ? avs.reduce((a,b) => a + b, 0) / avs.length : null;
+  const wos = activeWO().filter(w => w.status === '진행중' || recs.some(r => r.wo_id === w.wo_id));
+  const lbl = {run: '가동', stop: '정지', setup: '셋업', idle: '대기'};
+  return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:14px">
+      <div class="card"><div class="kpi"><small>오늘 완성 (${E(M.proc.filter(p => p.is_final).map(p => p.name).join('·') || '최종 공정')})</small>${N(good)}</div></div>
+      <div class="card"><div class="kpi" style="color:${ngRate > 1.5 ? '#F87171' : ngRate > 0.5 ? '#FBBF24' : '#4ADE80'}"><small>공정 불량률 · 불량 ${N(ngAll)}</small>${ngRate.toFixed(2)}%</div></div>
+      <div class="card"><div class="kpi"><small>설비 가동 중</small>${runN} <span style="font-size:22px;color:#8FA6B8">/ ${ms.length}</span></div></div>
+      <div class="card"><div class="kpi" style="color:${av === null ? '#8FA6B8' : av >= 85 ? '#4ADE80' : av >= 70 ? '#FBBF24' : '#F87171'}"><small>오늘 가동률 (계획 정지 제외)</small>${av === null ? '-' : av.toFixed(1) + '%'}</div></div>
+    </div>
+    <div class="grid" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)">
+      <div class="card"><h2 style="color:#E7EEF4">작업지시 진행 <span class="muted" style="font-weight:400">오늘 공정별 양품</span></h2>
+        <table><thead><tr><th>작업지시</th>${M.proc.filter(p => p.active !== false).map(p => `<th class="r">${E(p.name)}</th>`).join('')}<th class="r">불량</th></tr></thead><tbody>${wos.map(w => { const rs = recs.filter(r => r.wo_id === w.wo_id);
+          return `<tr><td><b style="font-size:16px">${E(w.name)}</b><div class="muted">${E(w.order_no)} · 계획 ${N(w.plan_qty)}</div></td>${M.proc.filter(p => p.active !== false).map(p => { const v = rs.filter(r => r.process_code === p.code).reduce((a,r) => a + (+r.good_qty||0), 0); return `<td class="r" style="font-size:18px;font-weight:700">${v ? N(v) : '<span class="muted">-</span>'}</td>`; }).join('')}<td class="r" style="color:#F87171;font-weight:700">${(v => v ? N(v) : '-')(rs.reduce((a,r) => a + (+r.ng_qty||0), 0))}</td></tr>`; }).join('') || `<tr><td colspan="${M.proc.length + 2}" class="muted">오늘 실적이 아직 없습니다.</td></tr>`}</tbody></table></div>
+      <div class="card"><h2 style="color:#E7EEF4">설비 상태</h2><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">${ms.map(m => { const s = machState(m.code), st = s ? s.state : 'idle', rs = s && s.reason_code ? (M.reasons.find(r => r.code === s.reason_code) || {}).name : '', a = availability(m.code, today0().getTime(), now);
+          return `<div class="mtile s-${st}" style="min-height:96px"><div style="font-weight:800;font-size:16px">${E(m.name)}</div><div><div style="font-weight:700">${lbl[st]}${rs ? ' · ' + E(rs) : ''}</div><div style="font-size:12px;opacity:.9">${s && s.started_at ? dur(now - new Date(s.started_at)) : ''}${a !== null ? ' · 가동률 ' + a.toFixed(0) + '%' : ''}</div></div></div>`; }).join('') || '<p class="muted">설비 없음</p>'}</div></div>
+    </div>
+    <div class="muted" style="margin-top:10px;text-align:right">실시간 자동 갱신 · ${new Date().toLocaleTimeString('ko-KR')}</div>`;
+}
+
+// ════════ 📊 보고서 ════════
+const RP = {from: '', to: '', tab: 'out', lot: ''};
+function reportView(){
+  if (!RP.from) { RP.to = ymd(new Date()); RP.from = RP.to.slice(0,8) + '01'; }
+  const tabs = [['out','공정별 생산'],['worker','작업자별'],['down','비가동'],['lot','LOT 추적'],['erp','ERP 반영']];
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">${tabs.map(([k,l]) => `<button class="btn ${RP.tab === k ? 'pri' : ''}" onclick="RP.tab='${k}';render();loadReport()">${l}</button>`).join('')}
+      <span style="flex:1"></span>${RP.tab !== 'lot' ? `<input type="date" value="${RP.from}" onchange="RP.from=this.value;loadReport()" class="btn" style="padding:8px"> ~ <input type="date" value="${RP.to}" onchange="RP.to=this.value;loadReport()" class="btn" style="padding:8px">` : `<input id="rp-lot" value="${E(RP.lot)}" placeholder="LOT 번호 (완제품·자재)" onkeydown="if(event.key==='Enter'){RP.lot=this.value.trim();loadReport()}" class="btn" style="padding:8px;min-width:240px"><button class="btn pri" onclick="RP.lot=$('rp-lot').value.trim();loadReport()">조회</button>`}
+      <button class="btn" onclick="rpCSV()">⬇ CSV</button></div><div id="rp-body" class="card">⏳ 불러오는 중…</div>`;
+}
+let RPD = {cols: [], rows: []};
+async function loadReport(){
+  const el = $('rp-body'); if (!el) return;
+  const fromIso = new Date(RP.from + 'T00:00:00').toISOString(), toIso = new Date(RP.to + 'T23:59:59.999').toISOString();
+  let cols = [], rows = [];
+  if (RP.tab === 'out' || RP.tab === 'worker' || RP.tab === 'erp') {
+    const r = await sb.from('prod_records').select('*').eq('status','done').gte('created_at', fromIso).lte('created_at', toIso).order('created_at').limit(20000);
+    const recs = r.data || [];
+    if (RP.tab === 'out') { const g = {}; recs.forEach(x => { const k = ymd(x.created_at) + '|' + x.process_code + '|' + x.item_name; const o = g[k] = g[k] || [ymd(x.created_at), procName(x.process_code), x.item_name, 0, 0]; o[3] += +x.good_qty||0; o[4] += +x.ng_qty||0; });
+      cols = ['일자','공정','품목','양품','불량','불량률']; rows = Object.values(g).map(o => [...o, o[3] + o[4] ? (o[4] / (o[3] + o[4]) * 100).toFixed(2) + '%' : '-']); }
+    else if (RP.tab === 'worker') { const g = {}; recs.forEach(x => { const k = x.worker_code + '|' + x.process_code; const o = g[k] = g[k] || [workName(x.worker_code), procName(x.process_code), 0, 0, 0, 0]; o[2]++; o[3] += +x.good_qty||0; o[4] += +x.ng_qty||0; if (x.start_at && x.end_at) o[5] += new Date(x.end_at) - new Date(x.start_at); });
+      cols = ['작업자','공정','건수','양품','불량','작업 시간','시간당 양품']; rows = Object.values(g).map(o => [o[0], o[1], o[2], o[3], o[4], o[5] ? dur(o[5]) : '-', o[5] ? N(o[3] / (o[5] / 3600e3)) : '-']).sort((a,b) => b[3] - a[3]); }
+    else { const fin = M.proc.filter(p => p.is_final).map(p => p.code), g = {}; recs.filter(x => fin.includes(x.process_code)).forEach(x => { const o = g[x.wo_id] = g[x.wo_id] || [x.order_no, x.item_name, 0, 0, 0, 0]; o[2] += +x.good_qty||0; o[3] += +x.ng_qty||0; if (x.erp_sent_at) o[4] += +x.good_qty||0; else o[5] += +x.good_qty||0; });
+      cols = ['작업지시','품목','완성 양품','불량','ERP 반영','미반영']; rows = Object.values(g); }
+  } else if (RP.tab === 'down') {
+    const r = await sb.from('machine_events').select('*').lte('started_at', toIso).or(`ended_at.is.null,ended_at.gte.${fromIso}`).limit(20000);
+    const a = new Date(fromIso).getTime(), b = Math.min(Date.now(), new Date(toIso).getTime()), g = {};
+    (r.data || []).forEach(e => { const s = Math.max(a, new Date(e.started_at).getTime()), t = Math.min(b, e.ended_at ? new Date(e.ended_at).getTime() : b); if (t <= s) return;
+      const k = e.machine_code + '|' + e.state + '|' + (e.reason_code || ''); const o = g[k] = g[k] || [machName(e.machine_code), ({run:'가동',stop:'정지',setup:'셋업',idle:'대기'})[e.state], e.reason_code ? (M.reasons.find(x => x.code === e.reason_code) || {}).name || e.reason_code : '', 0, 0]; o[3]++; o[4] += t - s; });
+    cols = ['설비','상태','사유','횟수','시간']; rows = Object.values(g).sort((x,y) => y[4] - x[4]).map(o => [o[0], o[1], o[2], o[3], dur(o[4])]);
+  } else if (RP.tab === 'lot') {
+    if (!RP.lot) { el.innerHTML = '<p class="muted">완제품 LOT 또는 자재 LOT을 넣으세요. 완제품 LOT이면 그 LOT의 공정별 이력과 투입 자재 LOT을, 자재 LOT이면 그 자재가 들어간 작업을 보여줍니다.</p>'; RPD = {cols: [], rows: []}; return; }
+    const [a, b] = await Promise.all([sb.from('prod_records').select('*').eq('lot_out', RP.lot).neq('status','void').order('created_at').limit(5000), sb.from('prod_records').select('*').contains('lots_in', [{lot: RP.lot}]).neq('status','void').order('created_at').limit(5000)]);
+    const all = [...(a.data||[]).map(x => ['이 LOT 생산', x]), ...(b.data||[]).map(x => ['이 자재 LOT 투입', x])];
+    cols = ['구분','일시','작업지시','품목','공정','작업자','설비','양품','불량','투입 자재 LOT'];
+    rows = all.map(([k, x]) => [k, ymd(x.created_at) + ' ' + hm(x.start_at || x.created_at), x.order_no, x.item_name, procName(x.process_code), workName(x.worker_code), x.machine_code ? machName(x.machine_code) : '', +x.good_qty||0, +x.ng_qty||0, (x.lots_in || []).map(l => l.lot).join(', ')]);
+  }
+  RPD = {cols, rows};
+  const numC = i => rows.length && typeof rows[0][i] === 'number';
+  el.innerHTML = rows.length ? `<div class="muted" style="margin-bottom:6px">${rows.length}건</div><div style="overflow:auto"><table><thead><tr>${cols.map((c, i) => `<th class="${numC(i) ? 'r' : ''}">${E(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map((v, i) => `<td class="${typeof v === 'number' ? 'r' : ''}">${typeof v === 'number' ? N(v) : E(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+    ${RP.tab === 'erp' ? '<p class="muted" style="margin-top:8px">ERP 작업지시 실적으로 넘기는 기능은 다음 단계에서 연결합니다. 지금은 반영 대상 수량만 확인할 수 있습니다.</p>' : ''}` : '<p class="muted">이 기간 자료가 없습니다.</p>';
+}
+function rpCSV(){ if (!RPD.rows.length) { alert('내보낼 자료가 없습니다.'); return; } const esc = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
+  const csv = '﻿' + [RPD.cols, ...RPD.rows].map(r => r.map(esc).join(',')).join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); a.download = `MES_${RP.tab}_${RP.from}_${RP.to}.csv`; a.click(); }
+
+// ════════ 🛠 기준정보 (관리자) ════════
+const AD = {t: 'processes'};
+const AD_DEF = {
+  processes: {l:'공정', key:'code', f:[['code','코드'],['name','이름'],['name_vi','이름(VN)'],['seq','순서','number'],['is_final','최종 공정','bool'],['active','사용','bool']]},
+  machines:  {l:'설비', key:'code', f:[['code','코드'],['name','이름'],['process_code','공정','proc'],['active','사용','bool']]},
+  workers:   {l:'작업자', key:'code', f:[['code','사번/코드'],['name','이름'],['team','조/팀'],['active','사용','bool']]},
+  stop_reasons: {l:'비가동 사유', key:'code', f:[['code','코드'],['name','이름'],['name_vi','이름(VN)'],['planned','계획 정지','bool'],['seq','순서','number']]}};
+const AD_DATA = () => ({processes: M.proc, machines: M.mach, workers: M.work, stop_reasons: M.reasons})[AD.t];
+function adminView(){
+  const d = AD_DEF[AD.t], rows = AD_DATA();
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
+      <button class="btn ok" onclick="syncWO(false).then(render)">🔄 ERP 작업지시 받기</button></div>
+    <div class="card"><h2>${d.l} <span class="muted">${rows.length}개</span></h2><div style="overflow:auto"><table><thead><tr>${d.f.map(f => `<th>${f[1]}</th>`).join('')}<th></th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr>${d.f.map(f => `<td>${adCell(f, r[f[0]], 'r' + i)}</td>`).join('')}<td><button class="btn" style="padding:6px 12px" onclick="adSave(${i})">저장</button></td></tr>`).join('')}
+      <tr style="background:#F8FAFB">${d.f.map(f => `<td>${adCell(f, f[2] === 'bool' ? (f[0] === 'active') : '', 'new')}</td>`).join('')}<td><button class="btn pri" style="padding:6px 12px" onclick="adSave(-1)">＋ 추가</button></td></tr></tbody></table></div>
+      <p class="muted" style="margin-top:8px">코드는 한 번 정하면 바꾸지 마세요 (실적이 코드로 연결됩니다). 안 쓰는 항목은 "사용"을 끄세요.</p></div>
+    <div class="card" style="margin-top:12px"><h2>이 기기</h2><div class="muted">기기 이름: <b>${E(S.device)}</b> <button class="btn" style="padding:4px 10px" onclick="const n=prompt('기기 이름',S.device);if(n){S.device=n;LS.set('mes_device',n);render()}">바꾸기</button> · 로그인: ${E(ME.email)} (${E(ME.role)})</div></div>`;
+}
+function adCell(f, v, rid){ const id = `ad-${rid}-${f[0]}`;
+  if (f[2] === 'bool') return `<input type="checkbox" id="${id}" ${v ? 'checked' : ''} style="width:20px;height:20px">`;
+  if (f[2] === 'proc') return `<select id="${id}" style="padding:6px"><option value="">(전체)</option>${M.proc.map(p => `<option value="${E(p.code)}" ${v === p.code ? 'selected' : ''}>${E(p.name)}</option>`).join('')}</select>`;
+  return `<input id="${id}" value="${E(v ?? '')}" ${f[2] === 'number' ? 'type="number" style="width:80px;padding:6px"' : 'style="padding:6px;min-width:110px"'} ${f[0] === 'code' && rid !== 'new' ? 'readonly' : ''}>`; }
+async function adSave(i){
+  const d = AD_DEF[AD.t], rid = i < 0 ? 'new' : 'r' + i, row = {};
+  d.f.forEach(f => { const el = $(`ad-${rid}-${f[0]}`); row[f[0]] = f[2] === 'bool' ? el.checked : f[2] === 'number' ? (+el.value || 0) : (el.value.trim() || null); });
+  if (!row.code || !row.name) { alert('코드와 이름을 넣어주세요.'); return; }
+  const r = await sb.from(AD.t).upsert(row, {onConflict: 'code'});
+  if (r.error) { alert('저장 실패: ' + r.error.message); return; }
+  await loadMaster(); render(); toast('저장했습니다');
+}
+
+// ── 실시간: 다른 기기의 입력이 들어오면 화면을 다시 그린다
+let _rt = null, _rtT = null;
+function realtime(){
+  if (_rt) return;
+  _rt = sb.channel('mes-live').on('postgres_changes', {event: '*', schema: 'public', table: 'prod_records'}, () => liveRefresh())
+    .on('postgres_changes', {event: '*', schema: 'public', table: 'machine_events'}, () => liveRefresh()).subscribe();
+}
+function liveRefresh(){ clearTimeout(_rtT); _rtT = setTimeout(async () => { await loadLive(); if (!document.querySelector('.ov') && S.view !== 'report' && S.view !== 'admin') render(); }, 400); }
+setInterval(() => { if (sb && ME.role && (S.view === 'tv' || S.view === 'machine') && !document.querySelector('.ov')) render(); }, 30000);   // 경과 시간 표시 갱신
+setInterval(() => { if (sb && ME.role && S.view === 'tv') loadLive().then(render); }, 5 * 60000);              // 실시간이 끊겨도 5분마다 새로
+
+// ── 시작
+async function boot(){
+  if (!SB_URL || !SB_KEY || !window.supabase) { $('app').innerHTML = cfgView(); return; }
+  if (!sb) sb = window.supabase.createClient(SB_URL, SB_KEY, {auth: {persistSession: true, autoRefreshToken: true}});
+  const s = await sb.auth.getSession(), u = s.data && s.data.session && s.data.session.user;
+  if (!u) { $('who').textContent = ''; $('app').innerHTML = loginView(); return; }
+  ME.email = u.email;
+  const r = await sb.from('app_users').select('role,name').eq('email', u.email).maybeSingle();
+  ME.role = r.data && r.data.role || '';
+  if (!ME.role) { $('app').innerHTML = `<div class="card" style="max-width:520px;margin:30px auto"><h2>권한 없음</h2><p>${E(u.email)} 계정이 MES 사용자(app_users)에 등록되지 않았습니다. 관리자에게 요청하세요.</p><button class="btn" onclick="logout()">로그아웃</button></div>`; return; }
+  $('who').textContent = `👤 ${r.data.name || u.email} · ${ME.role}`;
+  await loadMaster(); await loadLive(); setNet(true); realtime(); flushQ();
+  if (ME.role !== 'viewer' && (!M.wo.length || M.wo.every(w => Date.now() - new Date(w.synced_at) > 30*60000))) syncWO(true).then(render);
+  render();
+}
+boot();
+</script>
+</body>
+</html>
