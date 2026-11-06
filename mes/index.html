@@ -653,9 +653,9 @@ function adminView(){
   const d = AD_DEF[AD.t], rows = AD_DATA();
   return adminTabs() + `
     <div class="card"><h2>${d.l} <span class="muted">${rows.length}개</span></h2><div style="overflow:auto"><table><thead><tr>${d.f.map(f => `<th>${f[1]}</th>`).join('')}<th></th></tr></thead><tbody>
-      ${rows.map((r, i) => `<tr>${d.f.map(f => `<td>${adCell(f, r[f[0]], 'r' + i)}</td>`).join('')}<td><button class="btn" style="padding:6px 12px" onclick="adSave(${i})">저장</button></td></tr>`).join('')}
+      ${rows.map((r, i) => `<tr>${d.f.map(f => `<td>${adCell(f, r[f[0]], 'r' + i)}</td>`).join('')}<td style="white-space:nowrap"><button class="btn" style="padding:6px 12px" onclick="adSave(${i})">저장</button> <button class="btn" style="padding:6px 12px;color:var(--bad)" onclick="adDel(${i})">삭제</button></td></tr>`).join('')}
       <tr style="background:#F8FAFB">${d.f.map(f => `<td>${adCell(f, f[2] === 'bool' ? (f[0] === 'active') : '', 'new')}</td>`).join('')}<td><button class="btn pri" style="padding:6px 12px" onclick="adSave(-1)">＋ 추가</button></td></tr></tbody></table></div>
-      <p class="muted" style="margin-top:8px">코드는 한 번 정하면 바꾸지 마세요 (실적이 코드로 연결됩니다). 안 쓰는 항목은 "사용"을 끄세요.</p></div>
+      <p class="muted" style="margin-top:8px">코드는 한 번 정하면 바꾸지 마세요 (실적이 코드로 연결됩니다). 안 쓰는 항목은 "사용"을 끄세요. 실적이나 공정 순서에 이미 쓰인 항목은 삭제되지 않으니 "사용"을 끄세요.</p></div>
     ${AD.t === 'machines' ? `<div class="card" style="margin-top:12px"><h2>같은 설비 여러 대 한 번에 추가 <span class="muted">예: 권선기 1~8호기</span></h2>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <label class="field" style="margin:0"><span>코드 앞부분</span><input id="mb-code" value="WIND" style="padding:6px;width:110px"></label>
@@ -673,6 +673,13 @@ function adCell(f, v, rid){ const id = `ad-${rid}-${f[0]}`;
   if (f[2] === 'bool') return `<input type="checkbox" id="${id}" ${v ? 'checked' : ''} style="width:20px;height:20px">`;
   if (f[2] === 'proc') return `<select id="${id}" style="padding:6px"><option value="">(전체)</option>${M.proc.map(p => `<option value="${E(p.code)}" ${v === p.code ? 'selected' : ''}>${E(p.name)}</option>`).join('')}</select>`;
   return `<input id="${id}" value="${E(v ?? '')}" ${f[2] === 'number' ? 'type="number" style="width:80px;padding:6px"' : 'style="padding:6px;min-width:110px"'} ${f[0] === 'code' && rid !== 'new' ? 'readonly' : ''}>`; }
+async function adDel(i){
+  const d = AD_DEF[AD.t], row = AD_DATA()[i]; if (!row) return;
+  if (!confirm(`${d.l} "${row.name}" (${row.code})을(를) 삭제할까요?\n되돌릴 수 없습니다.`)) return;
+  const r = await sb.from(AD.t).delete().match({code: row.code});
+  if (r.error) { alert(r.error.code === '23503' || /foreign key|violates/i.test(r.error.message) ? `"${row.name}"은(는) 이미 실적·설비 기록·공정 순서에 쓰여서 삭제할 수 없습니다.\n대신 "사용" 체크를 끄고 저장하세요.` : '삭제 실패: ' + r.error.message); return; }
+  await loadMaster(); render(); toast('삭제했습니다');
+}
 async function machBulk(){
   const cp = $('mb-code').value.trim().toUpperCase(), np = $('mb-name').value.trim(), pc = $('mb-proc').value, a = +$('mb-from').value || 1, n = Math.min(50, +$('mb-n').value || 0);
   if (!cp || !np || !n) { alert('코드 앞부분, 이름 앞부분, 대수를 넣어주세요.'); return; }
