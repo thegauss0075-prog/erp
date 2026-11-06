@@ -147,10 +147,13 @@ async function syncWO(silent){
   if (!r || !r.ok) { if (!silent) alert('ERP 작업지시를 받지 못했습니다: ' + (r && r.error)); return; }
   const rows = (r.data || []).filter(w => w.status === '대기' || w.status === '진행중' || (w.status === '완료' && Date.now() - (+w.id||0) < 30*864e5))
     .map(w => ({wo_id: String(w.id), order_no: w.orderNo, code: w.code, name: w.name, cat: w.cat, unit: w.unit || 'Ea', plan_qty: +w.planQty || 0, lot: w.lot || '', status: w.status || '대기', due_date: w.dueDate ? String(w.dueDate).slice(0,10) : null, synced_at: new Date().toISOString()}));
-  if (!rows.length) return;
-  const u = await sb.from('work_orders').upsert(rows, {onConflict: 'wo_id'});
-  if (u.error) { if (!silent) alert('작업지시 저장 실패: ' + u.error.message); return; }
-  if (!silent) toast(`🔄 ERP 작업지시 ${rows.length}건을 받았습니다.`);
+  if (rows.length) { const u = await sb.from('work_orders').upsert(rows, {onConflict: 'wo_id'});
+    if (u.error) { if (!silent) alert('작업지시 저장 실패: ' + u.error.message); return; } }
+  // ERP에서 지운 작업지시는 MES에서도 "삭제됨"으로 바꿔 현장 목록에서 뺀다 (실적 기록은 그대로 남김)
+  const erpIds = new Set((r.data || []).map(w => String(w.id)));
+  const gone = M.wo.filter(w => !erpIds.has(w.wo_id) && w.status !== '삭제됨').map(w => w.wo_id);
+  if (gone.length) await sb.from('work_orders').update({status: '삭제됨', synced_at: new Date().toISOString()}).in('wo_id', gone);
+  if (!silent) toast(`🔄 ERP 작업지시 ${rows.length}건을 받았습니다.` + (gone.length ? ` (ERP에서 삭제된 ${gone.length}건 정리)` : ''));
   await loadMaster();
 }
 
@@ -175,7 +178,7 @@ const woOf = id => M.wo.find(w => w.wo_id === String(id)) || null;
 function routeOf(w){ if (!w) return []; const r = M.route.filter(x => x.item_code === w.code && String(x.cat||'TP').toUpperCase() === String(w.cat||'TP').toUpperCase()).sort((a,b) => a.seq - b.seq);
   return r.length ? r.map(x => ({...(M.proc.find(p => p.code === x.process_code) || {code: x.process_code, name: x.process_code}), seq: x.seq, is_final: x.is_final, note: x.note, _r: true})) : M.proc.filter(p => p.active !== false && p.in_default !== false); }   // 공정 순서가 없는 품목은 '기본 공정'만
 function isFinalFor(w, proc){ const r = routeOf(w).find(p => p.code === proc); return !!(r && r.is_final); }
-const activeWO = () => M.wo.filter(w => w.status !== '완료' && w.status !== '취소');
+const activeWO = () => M.wo.filter(w => w.status !== '완료' && w.status !== '취소' && w.status !== '삭제됨');
 function machState(code){ const e = M.ev.filter(x => x.machine_code === code).sort((a,b) => String(b.started_at).localeCompare(String(a.started_at)))[0]; return e && !e.ended_at ? e : (e ? {...e, state: 'idle', reason_code: null, started_at: e.ended_at} : null); }
 
 // ── 로그인
@@ -259,7 +262,7 @@ function floorView(){
 }
 function scanWO(v){
   v = String(v || '').trim(); if (!v) return;
-  const w = M.wo.find(x => x.order_no === v || x.lot === v || x.wo_id === v) || M.wo.find(x => v.includes(x.order_no) || (x.lot && v.includes(x.lot)));
+  const L = M.wo.filter(x => x.status !== '삭제됨'), w = L.find(x => x.order_no === v || x.lot === v || x.wo_id === v) || L.find(x => v.includes(x.order_no) || (x.lot && v.includes(x.lot)));
   if (!w) { toast(`❓ ${v} — 작업지시를 찾지 못했습니다`); return; }
   S.wo = w.wo_id; render(); toast(`✅ ${w.order_no} ${w.name}`);
 }
@@ -477,7 +480,7 @@ async function erpPush(){
     const q = await sb.from('prod_records').select('*').eq('status','done').is('erp_sent_at', null).order('created_at').limit(20000);
     if (q.error) { alert('실적을 읽지 못했습니다: ' + q.error.message); return; }
     const g = {};
-    (q.data || []).filter(x => x.wo_id && (+x.good_qty||0) > 0 && isFinalFor(woOf(x.wo_id) || {code: x.item_code}, x.process_code))
+    (q.data || []).filter(x => x.wo_id && (+x.good_qty||0) > 0 && (woOf(x.wo_id) || {}).status !== '삭제됨' && isFinalFor(woOf(x.wo_id) || {code: x.item_code}, x.process_code))
       .forEach(x => { const o = g[x.wo_id] = g[x.wo_id] || {wo: woOf(x.wo_id), order_no: x.order_no, name: x.item_name, ids: [], qty: 0}; o.ids.push(x.id); o.qty += +x.good_qty || 0; });
     const list = Object.entries(g);
     if (!list.length) { toast('보낼 완성 수량이 없습니다.'); return; }
@@ -557,7 +560,7 @@ async function rtDel(i){
 function adminView(){
   if (AD.t === 'route') return routeAdmin();
   if (AD.t === 'wo') return adminTabs() + `<div class="card"><h2>ERP 작업지시 <span class="muted">${M.wo.length}건 · 진행 ${activeWO().length}건${M.wo[0] ? ' · 받은 시각 ' + new Date(M.wo.map(w => w.synced_at).sort().pop()).toLocaleString('ko-KR') : ''}</span></h2>
-    <div style="overflow:auto"><table><thead><tr><th>지시번호</th><th>품목</th><th>구분</th><th>LOT</th><th class="r">계획</th><th>마감일</th><th>상태</th></tr></thead><tbody>${M.wo.map(w => `<tr style="${w.status === '완료' ? 'color:var(--sub)' : ''}"><td style="font-family:monospace">${E(w.order_no)}</td><td><b>${E(w.name)}</b><div class="muted">${E(w.code)}</div></td><td>${E(w.cat||'')}</td><td style="font-family:monospace">${E(w.lot||'')}</td><td class="r">${N(w.plan_qty)} ${E(w.unit||'')}</td><td>${E(w.due_date||'')}</td><td><span class="tag ${w.status === '진행중' ? 'm-run' : w.status === '완료' ? 'm-idle' : 'm-setup'}">${E(w.status)}</span></td></tr>`).join('') || '<tr><td colspan="7" class="muted">아직 받은 작업지시가 없습니다.</td></tr>'}</tbody></table></div>
+    <div style="overflow:auto"><table><thead><tr><th>지시번호</th><th>품목</th><th>구분</th><th>LOT</th><th class="r">계획</th><th>마감일</th><th>상태</th></tr></thead><tbody>${M.wo.map(w => `<tr style="${w.status === '완료' ? 'color:var(--sub)' : w.status === '삭제됨' ? 'color:var(--sub);text-decoration:line-through' : ''}"><td style="font-family:monospace">${E(w.order_no)}</td><td><b>${E(w.name)}</b><div class="muted">${E(w.code)}</div></td><td>${E(w.cat||'')}</td><td style="font-family:monospace">${E(w.lot||'')}</td><td class="r">${N(w.plan_qty)} ${E(w.unit||'')}</td><td>${E(w.due_date||'')}</td><td><span class="tag ${w.status === '진행중' ? 'm-run' : w.status === '완료' || w.status === '삭제됨' ? 'm-idle' : 'm-setup'}">${E(w.status)}</span></td></tr>`).join('') || '<tr><td colspan="7" class="muted">아직 받은 작업지시가 없습니다.</td></tr>'}</tbody></table></div>
     <p class="muted" style="margin-top:8px">현장(📝 실적 입력)에는 대기·진행중 작업지시만 보입니다. ERP에서 새로 발행하면 위 "🔄 ERP 작업지시 받기"를 다시 누르세요 (30분마다 자동으로도 받습니다).</p></div>`;
   const d = AD_DEF[AD.t], rows = AD_DATA();
   return adminTabs() + `
