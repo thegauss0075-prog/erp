@@ -239,7 +239,7 @@ function floorView(){
     </div>
     ${running.length ? `<div class="card" style="margin-bottom:12px;border-color:#86EFAC;background:#F0FDF4"><h2>⏱ 진행 중 <span class="vi">Đang làm</span></h2>${running.map(r => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #D1FAE5;flex-wrap:wrap">
         <div style="flex:1;min-width:200px"><b>${E(r.item_name||'')}</b> <span class="muted">${E(r.order_no||'')} · ${E(workName(r.worker_code))}${r.machine_code ? ' · ' + E(machName(r.machine_code)) : ''}</span><div class="muted">시작 ${hm(r.start_at)} · ${dur(Date.now() - new Date(r.start_at))} 경과</div></div>
-        <button class="btn ok big" onclick="finishDlg(${r.id})">■ 종료·실적 입력</button></div>`).join('')}</div>` : ''}
+        <button class="btn" onclick="cancelRun(${r.id})" title="잘못 시작한 작업 취소">✕ 시작 취소</button><button class="btn ok big" onclick="finishDlg(${r.id})">■ 종료·실적 입력</button></div>`).join('')}</div>` : ''}
     <div class="grid" style="grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)">
       <div class="card"><h2>작업지시 <span class="vi">Lệnh sản xuất</span></h2>
         <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">${wos.map(w => { const ps = procSum(w.wo_id), done = ps[S.proc] || 0, pct = w.plan_qty ? Math.min(100, done / w.plan_qty * 100) : 0;
@@ -272,8 +272,15 @@ async function camScan(){
   } catch (e) { alert('카메라를 열 수 없습니다: ' + e.message); }
 }
 function machPicker(sel){ const ms = M.mach.filter(m => m.active !== false && (!m.process_code || m.process_code === S.proc)); return ms.length ? `<label class="field"><span>설비 / Máy</span><select id="f-mach"><option value="">(선택 안 함)</option>${ms.map(m => `<option value="${E(m.code)}" ${sel === m.code ? 'selected' : ''}>${E(m.name)}</option>`).join('')}</select></label>` : ''; }
+let _starting = false;
 async function startJob(){
-  const w = woOf(S.wo); if (!w) return;
+  const w = woOf(S.wo); if (!w || _starting) return;
+  // 같은 작업지시·공정·작업자가 이미 진행 중이면 또 시작하지 않는다 (두 번 누름 방지)
+  const dup = M.rec.find(r => r.status === 'running' && r.wo_id === w.wo_id && r.process_code === S.proc && r.worker_code === S.worker);
+  if (dup) { toast(`⏱ 이미 ${hm(dup.start_at)}에 시작한 작업이 있습니다. 위 "진행 중"에서 종료하세요.`, 3500); return; }
+  _starting = true; try { await startJob2(w); } finally { _starting = false; }
+}
+async function startJob2(w){
   const ms = M.mach.filter(m => m.active !== false && (!m.process_code || m.process_code === S.proc));
   let mach = '';
   if (ms.length) { mach = await new Promise(res => { const ov = document.createElement('div'); ov.className = 'ov'; ov.innerHTML = `<div class="box"><h2>설비 선택 <span class="vi">Chọn máy</span></h2><div class="pick">${ms.map(m => `<button data-c="${E(m.code)}">${E(m.name)}</button>`).join('')}<button data-c="">설비 없음</button></div><button class="btn" style="margin-top:10px" data-x="1">취소</button></div>`; document.body.appendChild(ov);
@@ -321,6 +328,7 @@ async function fdSave(){
   if (!r) return;
   $('fd').remove(); await loadLive(); render(); toast(`✔ 양품 ${N(good)}${ng ? ' · 불량 ' + N(ng) : ''} 저장`);
 }
+async function cancelRun(id){ if (!confirm('이 작업 시작을 취소할까요? (실적 없이 "취소"로 남습니다)')) return; const r = await dbWrite({t: 'update', table: 'prod_records', match: {id}, row: {status: 'void', note: '시작 취소', updated_at: new Date().toISOString()}}); if (r) { await loadLive(); render(); toast('시작을 취소했습니다'); } }
 async function voidRec(id){ if (!confirm('이 실적을 취소할까요? (기록은 "취소"로 남습니다)')) return; const r = await dbWrite({t: 'update', table: 'prod_records', match: {id}, row: {status: 'void', updated_at: new Date().toISOString()}}); if (r) { await loadLive(); render(); } }
 
 // ════════ ⚙️ 설비 ════════
