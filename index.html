@@ -13578,10 +13578,33 @@ async function hqCPOSave(){
   if (r.status === '회신' && !r.replyDate) r.replyDate = hqToday();
   r.updatedAt = new Date().toISOString(); r.updatedBy = CURRENT_USER||''; if (!old) { r.createdAt = r.updatedAt; r.createdBy = r.updatedBy; }
   const btn = document.getElementById('hq-save'); btn.disabled = true; btn.textContent = '⏳ 저장 중…';
+  // ✅ [2026-11-06] 확정되는 순간 자재 소요를 계산해서, 새로 부족해진 자재로 구매요청 초안을 자동으로 만든다
+  const nowConfirmed = r.status === '확정' && !(old && ['확정','출하중','완료'].includes(old.status));
+  let autoPR = null;
+  if (nowConfirmed) {
+    const keep = HQ.cpo, fc = HQ.mrpFc, ts = HQ.mrpTpStock;
+    HQ.cpo = keep.filter(x => String(x.id) !== String(r.id)).concat([r]); HQ.mrpFc = false; HQ.mrpTpStock = true;
+    let m; try { m = hqMRP(); } finally { HQ.cpo = keep; HQ.mrpFc = fc; HQ.mrpTpStock = ts; }
+    const mine = new Set(r.lines.map(l => l.code));
+    const short = m.mats.filter(x => x.short > 0);
+    const dues = r.lines.map(l => l.replyDue || l.due).filter(Boolean).sort();
+    if (short.length) autoPR = {id: String(Date.now() + 1), date: hqToday(), status: '요청', auto: true, needBy: dues[0] ? hqAddDays(dues[0], -21) : '',
+      basis: r.cpoNo, reason: `고객 PO 확정 자동 생성 (${r.customer} ${r.custPoNo})`, history: [],
+      lines: short.map(x => ({code: x.code, name: x.name, cat: x.cat, unit: x.unit, qty: Math.ceil(x.short), supplier: x.sup || '', note: x.from}))};
+    r.mrpNote = short.length ? `부족 자재 ${short.length}건 → 구매요청 자동 생성` : (m.noBom.filter(c => mine.has(c)).length ? `BOM 없음 — 자재 확인 불가 (${m.noBom.join(', ')})` : '자재 충분 — 구매요청 없음');
+  }
   const res = await retrySafe(() => api('saveHQCPO', {rec: r}));
   if (!res || !res.ok) { btn.disabled = false; btn.textContent = '💾 저장 / Lưu'; err.textContent = '저장 실패: ' + ((res && res.error) || '서버 응답 없음') + (/unknown action/i.test(res && res.error || '') ? ' — 서버(Code.gs)를 새 버전으로 배포해야 합니다.' : ''); return; }
   const i = HQ.cpo.findIndex(x => String(x.id) === String(r.id)); if (i >= 0) HQ.cpo[i] = r; else HQ.cpo.push(r);
-  hqClose('hq-ed'); renderHQ();
+  hqClose('hq-ed');
+  if (autoPR) {
+    autoPR.prNo = hqNextNo('PR', HQ.pr, 'prNo', autoPR.date); autoPR.createdBy = CURRENT_USER || ''; autoPR.createdAt = new Date().toISOString();
+    autoPR.history = [{at: autoPR.createdAt, by: '자동 (' + (CURRENT_USER||'') + ')', status: '요청'}];
+    const pr = await retrySafe(() => api('saveHQPR', {rec: autoPR}));
+    if (pr && pr.ok) { HQ.pr.push(autoPR); alert(`✅ ${r.cpoNo} 확정\n부족 자재 ${autoPR.lines.length}건으로 구매요청 ${autoPR.prNo}를 자동으로 만들었습니다.\n구매부 → 구매요청·승인에서 수량·공급사를 확인하세요.`); }
+    else alert('PO는 저장됐지만 구매요청 자동 생성에 실패했습니다: ' + ((pr && pr.error) || '') + '\n구매부 → 자재 소요 계산에서 직접 만들어 주세요.');
+  } else if (nowConfirmed) alert(`✅ ${r.cpoNo} 확정 — ${r.mrpNote}`);
+  renderHQ();
 }
 function hqItemOK(lines){ return lines.every(l => allRows().some(x => x.code === l.code)); }
 async function hqCPODelete(id){
