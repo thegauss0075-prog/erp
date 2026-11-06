@@ -194,7 +194,7 @@ const machName = c => (M.mach.find(p => p.code === c) || {}).name || c || '-';
 const woOf = id => M.wo.find(w => w.wo_id === String(id)) || null;
 // 품목별 공정 순서(라우팅). 등록 안 된 품목은 전체 공정을 쓴다
 function routeOf(w){ if (!w) return []; const r = M.route.filter(x => x.item_code === w.code && String(x.cat||'TP').toUpperCase() === String(w.cat||'TP').toUpperCase()).sort((a,b) => a.seq - b.seq);
-  return r.length ? r.map(x => ({...(M.proc.find(p => p.code === x.process_code) || {code: x.process_code, name: x.process_code}), seq: x.seq, is_final: x.is_final, note: x.note, lot_required: !!x.lot_required, _r: true})) : M.proc.filter(p => p.active !== false && p.in_default !== false); }   // 공정 순서가 없는 품목은 '기본 공정'만
+  return r.length ? r.map(x => ({...(M.proc.find(p => p.code === x.process_code) || {code: x.process_code, name: x.process_code}), seq: x.seq, is_final: x.is_final, note: x.note, lot_required: !!x.lot_required, unit_name: x.unit_name || '', unit_per: +x.unit_per > 1 ? +x.unit_per : 1, _r: true})) : M.proc.filter(p => p.active !== false && p.in_default !== false); }   // 공정 순서가 없는 품목은 '기본 공정'만
 // 고른 공정에 해당하는 작업지시가 없을 때: 다른 작업지시를 보여 주고, 누르면 그 품목의 첫 공정으로 바꾼다
 function woOther(){
   const oth = activeWO().filter(w => !routeOf(w).some(p => p.code === S.proc));
@@ -373,6 +373,8 @@ const lotKey = w => 'mes_lot|' + S.proc + '|' + (w && w.code || '');
 function lotMem(w){ try { return JSON.parse(localStorage.getItem(lotKey(w)) || '[]'); } catch (e) { return []; } }
 function lotMemSet(w, lots){ try { localStorage.setItem(lotKey(w), JSON.stringify(lots)); } catch (e) {} }
 const lotReq = w => !!(routeOf(w).find(p => p.code === S.proc) || {}).lot_required;
+// 입력 단위: 예) WIRE 재단은 "가닥"으로 세고 2가닥 = 단품 1개 → 저장은 단품(EA) 기준
+const unitOf = w => { const p = routeOf(w).find(x => x.code === S.proc) || {}; return {name: p.unit_per > 1 ? (p.unit_name || '개') : '', per: p.unit_per > 1 ? p.unit_per : 1}; };
 function finishDlg(id){
   const r = id ? M.rec.find(x => x.id === id) : null, w = r ? woOf(r.wo_id) : woOf(S.wo); if (!w && !r) return;
   FD = {id, wo: w || {wo_id: r.wo_id, order_no: r.order_no, code: r.item_code, name: r.item_name, lot: r.lot_out}, good: '', ng: '', reason: '', lots: r && (r.lots_in || []).length ? r.lots_in.map(l => l.lot) : lotMem(w || {code: r && r.item_code}), f: 'good', mach: r ? r.machine_code : ''};
@@ -382,9 +384,10 @@ function fdRender(){
   const f = FD, reasons = ['권선 불량','L값 불량','내전압 불량','외관 불량','치수 불량','납땜 불량','자재 불량','기타'];
   $('fd').innerHTML = `<div class="box"><h2>■ 실적 입력 <span class="vi">Nhập kết quả</span></h2><div class="muted" style="margin-bottom:10px">${E(f.wo.order_no)} · ${E(f.wo.name)} · ${E(procName(S.proc))} · ${E(workName(S.worker))}</div>
     <div class="grid" style="grid-template-columns:1fr 1fr">
-      <div><div style="font-weight:700;margin-bottom:4px">양품 / Đạt</div><input class="num" id="fd-good" value="${E(f.good)}" readonly onclick="FD.f='good';fdRender()" style="${f.f === 'good' ? 'border-color:var(--ok)' : ''}"></div>
-      <div><div style="font-weight:700;margin-bottom:4px;color:var(--bad)">불량 / Lỗi</div><input class="num" id="fd-ng" value="${E(f.ng)}" readonly onclick="FD.f='ng';fdRender()" style="${f.f === 'ng' ? 'border-color:var(--bad)' : ''}"></div>
+      <div><div style="font-weight:700;margin-bottom:4px">양품 / Đạt${unitOf(f.wo).per > 1 ? ` <span style="color:var(--pri)">(${E(unitOf(f.wo).name)})</span>` : ''}</div><input class="num" id="fd-good" value="${E(f.good)}" readonly onclick="FD.f='good';fdRender()" style="${f.f === 'good' ? 'border-color:var(--ok)' : ''}"></div>
+      <div><div style="font-weight:700;margin-bottom:4px;color:var(--bad)">불량 / Lỗi${unitOf(f.wo).per > 1 ? ` (${E(unitOf(f.wo).name)})` : ''}</div><input class="num" id="fd-ng" value="${E(f.ng)}" readonly onclick="FD.f='ng';fdRender()" style="${f.f === 'ng' ? 'border-color:var(--bad)' : ''}"></div>
     </div>
+    ${(u => u.per > 1 ? `<div style="background:#EEF6FB;border-radius:9px;padding:8px 12px;margin-top:8px;font-size:15px">📐 ${N(u.per)}${E(u.name)} = 단품 1개 → <b>양품 ${N((+f.good||0) / u.per)} ${E(f.wo.unit || 'EA')}</b>${+f.ng ? ` · 불량 ${N((+f.ng||0) / u.per)}` : ''}${(+f.good||0) % u.per ? ' <span style="color:var(--bad)">· 짝이 안 맞습니다</span>' : ''}</div>` : '')(unitOf(f.wo))}
     <div class="pad">${[1,2,3,4,5,6,7,8,9,'C',0,'⌫'].map(k => `<button onclick="fdKey('${k}')">${k}</button>`).join('')}</div>
     ${+f.ng > 0 ? `<div style="margin-top:10px;font-weight:700">불량 사유 / Lý do lỗi</div><div class="pick" style="margin-top:4px">${reasons.map(x => `<button class="${f.reason === x ? 'on' : ''}" style="min-height:46px" onclick="FD.reason='${x}';fdRender()">${x}</button>`).join('')}</div>` : ''}
     ${f.id ? '' : machPicker(f.mach)}
@@ -396,8 +399,10 @@ function fdRender(){
 function fdKey(k){ const f = FD, cur = String(f[f.f] || ''); f[f.f] = k === 'C' ? '' : k === '⌫' ? cur.slice(0, -1) : (cur === '0' ? '' : cur) + k; if (k === 'C' || k === '⌫' || +f.ng === 0) {} fdRender(); }
 function fdLot(v){ v = String(v||'').trim(); if (v && !FD.lots.includes(v)) FD.lots.push(v); fdRender(); setTimeout(() => $('fd-lot') && $('fd-lot').focus(), 30); }
 async function fdSave(){
-  const f = FD, good = +f.good || 0, ng = +f.ng || 0;
+  const f = FD, u = unitOf(f.wo), rawG = +f.good || 0, rawN = +f.ng || 0, good = rawG / u.per, ng = rawN / u.per;
   if (!good && !ng) { alert('양품 또는 불량 수량을 넣어주세요.'); return; }
+  if (u.per > 1 && rawG % u.per && !confirm(`양품 ${N(rawG)}${u.name}은 ${N(u.per)}${u.name}씩 맞지 않습니다 (단품 ${N(good)}개).\n그래도 저장할까요?`)) return;
+  const rawNote = u.per > 1 ? `입력: 양품 ${rawG}${u.name}${rawN ? ' · 불량 ' + rawN + u.name : ''} (${u.per}${u.name}=1)` : null;
   if (ng && !f.reason) { alert('불량 사유를 골라주세요.'); return; }
   if (!f.lots.length && lotReq(f.wo)) { alert('이 공정은 투입 자재 LOT이 필수입니다.\nCông đoạn này bắt buộc quét LOT NVL.'); setTimeout(() => $('fd-lot') && $('fd-lot').focus(), 30); return; }
   const w = woOf(f.wo.wo_id), plan = w ? +w.plan_qty || 0 : 0;
@@ -407,8 +412,8 @@ async function fdSave(){
   const lots = f.lots.map(l => ({lot: l}));
   const mach = $('f-mach') ? $('f-mach').value : f.mach;
   let r;
-  if (f.id) r = await dbWrite({t: 'update', table: 'prod_records', match: {id: f.id}, row: {end_at: new Date().toISOString(), good_qty: good, ng_qty: ng, ng_reason: f.reason || null, lots_in: lots, status: 'done', updated_at: new Date().toISOString()}});
-  else r = await dbWrite({t: 'insert', table: 'prod_records', row: {wo_id: f.wo.wo_id, order_no: f.wo.order_no, item_code: f.wo.code, item_name: f.wo.name, process_code: S.proc, worker_code: S.worker, machine_code: mach || null, start_at: new Date().toISOString(), end_at: new Date().toISOString(), good_qty: good, ng_qty: ng, ng_reason: f.reason || null, lots_in: lots, lot_out: f.wo.lot || null, status: 'done', device: S.device}});
+  if (f.id) r = await dbWrite({t: 'update', table: 'prod_records', match: {id: f.id}, row: {end_at: new Date().toISOString(), good_qty: good, ng_qty: ng, ng_reason: f.reason || null, lots_in: lots, ...(rawNote ? {note: rawNote} : {}), status: 'done', updated_at: new Date().toISOString()}});
+  else r = await dbWrite({t: 'insert', table: 'prod_records', row: {wo_id: f.wo.wo_id, order_no: f.wo.order_no, item_code: f.wo.code, item_name: f.wo.name, process_code: S.proc, worker_code: S.worker, machine_code: mach || null, start_at: new Date().toISOString(), end_at: new Date().toISOString(), good_qty: good, ng_qty: ng, ng_reason: f.reason || null, lots_in: lots, note: rawNote, lot_out: f.wo.lot || null, status: 'done', device: S.device}});
   if (!r) return;
   lotMemSet(f.wo, f.lots);
   $('fd').remove(); await loadLive(); render(); toast(`✔ 양품 ${N(good)}${ng ? ' · 불량 ' + N(ng) : ''} 저장`);
@@ -598,17 +603,17 @@ function routeAdmin(){
   const [code, cat] = (AD.item || '|').split('|'), rows = M.route.filter(r => r.item_code === code && r.cat === cat).sort((a,b) => a.seq - b.seq);
   return adminTabs() + `<div class="card"><h2>품목별 공정 순서 <span class="muted">작업지시를 고르면 이 순서대로 공정이 나옵니다. MES는 PCDU 제품 작업지시만 받습니다.</span></h2>
     <select onchange="AD.item=this.value;render()" style="padding:8px;border-radius:8px;border:1px solid var(--line);margin-bottom:10px;min-width:320px">${items.map(i => `<option value="${E(i.code + '|' + i.cat)}" ${AD.item === i.code + '|' + i.cat ? 'selected' : ''}>[${E(i.cat)}] ${E(i.name)} (${E(i.code)})</option>`).join('')}</select>
-    <div style="overflow:auto"><table><thead><tr><th>순서</th><th>공정</th><th>마지막(완성)</th><th>자재 LOT 필수</th><th>관리기준·메모 (현장 화면에 표시)</th><th></th></tr></thead><tbody>
-      ${rows.map((r, i) => `<tr><td><input id="rt-seq-${i}" type="number" value="${r.seq}" style="width:70px;padding:6px"></td><td><b>${E(procName(r.process_code))}</b> <span class="muted">${E(r.process_code)}</span></td><td><input id="rt-fin-${i}" type="checkbox" ${r.is_final ? 'checked' : ''} style="width:20px;height:20px"></td><td><input id="rt-lot-${i}" type="checkbox" ${r.lot_required ? 'checked' : ''} style="width:20px;height:20px"></td>
-        <td><input id="rt-note-${i}" value="${E(r.note||'')}" style="padding:6px;width:100%;min-width:260px"></td><td style="white-space:nowrap"><button class="btn" style="padding:6px 10px" onclick="rtSave(${i})">저장</button> <button class="btn" style="padding:6px 10px;color:var(--bad)" onclick="rtDel(${i})">빼기</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">아직 공정 순서가 없습니다. 아래에서 추가하세요.</td></tr>'}
-      <tr style="background:#F8FAFB"><td><input id="rt-seq-new" type="number" value="${(rows.length ? rows[rows.length-1].seq : 0) + 10}" style="width:70px;padding:6px"></td><td><select id="rt-proc-new" style="padding:6px">${M.proc.filter(p => !rows.some(r => r.process_code === p.code)).map(p => `<option value="${E(p.code)}">${E(p.name)}</option>`).join('')}${rows.length ? `<optgroup label="같은 공정 한 번 더 (2차·3차)">${rows.map(r => `<option value="rep:${E(r.process_code)}">↻ ${E(procName(r.process_code))} 한 번 더</option>`).join('')}</optgroup>` : ''}</select></td><td><input id="rt-fin-new" type="checkbox" style="width:20px;height:20px"></td><td><input id="rt-lot-new" type="checkbox" style="width:20px;height:20px"></td><td><input id="rt-note-new" style="padding:6px;width:100%"></td><td><button class="btn pri" style="padding:6px 10px" onclick="rtSave(-1)">＋ 추가</button></td></tr></tbody></table></div>
+    <div style="overflow:auto"><table><thead><tr><th>순서</th><th>공정</th><th>마지막(완성)</th><th>자재 LOT 필수</th><th>입력 단위</th><th>관리기준·메모 (현장 화면에 표시)</th><th></th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr><td><input id="rt-seq-${i}" type="number" value="${r.seq}" style="width:70px;padding:6px"></td><td><b>${E(procName(r.process_code))}</b> <span class="muted">${E(r.process_code)}</span></td><td><input id="rt-fin-${i}" type="checkbox" ${r.is_final ? 'checked' : ''} style="width:20px;height:20px"></td><td><input id="rt-lot-${i}" type="checkbox" ${r.lot_required ? 'checked' : ''} style="width:20px;height:20px"></td><td style="white-space:nowrap"><input id="rt-up-${i}" type="number" min="1" value="${+r.unit_per > 1 ? +r.unit_per : ''}" placeholder="1" style="width:52px;padding:6px"><input id="rt-un-${i}" value="${E(r.unit_name||'')}" placeholder="가닥" style="width:56px;padding:6px"> = 1개</td>
+        <td><input id="rt-note-${i}" value="${E(r.note||'')}" style="padding:6px;width:100%;min-width:260px"></td><td style="white-space:nowrap"><button class="btn" style="padding:6px 10px" onclick="rtSave(${i})">저장</button> <button class="btn" style="padding:6px 10px;color:var(--bad)" onclick="rtDel(${i})">빼기</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">아직 공정 순서가 없습니다. 아래에서 추가하세요.</td></tr>'}
+      <tr style="background:#F8FAFB"><td><input id="rt-seq-new" type="number" value="${(rows.length ? rows[rows.length-1].seq : 0) + 10}" style="width:70px;padding:6px"></td><td><select id="rt-proc-new" style="padding:6px">${M.proc.filter(p => !rows.some(r => r.process_code === p.code)).map(p => `<option value="${E(p.code)}">${E(p.name)}</option>`).join('')}${rows.length ? `<optgroup label="같은 공정 한 번 더 (2차·3차)">${rows.map(r => `<option value="rep:${E(r.process_code)}">↻ ${E(procName(r.process_code))} 한 번 더</option>`).join('')}</optgroup>` : ''}</select></td><td><input id="rt-fin-new" type="checkbox" style="width:20px;height:20px"></td><td><input id="rt-lot-new" type="checkbox" style="width:20px;height:20px"></td><td style="white-space:nowrap"><input id="rt-up-new" type="number" min="1" placeholder="1" style="width:52px;padding:6px"><input id="rt-un-new" placeholder="가닥" style="width:56px;padding:6px"> = 1개</td><td><input id="rt-note-new" style="padding:6px;width:100%"></td><td><button class="btn pri" style="padding:6px 10px" onclick="rtSave(-1)">＋ 추가</button></td></tr></tbody></table></div>
     <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap">${rows.length ? `<button class="btn pri" onclick="rtSaveAll()">💾 전체 저장</button><span class="muted">위 표의 순서·마지막·관리기준을 한 번에 저장합니다.</span>` : ''}<span style="flex:1"></span><span class="muted">새 공정 이름이 필요하면 "공정" 탭에서 먼저 만드세요.</span></div></div>`;
 }
 async function rtSave(i){
   const [code, cat] = AD.item.split('|'), rows = M.route.filter(r => r.item_code === code && r.cat === cat).sort((a,b) => a.seq - b.seq), k = i < 0 ? 'new' : i;
   let pc = i < 0 ? $('rt-proc-new').value : rows[i].process_code;
   if (pc && pc.startsWith('rep:')) { pc = await procRepeat(pc.slice(4)); if (!pc) return; }
-  const row = {item_code: code, cat, process_code: pc, seq: +$('rt-seq-' + k).value || 0, is_final: $('rt-fin-' + k).checked, lot_required: $('rt-lot-' + k).checked, note: $('rt-note-' + k).value.trim() || null};
+  const row = {item_code: code, cat, process_code: pc, seq: +$('rt-seq-' + k).value || 0, is_final: $('rt-fin-' + k).checked, lot_required: $('rt-lot-' + k).checked, unit_per: +$('rt-up-' + k).value > 1 ? +$('rt-up-' + k).value : 1, unit_name: $('rt-un-' + k).value.trim() || null, note: $('rt-note-' + k).value.trim() || null};
   if (!row.process_code) return;
   const r = await sb.from('routings').upsert(row, {onConflict: 'item_code,cat,process_code'}); if (r.error) { alert('저장 실패: ' + r.error.message); return; }
   await loadMaster(); render(); toast('저장했습니다');
@@ -625,7 +630,7 @@ async function procRepeat(base){
 }
 async function rtSaveAll(){
   const [code, cat] = AD.item.split('|'), rows = M.route.filter(r => r.item_code === code && r.cat === cat).sort((a,b) => a.seq - b.seq);
-  const all = rows.map((r0, i) => ({item_code: code, cat, process_code: r0.process_code, seq: +$('rt-seq-' + i).value || 0, is_final: $('rt-fin-' + i).checked, lot_required: $('rt-lot-' + i).checked, note: $('rt-note-' + i).value.trim() || null}));
+  const all = rows.map((r0, i) => ({item_code: code, cat, process_code: r0.process_code, seq: +$('rt-seq-' + i).value || 0, is_final: $('rt-fin-' + i).checked, lot_required: $('rt-lot-' + i).checked, unit_per: +$('rt-up-' + i).value > 1 ? +$('rt-up-' + i).value : 1, unit_name: $('rt-un-' + i).value.trim() || null, note: $('rt-note-' + i).value.trim() || null}));
   const seqs = all.map(x => x.seq); if (new Set(seqs).size !== seqs.length && !confirm('순서 번호가 겹치는 공정이 있습니다. 그래도 저장할까요?')) return;
   if (!all.some(x => x.is_final) && !confirm('"마지막(완성)"으로 체크한 공정이 없습니다. 완성 수량과 ERP 보내기가 이 공정 기준입니다.\n그래도 저장할까요?')) return;
   const r = await sb.from('routings').upsert(all, {onConflict: 'item_code,cat,process_code'}); if (r.error) { alert('저장 실패: ' + r.error.message); return; }
