@@ -213,7 +213,7 @@ function render(){
   $('nav').innerHTML = VIEWS.filter(([k]) => ME.role === 'viewer' ? ['tv','report'].includes(k) : k !== 'admin' || ME.role === 'admin').map(([k,l]) => `<a href="#${k}" class="${k === v ? 'on' : ''}">${l}</a>`).join('');
   const app = $('app');
   if (v === 'floor') app.innerHTML = floorView(); else if (v === 'machine') app.innerHTML = machineView(); else if (v === 'tv') app.innerHTML = tvView();
-  else if (v === 'report') app.innerHTML = reportView(); else if (v === 'admin') app.innerHTML = adminView();
+  else if (v === 'report') { app.innerHTML = reportView(); loadReport().catch(e => { const el = $('rp-body'); if (el) el.innerHTML = '<p style="color:var(--bad)">불러오기 실패: ' + E(e.message || e) + '</p>'; }); } else if (v === 'admin') app.innerHTML = adminView();
   if (v === 'floor') setTimeout(() => { const i = $('scan'); if (i && !document.querySelector('.ov')) i.focus(); }, 50);
 }
 
@@ -424,7 +424,7 @@ const RP = {from: '', to: '', tab: 'out', lot: ''};
 function reportView(){
   if (!RP.from) { RP.to = ymd(new Date()); RP.from = RP.to.slice(0,8) + '01'; }
   const tabs = [['out','공정별 생산'],['worker','작업자별'],['down','비가동'],['lot','LOT 추적'],['erp','ERP 반영']];
-  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">${tabs.map(([k,l]) => `<button class="btn ${RP.tab === k ? 'pri' : ''}" onclick="RP.tab='${k}';render();loadReport()">${l}</button>`).join('')}
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">${tabs.map(([k,l]) => `<button class="btn ${RP.tab === k ? 'pri' : ''}" onclick="RP.tab='${k}';render()">${l}</button>`).join('')}
       <span style="flex:1"></span>${RP.tab !== 'lot' ? `<input type="date" value="${RP.from}" onchange="RP.from=this.value;loadReport()" class="btn" style="padding:8px"> ~ <input type="date" value="${RP.to}" onchange="RP.to=this.value;loadReport()" class="btn" style="padding:8px">` : `<input id="rp-lot" value="${E(RP.lot)}" placeholder="LOT 번호 (완제품·자재)" onkeydown="if(event.key==='Enter'){RP.lot=this.value.trim();loadReport()}" class="btn" style="padding:8px;min-width:240px"><button class="btn pri" onclick="RP.lot=$('rp-lot').value.trim();loadReport()">조회</button>`}
       <button class="btn" onclick="rpCSV()">⬇ CSV</button></div><div id="rp-body" class="card">⏳ 불러오는 중…</div>`;
 }
