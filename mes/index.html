@@ -432,15 +432,19 @@ const AD_DEF = {
   stop_reasons: {l:'비가동 사유', key:'code', f:[['code','코드'],['name','이름'],['name_vi','이름(VN)'],['planned','계획 정지','bool'],['seq','순서','number']]}};
 const AD_DATA = () => ({processes: M.proc, machines: M.mach, workers: M.work, stop_reasons: M.reasons})[AD.t];
 function adminView(){
+  if (AD.t === 'wo') return adminTabs() + `<div class="card"><h2>ERP 작업지시 <span class="muted">${M.wo.length}건 · 진행 ${activeWO().length}건${M.wo[0] ? ' · 받은 시각 ' + new Date(M.wo.map(w => w.synced_at).sort().pop()).toLocaleString('ko-KR') : ''}</span></h2>
+    <div style="overflow:auto"><table><thead><tr><th>지시번호</th><th>품목</th><th>구분</th><th>LOT</th><th class="r">계획</th><th>마감일</th><th>상태</th></tr></thead><tbody>${M.wo.map(w => `<tr style="${w.status === '완료' ? 'color:var(--sub)' : ''}"><td style="font-family:monospace">${E(w.order_no)}</td><td><b>${E(w.name)}</b><div class="muted">${E(w.code)}</div></td><td>${E(w.cat||'')}</td><td style="font-family:monospace">${E(w.lot||'')}</td><td class="r">${N(w.plan_qty)} ${E(w.unit||'')}</td><td>${E(w.due_date||'')}</td><td><span class="tag ${w.status === '진행중' ? 'm-run' : w.status === '완료' ? 'm-idle' : 'm-setup'}">${E(w.status)}</span></td></tr>`).join('') || '<tr><td colspan="7" class="muted">아직 받은 작업지시가 없습니다.</td></tr>'}</tbody></table></div>
+    <p class="muted" style="margin-top:8px">현장(📝 실적 입력)에는 대기·진행중 작업지시만 보입니다. ERP에서 새로 발행하면 위 "🔄 ERP 작업지시 받기"를 다시 누르세요 (30분마다 자동으로도 받습니다).</p></div>`;
   const d = AD_DEF[AD.t], rows = AD_DATA();
-  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
-      <button class="btn ok" onclick="syncWO(false).then(render)">🔄 ERP 작업지시 받기</button></div>
+  return adminTabs() + `
     <div class="card"><h2>${d.l} <span class="muted">${rows.length}개</span></h2><div style="overflow:auto"><table><thead><tr>${d.f.map(f => `<th>${f[1]}</th>`).join('')}<th></th></tr></thead><tbody>
       ${rows.map((r, i) => `<tr>${d.f.map(f => `<td>${adCell(f, r[f[0]], 'r' + i)}</td>`).join('')}<td><button class="btn" style="padding:6px 12px" onclick="adSave(${i})">저장</button></td></tr>`).join('')}
       <tr style="background:#F8FAFB">${d.f.map(f => `<td>${adCell(f, f[2] === 'bool' ? (f[0] === 'active') : '', 'new')}</td>`).join('')}<td><button class="btn pri" style="padding:6px 12px" onclick="adSave(-1)">＋ 추가</button></td></tr></tbody></table></div>
       <p class="muted" style="margin-top:8px">코드는 한 번 정하면 바꾸지 마세요 (실적이 코드로 연결됩니다). 안 쓰는 항목은 "사용"을 끄세요.</p></div>
     <div class="card" style="margin-top:12px"><h2>이 기기</h2><div class="muted">기기 이름: <b>${E(S.device)}</b> <button class="btn" style="padding:4px 10px" onclick="const n=prompt('기기 이름',S.device);if(n){S.device=n;LS.set('mes_device',n);render()}">바꾸기</button> · 로그인: ${E(ME.email)} (${E(ME.role)})</div></div>`;
 }
+function adminTabs(){ return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn ${AD.t === 'wo' ? 'pri' : ''}" onclick="AD.t='wo';render()">작업지시</button>${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
+      <button class="btn ok" onclick="syncWO(false).then(()=>{AD.t='wo';render()})">🔄 ERP 작업지시 받기</button></div>`; }
 function adCell(f, v, rid){ const id = `ad-${rid}-${f[0]}`;
   if (f[2] === 'bool') return `<input type="checkbox" id="${id}" ${v ? 'checked' : ''} style="width:20px;height:20px">`;
   if (f[2] === 'proc') return `<select id="${id}" style="padding:6px"><option value="">(전체)</option>${M.proc.map(p => `<option value="${E(p.code)}" ${v === p.code ? 'selected' : ''}>${E(p.name)}</option>`).join('')}</select>`;
