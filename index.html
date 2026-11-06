@@ -13424,6 +13424,12 @@ async function renderHQ(opts){
   if (!HQ._deptInit) { HQ._deptInit = true; try { const k = localStorage.getItem('hq_dept'); if (k && HQ_DEPTS.some(x => x.k === k)) { HQ.dept = k; HQ.tab = HQ_DEPTS.find(x => x.k === k).tabs[0][0]; } } catch(e) {} }
   if (!HQ.loaded || (opts && opts.reload)) { el.innerHTML = '<div class="empty">⏳ 불러오는 중… / Đang tải…</div>'; await loadHQ(true); }
   if ((HQ.dept === 'qa') && (!_loadedAt.qc || (opts && opts.reload))) { el.innerHTML = '<div class="empty">⏳ 품질검사 기록 불러오는 중…</div>'; await loadQC().catch(()=>{}); }
+  // 불량률은 입출고·불량 이력이 필요 — 아직 동기화 전이면(본사 열람 화면 등) 직접 받아온다
+  if (HQ.tab === 'qadr' && (!txLog.length || !ngLog.length)) { el.innerHTML = '<div class="empty">⏳ 입출고·불량 이력 불러오는 중…</div>';
+    try { const b = await api('getFullSyncBundle', {}); const arr = v => Array.isArray(v) ? v : (v && v.data) || [];
+      if (!txLog.length) txLog = arr(b.tx).map(r => ({...r, id:+r.id||0, qty:+r.qty||0}));
+      if (!ngLog.length) ngLog = arr(b.ngLogs).map(r => ({...r, id:+r.id||0, qty:+r.qty||0}));
+      if (!(DB.ng||[]).length) DB.ng = arr(b.ngItems).map(r => ({...r, prev:+r.prev||0, inng:+r.inng||0, cur:+r.cur||0})); } catch(e) {} }
   hqNav();
   const warn = HQ.err === 'server' ? '<div style="background:#FEF3C7;color:#92400e;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:13px">⚠️ 서버(Code.gs)를 새 버전으로 배포해야 본사 업무 데이터가 저장·조회됩니다.</div>' : '';
   el.innerHTML = warn + (HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'qadr' ? hqDefectView() : hqQAView(HQ.tab === 'qang'));
@@ -13874,7 +13880,8 @@ function hqDefectData(){
   const prod = z(), ngTP = z(), ngMat = z(), ngCu = z(), ngMatN = z(), insS = z(), insD = z(), shpS = z(), shpD = z();
   const pm = {}, nm = {};   // 모델별 생산·NG
   const ngType = c => ((DB.ng||[]).find(r => r.code === c) || {}).type || '';
-  const ngModel = c => ((DB.ng||[]).find(r => r.code === c) || {}).model || '';
+  // 불량 품목의 모델: 같은 코드의 완성품 모델을 먼저 쓴다 (불량 쪽 모델명이 "50KW PFC"처럼 다르게 적힌 경우가 있음)
+  const ngModel = c => { const tp = DB.tp.find(x => x.code === c); if (tp) return tp.model || getModel(tp.code, tp.name); const r = (DB.ng||[]).find(x => x.code === c) || {}; return r.model || (r.name ? getModel(c, r.name) : ''); };
   (txLog||[]).forEach(t => { if (t.type !== 'tp-in' || String(t.cat||'').toUpperCase() !== 'TP') return; const k = hqYM(t.dt); if (!(k in prod)) return;
     prod[k] += +t.qty || 0; const it = DB.tp.find(x => x.code === t.code), md = it ? (it.model || getModel(it.code, it.name)) : '기타'; ((pm[md] = pm[md] || z())[k]) += +t.qty || 0; });
   (ngLog||[]).forEach(l => { if (l.type !== 'ng-in') return; const k = hqYM(l.dt); if (!(k in prod)) return; const ty = ngType(l.code), q = +l.qty || 0;
