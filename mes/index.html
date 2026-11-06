@@ -550,15 +550,27 @@ function routeAdmin(){
     <div style="overflow:auto"><table><thead><tr><th>순서</th><th>공정</th><th>마지막(완성)</th><th>관리기준·메모 (현장 화면에 표시)</th><th></th></tr></thead><tbody>
       ${rows.map((r, i) => `<tr><td><input id="rt-seq-${i}" type="number" value="${r.seq}" style="width:70px;padding:6px"></td><td><b>${E(procName(r.process_code))}</b> <span class="muted">${E(r.process_code)}</span></td><td><input id="rt-fin-${i}" type="checkbox" ${r.is_final ? 'checked' : ''} style="width:20px;height:20px"></td>
         <td><input id="rt-note-${i}" value="${E(r.note||'')}" style="padding:6px;width:100%;min-width:260px"></td><td style="white-space:nowrap"><button class="btn" style="padding:6px 10px" onclick="rtSave(${i})">저장</button> <button class="btn" style="padding:6px 10px;color:var(--bad)" onclick="rtDel(${i})">빼기</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">아직 공정 순서가 없습니다. 아래에서 추가하세요.</td></tr>'}
-      <tr style="background:#F8FAFB"><td><input id="rt-seq-new" type="number" value="${(rows.length ? rows[rows.length-1].seq : 0) + 10}" style="width:70px;padding:6px"></td><td><select id="rt-proc-new" style="padding:6px">${M.proc.filter(p => !rows.some(r => r.process_code === p.code)).map(p => `<option value="${E(p.code)}">${E(p.name)}</option>`).join('')}</select></td><td><input id="rt-fin-new" type="checkbox" style="width:20px;height:20px"></td><td><input id="rt-note-new" style="padding:6px;width:100%"></td><td><button class="btn pri" style="padding:6px 10px" onclick="rtSave(-1)">＋ 추가</button></td></tr></tbody></table></div>
+      <tr style="background:#F8FAFB"><td><input id="rt-seq-new" type="number" value="${(rows.length ? rows[rows.length-1].seq : 0) + 10}" style="width:70px;padding:6px"></td><td><select id="rt-proc-new" style="padding:6px">${M.proc.filter(p => !rows.some(r => r.process_code === p.code)).map(p => `<option value="${E(p.code)}">${E(p.name)}</option>`).join('')}${rows.length ? `<optgroup label="같은 공정 한 번 더 (2차·3차)">${rows.map(r => `<option value="rep:${E(r.process_code)}">↻ ${E(procName(r.process_code))} 한 번 더</option>`).join('')}</optgroup>` : ''}</select></td><td><input id="rt-fin-new" type="checkbox" style="width:20px;height:20px"></td><td><input id="rt-note-new" style="padding:6px;width:100%"></td><td><button class="btn pri" style="padding:6px 10px" onclick="rtSave(-1)">＋ 추가</button></td></tr></tbody></table></div>
     <p class="muted">새 공정 이름이 필요하면 "공정" 탭에서 먼저 만드세요.</p></div>`;
 }
 async function rtSave(i){
   const [code, cat] = AD.item.split('|'), rows = M.route.filter(r => r.item_code === code && r.cat === cat).sort((a,b) => a.seq - b.seq), k = i < 0 ? 'new' : i;
-  const row = {item_code: code, cat, process_code: i < 0 ? $('rt-proc-new').value : rows[i].process_code, seq: +$('rt-seq-' + k).value || 0, is_final: $('rt-fin-' + k).checked, note: $('rt-note-' + k).value.trim() || null};
+  let pc = i < 0 ? $('rt-proc-new').value : rows[i].process_code;
+  if (pc && pc.startsWith('rep:')) { pc = await procRepeat(pc.slice(4)); if (!pc) return; }
+  const row = {item_code: code, cat, process_code: pc, seq: +$('rt-seq-' + k).value || 0, is_final: $('rt-fin-' + k).checked, note: $('rt-note-' + k).value.trim() || null};
   if (!row.process_code) return;
   const r = await sb.from('routings').upsert(row, {onConflict: 'item_code,cat,process_code'}); if (r.error) { alert('저장 실패: ' + r.error.message); return; }
   await loadMaster(); render(); toast('저장했습니다');
+}
+// 같은 공정을 한 번 더 하는 품목(예: 에폭시 토출 2번)은 공정을 "○○ 2차"로 하나 더 만들어 따로 실적을 받는다
+async function procRepeat(base){
+  const b = M.proc.find(p => p.code === base); if (!b) return null;
+  const root = String(b.name).replace(/\s*\d+\s*차?\s*$/, '').trim(), rootC = base.replace(/\d+$/, '');
+  let n = 2; while (M.proc.some(p => p.code === rootC + n)) n++;
+  const nm = prompt('새로 만들 공정 이름', `${root} ${n}차`); if (!nm) return null;
+  const np = {code: rootC + n, name: nm.trim(), name_vi: b.name_vi ? String(b.name_vi).replace(/\s*\d+$/, '') + ' ' + n : null, seq: b.seq || 0, is_final: false, active: true, in_default: false};
+  const r = await sb.from('processes').insert(np); if (r.error) { alert('공정 만들기 실패: ' + r.error.message); return null; }
+  M.proc.push(np); return np.code;
 }
 async function rtDel(i){
   const [code, cat] = AD.item.split('|'), r0 = M.route.filter(r => r.item_code === code && r.cat === cat).sort((a,b) => a.seq - b.seq)[i]; if (!r0 || !confirm(`${procName(r0.process_code)} 공정을 이 품목 순서에서 뺄까요?`)) return;
