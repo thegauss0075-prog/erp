@@ -167,3 +167,13 @@ end $$;
 -- ── [보안 보강] 로그인 안 한 사람은 권한 확인 함수를 직접 부를 수 없게
 revoke execute on function public.my_role() from anon, public;
 grant execute on function public.my_role() to authenticated;
+
+-- ── [2026-11-06] 품목별 공정 순서(라우팅) + 기본 공정 표시
+create table if not exists routings (
+  item_code text not null, cat text not null default 'TP',
+  process_code text not null references processes(code), seq int not null,
+  is_final boolean default false, note text,
+  primary key (item_code, cat, process_code));
+alter table routings enable row level security;
+alter table processes add column if not exists in_default boolean default true;
+-- (200kW PCDU 공정 순서는 Supabase에 직접 넣어 두었음: BTP 50~120, TP 130~190)

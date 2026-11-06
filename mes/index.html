@@ -95,7 +95,7 @@ const ERP_API = 'https://script.google.com/macros/s/AKfycbyo_eOJACEPPqV-CHA9rUnY
 const SB_URL_DEFAULT = 'https://dorbfjtgnjnsnyamgnxy.supabase.co', SB_KEY_DEFAULT = 'sb_publishable_3f-9RqobsZ2Na6tUI8ruNg_eshe2vF2';
 const LS = { get(k, d){ try { const v = localStorage.getItem(k); return v === null ? d : v; } catch(e){ return d; } }, set(k, v){ try { localStorage.setItem(k, v); } catch(e){} }, del(k){ try { localStorage.removeItem(k); } catch(e){} } };
 const SB_URL = LS.get('mes_sb_url', SB_URL_DEFAULT), SB_KEY = LS.get('mes_sb_key', SB_KEY_DEFAULT);
-let sb = null, ME = {email: '', role: ''}, M = {proc: [], mach: [], work: [], reasons: [], wo: [], rec: [], ev: []};
+let sb = null, ME = {email: '', role: ''}, M = {proc: [], mach: [], work: [], reasons: [], wo: [], rec: [], ev: [], route: []};
 const S = {view: '', worker: LS.get('mes_worker',''), proc: LS.get('mes_proc',''), device: LS.get('mes_device','') || ('태블릿-' + Math.random().toString(36).slice(2,6).toUpperCase()), wo: ''};
 LS.set('mes_device', S.device);
 const $ = id => document.getElementById(id);
@@ -156,8 +156,8 @@ async function syncWO(silent){
 
 // ── 데이터 읽기
 async function loadMaster(){
-  const [p, m, w, r, o] = await Promise.all([sb.from('processes').select('*').order('seq'), sb.from('machines').select('*').order('code'), sb.from('workers').select('*').order('name'), sb.from('stop_reasons').select('*').order('seq'), sb.from('work_orders').select('*').order('order_no', {ascending: false})]);
-  M.proc = p.data || []; M.mach = m.data || []; M.work = w.data || []; M.reasons = r.data || []; M.wo = o.data || [];
+  const [p, m, w, r, o, rt] = await Promise.all([sb.from('processes').select('*').order('seq'), sb.from('machines').select('*').order('code'), sb.from('workers').select('*').order('name'), sb.from('stop_reasons').select('*').order('seq'), sb.from('work_orders').select('*').order('order_no', {ascending: false}), sb.from('routings').select('*').order('seq')]);
+  M.proc = p.data || []; M.mach = m.data || []; M.work = w.data || []; M.reasons = r.data || []; M.wo = o.data || []; M.route = rt.data || [];
 }
 async function loadLive(fromIso){
   const since = fromIso || new Date(today0().getTime() - 0).toISOString();
@@ -171,6 +171,10 @@ const procName = c => (M.proc.find(p => p.code === c) || {}).name || c || '-';
 const workName = c => (M.work.find(p => p.code === c) || {}).name || c || '-';
 const machName = c => (M.mach.find(p => p.code === c) || {}).name || c || '-';
 const woOf = id => M.wo.find(w => w.wo_id === String(id)) || null;
+// 품목별 공정 순서(라우팅). 등록 안 된 품목은 전체 공정을 쓴다
+function routeOf(w){ if (!w) return []; const r = M.route.filter(x => x.item_code === w.code && String(x.cat||'TP').toUpperCase() === String(w.cat||'TP').toUpperCase()).sort((a,b) => a.seq - b.seq);
+  return r.length ? r.map(x => ({...(M.proc.find(p => p.code === x.process_code) || {code: x.process_code, name: x.process_code}), seq: x.seq, is_final: x.is_final, note: x.note, _r: true})) : M.proc.filter(p => p.active !== false && p.in_default !== false); }   // 공정 순서가 없는 품목은 '기본 공정'만
+function isFinalFor(w, proc){ const r = routeOf(w).find(p => p.code === proc); return !!(r && r.is_final); }
 const activeWO = () => M.wo.filter(w => w.status !== '완료' && w.status !== '취소');
 function machState(code){ const e = M.ev.filter(x => x.machine_code === code).sort((a,b) => String(b.started_at).localeCompare(String(a.started_at)))[0]; return e && !e.ended_at ? e : (e ? {...e, state: 'idle', reason_code: null, started_at: e.ended_at} : null); }
 
@@ -223,8 +227,9 @@ function floorView(){
   const t0 = today0().toISOString();
   const mine = M.rec.filter(r => r.process_code === S.proc && r.created_at >= t0);
   const running = M.rec.filter(r => r.status === 'running' && r.process_code === S.proc);
-  const wos = activeWO();
+  const wos = activeWO().filter(w => routeOf(w).some(p => p.code === S.proc));
   const sel = woOf(S.wo);
+  const curNote = sel ? (routeOf(sel).find(p => p.code === S.proc) || {}).note : '';
   const procSum = id => { const o = {}; M.rec.filter(r => r.wo_id === id && r.status === 'done').forEach(r => { o[r.process_code] = (o[r.process_code]||0) + (+r.good_qty||0); }); return o; };
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
       <button class="btn" onclick="S.worker='';LS.del('mes_worker');render()">👷 ${E(workName(S.worker))} <span class="muted">바꾸기</span></button>
@@ -239,11 +244,12 @@ function floorView(){
       <div class="card"><h2>작업지시 <span class="vi">Lệnh sản xuất</span></h2>
         <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">${wos.map(w => { const ps = procSum(w.wo_id), done = ps[S.proc] || 0, pct = w.plan_qty ? Math.min(100, done / w.plan_qty * 100) : 0;
           return `<button class="wo ${S.wo === w.wo_id ? 'on' : ''}" onclick="S.wo='${E(w.wo_id)}';render()"><div class="no">${E(w.order_no)} · ${E(w.lot||'')}</div><div class="nm">${E(w.name)}</div>
-            <div class="muted">${E(procName(S.proc))} ${N(done)} / ${N(w.plan_qty)} ${E(w.unit||'')}</div><div class="bar" style="margin-top:6px"><i style="width:${pct}%"></i></div></button>`; }).join('') || '<p class="muted">진행 중인 작업지시가 없습니다. 관리자가 🛠 기준정보에서 "ERP 작업지시 받기"를 누르세요.</p>'}</div></div>
+            <div class="muted">${E(procName(S.proc))} ${N(done)} / ${N(w.plan_qty)} ${E(w.unit||'')}</div><div class="bar" style="margin-top:6px"><i style="width:${pct}%"></i></div></button>`; }).join('') || `<p class="muted">${E(procName(S.proc))} 공정이 있는 진행 중 작업지시가 없습니다. 공정을 바꾸거나, 관리자가 🛠 기준정보에서 "ERP 작업지시 받기"를 누르세요.</p>`}</div></div>
       <div class="card">${sel ? `<h2>${E(sel.name)}</h2><div class="muted" style="margin-bottom:10px">${E(sel.order_no)} · LOT ${E(sel.lot||'-')} · 계획 ${N(sel.plan_qty)} ${E(sel.unit||'')}</div>
+        ${curNote ? `<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;padding:8px 12px;margin-bottom:10px;font-size:14px"><b>📋 ${E(procName(S.proc))} 관리기준</b><br>${E(curNote)}</div>` : ''}
         <div class="grid" style="grid-template-columns:1fr 1fr;margin-bottom:12px"><button class="btn pri big" onclick="startJob()">▶ 작업 시작<span class="vi" style="color:#DCEBF5">Bắt đầu</span></button><button class="btn big" onclick="finishDlg(null)">＋ 실적만 입력<span class="vi">Nhập kết quả</span></button></div>
-        <table><thead><tr><th>공정</th><th class="r">양품 누계</th><th class="r">불량</th></tr></thead><tbody>${M.proc.filter(p => p.active !== false).map(p => { const rs = M.rec.filter(r => r.wo_id === sel.wo_id && r.process_code === p.code && r.status === 'done');
-          return `<tr style="${p.code === S.proc ? 'background:#E7F1F8;font-weight:700' : ''}"><td>${E(p.name)}</td><td class="r">${N(rs.reduce((a,r) => a + (+r.good_qty||0), 0))}</td><td class="r" style="color:var(--bad)">${(v => v ? N(v) : '-')(rs.reduce((a,r) => a + (+r.ng_qty||0), 0))}</td></tr>`; }).join('')}</tbody></table>
+        <table><thead><tr><th>공정</th><th class="r">양품 누계</th><th class="r">불량</th></tr></thead><tbody>${routeOf(sel).map(p => { const rs = M.rec.filter(r => r.wo_id === sel.wo_id && r.process_code === p.code && r.status === 'done');
+          return `<tr style="${p.code === S.proc ? 'background:#E7F1F8;font-weight:700' : ''}"><td>${p._r ? `<span class="muted">${p.seq}</span> ` : ''}${E(p.name)}${p.is_final ? ' <span class="tag m-run">완성</span>' : ''}</td><td class="r">${N(rs.reduce((a,r) => a + (+r.good_qty||0), 0))}</td><td class="r" style="color:var(--bad)">${(v => v ? N(v) : '-')(rs.reduce((a,r) => a + (+r.ng_qty||0), 0))}</td></tr>`; }).join('')}</tbody></table>
         <div class="muted" style="margin-top:6px">누계는 오늘 이 기기가 받은 기록 기준입니다. 전체 누계는 📊 보고서에서 보세요.</div>`
         : '<p class="muted" style="font-size:16px">← 작업지시를 고르거나 바코드를 스캔하세요.<br>Chọn lệnh sản xuất hoặc quét mã.</p>'}</div>
     </div>
@@ -356,7 +362,7 @@ function availability(code, fromMs, toMs){
 }
 function tvView(){
   const t0 = today0().toISOString(), recs = M.rec.filter(r => r.status === 'done' && r.created_at >= t0);
-  const fin = M.proc.filter(p => p.is_final).map(p => p.code), finRecs = recs.filter(r => fin.includes(r.process_code));
+  const finRecs = recs.filter(r => isFinalFor(woOf(r.wo_id) || {code: r.item_code}, r.process_code));
   const good = finRecs.reduce((a,r) => a + (+r.good_qty||0), 0), ngAll = recs.reduce((a,r) => a + (+r.ng_qty||0), 0), goodAll = recs.reduce((a,r) => a + (+r.good_qty||0), 0);
   const ngRate = goodAll + ngAll ? ngAll / (goodAll + ngAll) * 100 : 0;
   const ms = M.mach.filter(m => m.active !== false), now = Date.now(), runN = ms.filter(m => (machState(m.code) || {}).state === 'run').length;
@@ -364,15 +370,18 @@ function tvView(){
   const wos = activeWO().filter(w => w.status === '진행중' || recs.some(r => r.wo_id === w.wo_id));
   const lbl = {run: '가동', stop: '정지', setup: '셋업', idle: '대기'};
   return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:14px">
-      <div class="card"><div class="kpi"><small>오늘 완성 (${E(M.proc.filter(p => p.is_final).map(p => p.name).join('·') || '최종 공정')})</small>${N(good)}</div></div>
+      <div class="card"><div class="kpi"><small>오늘 완성 (품목별 마지막 공정)</small>${N(good)}</div></div>
       <div class="card"><div class="kpi" style="color:${ngRate > 1.5 ? '#F87171' : ngRate > 0.5 ? '#FBBF24' : '#4ADE80'}"><small>공정 불량률 · 불량 ${N(ngAll)}</small>${ngRate.toFixed(2)}%</div></div>
       <div class="card"><div class="kpi"><small>설비 가동 중</small>${runN} <span style="font-size:22px;color:#8FA6B8">/ ${ms.length}</span></div></div>
       <div class="card"><div class="kpi" style="color:${av === null ? '#8FA6B8' : av >= 85 ? '#4ADE80' : av >= 70 ? '#FBBF24' : '#F87171'}"><small>오늘 가동률 (계획 정지 제외)</small>${av === null ? '-' : av.toFixed(1) + '%'}</div></div>
     </div>
     <div class="grid" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)">
       <div class="card"><h2 style="color:#E7EEF4">작업지시 진행 <span class="muted" style="font-weight:400">오늘 공정별 양품</span></h2>
-        <table><thead><tr><th>작업지시</th>${M.proc.filter(p => p.active !== false).map(p => `<th class="r">${E(p.name)}</th>`).join('')}<th class="r">불량</th></tr></thead><tbody>${wos.map(w => { const rs = recs.filter(r => r.wo_id === w.wo_id);
-          return `<tr><td><b style="font-size:16px">${E(w.name)}</b><div class="muted">${E(w.order_no)} · 계획 ${N(w.plan_qty)}</div></td>${M.proc.filter(p => p.active !== false).map(p => { const v = rs.filter(r => r.process_code === p.code).reduce((a,r) => a + (+r.good_qty||0), 0); return `<td class="r" style="font-size:18px;font-weight:700">${v ? N(v) : '<span class="muted">-</span>'}</td>`; }).join('')}<td class="r" style="color:#F87171;font-weight:700">${(v => v ? N(v) : '-')(rs.reduce((a,r) => a + (+r.ng_qty||0), 0))}</td></tr>`; }).join('') || `<tr><td colspan="${M.proc.length + 2}" class="muted">오늘 실적이 아직 없습니다.</td></tr>`}</tbody></table></div>
+        <table><thead><tr><th>작업지시</th><th>공정별 오늘 양품</th><th class="r">완성</th><th class="r">불량</th></tr></thead><tbody>${wos.map(w => { const rs = recs.filter(r => r.wo_id === w.wo_id), rt = routeOf(w);
+          const fin = rs.filter(r => isFinalFor(w, r.process_code)).reduce((a,r) => a + (+r.good_qty||0), 0);
+          return `<tr><td><b style="font-size:16px">${E(w.name)}</b><div class="muted">${E(w.order_no)} · 계획 ${N(w.plan_qty)}</div></td>
+            <td><div style="display:flex;flex-wrap:wrap;gap:4px">${rt.map(p => { const v = rs.filter(r => r.process_code === p.code).reduce((a,r) => a + (+r.good_qty||0), 0); return `<span style="padding:3px 8px;border-radius:6px;font-size:12.5px;background:${v ? '#0E7490' : '#1E3446'};color:${v ? '#fff' : '#8FA6B8'}">${E(p.name)} ${v ? '<b>' + N(v) + '</b>' : ''}</span>`; }).join('')}</div></td>
+            <td class="r" style="font-size:20px;font-weight:800">${fin ? N(fin) : '-'}</td><td class="r" style="color:#F87171;font-weight:700">${(v => v ? N(v) : '-')(rs.reduce((a,r) => a + (+r.ng_qty||0), 0))}</td></tr>`; }).join('') || `<tr><td colspan="4" class="muted">오늘 실적이 아직 없습니다.</td></tr>`}</tbody></table></div>
       <div class="card"><h2 style="color:#E7EEF4">설비 상태</h2><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">${ms.map(m => { const s = machState(m.code), st = s ? s.state : 'idle', rs = s && s.reason_code ? (M.reasons.find(r => r.code === s.reason_code) || {}).name : '', a = availability(m.code, today0().getTime(), now);
           return `<div class="mtile s-${st}" style="min-height:96px"><div style="font-weight:800;font-size:16px">${E(m.name)}</div><div><div style="font-weight:700">${lbl[st]}${rs ? ' · ' + E(rs) : ''}</div><div style="font-size:12px;opacity:.9">${s && s.started_at ? dur(now - new Date(s.started_at)) : ''}${a !== null ? ' · 가동률 ' + a.toFixed(0) + '%' : ''}</div></div></div>`; }).join('') || '<p class="muted">설비 없음</p>'}</div></div>
     </div>
@@ -400,7 +409,7 @@ async function loadReport(){
       cols = ['일자','공정','품목','양품','불량','불량률']; rows = Object.values(g).map(o => [...o, o[3] + o[4] ? (o[4] / (o[3] + o[4]) * 100).toFixed(2) + '%' : '-']); }
     else if (RP.tab === 'worker') { const g = {}; recs.forEach(x => { const k = x.worker_code + '|' + x.process_code; const o = g[k] = g[k] || [workName(x.worker_code), procName(x.process_code), 0, 0, 0, 0]; o[2]++; o[3] += +x.good_qty||0; o[4] += +x.ng_qty||0; if (x.start_at && x.end_at) o[5] += new Date(x.end_at) - new Date(x.start_at); });
       cols = ['작업자','공정','건수','양품','불량','작업 시간','시간당 양품']; rows = Object.values(g).map(o => [o[0], o[1], o[2], o[3], o[4], o[5] ? dur(o[5]) : '-', o[5] ? N(o[3] / (o[5] / 3600e3)) : '-']).sort((a,b) => b[3] - a[3]); }
-    else { const fin = M.proc.filter(p => p.is_final).map(p => p.code), g = {}; recs.filter(x => fin.includes(x.process_code)).forEach(x => { const o = g[x.wo_id] = g[x.wo_id] || [x.order_no, x.item_name, 0, 0, 0, 0]; o[2] += +x.good_qty||0; o[3] += +x.ng_qty||0; if (x.erp_sent_at) o[4] += +x.good_qty||0; else o[5] += +x.good_qty||0; });
+    else { const g = {}; recs.filter(x => isFinalFor(woOf(x.wo_id) || {code: x.item_code}, x.process_code)).forEach(x => { const o = g[x.wo_id] = g[x.wo_id] || [x.order_no, x.item_name, 0, 0, 0, 0]; o[2] += +x.good_qty||0; o[3] += +x.ng_qty||0; if (x.erp_sent_at) o[4] += +x.good_qty||0; else o[5] += +x.good_qty||0; });
       cols = ['작업지시','품목','완성 양품','불량','ERP 반영','미반영']; rows = Object.values(g); }
   } else if (RP.tab === 'down') {
     const r = await sb.from('machine_events').select('*').lte('started_at', toIso).or(`ended_at.is.null,ended_at.gte.${fromIso}`).limit(20000);
@@ -426,12 +435,38 @@ function rpCSV(){ if (!RPD.rows.length) { alert('내보낼 자료가 없습니�
 // ════════ 🛠 기준정보 (관리자) ════════
 const AD = {t: 'processes'};
 const AD_DEF = {
-  processes: {l:'공정', key:'code', f:[['code','코드'],['name','이름'],['name_vi','이름(VN)'],['seq','순서','number'],['is_final','최종 공정','bool'],['active','사용','bool']]},
+  processes: {l:'공정', key:'code', f:[['code','코드'],['name','이름'],['name_vi','이름(VN)'],['seq','순서','number'],['is_final','최종 공정','bool'],['in_default','기본 공정','bool'],['active','사용','bool']]},
   machines:  {l:'설비', key:'code', f:[['code','코드'],['name','이름'],['process_code','공정','proc'],['active','사용','bool']]},
   workers:   {l:'작업자', key:'code', f:[['code','사번/코드'],['name','이름'],['team','조/팀'],['active','사용','bool']]},
   stop_reasons: {l:'비가동 사유', key:'code', f:[['code','코드'],['name','이름'],['name_vi','이름(VN)'],['planned','계획 정지','bool'],['seq','순서','number']]}};
 const AD_DATA = () => ({processes: M.proc, machines: M.mach, workers: M.work, stop_reasons: M.reasons})[AD.t];
+function routeAdmin(){
+  const items = [...new Map([...M.wo.map(w => [w.code + '|' + w.cat, {code: w.code, cat: w.cat || 'TP', name: w.name}]), ...M.route.map(r => [r.item_code + '|' + r.cat, {code: r.item_code, cat: r.cat, name: r.item_code}])]).values()];
+  items.sort((a,b) => (M.route.some(r => r.item_code === b.code && r.cat === b.cat) - M.route.some(r => r.item_code === a.code && r.cat === a.cat)) || String(a.name).localeCompare(String(b.name)));
+  if (!AD.item && items[0]) AD.item = items[0].code + '|' + items[0].cat;
+  const [code, cat] = (AD.item || '|').split('|'), rows = M.route.filter(r => r.item_code === code && r.cat === cat).sort((a,b) => a.seq - b.seq);
+  return adminTabs() + `<div class="card"><h2>품목별 공정 순서 <span class="muted">작업지시를 고르면 이 순서대로 공정이 나옵니다. 등록 안 된 품목은 "기본 공정"(공정 탭에서 체크된 것)을 씁니다.</span></h2>
+    <select onchange="AD.item=this.value;render()" style="padding:8px;border-radius:8px;border:1px solid var(--line);margin-bottom:10px;min-width:320px">${items.map(i => `<option value="${E(i.code + '|' + i.cat)}" ${AD.item === i.code + '|' + i.cat ? 'selected' : ''}>[${E(i.cat)}] ${E(i.name)} (${E(i.code)})</option>`).join('')}</select>
+    <div style="overflow:auto"><table><thead><tr><th>순서</th><th>공정</th><th>마지막(완성)</th><th>관리기준·메모 (현장 화면에 표시)</th><th></th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr><td><input id="rt-seq-${i}" type="number" value="${r.seq}" style="width:70px;padding:6px"></td><td><b>${E(procName(r.process_code))}</b> <span class="muted">${E(r.process_code)}</span></td><td><input id="rt-fin-${i}" type="checkbox" ${r.is_final ? 'checked' : ''} style="width:20px;height:20px"></td>
+        <td><input id="rt-note-${i}" value="${E(r.note||'')}" style="padding:6px;width:100%;min-width:260px"></td><td style="white-space:nowrap"><button class="btn" style="padding:6px 10px" onclick="rtSave(${i})">저장</button> <button class="btn" style="padding:6px 10px;color:var(--bad)" onclick="rtDel(${i})">빼기</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">아직 공정 순서가 없습니다. 아래에서 추가하세요.</td></tr>'}
+      <tr style="background:#F8FAFB"><td><input id="rt-seq-new" type="number" value="${(rows.length ? rows[rows.length-1].seq : 0) + 10}" style="width:70px;padding:6px"></td><td><select id="rt-proc-new" style="padding:6px">${M.proc.filter(p => !rows.some(r => r.process_code === p.code)).map(p => `<option value="${E(p.code)}">${E(p.name)}</option>`).join('')}</select></td><td><input id="rt-fin-new" type="checkbox" style="width:20px;height:20px"></td><td><input id="rt-note-new" style="padding:6px;width:100%"></td><td><button class="btn pri" style="padding:6px 10px" onclick="rtSave(-1)">＋ 추가</button></td></tr></tbody></table></div>
+    <p class="muted">새 공정 이름이 필요하면 "공정" 탭에서 먼저 만드세요.</p></div>`;
+}
+async function rtSave(i){
+  const [code, cat] = AD.item.split('|'), rows = M.route.filter(r => r.item_code === code && r.cat === cat).sort((a,b) => a.seq - b.seq), k = i < 0 ? 'new' : i;
+  const row = {item_code: code, cat, process_code: i < 0 ? $('rt-proc-new').value : rows[i].process_code, seq: +$('rt-seq-' + k).value || 0, is_final: $('rt-fin-' + k).checked, note: $('rt-note-' + k).value.trim() || null};
+  if (!row.process_code) return;
+  const r = await sb.from('routings').upsert(row, {onConflict: 'item_code,cat,process_code'}); if (r.error) { alert('저장 실패: ' + r.error.message); return; }
+  await loadMaster(); render(); toast('저장했습니다');
+}
+async function rtDel(i){
+  const [code, cat] = AD.item.split('|'), r0 = M.route.filter(r => r.item_code === code && r.cat === cat).sort((a,b) => a.seq - b.seq)[i]; if (!r0 || !confirm(`${procName(r0.process_code)} 공정을 이 품목 순서에서 뺄까요?`)) return;
+  const r = await sb.from('routings').delete().match({item_code: code, cat, process_code: r0.process_code}); if (r.error) { alert('실패: ' + r.error.message); return; }
+  await loadMaster(); render();
+}
 function adminView(){
+  if (AD.t === 'route') return routeAdmin();
   if (AD.t === 'wo') return adminTabs() + `<div class="card"><h2>ERP 작업지시 <span class="muted">${M.wo.length}건 · 진행 ${activeWO().length}건${M.wo[0] ? ' · 받은 시각 ' + new Date(M.wo.map(w => w.synced_at).sort().pop()).toLocaleString('ko-KR') : ''}</span></h2>
     <div style="overflow:auto"><table><thead><tr><th>지시번호</th><th>품목</th><th>구분</th><th>LOT</th><th class="r">계획</th><th>마감일</th><th>상태</th></tr></thead><tbody>${M.wo.map(w => `<tr style="${w.status === '완료' ? 'color:var(--sub)' : ''}"><td style="font-family:monospace">${E(w.order_no)}</td><td><b>${E(w.name)}</b><div class="muted">${E(w.code)}</div></td><td>${E(w.cat||'')}</td><td style="font-family:monospace">${E(w.lot||'')}</td><td class="r">${N(w.plan_qty)} ${E(w.unit||'')}</td><td>${E(w.due_date||'')}</td><td><span class="tag ${w.status === '진행중' ? 'm-run' : w.status === '완료' ? 'm-idle' : 'm-setup'}">${E(w.status)}</span></td></tr>`).join('') || '<tr><td colspan="7" class="muted">아직 받은 작업지시가 없습니다.</td></tr>'}</tbody></table></div>
     <p class="muted" style="margin-top:8px">현장(📝 실적 입력)에는 대기·진행중 작업지시만 보입니다. ERP에서 새로 발행하면 위 "🔄 ERP 작업지시 받기"를 다시 누르세요 (30분마다 자동으로도 받습니다).</p></div>`;
@@ -443,7 +478,7 @@ function adminView(){
       <p class="muted" style="margin-top:8px">코드는 한 번 정하면 바꾸지 마세요 (실적이 코드로 연결됩니다). 안 쓰는 항목은 "사용"을 끄세요.</p></div>
     <div class="card" style="margin-top:12px"><h2>이 기기</h2><div class="muted">기기 이름: <b>${E(S.device)}</b> <button class="btn" style="padding:4px 10px" onclick="const n=prompt('기기 이름',S.device);if(n){S.device=n;LS.set('mes_device',n);render()}">바꾸기</button> · 로그인: ${E(ME.email)} (${E(ME.role)})</div></div>`;
 }
-function adminTabs(){ return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn ${AD.t === 'wo' ? 'pri' : ''}" onclick="AD.t='wo';render()">작업지시</button>${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
+function adminTabs(){ return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn ${AD.t === 'wo' ? 'pri' : ''}" onclick="AD.t='wo';render()">작업지시</button><button class="btn ${AD.t === 'route' ? 'pri' : ''}" onclick="AD.t='route';render()">공정 순서(품목별)</button>${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
       <button class="btn ok" onclick="syncWO(false).then(()=>{AD.t='wo';render()})">🔄 ERP 작업지시 받기</button></div>`; }
 function adCell(f, v, rid){ const id = `ad-${rid}-${f[0]}`;
   if (f[2] === 'bool') return `<input type="checkbox" id="${id}" ${v ? 'checked' : ''} style="width:20px;height:20px">`;
