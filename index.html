@@ -13409,7 +13409,7 @@ async function loadHQ(force){
 const HQ_DEPTS = [
   {k:'sales', l:'💼 영업부', vi:'Kinh doanh', col:'#5b21b6', tabs:[['cpo','📥 고객 PO 접수']]},
   {k:'buy',   l:'🛒 구매부', vi:'Mua hàng',   col:'#b45309', tabs:[['mrp','🧮 자재 소요 계산'],['pr','📝 구매요청·승인'],['ship','🚢 발주·선적·입고']]},
-  {k:'qa',    l:'🔬 품질부', vi:'Chất lượng', col:'#0f766e', tabs:[['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]}];
+  {k:'qa',    l:'🔬 품질부', vi:'Chất lượng', col:'#0f766e', tabs:[['qadr','📈 월별 불량률'],['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]}];
 function hqSetDept(k){ const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0]; HQ.dept = d.k; HQ.tab = d.tabs[0][0]; HQ.q = ''; HQ.st = ''; try { localStorage.setItem('hq_dept', d.k); } catch(e) {} renderHQ(); }
 function hqNav(){
   const d = HQ_DEPTS.find(x => x.k === HQ.dept) || HQ_DEPTS[0];
@@ -13426,7 +13426,7 @@ async function renderHQ(opts){
   if ((HQ.dept === 'qa') && (!_loadedAt.qc || (opts && opts.reload))) { el.innerHTML = '<div class="empty">⏳ 품질검사 기록 불러오는 중…</div>'; await loadQC().catch(()=>{}); }
   hqNav();
   const warn = HQ.err === 'server' ? '<div style="background:#FEF3C7;color:#92400e;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:13px">⚠️ 서버(Code.gs)를 새 버전으로 배포해야 본사 업무 데이터가 저장·조회됩니다.</div>' : '';
-  el.innerHTML = warn + (HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : hqQAView(HQ.tab === 'qang'));
+  el.innerHTML = warn + (HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'qadr' ? hqDefectView() : hqQAView(HQ.tab === 'qang'));
 }
 function hqSetTab(k){ HQ.tab = k; const d = HQ_DEPTS.find(x => x.tabs.some(t => t[0] === k)); if (d) HQ.dept = d.k; HQ.q = ''; HQ.st = ''; renderHQ(); }
 
@@ -13862,6 +13862,79 @@ function hqQAFiles(r){
   if (r.attachmentUrl) a.push(`<a href="${hqE(r.attachmentUrl)}" target="_blank" rel="noopener" title="${hqE(r.attachmentName || '첨부파일')}" style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:6px;background:#ECFDF5;color:#166534;font-size:12px;text-decoration:none;margin-right:4px">📎 ${r.inspType === '출하검사' ? '특성 데이터' : '첨부'}</a>`);
   if (r.attachmentUrl2) a.push(`<a href="${hqE(r.attachmentUrl2)}" target="_blank" rel="noopener" title="${hqE(r.attachmentName2 || '출하검사 성적서')}" style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:6px;background:#F3E8FF;color:#6d28d9;font-size:12px;text-decoration:none">📄 성적서</a>`);
   return a.join('') || '<span style="color:#C0C7D0">-</span>';
+}
+// 📈 베트남 법인 월별 불량률 (최근 12개월)
+//   공정 불량률 = 완성품 NG 입고 ÷ (완성품 생산 입고 + 완성품 NG 입고)
+//   수입·출하검사 불량률 = 불량 ÷ 시료 (품질검사 기록)
+function hqYM(v){ const s = String(v||''), m = s.match(/^(\d{2})\/(\d{2})(?!\/)/); if (m) return ngmYM(s); const d = new Date(s); return isNaN(d) ? '' : new Date(d.getTime() + 7*3600e3).toISOString().slice(0,7); }
+function hqDefectData(){
+  const now = hqToday().slice(0,7), months = []; let [y, m] = now.split('-').map(Number);
+  for (let i = 0; i < 12; i++) { months.unshift(`${y}-${String(m).padStart(2,'0')}`); m--; if (m < 1) { m = 12; y--; } }
+  const z = () => Object.fromEntries(months.map(k => [k, 0]));
+  const prod = z(), ngTP = z(), ngMat = z(), ngCu = z(), ngMatN = z(), insS = z(), insD = z(), shpS = z(), shpD = z();
+  const pm = {}, nm = {};   // 모델별 생산·NG
+  const ngType = c => ((DB.ng||[]).find(r => r.code === c) || {}).type || '';
+  const ngModel = c => ((DB.ng||[]).find(r => r.code === c) || {}).model || '';
+  (txLog||[]).forEach(t => { if (t.type !== 'tp-in' || String(t.cat||'').toUpperCase() !== 'TP') return; const k = hqYM(t.dt); if (!(k in prod)) return;
+    prod[k] += +t.qty || 0; const it = DB.tp.find(x => x.code === t.code), md = it ? (it.model || getModel(it.code, it.name)) : '기타'; ((pm[md] = pm[md] || z())[k]) += +t.qty || 0; });
+  (ngLog||[]).forEach(l => { if (l.type !== 'ng-in') return; const k = hqYM(l.dt); if (!(k in prod)) return; const ty = ngType(l.code), q = +l.qty || 0;
+    if (ty === 'TP') { ngTP[k] += q; const md = ngModel(l.code) || '기타'; ((nm[md] = nm[md] || z())[k]) += q; }
+    else if (ty === 'copper') ngCu[k] += q; else { ngMat[k] += q; ngMatN[k]++; } });
+  (QC||[]).forEach(q => { const k = hqYM(q.inspDate); if (!(k in prod)) return;
+    if (q.inspType === '수입검사') { insS[k] += +q.sampleQty||0; insD[k] += +q.defectQty||0; } else if (q.inspType === '출하검사') { shpS[k] += +q.sampleQty||0; shpD[k] += +q.defectQty||0; } });
+  const rate = (a, b) => b > 0 ? a / b * 100 : null;
+  const proc = months.map(k => rate(ngTP[k], prod[k] + ngTP[k]));
+  const models = [...new Set([...Object.keys(pm), ...Object.keys(nm)])].map(md => ({md, r: months.map(k => rate((nm[md]||{})[k]||0, ((pm[md]||{})[k]||0) + ((nm[md]||{})[k]||0))), p: months.reduce((a,k) => a + ((pm[md]||{})[k]||0), 0), n: months.reduce((a,k) => a + ((nm[md]||{})[k]||0), 0)}))
+    .filter(x => x.p + x.n > 0).sort((a,b) => b.p - a.p);
+  return {months, prod, ngTP, ngMat, ngMatN, ngCu, proc, ins: months.map(k => rate(insD[k], insS[k])), shp: months.map(k => rate(shpD[k], shpS[k])), models};
+}
+function hqDefectView(){
+  const d = hqDefectData(), M = d.months, f = v => v === null ? '-' : (Math.round(v * 100) / 100).toFixed(2) + '%';
+  const col = v => v === null ? '#8A95A3' : v <= 0.5 ? '#166534' : v <= 1.5 ? '#b45309' : '#b91c1c';
+  const cur = M.length - 1, last = d.proc[cur], prev = d.proc[cur - 1];
+  const tot = (o) => M.reduce((a,k) => a + o[k], 0), yProd = tot(d.prod), yNG = tot(d.ngTP), yRate = yProd + yNG ? yNG / (yProd + yNG) * 100 : null;
+  // 그래프: 공정 불량률(선) — 12개월
+  const W = 760, H = 210, L = 44, R = 12, T = 16, B = 30, vals = [...d.proc, ...d.ins, ...d.shp].filter(v => v !== null);
+  const max = costNiceMax(Math.max(1, ...vals)), x = i => L + (W - L - R) * (i + 0.5) / M.length, yy = v => T + (H - T - B) * (1 - v / max);
+  const line = (arr, c, dash) => { const pts = arr.map((v,i) => v === null ? null : [x(i), yy(v)]); let p = '', on = false; pts.forEach(q => { if (!q) { on = false; return; } p += (on ? 'L' : 'M') + q[0].toFixed(1) + ',' + q[1].toFixed(1); on = true; });
+    return `<path d="${p}" fill="none" stroke="${c}" stroke-width="2.2" ${dash ? 'stroke-dasharray="5 4"' : ''}/>` + pts.map((q,i) => q ? `<circle cx="${q[0]}" cy="${q[1]}" r="3.2" fill="${c}"><title>${M[i]} ${f(arr[i])}</title></circle>` : '').join(''); };
+  let g = ''; for (let i = 0; i <= 4; i++) { const v = max * i / 4; g += `<line x1="${L}" x2="${W-R}" y1="${yy(v)}" y2="${yy(v)}" stroke="#EEF1F4"/><text x="${L-6}" y="${yy(v)+4}" text-anchor="end" font-size="10" fill="#8A95A3">${(Math.round(v*100)/100)}%</text>`; }
+  M.forEach((k,i) => g += `<text x="${x(i)}" y="${H-10}" text-anchor="middle" font-size="10.5" fill="${i === cur ? '#18212B' : '#8A95A3'}" font-weight="${i === cur ? 700 : 400}">${+k.slice(5)}월</text>`);
+  const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-height:240px">${g}${line(d.ins, '#7c3aed', true)}${line(d.shp, '#0ea5e9', true)}${line(d.proc, '#dc2626')}
+    ${d.proc.map((v,i) => v !== null && i === cur ? `<text x="${x(i)}" y="${yy(v)-8}" text-anchor="middle" font-size="11" font-weight="700" fill="#dc2626">${f(v)}</text>` : '').join('')}</svg>`;
+  const lg = (c, t, dash) => `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px"><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="${c}" stroke-width="2.4" ${dash ? 'stroke-dasharray="5 3"' : ''}/></svg>${t}</span>`;
+  const tile = (l, vi, v, sub, c) => `<div style="flex:1;min-width:150px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${l} <span style="color:#8A95A3;font-size:11px">${vi}</span></div><div style="font-size:22px;font-weight:700;color:${c||'#18212B'}">${v}</div><div style="font-size:11px;color:#8A95A3">${sub||''}</div></div>`;
+  const diff = last !== null && prev !== null ? (last - prev) : null;
+  const row = (lbl, arr, fmt, strong) => `<tr${strong ? ' style="font-weight:700"' : ''}><td style="white-space:nowrap;text-align:left">${lbl}</td>${arr.map((v,i) => `<td style="text-align:right;${i === cur ? 'background:#F8FAFC;' : ''}${fmt === 'r' ? 'color:' + col(v) : ''}">${fmt === 'r' ? f(v) : (v ? hqN(v) : '-')}</td>`).join('')}</tr>`;
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      ${tile(`${+M[cur].slice(5)}월 공정 불량률`, 'Tỷ lệ lỗi tháng này', f(last), diff === null ? '' : `전월 대비 ${diff > 0 ? '▲' : diff < 0 ? '▼' : ''} ${Math.abs(Math.round(diff*100)/100).toFixed(2)}%p`, col(last))}
+      ${tile('12개월 평균', 'TB 12 tháng', f(yRate), `생산 ${hqN(yProd)} · NG ${hqN(yNG)}`, col(yRate))}
+      ${tile(`${+M[cur].slice(5)}월 완성품 NG`, 'SP lỗi', hqN(d.ngTP[M[cur]]) + '개', `생산 입고 ${hqN(d.prod[M[cur]])}개`)}
+      ${tile(`${+M[cur].slice(5)}월 원자재·동선 NG`, 'NVL lỗi', `${d.ngMatN[M[cur]]}건`, `원자재 ${hqN(d.ngMat[M[cur]])} · 동선 ${hqN(d.ngCu[M[cur]])} Kg`)}
+    </div>
+    <div style="background:#fff;border:1px solid #E6EAEF;border-radius:10px;padding:12px 14px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:12px;color:#5D6977;margin-bottom:4px"><b style="color:#18212B;font-size:13px">최근 12개월 불량률 추이</b><span>${lg('#dc2626','공정 불량률')}${lg('#7c3aed','수입검사',1)}${lg('#0ea5e9','출하검사',1)}</span></div>${svg}</div>
+    <div class="tw" style="margin-bottom:12px"><table style="font-size:12.5px"><thead><tr><th style="text-align:left">구분</th>${M.map((k,i) => `<th style="text-align:right;${i === cur ? 'background:#F1F5F9' : ''}">${k.slice(2).replace('-','.')}</th>`).join('')}</tr></thead><tbody>
+      ${row('완성품 생산 입고', M.map(k => d.prod[k]))}
+      ${row('완성품 NG 입고', M.map(k => d.ngTP[k]))}
+      ${row('공정 불량률', d.proc, 'r', true)}
+      ${row('수입검사 불량률', d.ins, 'r')}
+      ${row('출하검사 불량률', d.shp, 'r')}
+      ${row('원자재 NG 수량', M.map(k => d.ngMat[k]))}
+      ${row('동선 NG (Kg)', M.map(k => d.ngCu[k]))}
+    </tbody></table></div>
+    ${d.models.length ? `<div style="font-size:13px;font-weight:700;margin-bottom:6px">모델별 공정 불량률 / Theo model</div><div class="tw"><table style="font-size:12.5px"><thead><tr><th style="text-align:left">모델</th>${M.map((k,i) => `<th style="text-align:right;${i === cur ? 'background:#F1F5F9' : ''}">${k.slice(2).replace('-','.')}</th>`).join('')}<th style="text-align:right">12개월</th></tr></thead><tbody>${
+      d.models.map(x => `<tr><td style="text-align:left;white-space:nowrap">${hqE(x.md)}</td>${x.r.map((v,i) => `<td style="text-align:right;color:${col(v)};${i === cur ? 'background:#F8FAFC' : ''}">${f(v)}</td>`).join('')}<td style="text-align:right;font-weight:700;color:${col(x.p + x.n ? x.n / (x.p + x.n) * 100 : null)}">${f(x.p + x.n ? x.n / (x.p + x.n) * 100 : null)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:8px;line-height:1.6">공정 불량률 = 완성품 NG 입고 ÷ (완성품 생산 입고 + 완성품 NG 입고). 수입·출하검사 불량률 = 불량 수 ÷ 시료 수.<br>색: 0.5% 이하 초록 · 1.5% 이하 주황 · 그 이상 빨강. 법인 입출고·불량(NG)·품질검사 기록으로 자동 계산합니다.</div>
+    <div style="margin-top:8px"><button onclick="hqDefectExcel()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer">📊 엑셀</button></div>`;
+}
+function hqDefectExcel(){
+  if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
+  const d = hqDefectData(), r2 = v => v === null ? '' : Math.round(v * 100) / 100;
+  const ws = XLSX.utils.json_to_sheet(d.months.map((k,i) => ({'월': k, '완성품 생산 입고': d.prod[k], '완성품 NG 입고': d.ngTP[k], '공정 불량률(%)': r2(d.proc[i]), '수입검사 불량률(%)': r2(d.ins[i]), '출하검사 불량률(%)': r2(d.shp[i]), '원자재 NG 수량': d.ngMat[k], '동선 NG(Kg)': d.ngCu[k]})));
+  const ws2 = XLSX.utils.json_to_sheet(d.models.map(x => Object.assign({'모델': x.md}, Object.fromEntries(d.months.map((k,i) => [k, r2(x.r[i])])), {'12개월(%)': r2(x.p + x.n ? x.n / (x.p + x.n) * 100 : null)})));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '월별 불량률'); XLSX.utils.book_append_sheet(wb, ws2, '모델별');
+  XLSX.writeFile(wb, `월별불량률_${hqToday().replace(/-/g,'')}.xlsx`);
 }
 function hqQAExcel(ngOnly){
   if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
