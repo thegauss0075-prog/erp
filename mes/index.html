@@ -649,13 +649,22 @@ function adminView(){
   if (AD.t === 'route') return routeAdmin();
   if (AD.t === 'wo') return adminTabs() + `<div class="card"><h2>ERP 작업지시 <span class="muted">${M.wo.length}건 · 진행 ${activeWO().length}건${M.wo[0] ? ' · 받은 시각 ' + new Date(M.wo.map(w => w.synced_at).sort().pop()).toLocaleString('ko-KR') : ''}</span></h2>
     <div style="overflow:auto"><table><thead><tr><th>지시번호</th><th>품목</th><th>구분</th><th>LOT</th><th class="r">계획</th><th>마감일</th><th>상태</th></tr></thead><tbody>${M.wo.filter(w => inScope(w.code, w.name)).map(w => `<tr style="${w.status === '완료' ? 'color:var(--sub)' : w.status === '삭제됨' ? 'color:var(--sub);text-decoration:line-through' : ''}"><td style="font-family:monospace">${E(w.order_no)}</td><td><b>${E(w.name)}</b><div class="muted">${E(w.code)}</div></td><td>${E(w.cat||'')}</td><td style="font-family:monospace">${E(w.lot||'')}</td><td class="r">${N(w.plan_qty)} ${E(w.unit||'')}</td><td>${E(w.due_date||'')}</td><td><span class="tag ${w.status === '진행중' ? 'm-run' : w.status === '완료' || w.status === '삭제됨' ? 'm-idle' : 'm-setup'}">${E(w.status)}</span></td></tr>`).join('') || '<tr><td colspan="7" class="muted">아직 받은 작업지시가 없습니다.</td></tr>'}</tbody></table></div>
-    <p class="muted" style="margin-top:8px">현장(📝 실적 입력)에는 대기·진행중 작업지시만 보입니다. ERP에서 새로 발행하면 위 "🔄 ERP 작업지시 받기"를 다시 누르세요 (30분마다 자동으로도 받습니다).</p></div>`;
+    <p class="muted" style="margin-top:8px">현장(📝 실적 입력)에는 대기·진행중 작업지시만 보입니다. ERP에서 새로 발행하면 위 "🔄 ERP 작업지시 받기"를 다시 누르세요 (화면이 열려 있으면 2분마다 자동으로도 받습니다).</p></div>`;
   const d = AD_DEF[AD.t], rows = AD_DATA();
   return adminTabs() + `
     <div class="card"><h2>${d.l} <span class="muted">${rows.length}개</span></h2><div style="overflow:auto"><table><thead><tr>${d.f.map(f => `<th>${f[1]}</th>`).join('')}<th></th></tr></thead><tbody>
       ${rows.map((r, i) => `<tr>${d.f.map(f => `<td>${adCell(f, r[f[0]], 'r' + i)}</td>`).join('')}<td><button class="btn" style="padding:6px 12px" onclick="adSave(${i})">저장</button></td></tr>`).join('')}
       <tr style="background:#F8FAFB">${d.f.map(f => `<td>${adCell(f, f[2] === 'bool' ? (f[0] === 'active') : '', 'new')}</td>`).join('')}<td><button class="btn pri" style="padding:6px 12px" onclick="adSave(-1)">＋ 추가</button></td></tr></tbody></table></div>
       <p class="muted" style="margin-top:8px">코드는 한 번 정하면 바꾸지 마세요 (실적이 코드로 연결됩니다). 안 쓰는 항목은 "사용"을 끄세요.</p></div>
+    ${AD.t === 'machines' ? `<div class="card" style="margin-top:12px"><h2>같은 설비 여러 대 한 번에 추가 <span class="muted">예: 권선기 1~8호기</span></h2>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <label class="field" style="margin:0"><span>코드 앞부분</span><input id="mb-code" value="WIND" style="padding:6px;width:110px"></label>
+        <label class="field" style="margin:0"><span>이름 앞부분</span><input id="mb-name" value="권선기" style="padding:6px;width:120px"></label>
+        <label class="field" style="margin:0"><span>공정</span><select id="mb-proc" style="padding:6px">${M.proc.filter(p => p.active !== false).map(p => `<option value="${E(p.code)}" ${p.code === 'WIND' ? 'selected' : ''}>${E(p.name)}</option>`).join('')}</select></label>
+        <label class="field" style="margin:0"><span>시작 번호</span><input id="mb-from" type="number" value="1" min="1" style="padding:6px;width:70px"></label>
+        <label class="field" style="margin:0"><span>대수</span><input id="mb-n" type="number" value="4" min="1" max="50" style="padding:6px;width:70px"></label>
+        <button class="btn pri" onclick="machBulk()">＋ 한 번에 추가</button></div>
+      <p class="muted" style="margin-top:8px">코드는 WIND-01, WIND-02 …, 이름은 권선기 1호기, 2호기 … 로 만들어집니다. 이미 있는 코드는 건너뜁니다.</p></div>` : ''}
     <div class="card" style="margin-top:12px"><h2>이 기기</h2><div class="muted">기기 이름: <b>${E(S.device)}</b> <button class="btn" style="padding:4px 10px" onclick="const n=prompt('기기 이름',S.device);if(n){S.device=n;LS.set('mes_device',n);render()}">바꾸기</button> · 로그인: ${E(ME.email)} (${E(ME.role)})</div></div>`;
 }
 function adminTabs(){ return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn ${AD.t === 'wo' ? 'pri' : ''}" onclick="AD.t='wo';render()">작업지시</button><button class="btn ${AD.t === 'route' ? 'pri' : ''}" onclick="AD.t='route';render()">공정 순서(품목별)</button>${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
@@ -664,6 +673,15 @@ function adCell(f, v, rid){ const id = `ad-${rid}-${f[0]}`;
   if (f[2] === 'bool') return `<input type="checkbox" id="${id}" ${v ? 'checked' : ''} style="width:20px;height:20px">`;
   if (f[2] === 'proc') return `<select id="${id}" style="padding:6px"><option value="">(전체)</option>${M.proc.map(p => `<option value="${E(p.code)}" ${v === p.code ? 'selected' : ''}>${E(p.name)}</option>`).join('')}</select>`;
   return `<input id="${id}" value="${E(v ?? '')}" ${f[2] === 'number' ? 'type="number" style="width:80px;padding:6px"' : 'style="padding:6px;min-width:110px"'} ${f[0] === 'code' && rid !== 'new' ? 'readonly' : ''}>`; }
+async function machBulk(){
+  const cp = $('mb-code').value.trim().toUpperCase(), np = $('mb-name').value.trim(), pc = $('mb-proc').value, a = +$('mb-from').value || 1, n = Math.min(50, +$('mb-n').value || 0);
+  if (!cp || !np || !n) { alert('코드 앞부분, 이름 앞부분, 대수를 넣어주세요.'); return; }
+  const rows = []; for (let k = a; k < a + n; k++) { const code = `${cp}-${String(k).padStart(2, '0')}`; if (!M.mach.some(m => m.code === code)) rows.push({code, name: `${np} ${k}호기`, process_code: pc || null, active: true}); }
+  if (!rows.length) { toast('모두 이미 있는 코드입니다.'); return; }
+  if (!confirm(`${rows.length}대를 추가합니다.\n${rows.map(x => x.code + '  ' + x.name).join('\n')}`)) return;
+  const r = await sb.from('machines').insert(rows); if (r.error) { alert('추가 실패: ' + r.error.message); return; }
+  await loadMaster(); render(); toast(`＋ 설비 ${rows.length}대를 추가했습니다`);
+}
 async function adSave(i){
   const d = AD_DEF[AD.t], rid = i < 0 ? 'new' : 'r' + i, row = {};
   d.f.forEach(f => { const el = $(`ad-${rid}-${f[0]}`); row[f[0]] = f[2] === 'bool' ? el.checked : f[2] === 'number' ? (+el.value || 0) : (el.value.trim() || null); });
