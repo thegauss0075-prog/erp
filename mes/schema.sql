@@ -181,3 +181,4 @@ alter table processes add column if not exists in_default boolean default true;
 alter table routings add column if not exists lot_required boolean default false;
 -- ── [2026-11-06] 공정별 입력 단위 (예: WIRE 재단 2가닥 = 단품 1개)
 alter table routings add column if not exists unit_name text, add column if not exists unit_per numeric default 1;
+-- ── [2026-11-06] 계측기 교정 대장 · 설비 일상점검 (Supabase에 적용해 둠: gauges, gauge_cals, check_items, machine_checks + RLS)

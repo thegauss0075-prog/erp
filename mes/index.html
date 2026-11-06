@@ -95,7 +95,7 @@ const ERP_API = 'https://script.google.com/macros/s/AKfycbyo_eOJACEPPqV-CHA9rUnY
 const SB_URL_DEFAULT = 'https://dorbfjtgnjnsnyamgnxy.supabase.co', SB_KEY_DEFAULT = 'sb_publishable_3f-9RqobsZ2Na6tUI8ruNg_eshe2vF2';
 const LS = { get(k, d){ try { const v = localStorage.getItem(k); return v === null ? d : v; } catch(e){ return d; } }, set(k, v){ try { localStorage.setItem(k, v); } catch(e){} }, del(k){ try { localStorage.removeItem(k); } catch(e){} } };
 const SB_URL = LS.get('mes_sb_url', SB_URL_DEFAULT), SB_KEY = LS.get('mes_sb_key', SB_KEY_DEFAULT);
-let sb = null, ME = {email: '', role: ''}, M = {proc: [], mach: [], work: [], reasons: [], wo: [], rec: [], ev: [], route: []};
+let sb = null, ME = {email: '', role: ''}, M = {proc: [], mach: [], work: [], reasons: [], wo: [], rec: [], ev: [], route: [], gauge: [], chkItem: [], chk: []};
 const S = {view: '', worker: LS.get('mes_worker',''), proc: LS.get('mes_proc',''), device: LS.get('mes_device','') || ('태블릿-' + Math.random().toString(36).slice(2,6).toUpperCase()), wo: ''};
 LS.set('mes_device', S.device);
 const $ = id => document.getElementById(id);
@@ -177,8 +177,9 @@ function woAutoSync(){
 }
 // ── 데이터 읽기
 async function loadMaster(){
-  const [p, m, w, r, o, rt] = await Promise.all([sb.from('processes').select('*').order('seq'), sb.from('machines').select('*').order('code'), sb.from('workers').select('*').order('name'), sb.from('stop_reasons').select('*').order('seq'), sb.from('work_orders').select('*').order('order_no', {ascending: false}), sb.from('routings').select('*').order('seq')]);
+  const [p, m, w, r, o, rt, g, ci] = await Promise.all([sb.from('processes').select('*').order('seq'), sb.from('machines').select('*').order('code'), sb.from('workers').select('*').order('name'), sb.from('stop_reasons').select('*').order('seq'), sb.from('work_orders').select('*').order('order_no', {ascending: false}), sb.from('routings').select('*').order('seq'), sb.from('gauges').select('*').order('code'), sb.from('check_items').select('*').order('seq')]);
   M.proc = p.data || []; M.mach = m.data || []; M.work = w.data || []; M.reasons = r.data || []; M.wo = o.data || []; M.route = rt.data || [];
+  M.gauge = g.data || []; M.chkItem = ci.data || [];
 }
 async function loadLive(fromIso){
   const since = fromIso || new Date(today0().getTime() - 0).toISOString();
@@ -187,6 +188,7 @@ async function loadLive(fromIso){
     sb.from('machine_events').select('*').or(`ended_at.is.null,started_at.gte.${since}`).order('started_at', {ascending: false}).limit(2000)]);
   const map = {}; [...(a.data||[]), ...(b.data||[])].forEach(x => map[x.id] = x); M.rec = Object.values(map).sort((x,y) => String(y.created_at).localeCompare(String(x.created_at)));
   M.ev = c.data || [];
+  const ck = await sb.from('machine_checks').select('*').eq('check_date', ymd(new Date())).order('created_at', {ascending: false}).limit(500); M.chk = ck.data || [];
 }
 const procName = c => (M.proc.find(p => p.code === c) || {}).name || c || '-';
 const workName = c => (M.work.find(p => p.code === c) || {}).name || c || '-';
@@ -361,6 +363,8 @@ function startDlg(w){
       if (b.dataset.go) {
         const pend = $('sd-lot').value.trim(); if (pend) add(pend);
         if (st.mach === undefined) { alert('설비를 고르세요. (없으면 "설비 없음")\nChọn máy.'); return; }
+        if (st.mach) { const mm = M.mach.find(x => x.code === st.mach); if (mm && chkItemsFor(mm).length && !chkToday(mm.code)) { if (confirm(`${mm.name} 오늘 일상점검을 아직 안 했습니다. 점검한 뒤 시작하세요.\nChưa kiểm tra máy hôm nay.\n\n[확인]을 누르면 점검 창을 엽니다.`)) { ov.remove(); res(null); checkDlg(mm.code); } return; }  if (mm && chkToday(mm.code) && !chkToday(mm.code).all_ok && !confirm(`${mm.name} 오늘 점검에서 NG가 있었습니다 (${chkToday(mm.code).note || ''}).\n조치가 끝났으면 [확인]을 눌러 시작하세요.`)) return; }
+        const bad = gaugeBad(S.proc); if (bad.length) { alert('교정 기한이 지난 계측기가 있습니다. 사용하지 마세요.\nThiết bị đo quá hạn hiệu chuẩn.\n\n' + bad.map(g => `· ${g.name} (${g.code}) 기한 ${g.next_due}`).join('\n') + '\n\n관리자가 교정을 등록하거나, 이 공정에서 빼야 시작할 수 있습니다.'); return; }
         if (req && !st.lots.length) { alert('이 공정은 투입 자재 LOT이 필수입니다.\nCông đoạn này bắt buộc quét LOT NVL.'); $('sd-lot').focus(); return; }
         ov.remove(); res({mach: st.mach, lots: st.lots});
       } };
@@ -433,8 +437,45 @@ function machineView(){
   return `<div class="muted" style="margin-bottom:8px">설비를 누르고 상태를 바꾸세요. 정지는 사유를 꼭 고릅니다. · Chạm vào máy để đổi trạng thái.</div>
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">${ms.map(m => { const s = machState(m.code), st = s ? s.state : 'idle', rs = s && s.reason_code ? (M.reasons.find(r => r.code === s.reason_code) || {}).name : '';
       const w = s && s.wo_id ? woOf(s.wo_id) : null;
-      return `<button class="mtile s-${st}" onclick="machDlg('${E(m.code)}')"><div><div style="font-size:18px;font-weight:800">${E(m.name)}</div><div style="opacity:.85;font-size:12.5px">${E(procName(m.process_code))}</div></div>
-        <div><div style="font-size:16px;font-weight:700">${lbl[st]}${rs ? ' · ' + E(rs) : ''}</div><div style="opacity:.9;font-size:12.5px">${s && s.started_at ? dur(Date.now() - new Date(s.started_at)) + ' 째' : ''}${w ? ' · ' + E(w.name) : ''}</div></div></button>`; }).join('')}</div>`;
+      const ci = chkItemsFor(m), ck = chkToday(m.code);
+      return `<div><button class="mtile s-${st}" style="width:100%" onclick="machDlg('${E(m.code)}')"><div><div style="font-size:18px;font-weight:800">${E(m.name)}</div><div style="opacity:.85;font-size:12.5px">${E(procName(m.process_code))}</div></div>
+        <div><div style="font-size:16px;font-weight:700">${lbl[st]}${rs ? ' · ' + E(rs) : ''}</div><div style="opacity:.9;font-size:12.5px">${s && s.started_at ? dur(Date.now() - new Date(s.started_at)) + ' 째' : ''}${w ? ' · ' + E(w.name) : ''}</div></div></button>
+        ${ci.length ? `<button class="btn" style="width:100%;margin-top:4px;${ck ? (ck.all_ok ? 'color:var(--ok)' : 'color:var(--bad);border-color:var(--bad)') : 'color:var(--warn,#B45309);border-color:#F59E0B'}" onclick="checkDlg('${E(m.code)}')">📋 일상점검 ${ck ? (ck.all_ok ? '✔ ' + hm(ck.created_at) : '✕ 이상 ' + hm(ck.created_at)) : '— 미점검'}</button>` : ''}</div>`; }).join('')}</div>`;
+}
+// ════════ 📋 설비 일상점검 · 📏 계측기 교정 ════════
+// 점검 항목: 설비 지정 > 공정 지정 > 전체 공통 순으로 적용
+const chkItemsFor = m => M.chkItem.filter(i => i.active !== false && (i.machine_code ? i.machine_code === m.code : (!i.process_code || i.process_code === m.process_code))).sort((a,b) => (a.seq||0) - (b.seq||0));
+const chkToday = code => M.chk.find(c => c.machine_code === code) || null;
+const addMonths = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setMonth(x.getMonth() + (+n || 0)); return ymd(x); };
+const gaugeState = g => { if (!g.next_due) return 'none'; const t = ymd(new Date()); if (g.next_due < t) return 'over'; return g.next_due <= addMonths(t, 1) ? 'soon' : 'ok'; };
+const gaugeBad = proc => M.gauge.filter(g => g.active !== false && g.process_code === proc && gaugeState(g) === 'over');
+function checkDlg(code){
+  const m = M.mach.find(x => x.code === code); if (!m) return;
+  if (!S.worker) { alert('먼저 📝 실적 입력에서 작업자를 고르세요.\nChọn công nhân trước.'); return; }
+  const items = chkItemsFor(m), st = items.map(() => ({ok: null, value: ''}));
+  const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+  const draw = () => { ov.innerHTML = `<div class="box" style="max-width:720px"><h2>📋 일상점검 <span class="vi">Kiểm tra hằng ngày</span></h2><div class="muted" style="margin-bottom:10px">${E(m.name)} · ${ymd(new Date())} · ${E(workName(S.worker))}</div>
+    <div style="max-height:56vh;overflow:auto"><table><thead><tr><th>항목</th><th>기준 / 방법</th><th style="width:170px">결과</th><th style="width:110px">측정값</th></tr></thead><tbody>${items.map((it, i) => `<tr>
+      <td><b>${E(it.item)}</b><div class="vi">${E(it.item_vi||'')}</div></td><td class="muted">${E(it.standard||'')}${it.method ? '<br>' + E(it.method) : ''}</td>
+      <td><button class="btn ${st[i].ok === true ? 'ok' : ''}" style="padding:10px 14px" data-i="${i}" data-v="1">OK</button> <button class="btn" style="padding:10px 14px;${st[i].ok === false ? 'background:var(--bad);color:#fff' : ''}" data-i="${i}" data-v="0">NG</button></td>
+      <td><input data-val="${i}" value="${E(st[i].value)}" style="width:100px;padding:8px"></td></tr>`).join('')}</tbody></table></div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn" data-all="1">✔ 전부 OK</button><input id="ck-note" placeholder="특이사항 / Ghi chú" style="flex:1;min-width:200px;padding:10px;border:1px solid var(--line);border-radius:9px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn big" data-x="1">취소</button><button class="btn ok big" data-go="1">✔ 점검 저장 / Lưu</button></div></div>`; };
+  ov.oninput = e => { const v = e.target.dataset && e.target.dataset.val; if (v !== undefined) st[+v].value = e.target.value; };
+  ov.onclick = async e => { const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.x) { ov.remove(); return; }
+    if (b.dataset.all) { st.forEach(x => x.ok = true); const n = $('ck-note').value; draw(); $('ck-note').value = n; return; }
+    if (b.dataset.i !== undefined) { st[+b.dataset.i].ok = b.dataset.v === '1'; const n = $('ck-note').value; draw(); $('ck-note').value = n; return; }
+    if (b.dataset.go) {
+      const miss = st.findIndex(x => x.ok === null); if (miss >= 0) { alert(`"${items[miss].item}" 결과를 고르세요.`); return; }
+      const allOk = st.every(x => x.ok), note = $('ck-note').value.trim();
+      if (!allOk && !note) { alert('NG 항목이 있으면 특이사항(조치 내용)을 적어주세요.'); $('ck-note').focus(); return; }
+      const row = {machine_code: code, check_date: ymd(new Date()), worker_code: S.worker, results: items.map((it, i) => ({item: it.item, standard: it.standard || '', ok: st[i].ok, value: st[i].value || ''})), all_ok: allOk, note: note || null, device: S.device};
+      const r = await sb.from('machine_checks').insert(row); if (r.error) { alert('저장 실패: ' + r.error.message); return; }
+      ov.remove(); await loadLive(); render(); toast(allOk ? '📋 점검 완료 — 이상 없음' : '📋 점검 저장 — NG 있음');
+      if (!allOk && confirm(`${m.name}에 NG 항목이 있습니다. 설비를 "정지(설비 고장)"로 바꿀까요?`)) await setMachine(code, 'stop', M.reasons.some(x => x.code === 'BRK') ? 'BRK' : null, null);
+    } };
+  draw();
 }
 function machDlg(code){
   const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'md';
@@ -494,7 +535,7 @@ function tvView(){
 const RP = {from: '', to: '', tab: 'out', lot: ''};
 function reportView(){
   if (!RP.from) { RP.to = ymd(new Date()); RP.from = RP.to.slice(0,8) + '01'; }
-  const tabs = [['out','공정별 생산'],['worker','작업자별'],['down','비가동'],['lot','LOT 추적'],['erp','ERP 반영']];
+  const tabs = [['out','공정별 생산'],['worker','작업자별'],['down','비가동'],['chk','설비 점검'],['lot','LOT 추적'],['erp','ERP 반영']];
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">${tabs.map(([k,l]) => `<button class="btn ${RP.tab === k ? 'pri' : ''}" onclick="RP.tab='${k}';render()">${l}</button>`).join('')}
       <span style="flex:1"></span>${RP.tab !== 'lot' ? `<input type="date" value="${RP.from}" onchange="RP.from=this.value;loadReport()" class="btn" style="padding:8px"> ~ <input type="date" value="${RP.to}" onchange="RP.to=this.value;loadReport()" class="btn" style="padding:8px">` : `<input id="rp-lot" value="${E(RP.lot)}" placeholder="LOT 번호 (완제품·자재)" onkeydown="if(event.key==='Enter'){RP.lot=parseLot(this.value).lot;loadReport()}" class="btn" style="padding:8px;min-width:240px"><button class="btn pri" onclick="RP.lot=parseLot($('rp-lot').value).lot;loadReport()">조회</button>`}
       <button class="btn" onclick="rpCSV()">⬇ CSV</button></div><div id="rp-body" class="card">⏳ 불러오는 중…</div>`;
@@ -519,6 +560,11 @@ async function loadReport(){
     (r.data || []).forEach(e => { const s = Math.max(a, new Date(e.started_at).getTime()), t = Math.min(b, e.ended_at ? new Date(e.ended_at).getTime() : b); if (t <= s) return;
       const k = e.machine_code + '|' + e.state + '|' + (e.reason_code || ''); const o = g[k] = g[k] || [machName(e.machine_code), ({run:'가동',stop:'정지',setup:'셋업',idle:'대기'})[e.state], e.reason_code ? (M.reasons.find(x => x.code === e.reason_code) || {}).name || e.reason_code : '', 0, 0]; o[3]++; o[4] += t - s; });
     cols = ['설비','상태','사유','횟수','시간']; rows = Object.values(g).sort((x,y) => y[4] - x[4]).map(o => [o[0], o[1], o[2], o[3], dur(o[4])]);
+  } else if (RP.tab === 'chk') {
+    const r = await sb.from('machine_checks').select('*').gte('check_date', RP.from).lte('check_date', RP.to).order('created_at').limit(20000);
+    cols = ['일자','설비','점검자','결과','NG 항목','측정값','특이사항','시각'];
+    rows = (r.data || []).map(c => [c.check_date, machName(c.machine_code), workName(c.worker_code), c.all_ok ? 'OK' : 'NG', (c.results || []).filter(x => !x.ok).map(x => x.item).join(', '), (c.results || []).filter(x => x.value).map(x => x.item + ' ' + x.value).join(', '), c.note || '', hm(c.created_at)]);
+    if (rows.length || true) { RPD = {cols, rows}; el.innerHTML = chkMatrix(r.data || []) + (rows.length ? `<h2 style="margin-top:16px">점검 기록 ${rows.length}건</h2><div style="overflow:auto"><table><thead><tr>${cols.map(c => `<th>${E(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(x => `<tr style="${x[3] === 'NG' ? 'color:var(--bad)' : ''}">${x.map(v => `<td>${E(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<p class="muted">이 기간 점검 기록이 없습니다.</p>'); return; }
   } else if (RP.tab === 'lot') {
     if (!RP.lot) { el.innerHTML = '<p class="muted">완제품 LOT 또는 자재 LOT을 넣으세요. 완제품 LOT이면 그 LOT의 공정별 이력과 투입 자재 LOT을, 자재 LOT이면 그 자재가 들어간 작업을 보여줍니다.</p>'; RPD = {cols: [], rows: []}; return; }
     const [a, b] = await Promise.all([sb.from('prod_records').select('*').eq('lot_out', RP.lot).neq('status','void').order('created_at').limit(5000), sb.from('prod_records').select('*').contains('lots_in', [{lot: RP.lot}]).neq('status','void').order('created_at').limit(5000)]);
@@ -589,6 +635,21 @@ async function erpOfferComplete(ids, token){
   for (const w of full) await erpCall('updateWorkOrder', {id: w.id, status: '완료'}, token);
   await syncWO(true); toast('작업지시를 완료로 바꿨습니다.');
 }
+// 월별 설비 점검표 (설비 × 일자): ✔ 이상 없음, ✕ NG, 빈칸 미점검 — 종이 점검표 대신 출력
+function chkMatrix(list){
+  const days = []; for (let d = new Date(RP.from + 'T00:00:00'); ymd(d) <= RP.to && days.length < 62; d.setDate(d.getDate() + 1)) days.push(ymd(d));
+  const ms = M.mach.filter(m => m.active !== false && chkItemsFor(m).length);
+  if (!ms.length) return '<p class="muted">점검 항목이 등록된 설비가 없습니다. 🛠 기준정보 → 점검 항목에서 먼저 등록하세요.</p>';
+  const cell = (m, d) => { const c = list.filter(x => x.machine_code === m.code && x.check_date === d); if (!c.length) return ''; return c.some(x => !x.all_ok) ? '<b style="color:var(--bad)">✕</b>' : '<span style="color:var(--ok)">✔</span>'; };
+  return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h2 style="margin:0">월별 설비 점검표</h2><span class="muted">✔ 이상 없음 · ✕ NG · 빈칸 미점검</span><span style="flex:1"></span><button class="btn" onclick="chkPrint()">🖨 점검표 출력</button></div>
+    <div style="overflow:auto" id="chk-mx"><table style="font-size:12px"><thead><tr><th>설비</th>${days.map(d => `<th style="padding:4px 3px;text-align:center">${+d.slice(8)}</th>`).join('')}</tr></thead><tbody>${ms.map(m => `<tr><td style="white-space:nowrap"><b>${E(m.name)}</b></td>${days.map(d => `<td style="text-align:center;padding:4px 3px">${cell(m, d)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+function chkPrint(){
+  const mx = $('chk-mx'); if (!mx) return; const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>설비 일상점검표 ${RP.from.slice(0,7)}</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:"Malgun Gothic",sans-serif;font-size:10px}h1{font-size:17px;text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:3px 2px;text-align:center}td:first-child{text-align:left;white-space:nowrap}.sg{float:right;margin-bottom:6px}.sg td{width:66px;height:42px;vertical-align:top}b{color:#C00}</style></head><body>
+    <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr></table><h1 style="clear:both">설비 일상점검 관리표 (${RP.from} ~ ${RP.to})</h1><div style="margin-bottom:6px">THE GAUSS VINA · ✔ 이상 없음 / ✕ NG (조치 내용은 점검 기록 참조) / 빈칸 미점검·비가동</div>
+    ${mx.innerHTML}<script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
+}
 function rpCSV(){ if (!RPD.rows.length) { alert('내보낼 자료가 없습니다.'); return; } const esc = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
   const csv = '﻿' + [RPD.cols, ...RPD.rows].map(r => r.map(esc).join(',')).join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); a.download = `MES_${RP.tab}_${RP.from}_${RP.to}.csv`; a.click(); }
 
@@ -598,8 +659,9 @@ const AD_DEF = {
   processes: {l:'공정', key:'code', f:[['code','코드'],['name','이름'],['name_vi','이름(VN)'],['seq','순서','number'],['is_final','최종 공정','bool'],['in_default','기본 공정','bool'],['active','사용','bool']]},
   machines:  {l:'설비', key:'code', f:[['code','코드'],['name','이름'],['process_code','공정','proc'],['active','사용','bool']]},
   workers:   {l:'작업자', key:'code', f:[['code','사번/코드'],['name','이름'],['team','조/팀'],['active','사용','bool']]},
+  gauges:    {l:'계측기', key:'code', f:[['code','관리번호'],['name','이름'],['model','모델'],['serial_no','S/N'],['process_code','사용 공정','proc'],['location','위치'],['cycle_months','교정 주기(월)','number'],['cal_org','교정 기관'],['active','사용','bool']]},
   stop_reasons: {l:'비가동 사유', key:'code', f:[['code','코드'],['name','이름'],['name_vi','이름(VN)'],['planned','계획 정지','bool'],['seq','순서','number']]}};
-const AD_DATA = () => ({processes: M.proc, machines: M.mach, workers: M.work, stop_reasons: M.reasons})[AD.t];
+const AD_DATA = () => ({processes: M.proc, machines: M.mach, workers: M.work, stop_reasons: M.reasons, gauges: M.gauge})[AD.t];
 function routeAdmin(){
   const items = [...new Map([...M.wo.filter(w => inScope(w.code, w.name)).map(w => [w.code + '|' + w.cat, {code: w.code, cat: w.cat || 'TP', name: w.name}]), ...M.route.filter(r => inScope(r.item_code)).map(r => [r.item_code + '|' + r.cat, {code: r.item_code, cat: r.cat, name: r.item_code}])]).values()];
   items.sort((a,b) => (M.route.some(r => r.item_code === b.code && r.cat === b.cat) - M.route.some(r => r.item_code === a.code && r.cat === a.cat)) || String(a.name).localeCompare(String(b.name)));
@@ -647,6 +709,7 @@ async function rtDel(i){
 }
 function adminView(){
   if (AD.t === 'route') return routeAdmin();
+  if (AD.t === 'chkitem') return chkItemAdmin();
   if (AD.t === 'wo') return adminTabs() + `<div class="card"><h2>ERP 작업지시 <span class="muted">${M.wo.length}건 · 진행 ${activeWO().length}건${M.wo[0] ? ' · 받은 시각 ' + new Date(M.wo.map(w => w.synced_at).sort().pop()).toLocaleString('ko-KR') : ''}</span></h2>
     <div style="overflow:auto"><table><thead><tr><th>지시번호</th><th>품목</th><th>구분</th><th>LOT</th><th class="r">계획</th><th>마감일</th><th>상태</th></tr></thead><tbody>${M.wo.filter(w => inScope(w.code, w.name)).map(w => `<tr style="${w.status === '완료' ? 'color:var(--sub)' : w.status === '삭제됨' ? 'color:var(--sub);text-decoration:line-through' : ''}"><td style="font-family:monospace">${E(w.order_no)}</td><td><b>${E(w.name)}</b><div class="muted">${E(w.code)}</div></td><td>${E(w.cat||'')}</td><td style="font-family:monospace">${E(w.lot||'')}</td><td class="r">${N(w.plan_qty)} ${E(w.unit||'')}</td><td>${E(w.due_date||'')}</td><td><span class="tag ${w.status === '진행중' ? 'm-run' : w.status === '완료' || w.status === '삭제됨' ? 'm-idle' : 'm-setup'}">${E(w.status)}</span></td></tr>`).join('') || '<tr><td colspan="7" class="muted">아직 받은 작업지시가 없습니다.</td></tr>'}</tbody></table></div>
     <p class="muted" style="margin-top:8px">현장(📝 실적 입력)에는 대기·진행중 작업지시만 보입니다. ERP에서 새로 발행하면 위 "🔄 ERP 작업지시 받기"를 다시 누르세요 (화면이 열려 있으면 2분마다 자동으로도 받습니다).</p></div>`;
@@ -656,6 +719,7 @@ function adminView(){
       ${rows.map((r, i) => `<tr>${d.f.map(f => `<td>${adCell(f, r[f[0]], 'r' + i)}</td>`).join('')}<td style="white-space:nowrap"><button class="btn" style="padding:6px 12px" onclick="adSave(${i})">저장</button> <button class="btn" style="padding:6px 12px;color:var(--bad)" onclick="adDel(${i})">삭제</button></td></tr>`).join('')}
       <tr style="background:#F8FAFB">${d.f.map(f => `<td>${adCell(f, f[2] === 'bool' ? (f[0] === 'active') : '', 'new')}</td>`).join('')}<td><button class="btn pri" style="padding:6px 12px" onclick="adSave(-1)">＋ 추가</button></td></tr></tbody></table></div>
       <p class="muted" style="margin-top:8px">코드는 한 번 정하면 바꾸지 마세요 (실적이 코드로 연결됩니다). 안 쓰는 항목은 "사용"을 끄세요. 실적이나 공정 순서에 이미 쓰인 항목은 삭제되지 않으니 "사용"을 끄세요.</p></div>
+    ${AD.t === 'gauges' ? gaugeCard() : ''}
     ${AD.t === 'machines' ? `<div class="card" style="margin-top:12px"><h2>같은 설비 여러 대 한 번에 추가 <span class="muted">예: 권선기 1~8호기</span></h2>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <label class="field" style="margin:0"><span>코드 앞부분</span><input id="mb-code" value="WIND" style="padding:6px;width:110px"></label>
@@ -667,7 +731,7 @@ function adminView(){
       <p class="muted" style="margin-top:8px">코드는 WIND-01, WIND-02 …, 이름은 권선기 1호기, 2호기 … 로 만들어집니다. 이미 있는 코드는 건너뜁니다.</p></div>` : ''}
     <div class="card" style="margin-top:12px"><h2>이 기기</h2><div class="muted">기기 이름: <b>${E(S.device)}</b> <button class="btn" style="padding:4px 10px" onclick="const n=prompt('기기 이름',S.device);if(n){S.device=n;LS.set('mes_device',n);render()}">바꾸기</button> · 로그인: ${E(ME.email)} (${E(ME.role)})</div></div>`;
 }
-function adminTabs(){ return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn ${AD.t === 'wo' ? 'pri' : ''}" onclick="AD.t='wo';render()">작업지시</button><button class="btn ${AD.t === 'route' ? 'pri' : ''}" onclick="AD.t='route';render()">공정 순서(품목별)</button>${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
+function adminTabs(){ return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn ${AD.t === 'wo' ? 'pri' : ''}" onclick="AD.t='wo';render()">작업지시</button><button class="btn ${AD.t === 'route' ? 'pri' : ''}" onclick="AD.t='route';render()">공정 순서(품목별)</button><button class="btn ${AD.t === 'chkitem' ? 'pri' : ''}" onclick="AD.t='chkitem';render()">점검 항목</button>${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
       <button class="btn ok" onclick="syncWO(false).then(()=>{AD.t='wo';render()})">🔄 ERP 작업지시 받기</button></div>`; }
 function adCell(f, v, rid){ const id = `ad-${rid}-${f[0]}`;
   if (f[2] === 'bool') return `<input type="checkbox" id="${id}" ${v ? 'checked' : ''} style="width:20px;height:20px">`;
@@ -680,6 +744,74 @@ async function adDel(i){
   if (r.error) { alert(r.error.code === '23503' || /foreign key|violates/i.test(r.error.message) ? `"${row.name}"은(는) 이미 실적·설비 기록·공정 순서에 쓰여서 삭제할 수 없습니다.\n대신 "사용" 체크를 끄고 저장하세요.` : '삭제 실패: ' + r.error.message); return; }
   await loadMaster(); render(); toast('삭제했습니다');
 }
+// ── 계측기 교정 현황·등록·이력 (교정 대장)
+function gaugeCard(){
+  const gs = M.gauge.filter(g => g.active !== false), tag = {over: ['m-stop','기한 지남'], soon: ['m-setup','30일 이내'], ok: ['m-run','정상'], none: ['m-idle','교정 기록 없음']};
+  return `<div class="card" style="margin-top:12px"><h2>📏 교정 현황 <span class="muted">기한이 지난 계측기를 쓰는 공정은 현장에서 작업 시작이 막힙니다.</span></h2>
+    <div style="overflow:auto"><table><thead><tr><th>관리번호</th><th>이름</th><th>사용 공정</th><th>주기</th><th>최근 교정</th><th>다음 교정</th><th>상태</th><th></th></tr></thead><tbody>
+    ${gs.map(g => { const t = tag[gaugeState(g)]; return `<tr><td style="font-family:monospace">${E(g.code)}</td><td><b>${E(g.name)}</b><div class="muted">${E([g.model, g.serial_no].filter(Boolean).join(' · '))}</div></td><td>${E(g.process_code ? procName(g.process_code) : '-')}</td><td>${N(g.cycle_months || 12)}개월</td><td>${E(g.last_cal || '-')}</td><td><b>${E(g.next_due || '-')}</b></td><td><span class="tag ${t[0]}">${t[1]}</span></td>
+      <td style="white-space:nowrap"><button class="btn pri" style="padding:6px 10px" onclick="calDlg('${E(g.code)}')">교정 등록</button> <button class="btn" style="padding:6px 10px" onclick="calHist('${E(g.code)}')">이력</button></td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">위 표에서 계측기를 먼저 추가하세요.</td></tr>'}</tbody></table></div>
+    <div style="margin-top:8px"><button class="btn" onclick="gaugePrint()">🖨 교정 대장 출력</button></div></div>`;
+}
+function calDlg(code){
+  const g = M.gauge.find(x => x.code === code); if (!g) return; const t = ymd(new Date());
+  const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+  ov.innerHTML = `<div class="box"><h2>교정 등록 — ${E(g.name)}</h2><div class="grid" style="grid-template-columns:1fr 1fr">
+    <label class="field"><span>교정일</span><input id="cl-d" type="date" value="${t}"></label>
+    <label class="field"><span>결과</span><select id="cl-r"><option>합격</option><option>조정 후 합격</option><option>불합격</option></select></label>
+    <label class="field"><span>교정 기관</span><input id="cl-o" value="${E(g.cal_org||'')}"></label>
+    <label class="field"><span>성적서 번호</span><input id="cl-c"></label>
+    <label class="field"><span>다음 교정일 (주기 ${N(g.cycle_months || 12)}개월)</span><input id="cl-n" type="date" value="${addMonths(t, g.cycle_months || 12)}"></label>
+    <label class="field"><span>비고</span><input id="cl-x"></label></div>
+    <p class="muted">성적서 원본(PDF·종이)은 지금처럼 보관하고, 여기에는 번호를 적어 연결합니다.</p>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px"><button class="btn" id="cl-cancel">취소</button><button class="btn ok" id="cl-save">저장</button></div></div>`;
+  $('cl-d').onchange = () => { $('cl-n').value = addMonths($('cl-d').value, g.cycle_months || 12); };
+  $('cl-cancel').onclick = () => ov.remove();
+  $('cl-save').onclick = async () => {
+    const row = {gauge_code: code, cal_date: $('cl-d').value, result: $('cl-r').value, cal_org: $('cl-o').value.trim() || null, cert_no: $('cl-c').value.trim() || null, next_due: $('cl-r').value === '불합격' ? null : ($('cl-n').value || null), note: $('cl-x').value.trim() || null};
+    if (!row.cal_date) { alert('교정일을 넣어주세요.'); return; }
+    const a = await sb.from('gauge_cals').insert(row); if (a.error) { alert('저장 실패: ' + a.error.message); return; }
+    const upd = {last_cal: row.cal_date, next_due: row.next_due, cal_org: row.cal_org || g.cal_org || null}; if (row.result === '불합격') upd.active = false;
+    await sb.from('gauges').update(upd).match({code});
+    ov.remove(); await loadMaster(); render(); toast(row.result === '불합격' ? '불합격 — 이 계측기는 사용 중지로 바꿨습니다' : '교정을 등록했습니다');
+  };
+}
+async function calHist(code){
+  const g = M.gauge.find(x => x.code === code) || {name: code}; const r = await sb.from('gauge_cals').select('*').eq('gauge_code', code).order('cal_date', {ascending: false}).limit(200);
+  const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+  ov.innerHTML = `<div class="box" style="max-width:720px"><h2>교정 이력 — ${E(g.name)}</h2><div style="overflow:auto;max-height:60vh"><table><thead><tr><th>교정일</th><th>결과</th><th>기관</th><th>성적서</th><th>다음 교정</th><th>비고</th><th>등록</th></tr></thead><tbody>
+    ${(r.data || []).map(c => `<tr><td>${E(c.cal_date)}</td><td>${E(c.result)}</td><td>${E(c.cal_org||'')}</td><td>${E(c.cert_no||'')}</td><td>${E(c.next_due||'-')}</td><td>${E(c.note||'')}</td><td class="muted">${E(c.created_by||'')}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">기록이 없습니다.</td></tr>'}</tbody></table></div>
+    <div style="text-align:right;margin-top:10px"><button class="btn" onclick="this.closest('.ov').remove()">닫기</button></div></div>`;
+}
+async function gaugePrint(){
+  const r = await sb.from('gauge_cals').select('*').order('cal_date', {ascending: false}).limit(5000), cals = r.data || [];
+  const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
+  const rows = M.gauge.map(g => { const last = cals.find(c => c.gauge_code === g.code) || {}; return `<tr><td>${E(g.code)}</td><td>${E(g.name)}</td><td>${E(g.model||'')}</td><td>${E(g.serial_no||'')}</td><td>${E(g.process_code ? procName(g.process_code) : '')}</td><td>${E(g.location||'')}</td><td>${N(g.cycle_months||12)}개월</td><td>${E(g.last_cal||'')}</td><td>${E(last.result||'')}</td><td>${E(last.cert_no||'')}</td><td>${E(g.cal_org||'')}</td><td><b>${E(g.next_due||'')}</b></td><td>${g.active === false ? '사용 중지' : ''}</td></tr>`; }).join('');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>계측기 교정 관리 대장</title><style>@page{size:A4 landscape;margin:10mm}body{font-family:"Malgun Gothic",sans-serif;font-size:11px}h1{font-size:18px;text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:4px 5px}th{background:#EEE}.sg{float:right;border-collapse:collapse;margin-bottom:8px}.sg td{width:70px;height:46px;text-align:center;vertical-align:top}</style></head><body>
+    <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr></table><h1 style="clear:both">계측기 교정 관리 대장</h1><div style="margin-bottom:6px">THE GAUSS VINA · 기준일 ${ymd(new Date())}</div>
+    <table><thead><tr><th>관리번호</th><th>이름</th><th>모델</th><th>S/N</th><th>사용 공정</th><th>위치</th><th>주기</th><th>최근 교정</th><th>결과</th><th>성적서</th><th>교정 기관</th><th>다음 교정</th><th>비고</th></tr></thead><tbody>${rows}</tbody></table>
+    <script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
+}
+// ── 일상점검 항목 관리 (설비 지정 > 공정 지정 > 전체 공통)
+function chkItemAdmin(){
+  const its = M.chkItem.slice().sort((a,b) => String(a.machine_code||a.process_code||'').localeCompare(String(b.machine_code||b.process_code||'')) || (a.seq||0) - (b.seq||0));
+  const procSel = (id, v) => `<select id="${id}" style="padding:6px"><option value="">(전체 설비)</option>${M.proc.map(p => `<option value="${E(p.code)}" ${v === p.code ? 'selected' : ''}>${E(p.name)}</option>`).join('')}</select>`;
+  const machSel = (id, v) => `<select id="${id}" style="padding:6px"><option value="">(공정 전체)</option>${M.mach.map(m => `<option value="${E(m.code)}" ${v === m.code ? 'selected' : ''}>${E(m.name)}</option>`).join('')}</select>`;
+  const cell = (id, v, w) => `<input id="${id}" value="${E(v ?? '')}" style="padding:6px;width:${w}px">`;
+  return adminTabs() + `<div class="card"><h2>📋 설비 일상점검 항목 <span class="muted">공정을 고르면 그 공정의 모든 설비에, 설비를 고르면 그 설비에만 적용됩니다.</span></h2>
+    <div style="overflow:auto"><table><thead><tr><th>공정</th><th>설비</th><th>순서</th><th>점검 항목</th><th>항목 (VN)</th><th>기준</th><th>방법</th><th>사용</th><th></th></tr></thead><tbody>
+    ${its.map(i => `<tr><td>${procSel('ci-p-' + i.id, i.process_code)}</td><td>${machSel('ci-m-' + i.id, i.machine_code)}</td><td><input id="ci-s-${i.id}" type="number" value="${i.seq||0}" style="width:60px;padding:6px"></td><td>${cell('ci-i-' + i.id, i.item, 170)}</td><td>${cell('ci-v-' + i.id, i.item_vi, 150)}</td><td>${cell('ci-d-' + i.id, i.standard, 140)}</td><td>${cell('ci-h-' + i.id, i.method, 110)}</td><td><input id="ci-a-${i.id}" type="checkbox" ${i.active !== false ? 'checked' : ''} style="width:20px;height:20px"></td>
+      <td style="white-space:nowrap"><button class="btn" style="padding:6px 10px" onclick="ciSave(${i.id})">저장</button> <button class="btn" style="padding:6px 10px;color:var(--bad)" onclick="ciDel(${i.id})">삭제</button></td></tr>`).join('')}
+    <tr style="background:#F8FAFB"><td>${procSel('ci-p-new', 'WIND')}</td><td>${machSel('ci-m-new', '')}</td><td><input id="ci-s-new" type="number" value="${(its.length ? Math.max(...its.map(i => i.seq||0)) : 0) + 10}" style="width:60px;padding:6px"></td><td>${cell('ci-i-new', '', 170)}</td><td>${cell('ci-v-new', '', 150)}</td><td>${cell('ci-d-new', '', 140)}</td><td>${cell('ci-h-new', '', 110)}</td><td><input id="ci-a-new" type="checkbox" checked style="width:20px;height:20px"></td><td><button class="btn pri" style="padding:6px 10px" onclick="ciSave('new')">＋ 추가</button></td></tr></tbody></table></div>
+    <p class="muted">예) 권선 · 텐션 게이지 · "규정 텐션 ±10%" · 육안 / 지그 고정 상태 · "흔들림 없음" · 손으로 확인. 지금 종이 점검표의 항목을 그대로 옮기면 됩니다.</p></div>`;
+}
+async function ciSave(id){
+  const k = id, row = {process_code: $('ci-p-' + k).value || null, machine_code: $('ci-m-' + k).value || null, seq: +$('ci-s-' + k).value || 0, item: $('ci-i-' + k).value.trim(), item_vi: $('ci-v-' + k).value.trim() || null, standard: $('ci-d-' + k).value.trim() || null, method: $('ci-h-' + k).value.trim() || null, active: $('ci-a-' + k).checked};
+  if (!row.item) { alert('점검 항목을 넣어주세요.'); return; }
+  const r = id === 'new' ? await sb.from('check_items').insert(row) : await sb.from('check_items').update(row).match({id});
+  if (r.error) { alert('저장 실패: ' + r.error.message); return; } await loadMaster(); render(); toast('저장했습니다');
+}
+async function ciDel(id){ if (!confirm('이 점검 항목을 삭제할까요? (지난 점검 기록은 그대로 남습니다)')) return; const r = await sb.from('check_items').delete().match({id}); if (r.error) { alert('삭제 실패: ' + r.error.message); return; } await loadMaster(); render(); }
 async function machBulk(){
   const cp = $('mb-code').value.trim().toUpperCase(), np = $('mb-name').value.trim(), pc = $('mb-proc').value, a = +$('mb-from').value || 1, n = Math.min(50, +$('mb-n').value || 0);
   if (!cp || !np || !n) { alert('코드 앞부분, 이름 앞부분, 대수를 넣어주세요.'); return; }
