@@ -333,7 +333,7 @@ async function startJob2(w){
   const sd = await startDlg(w); if (!sd) return;
   const mach = sd.mach, lots = sd.lots;
   lotMemSet(w, lots);
-  const row = {wo_id: w.wo_id, order_no: w.order_no, item_code: w.code, item_name: w.name, process_code: S.proc, machine_code: mach || null, worker_code: S.worker, start_at: new Date().toISOString(), status: 'running', lots_in: lots.map(l => ({lot: l})), lot_out: w.lot || null, device: S.device};
+  const row = {wo_id: w.wo_id, order_no: w.order_no, item_code: w.code, item_name: w.name, process_code: S.proc, machine_code: mach || null, worker_code: S.worker, start_at: new Date().toISOString(), status: 'running', lots_in: lots.map(parseLot), lot_out: w.lot || null, device: S.device};
   const r = await dbWrite({t: 'insert', table: 'prod_records', row});
   if (r && !r.queued) { M.rec.unshift(r); if (mach) await setMachine(mach, 'run', null, w.wo_id, true); }
   render(); toast('▶ 작업 시작');
@@ -349,7 +349,7 @@ function startDlg(w){
       ${ms.length ? `<div style="font-weight:700;margin-bottom:4px">설비 / Máy</div><div class="pick">${ms.map(m => `<button data-c="${E(m.code)}" class="${st.mach === m.code ? 'on' : ''}">${E(m.name)}</button>`).join('')}<button data-c="" class="${st.mach === '' ? 'on' : ''}">설비 없음</button></div>` : ''}
       <div style="margin-top:12px;font-weight:700">투입 자재 LOT ${req ? '<span style="color:var(--bad)">(필수)</span>' : '<span class="muted">(선택)</span>'} <span class="muted">· 지금 올리는 자재 라벨을 찍으세요. 지난번 LOT이 들어 있으면 같은 자재인지 확인하세요.</span></div>
       <div style="display:flex;gap:6px;margin-top:4px"><input id="sd-lot" placeholder="자재 LOT 스캔 / Quét LOT NVL" style="flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px">${'BarcodeDetector' in window ? `<button class="btn" data-cam="1">📷</button>` : ''}</div>
-      <div style="margin-top:6px">${st.lots.map((l, i) => `<span class="tag m-idle" style="margin:2px">${E(l)} <a href="#" data-del="${i}">✕</a></span>`).join('') || '<span class="muted">찍은 LOT 없음</span>'}</div>
+      <div style="margin-top:6px">${st.lots.map((l, i) => `<span class="tag m-idle" style="margin:2px">${lotChip(l)} <a href="#" data-del="${i}">✕</a></span>`).join('') || '<span class="muted">찍은 LOT 없음</span>'}</div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn big" data-x="1">취소</button><button class="btn pri big" data-go="1">▶ 시작 / Bắt đầu</button></div></div>`;
       const inp = $('sd-lot'); inp.onkeydown = e => { if (e.key === 'Enter') { add(inp.value); inp.value = ''; } }; };
     ov.onclick = e => {
@@ -369,6 +369,10 @@ function startDlg(w){
 }
 let FD = null;
 // 공정·품목별로 마지막에 찍은 자재 LOT을 태블릿이 기억 → 다음 실적에 자동으로 넣는다 (LOT이 바뀔 때만 다시 찍음)
+// ERP 수입검사 LOT 라벨 QR은 "MAT:자재코드:LOT" 형식 → 자재코드와 LOT으로 나눠 저장
+function parseLot(v){ v = String(v||'').trim(); const p = v.split(':'); return p[0] === 'MAT' && p.length >= 3 ? {code: p.slice(1, -1).join(':'), lot: p[p.length - 1]} : {lot: v}; }
+const lotRaw = l => l.code ? `MAT:${l.code}:${l.lot}` : l.lot;
+const lotChip = v => { const l = parseLot(v); return E(l.lot) + (l.code ? ` <span class="muted">${E(l.code)}</span>` : ''); };
 const lotKey = w => 'mes_lot|' + S.proc + '|' + (w && w.code || '');
 function lotMem(w){ try { return JSON.parse(localStorage.getItem(lotKey(w)) || '[]'); } catch (e) { return []; } }
 function lotMemSet(w, lots){ try { localStorage.setItem(lotKey(w), JSON.stringify(lots)); } catch (e) {} }
@@ -377,7 +381,7 @@ const lotReq = w => !!(routeOf(w).find(p => p.code === S.proc) || {}).lot_requir
 const unitOf = w => { const p = routeOf(w).find(x => x.code === S.proc) || {}; return {name: p.unit_per > 1 ? (p.unit_name || '개') : '', per: p.unit_per > 1 ? p.unit_per : 1}; };
 function finishDlg(id){
   const r = id ? M.rec.find(x => x.id === id) : null, w = r ? woOf(r.wo_id) : woOf(S.wo); if (!w && !r) return;
-  FD = {id, wo: w || {wo_id: r.wo_id, order_no: r.order_no, code: r.item_code, name: r.item_name, lot: r.lot_out}, good: '', ng: '', reason: '', lots: r && (r.lots_in || []).length ? r.lots_in.map(l => l.lot) : lotMem(w || {code: r && r.item_code}), f: 'good', mach: r ? r.machine_code : ''};
+  FD = {id, wo: w || {wo_id: r.wo_id, order_no: r.order_no, code: r.item_code, name: r.item_name, lot: r.lot_out}, good: '', ng: '', reason: '', lots: r && (r.lots_in || []).length ? r.lots_in.map(lotRaw) : lotMem(w || {code: r && r.item_code}), f: 'good', mach: r ? r.machine_code : ''};
   const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'fd'; document.body.appendChild(ov); fdRender();
 }
 function fdRender(){
@@ -393,7 +397,7 @@ function fdRender(){
     ${f.id ? '' : machPicker(f.mach)}
     <div style="margin-top:10px;font-weight:700">투입 자재 LOT ${lotReq(f.wo) ? '<span style="color:var(--bad)">(필수)</span>' : '<span class="muted">(선택)</span>'} <span class="muted">· ${f.id ? '시작할 때 찍은 LOT이 들어 있습니다. 중간에 자재를 바꿨으면 새 LOT을 추가로 찍으세요.' : '지난번 LOT이 자동으로 들어 있습니다. 새 자재를 뜯었으면 ✕로 빼고 새로 찍으세요.'}</span></div>
     <div style="display:flex;gap:6px;margin-top:4px"><input id="fd-lot" placeholder="자재 LOT 스캔 / Quét LOT NVL" onkeydown="if(event.key==='Enter'){fdLot(this.value);this.value=''}" style="flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px">${'BarcodeDetector' in window ? `<button class="btn" onclick="window._camTarget=v=>{fdLot(v);window._camTarget=null};camScan()">📷</button>` : ''}</div>
-    <div style="margin-top:6px">${f.lots.map((l, i) => `<span class="tag m-idle" style="margin:2px">${E(l)} <a href="#" onclick="event.preventDefault();FD.lots.splice(${i},1);fdRender()">✕</a></span>`).join('')}</div>
+    <div style="margin-top:6px">${f.lots.map((l, i) => `<span class="tag m-idle" style="margin:2px">${lotChip(l)} <a href="#" onclick="event.preventDefault();FD.lots.splice(${i},1);fdRender()">✕</a></span>`).join('')}</div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn big" onclick="$('fd').remove()">취소</button><button class="btn ok big" onclick="fdSave()">✔ 저장 / Lưu</button></div></div>`;
 }
 function fdKey(k){ const f = FD, cur = String(f[f.f] || ''); f[f.f] = k === 'C' ? '' : k === '⌫' ? cur.slice(0, -1) : (cur === '0' ? '' : cur) + k; if (k === 'C' || k === '⌫' || +f.ng === 0) {} fdRender(); }
@@ -409,7 +413,7 @@ async function fdSave(){
   const done = M.rec.filter(r => r.wo_id === f.wo.wo_id && r.process_code === S.proc && r.status === 'done').reduce((a,r) => a + (+r.good_qty||0), 0);
   if (w && !(await checkPrev(w, good))) return;
   if (plan && done + good > plan * 1.1 && !confirm(`이 공정 양품 누계가 계획(${N(plan)})보다 많아집니다 (${N(done + good)}). 그래도 저장할까요?`)) return;
-  const lots = f.lots.map(l => ({lot: l}));
+  const lots = f.lots.map(parseLot);
   const mach = $('f-mach') ? $('f-mach').value : f.mach;
   let r;
   if (f.id) r = await dbWrite({t: 'update', table: 'prod_records', match: {id: f.id}, row: {end_at: new Date().toISOString(), good_qty: good, ng_qty: ng, ng_reason: f.reason || null, lots_in: lots, ...(rawNote ? {note: rawNote} : {}), status: 'done', updated_at: new Date().toISOString()}});
@@ -492,7 +496,7 @@ function reportView(){
   if (!RP.from) { RP.to = ymd(new Date()); RP.from = RP.to.slice(0,8) + '01'; }
   const tabs = [['out','공정별 생산'],['worker','작업자별'],['down','비가동'],['lot','LOT 추적'],['erp','ERP 반영']];
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">${tabs.map(([k,l]) => `<button class="btn ${RP.tab === k ? 'pri' : ''}" onclick="RP.tab='${k}';render()">${l}</button>`).join('')}
-      <span style="flex:1"></span>${RP.tab !== 'lot' ? `<input type="date" value="${RP.from}" onchange="RP.from=this.value;loadReport()" class="btn" style="padding:8px"> ~ <input type="date" value="${RP.to}" onchange="RP.to=this.value;loadReport()" class="btn" style="padding:8px">` : `<input id="rp-lot" value="${E(RP.lot)}" placeholder="LOT 번호 (완제품·자재)" onkeydown="if(event.key==='Enter'){RP.lot=this.value.trim();loadReport()}" class="btn" style="padding:8px;min-width:240px"><button class="btn pri" onclick="RP.lot=$('rp-lot').value.trim();loadReport()">조회</button>`}
+      <span style="flex:1"></span>${RP.tab !== 'lot' ? `<input type="date" value="${RP.from}" onchange="RP.from=this.value;loadReport()" class="btn" style="padding:8px"> ~ <input type="date" value="${RP.to}" onchange="RP.to=this.value;loadReport()" class="btn" style="padding:8px">` : `<input id="rp-lot" value="${E(RP.lot)}" placeholder="LOT 번호 (완제품·자재)" onkeydown="if(event.key==='Enter'){RP.lot=parseLot(this.value).lot;loadReport()}" class="btn" style="padding:8px;min-width:240px"><button class="btn pri" onclick="RP.lot=parseLot($('rp-lot').value).lot;loadReport()">조회</button>`}
       <button class="btn" onclick="rpCSV()">⬇ CSV</button></div><div id="rp-body" class="card">⏳ 불러오는 중…</div>`;
 }
 let RPD = {cols: [], rows: []};
@@ -520,7 +524,7 @@ async function loadReport(){
     const [a, b] = await Promise.all([sb.from('prod_records').select('*').eq('lot_out', RP.lot).neq('status','void').order('created_at').limit(5000), sb.from('prod_records').select('*').contains('lots_in', [{lot: RP.lot}]).neq('status','void').order('created_at').limit(5000)]);
     const all = [...(a.data||[]).map(x => ['이 LOT 생산', x]), ...(b.data||[]).map(x => ['이 자재 LOT 투입', x])];
     cols = ['구분','일시','작업지시','품목','공정','작업자','설비','양품','불량','투입 자재 LOT'];
-    rows = all.map(([k, x]) => [k, ymd(x.created_at) + ' ' + hm(x.start_at || x.created_at), x.order_no, x.item_name, procName(x.process_code), workName(x.worker_code), x.machine_code ? machName(x.machine_code) : '', +x.good_qty||0, +x.ng_qty||0, (x.lots_in || []).map(l => l.lot).join(', ')]);
+    rows = all.map(([k, x]) => [k, ymd(x.created_at) + ' ' + hm(x.start_at || x.created_at), x.order_no, x.item_name, procName(x.process_code), workName(x.worker_code), x.machine_code ? machName(x.machine_code) : '', +x.good_qty||0, +x.ng_qty||0, (x.lots_in || []).map(l => l.lot + (l.code ? ` (${l.code})` : '')).join(', ')]);
   }
   RPD = {cols, rows};
   const numC = i => rows.length && typeof rows[0][i] === 'number';
