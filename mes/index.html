@@ -189,6 +189,7 @@ async function loadLive(fromIso){
   const map = {}; [...(a.data||[]), ...(b.data||[])].forEach(x => map[x.id] = x); M.rec = Object.values(map).sort((x,y) => String(y.created_at).localeCompare(String(x.created_at)));
   M.ev = c.data || [];
   const ck = await sb.from('machine_checks').select('*').eq('check_date', ymd(new Date())).order('created_at', {ascending: false}).limit(500); M.chk = ck.data || [];
+  try { const q = await sb.from('ncr').select('id,status,qty').in('status', ['open','decided','approved']); M.ncrOpen = q.error ? [] : (q.data || []); } catch (e) { M.ncrOpen = []; }
 }
 const procName = c => (M.proc.find(p => p.code === c) || {}).name || c || '-';
 const workName = c => (M.work.find(p => p.code === c) || {}).name || c || '-';
@@ -235,16 +236,17 @@ async function doLogin(){
 async function logout(){ if (!ME.email || !confirm(`${ME.email}에서 로그아웃할까요?`)) return; await sb.auth.signOut(); location.reload(); }
 
 // ── 화면 전환
-const VIEWS = [['floor','📝 실적 입력'],['machine','⚙️ 설비'],['tv','📺 현황판'],['report','📊 보고서'],['admin','🛠 기준정보']];
+const VIEWS = [['floor','📝 실적 입력'],['machine','⚙️ 설비'],['tv','📺 현황판'],['ncr','🚫 부적합'],['report','📊 보고서'],['admin','🛠 기준정보']];
 function go(v){ location.hash = v; }
 window.addEventListener('hashchange', () => render());
 function render(){
   const v = (location.hash || '').slice(1) || (ME.role === 'viewer' ? 'tv' : 'floor');
   S.view = v; document.body.classList.toggle('tv', v === 'tv');
-  $('nav').innerHTML = VIEWS.filter(([k]) => ME.role === 'viewer' ? ['tv','report'].includes(k) : k !== 'admin' || ME.role === 'admin').map(([k,l]) => `<a href="#${k}" class="${k === v ? 'on' : ''}">${l}</a>`).join('');
+  $('nav').innerHTML = VIEWS.filter(([k]) => ME.role === 'viewer' ? ['tv','report','ncr'].includes(k) : k !== 'admin' || ME.role === 'admin').map(([k,l]) => `<a href="#${k}" class="${k === v ? 'on' : ''}">${l}</a>`).join('');
   const app = $('app');
   if (v === 'floor') app.innerHTML = floorView(); else if (v === 'machine') app.innerHTML = machineView(); else if (v === 'tv') app.innerHTML = tvView();
   else if (v === 'report') { app.innerHTML = reportView(); loadReport().catch(e => { const el = $('rp-body'); if (el) el.innerHTML = '<p style="color:var(--bad)">불러오기 실패: ' + E(e.message || e) + '</p>'; }); } else if (v === 'admin') app.innerHTML = adminView();
+  else if (v === 'ncr') { app.innerHTML = ncrView(); ncrLoad().catch(e => { const el = $('nc-body'); if (el) el.innerHTML = '<p style="color:var(--bad)">불러오기 실패: ' + E(e.message || e) + '</p>'; }); }
   if (v === 'floor') setTimeout(() => { const i = $('scan'); if (i && !document.querySelector('.ov')) i.focus(); }, 50);
 }
 
@@ -566,6 +568,9 @@ function tvAlerts(){
   const ex = M.skill.filter(k => k.valid_until && k.valid_until < t), sn = M.skill.filter(k => k.valid_until && k.valid_until >= t && k.valid_until <= soon);
   if (ex.length) a.push(['bad', `🎓 자격 만료 ${ex.length}건 · ${[...new Set(ex.map(k => workName(k.worker_code)))].slice(0, 4).join(', ')}`]);
   if (sn.length) a.push(['warn', `🎓 30일 내 자격 만료 ${sn.length}건 · ${[...new Set(sn.map(k => workName(k.worker_code)))].slice(0, 4).join(', ')}`]);
+  const no = M.ncrOpen || [], nOpen = no.filter(x => x.status === 'open').length, nDec = no.filter(x => x.status === 'decided').length;
+  if (nOpen) a.push(['bad', `🚫 부적합 처리 대기 ${nOpen}건 (${N(no.filter(x => x.status === 'open').reduce((t, x) => t + (+x.qty||0), 0))}개)`]);
+  if (nDec) a.push(['warn', `🚫 부적합 승인 대기 ${nDec}건`]);
   if (!a.length) return '';
   return `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">${a.map(([k, v]) => `<div style="padding:8px 14px;border-radius:9px;font-weight:700;font-size:15px;background:${k === 'bad' ? '#7F1D1D' : '#78350F'};color:${k === 'bad' ? '#FECACA' : '#FDE68A'};border:1px solid ${k === 'bad' ? '#B91C1C' : '#B45309'}">${E(v)}</div>`).join('')}</div>`;
 }
@@ -1067,6 +1072,165 @@ function c4Print(){
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>4M 변경 관리 대장</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:"Malgun Gothic",sans-serif;font-size:10.5px}h1{font-size:17px;text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:4px 4px;text-align:center}th{background:#EEE}.sg{float:right;margin-bottom:6px}.sg td{width:66px;height:42px;vertical-align:top}</style></head><body>
     <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr></table><h1 style="clear:both">4M 변경 관리 대장</h1><div style="margin-bottom:6px">THE GAUSS VINA · 200kW PCDU · 기준일 ${ymd(new Date())}</div>
     <table><thead><tr><th>No</th><th>구분</th><th>변경 내용</th><th>공정</th><th>문서 번호</th><th>변경 예정일</th><th>고객 통보</th><th>고객 승인</th><th>적용일</th><th>첫 작업지시 / LOT</th><th>초품 검사</th><th>상태</th></tr></thead><tbody>${rows || '<tr><td colspan="12">기록 없음</td></tr>'}</tbody></table>
+    <script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
+}
+// ════════ 🚫 부적합 대장 (실적에 불량이 들어오면 자동 등록 → 처리 결정 → 승인 → 재작업/폐기/특채 완료) ════════
+const NCS = {open: ['처리 대기','m-stop'], decided: ['승인 대기','m-setup'], approved: ['처리 중','m-run'], closed: ['완료','m-idle'], void: ['취소','m-idle']};
+const NCD = {rework: '재작업', scrap: '폐기', accept: '특채'};
+const NC = {from: '', to: '', f: 'todo', rows: []};
+const ncNo = x => 'NCR-' + String(x.id).padStart(4, '0');
+function ncrView(){
+  if (!NC.from) { const d = new Date(); NC.to = ymd(d); d.setDate(1); d.setMonth(d.getMonth() - 1); NC.from = ymd(d); }
+  const fs = [['todo','처리할 것'],['all','전체'],['closed','완료'],['void','취소']];
+  return `<div class="card"><h2>🚫 부적합 대장 <span class="muted">실적에 불량이 들어오면 자동으로 올라옵니다. 처리 방법을 정하고 관리자가 승인하면 재작업·폐기·특채로 마무리됩니다.</span></h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">${fs.map(([k, l]) => `<button class="btn ${NC.f === k ? 'pri' : ''}" onclick="NC.f='${k}';render()">${l}</button>`).join('')}
+      <span style="flex:1"></span><input type="date" value="${NC.from}" onchange="NC.from=this.value;render()"> ~ <input type="date" value="${NC.to}" onchange="NC.to=this.value;render()">
+      <button class="btn" onclick="ncrPrint()">🖨 부적합 대장 출력</button></div>
+    <div id="nc-body"><p class="muted">불러오는 중…</p></div></div>`;
+}
+async function ncrLoad(){
+  const to = new Date(NC.to + 'T00:00:00'); to.setDate(to.getDate() + 1);
+  const [a, b] = await Promise.all([
+    sb.from('ncr').select('*').gte('created_at', new Date(NC.from + 'T00:00:00').toISOString()).lt('created_at', to.toISOString()).order('created_at', {ascending: false}).limit(5000),
+    sb.from('ncr').select('*').in('status', ['open','decided','approved']).order('created_at', {ascending: false}).limit(2000)]);
+  if (a.error) throw a.error;
+  const m = new Map(); [...(b.data || []), ...(a.data || [])].forEach(x => m.set(x.id, x));
+  NC.rows = [...m.values()].sort((x, y) => String(y.created_at).localeCompare(String(x.created_at)));
+  M.ncrOpen = NC.rows.filter(x => ['open','decided','approved'].includes(x.status)).map(x => ({id: x.id, status: x.status, qty: x.qty}));
+  const el = $('nc-body'); if (el) el.innerHTML = ncrBody();
+}
+function ncrInPeriod(x){ const d = ymd(x.created_at); return d >= NC.from && d <= NC.to; }
+function ncrBody(){
+  const all = NC.rows, per = all.filter(ncrInPeriod), live = per.filter(x => x.status !== 'void');
+  const list = NC.f === 'todo' ? all.filter(x => ['open','decided','approved'].includes(x.status)) : NC.f === 'all' ? per : per.filter(x => x.status === NC.f);
+  const cnt = s => all.filter(x => x.status === s).length, sum = (arr, f) => arr.reduce((t, x) => t + (+f(x) || 0), 0);
+  const kpi = [['처리 대기', cnt('open'), cnt('open') ? '#F87171' : ''], ['승인 대기', cnt('decided'), cnt('decided') ? '#FBBF24' : ''], ['처리 중', cnt('approved'), ''],
+    ['기간 불량 수량', N(sum(live, x => x.qty)), ''], ['재작업 양품', N(sum(live, x => x.rework_ok)), ''], ['폐기', N(sum(live, x => x.disp === 'scrap' ? x.qty : x.rework_ng)), '']];
+  const btn = x => {
+    const b = [];
+    if (x.status === 'open' && ME.role !== 'viewer') b.push(`<button class="btn pri" style="padding:6px 10px" onclick="ncrDecide(${x.id})">처리 결정</button>`);
+    if (x.status === 'decided') { if (ME.role === 'admin') b.push(`<button class="btn ok" style="padding:6px 10px" onclick="ncrApprove(${x.id})">승인</button> <button class="btn" style="padding:6px 10px" onclick="ncrReject(${x.id})">반려</button>`); if (ME.role !== 'viewer') b.push(`<button class="btn" style="padding:6px 10px" onclick="ncrDecide(${x.id})">수정</button>`); }
+    if (x.status === 'approved' && x.disp === 'rework' && x.rework_ok == null && ME.role !== 'viewer') b.push(`<button class="btn pri" style="padding:6px 10px" onclick="ncrRework(${x.id})">재작업 결과</button>`);
+    if (x.status === 'approved' && +x.scrap_qty > 0 && !x.erp_sent_at && ME.role === 'admin') b.push(`<button class="btn" style="padding:6px 10px;color:var(--bad)" onclick="ncrScrap(${x.id})">ERP 불량 입고</button>`);
+    return b.join(' ');
+  };
+  const dispTxt = x => !x.disp ? '-' : `<b>${E(NCD[x.disp])}</b>${x.disp === 'accept' && x.accept_ref ? '<div class="muted">고객 승인 ' + E(x.accept_ref) + '</div>' : ''}${x.rework_ok != null ? `<div class="muted">양품 ${N(x.rework_ok)} · 불량 ${N(x.rework_ng)}</div>` : ''}${+x.scrap_qty > 0 ? `<div class="muted">폐기 ${N(x.scrap_qty)}${x.erp_sent_at ? ' · ERP 입고 ' + E(ymd(x.erp_sent_at)) : ' · ERP 미입고'}</div>` : ''}`;
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px">${kpi.map(([l, v, c]) => `<div class="card" style="padding:10px 12px"><div class="muted">${l}</div><div style="font-size:24px;font-weight:800;${c ? 'color:' + c : ''}">${v}</div></div>`).join('')}</div>
+    <div style="overflow:auto"><table><thead><tr><th>번호</th><th>발생</th><th>작업지시 · LOT</th><th>공정</th><th>작업자 · 설비</th><th class="r">수량</th><th>불량 사유</th><th>원인 · 대책</th><th>처리</th><th>결정 · 승인</th><th>상태</th><th></th></tr></thead><tbody>
+    ${list.map(x => `<tr style="${x.status === 'void' ? 'color:var(--sub);text-decoration:line-through' : ''}"><td style="font-family:monospace;white-space:nowrap">${ncNo(x)}</td><td style="white-space:nowrap">${E(ymd(x.created_at))}<div class="muted">${E(hm(x.created_at))}</div></td>
+      <td>${E(x.order_no || '')}<div class="muted" style="font-family:monospace">${E(x.lot || '')}</div></td><td>${E(procName(x.process_code))}</td><td>${E(workName(x.worker_code))}<div class="muted">${E(x.machine_code ? machName(x.machine_code) : '')}</div></td>
+      <td class="r" style="font-weight:800;color:var(--bad)">${N(x.qty)}</td><td>${E(x.reason || '')}</td><td style="max-width:220px">${E(x.cause || '')}${x.action ? '<div class="muted">대책: ' + E(x.action) + '</div>' : ''}</td><td>${dispTxt(x)}</td>
+      <td style="white-space:nowrap">${x.decided_by ? E(x.decided_by) + '<div class="muted">' + E(ymd(x.decided_at)) + '</div>' : ''}${x.approved_by ? '<b>✔ ' + E(x.approved_by) + '</b><div class="muted">' + E(ymd(x.approved_at)) + '</div>' : ''}</td>
+      <td><span class="tag ${(NCS[x.status] || [])[1] || 'm-idle'}">${E((NCS[x.status] || [x.status])[0])}</span>${x.note ? '<div class="muted">' + E(x.note) + '</div>' : ''}</td><td style="white-space:nowrap">${btn(x)}</td></tr>`).join('') || '<tr><td colspan="12" class="muted">해당하는 부적합이 없습니다.</td></tr>'}</tbody></table></div>
+    <h2 style="margin-top:18px">📊 불량 사유 파레토 <span class="muted">${E(NC.from)} ~ ${E(NC.to)} · 취소 건 제외</span></h2>${ncrPareto(live)}
+    <p class="muted" style="margin-top:10px">흐름: 처리 대기 → <b>처리 결정</b>(재작업·폐기·특채, 원인·대책) → <b>관리자 승인</b> → 재작업은 결과 입력(양품은 실적으로 다시 잡혀 ERP로 넘어감, 남은 불량은 폐기), 폐기는 <b>ERP 불량 입고</b> 후 완료, 특채는 승인 즉시 완료. ERP 불량 재고의 폐기 처리는 ERP 불량(NG) 탭의 폐기관리 대장에서 합니다.</p>`;
+}
+function ncrPareto(rows){
+  const g = {}; rows.forEach(x => { const k = x.reason || '(사유 없음)'; g[k] = (g[k] || 0) + (+x.qty || 0); });
+  const arr = Object.entries(g).sort((a, b) => b[1] - a[1]), tot = arr.reduce((t, x) => t + x[1], 0);
+  if (!tot) return '<p class="muted">이 기간 불량이 없습니다.</p>';
+  let cum = 0;
+  return `<table style="max-width:760px"><thead><tr><th>불량 사유</th><th class="r">수량</th><th class="r">비율</th><th class="r">누적</th><th style="width:45%"></th></tr></thead><tbody>${arr.map(([k, v]) => { cum += v; const p = v / tot * 100, c = cum / tot * 100;
+    return `<tr><td><b>${E(k)}</b></td><td class="r">${N(v)}</td><td class="r">${p.toFixed(1)}%</td><td class="r" style="${c <= 80.05 ? 'font-weight:700' : 'color:var(--sub)'}">${c.toFixed(1)}%</td><td><div style="height:14px;border-radius:4px;background:${c <= 80.05 || cum === v ? '#DC2626' : '#F59E0B'};width:${Math.max(2, v / arr[0][1] * 100)}%"></div></td></tr>`; }).join('')}</tbody></table>
+    <p class="muted">누적 80% 안에 드는 사유(빨간 막대)부터 원인 분석·대책을 세우면 효과가 큽니다.</p>`;
+}
+function ncrDecide(id){
+  const x = NC.rows.find(r => r.id === id); if (!x) return;
+  const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+  let disp = x.disp || '';
+  const draw = () => { ov.innerHTML = `<div class="box" style="max-width:640px"><h2>${ncNo(x)} 처리 결정</h2>
+    <div class="muted" style="margin-bottom:10px">${E(x.order_no || '')} · ${E(procName(x.process_code))} · LOT ${E(x.lot || '-')} · <b style="color:var(--bad)">불량 ${N(x.qty)}</b> · ${E(x.reason || '')}</div>
+    <div style="font-weight:700;margin-bottom:6px">처리 방법</div><div class="pick" style="margin-bottom:10px">${Object.entries(NCD).map(([k, v]) => `<button class="${disp === k ? 'on' : ''}" data-d="${k}">${v}<span class="vi">${k === 'rework' ? 'Làm lại' : k === 'scrap' ? 'Hủy bỏ' : 'Chấp nhận đặc biệt'}</span></button>`).join('')}</div>
+    <div class="grid" style="grid-template-columns:1fr">
+      <label class="field"><span>발생 원인</span><input id="nc-cause" value="${E(x.cause || '')}" placeholder="예) 권선 장력 설정값 이탈"></label>
+      <label class="field"><span>재발 방지 대책</span><input id="nc-act" value="${E(x.action || '')}" placeholder="예) 장력 시업 점검 항목 추가, 작업자 재교육"></label>
+      ${disp === 'accept' ? `<label class="field"><span>고객 특채 승인 번호 (필수)</span><input id="nc-ref" value="${E(x.accept_ref || '')}"></label>` : ''}
+      <label class="field"><span>메모</span><input id="nc-note" value="${E(x.note || '')}"></label></div>
+    <div style="display:flex;gap:8px;margin-top:12px"><span style="flex:1"></span><button class="btn" id="nc-x">취소</button><button class="btn ok" id="nc-go">결정 저장 → 승인 요청</button></div></div>`;
+    ov.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const keep = {cause: $('nc-cause').value, action: $('nc-act').value, note: $('nc-note').value}; disp = b.dataset.d; draw(); $('nc-cause').value = keep.cause; $('nc-act').value = keep.action; $('nc-note').value = keep.note; });
+    $('nc-x').onclick = () => ov.remove();
+    $('nc-go').onclick = async () => {
+      if (!disp) { alert('처리 방법을 골라주세요.'); return; }
+      const v = k => ($(k) && $(k).value.trim()) || null;
+      if (!v('nc-cause')) { alert('발생 원인을 적어주세요.'); return; }
+      if (disp === 'accept' && !v('nc-ref')) { alert('특채는 고객 승인 번호가 있어야 합니다.'); return; }
+      const r = await sb.from('ncr').update({disp, cause: v('nc-cause'), action: v('nc-act'), accept_ref: disp === 'accept' ? v('nc-ref') : null, note: v('nc-note'), status: 'decided', decided_by: ME.name || ME.email, decided_at: new Date().toISOString(), approved_by: null, approved_at: null}).match({id}).in('status', ['open','decided']).select();
+      if (r.error) { alert('저장 실패: ' + r.error.message); return; }
+      if (!(r.data || []).length) { alert('다른 사람이 먼저 처리했습니다. 새로 불러옵니다.'); }
+      ov.remove(); await ncrLoad(); toast('처리 방법을 저장했습니다 — 관리자 승인을 기다립니다');
+    };
+  };
+  draw();
+}
+async function ncrApprove(id){
+  const x = NC.rows.find(r => r.id === id); if (!x) return;
+  const me = ME.name || ME.email;
+  if (!confirm(`${ncNo(x)} — ${NCD[x.disp]} (${N(x.qty)}개)\n원인: ${x.cause || ''}\n대책: ${x.action || ''}\n\n승인할까요?` + (x.decided_by === me ? '\n\n※ 결정한 사람과 승인하는 사람이 같습니다.' : ''))) return;
+  const now = new Date().toISOString(), row = {approved_by: me, approved_at: now, status: x.disp === 'accept' ? 'closed' : 'approved'};
+  if (x.disp === 'accept') row.closed_at = now;
+  if (x.disp === 'scrap') row.scrap_qty = x.qty;
+  const r = await sb.from('ncr').update(row).match({id, status: 'decided'}).select();
+  if (r.error) { alert('승인 실패: ' + r.error.message); return; }
+  await ncrLoad(); toast(x.disp === 'accept' ? '✔ 특채 승인 — 완료 처리했습니다' : x.disp === 'scrap' ? '✔ 승인 — ERP 불량 입고를 눌러 마무리하세요' : '✔ 승인 — 재작업 후 결과를 입력하세요');
+}
+async function ncrReject(id){
+  const why = prompt('반려 사유'); if (!why) return;
+  const x = NC.rows.find(r => r.id === id);
+  const r = await sb.from('ncr').update({status: 'open', note: ((x && x.note) ? x.note + ' · ' : '') + '반려: ' + why}).match({id, status: 'decided'});
+  if (r.error) { alert(r.error.message); return; } await ncrLoad(); toast('반려했습니다');
+}
+function ncrRework(id){
+  const x = NC.rows.find(r => r.id === id); if (!x) return;
+  const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+  const ws = M.work.filter(w => w.active !== false);
+  ov.innerHTML = `<div class="box" style="max-width:560px"><h2>${ncNo(x)} 재작업 결과</h2>
+    <div class="muted" style="margin-bottom:10px">${E(x.order_no || '')} · ${E(procName(x.process_code))} · LOT ${E(x.lot || '-')} · 재작업 대상 <b>${N(x.qty)}</b>개</div>
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <label class="field"><span>재검사 합격 (양품)</span><input id="rw-ok" type="number" inputmode="numeric" min="0" value="${E(x.qty)}"></label>
+      <label class="field"><span>재작업 후에도 불량 → 폐기</span><input id="rw-ng" type="number" inputmode="numeric" min="0" value="0"></label>
+      <label class="field" style="grid-column:1/-1"><span>재작업자</span><select id="rw-w">${ws.map(w => `<option value="${E(w.code)}" ${w.code === x.worker_code ? 'selected' : ''}>${E(w.name)}</option>`).join('')}</select></label></div>
+    <p class="muted">양품 수량은 이 공정의 실적("재작업 ${ncNo(x)}")으로 다시 잡힙니다. 마지막 공정이면 ERP 반영 대상이 됩니다.</p>
+    <div style="display:flex;gap:8px;margin-top:12px"><span style="flex:1"></span><button class="btn" id="rw-x">취소</button><button class="btn ok" id="rw-go">저장</button></div></div>`;
+  $('rw-x').onclick = () => ov.remove();
+  $('rw-go').onclick = async () => {
+    const ok = +$('rw-ok').value || 0, ng = +$('rw-ng').value || 0;
+    if (ok < 0 || ng < 0 || Math.abs(ok + ng - (+x.qty || 0)) > 1e-9) { alert(`양품 + 폐기 = ${N(x.qty)} 이 되어야 합니다.`); return; }
+    $('rw-go').disabled = true;
+    const claim = await sb.from('ncr').update({rework_ok: ok, rework_ng: ng, scrap_qty: ng}).match({id, status: 'approved'}).is('rework_ok', null).select();
+    if (claim.error || !(claim.data || []).length) { alert(claim.error ? '저장 실패: ' + claim.error.message : '이미 결과가 입력되었습니다.'); ov.remove(); await ncrLoad(); return; }
+    let recId = null;
+    if (ok > 0) {
+      const now = new Date().toISOString();
+      const r = await sb.from('prod_records').insert({wo_id: x.wo_id, order_no: x.order_no, item_code: x.item_code, item_name: x.item_name, process_code: x.process_code, worker_code: $('rw-w').value || x.worker_code, machine_code: null, start_at: now, end_at: now, good_qty: ok, ng_qty: 0, lot_out: x.lot, lots_in: [], note: '재작업 ' + ncNo(x), status: 'done', device: S.device}).select().single();
+      if (r.error) { await sb.from('ncr').update({rework_ok: null, rework_ng: null, scrap_qty: null}).match({id}); alert('재작업 실적 저장 실패: ' + r.error.message); ov.remove(); return; }
+      recId = r.data.id;
+    }
+    const fin = {rework_rec_id: recId}; if (!ng) { fin.status = 'closed'; fin.closed_at = new Date().toISOString(); }
+    await sb.from('ncr').update(fin).match({id});
+    ov.remove(); await loadLive(); await ncrLoad(); toast(ng ? `재작업 양품 ${N(ok)} 저장 — 남은 ${N(ng)}개는 ERP 불량 입고로 마무리하세요` : '재작업 완료 — 양품 실적으로 잡았습니다');
+  };
+}
+async function ncrScrap(id){
+  const x = NC.rows.find(r => r.id === id); if (!x) return;
+  const token = erpToken();
+  if (!token) { alert('ERP 로그인 정보가 없습니다.\n이 브라우저에서 ERP(…/erp/) 화면에 먼저 로그인한 뒤 다시 누르세요.'); return; }
+  if (!confirm(`ERP 불량 재고로 입고합니다.\n\n${x.item_name || x.item_code}  ${N(x.scrap_qty)}개\n${ncNo(x)} · ${x.order_no || ''} · LOT ${x.lot || '-'}\n\n보낼까요?`)) return;
+  const ts = new Date().toISOString();
+  const c = await sb.from('ncr').update({erp_sent_at: ts}).match({id, status: 'approved'}).is('erp_sent_at', null).select();
+  if (c.error || !(c.data || []).length) { alert(c.error ? c.error.message : '이미 보냈습니다.'); await ncrLoad(); return; }
+  const res = await erpCall('addNG', {id: Date.now(), type: 'ng-in', code: x.item_code, name: x.item_name, cat: 'TP', unit: 'EA', qty: +x.scrap_qty, reason: x.reason || '공정 불량', note: `MES ${ncNo(x)} · ${x.order_no || ''} · LOT ${x.lot || '-'} · ${procName(x.process_code)}`, user: ME.name || '', model: 'PCDU'}, token);
+  if (res && res.ok) { await sb.from('ncr').update({status: 'closed', closed_at: new Date().toISOString()}).match({id}); await ncrLoad(); toast('ERP 불량 재고에 입고하고 완료 처리했습니다'); }
+  else if (res && (res.error === 'timeout' || res.error === 'network')) { await ncrLoad(); alert('응답이 없어 결과를 확인하지 못했습니다. ERP 불량(NG) 탭에서 입고됐는지 확인하세요.\n(중복 입고를 막기 위해 "보냄"으로 표시해 두었습니다)'); }
+  else { await sb.from('ncr').update({erp_sent_at: null}).match({id}); alert('ERP 입고 실패: ' + (res && res.error || '알 수 없는 오류')); }
+}
+function ncrPrint(){
+  const rows = NC.rows.filter(ncrInPeriod).filter(x => x.status !== 'void').slice().reverse();
+  const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
+  const tr = rows.map(x => `<tr><td>${ncNo(x)}</td><td>${E(ymd(x.created_at))}</td><td>${E(x.order_no || '')}<br><small>${E(x.lot || '')}</small></td><td>${E(procName(x.process_code))}</td><td>${E(workName(x.worker_code))}</td><td>${N(x.qty)}</td><td>${E(x.reason || '')}</td><td style="text-align:left">${E(x.cause || '')}</td><td style="text-align:left">${E(x.action || '')}</td><td>${E(x.disp ? NCD[x.disp] : '')}${x.accept_ref ? '<br><small>' + E(x.accept_ref) + '</small>' : ''}${x.rework_ok != null ? '<br><small>양품 ' + N(x.rework_ok) + ' / 폐기 ' + N(x.rework_ng) + '</small>' : ''}</td><td>${E(x.decided_by || '')}</td><td>${E(x.approved_by || '')}<br><small>${E(ymd(x.approved_at))}</small></td><td>${E((NCS[x.status] || [x.status])[0])}</td></tr>`).join('');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>부적합품 관리 대장</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:"Malgun Gothic",sans-serif;font-size:10px}h1{font-size:17px;text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:3px 4px;text-align:center}th{background:#EEE}.sg{float:right;margin-bottom:6px}.sg td{width:66px;height:42px;vertical-align:top}</style></head><body>
+    <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr></table><h1 style="clear:both">부적합품 관리 대장 (NCR Log)</h1><div style="margin-bottom:6px">THE GAUSS VINA · 200kW PCDU · 기간 ${E(NC.from)} ~ ${E(NC.to)} · 출력일 ${ymd(new Date())}</div>
+    <table><thead><tr><th>번호</th><th>발생일</th><th>작업지시 / LOT</th><th>공정</th><th>작업자</th><th>수량</th><th>불량 사유</th><th>발생 원인</th><th>재발 방지 대책</th><th>처리</th><th>결정</th><th>승인</th><th>상태</th></tr></thead><tbody>${tr || '<tr><td colspan="13">기록 없음</td></tr>'}</tbody></table>
+    <h2 style="font-size:13px;margin-top:14px">불량 사유 파레토</h2>${ncrPareto(rows)}
     <script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
 }
 async function machBulk(){
