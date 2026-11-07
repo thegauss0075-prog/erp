@@ -183,3 +183,4 @@ alter table routings add column if not exists lot_required boolean default false
 alter table routings add column if not exists unit_name text, add column if not exists unit_per numeric default 1;
 -- ── [2026-11-06] 계측기 교정 대장 · 설비 일상점검 (Supabase에 적용해 둠: gauges, gauge_cals, check_items, machine_checks + RLS)
 -- ── [2026-11-06] 작업자 자격(worker_skills) · 4M 변경 대장(changes_4m) (Supabase에 적용해 둠 + RLS)
+-- ── [2026-11-07] 수정 이력(audit_log + audit_trg 트리거) · 전자 검토·승인(approvals) (Supabase에 적용해 둠)

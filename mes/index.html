@@ -584,10 +584,19 @@ async function loadReport(){
       const k = e.machine_code + '|' + e.state + '|' + (e.reason_code || ''); const o = g[k] = g[k] || [machName(e.machine_code), ({run:'가동',stop:'정지',setup:'셋업',idle:'대기'})[e.state], e.reason_code ? (M.reasons.find(x => x.code === e.reason_code) || {}).name || e.reason_code : '', 0, 0]; o[3]++; o[4] += t - s; });
     cols = ['설비','상태','사유','횟수','시간']; rows = Object.values(g).sort((x,y) => y[4] - x[4]).map(o => [o[0], o[1], o[2], o[3], dur(o[4])]);
   } else if (RP.tab === 'chk') {
-    const r = await sb.from('machine_checks').select('*').gte('check_date', RP.from).lte('check_date', RP.to).order('created_at').limit(20000);
+    const [r, u, ap] = await Promise.all([sb.from('machine_checks').select('*').gte('check_date', RP.from).lte('check_date', RP.to).order('created_at').limit(20000),
+      sb.from('prod_records').select('machine_code,start_at,created_at,status').gte('created_at', RP.from + 'T00:00:00').lte('created_at', RP.to + 'T23:59:59').neq('status','void').limit(50000),
+      sb.from('approvals').select('*').eq('doc_type', 'chk').eq('period', RP.from + '~' + RP.to)]);
+    const used = new Set((u.data || []).filter(x => x.machine_code).map(x => x.machine_code + '|' + ymd(x.start_at || x.created_at)));
+    const list = r.data || [], aps = ap.data || [];
+    let changed = [];
+    if (aps.length) { const first = aps.map(a => a.approved_at).sort()[0]; const al = await sb.from('audit_log').select('*').eq('tbl', 'machine_checks').gte('at', first).limit(500); changed = (al.data || []).filter(a => { const d = (a.old_row || {}).check_date; return d >= RP.from && d <= RP.to; }); }
+    RP._chk = list;
     cols = ['일자','설비','점검자','결과','NG 항목','측정값','특이사항','시각'];
-    rows = (r.data || []).map(c => [c.check_date, machName(c.machine_code), workName(c.worker_code), c.all_ok ? 'OK' : 'NG', (c.results || []).filter(x => !x.ok).map(x => x.item).join(', '), (c.results || []).filter(x => x.value).map(x => x.item + ' ' + x.value).join(', '), c.note || '', hm(c.created_at)]);
-    if (rows.length || true) { RPD = {cols, rows}; el.innerHTML = chkMatrix(r.data || []) + (rows.length ? `<h2 style="margin-top:16px">점검 기록 ${rows.length}건</h2><div style="overflow:auto"><table><thead><tr>${cols.map(c => `<th>${E(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(x => `<tr style="${x[3] === 'NG' ? 'color:var(--bad)' : ''}">${x.map(v => `<td>${E(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<p class="muted">이 기간 점검 기록이 없습니다.</p>'); return; }
+    rows = list.map(c => [c.check_date, machName(c.machine_code), workName(c.worker_code), c.all_ok ? 'OK' : 'NG', (c.results || []).filter(x => !x.ok).map(x => x.item).join(', '), (c.results || []).filter(x => x.value).map(x => x.item + ' ' + x.value).join(', '), c.note || '', hm(c.created_at)]);
+    RPD = {cols, rows};
+    el.innerHTML = apBox('chk', aps, changed) + chkMatrix(list, used) + (rows.length ? `<h2 style="margin-top:16px">점검 기록 ${rows.length}건 <a href="#" style="font-size:13px;font-weight:400" onclick="event.preventDefault();auditView('machine_checks')">수정 이력 보기</a></h2><div style="overflow:auto"><table><thead><tr>${cols.map(c => `<th>${E(c)}</th>`).join('')}${ME.role === 'admin' ? '<th></th>' : ''}</tr></thead><tbody>${rows.map((x, i) => `<tr style="${x[3] === 'NG' ? 'color:var(--bad)' : ''}">${x.map(v => `<td>${E(v)}</td>`).join('')}${ME.role === 'admin' ? `<td style="white-space:nowrap"><button class="btn" style="padding:4px 8px" onclick="chkEdit(${list[i].id})">메모 수정</button> <button class="btn" style="padding:4px 8px;color:var(--bad)" onclick="chkDel(${list[i].id})">삭제</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="muted">이 기간 점검 기록이 없습니다.</p>');
+    return;
   } else if (RP.tab === 'lot') {
     if (!RP.lot) { el.innerHTML = '<p class="muted">완제품 LOT 또는 자재 LOT을 넣으세요. 완제품 LOT이면 그 LOT의 공정별 이력과 투입 자재 LOT을, 자재 LOT이면 그 자재가 들어간 작업을 보여줍니다.</p>'; RPD = {cols: [], rows: []}; return; }
     const [a, b] = await Promise.all([sb.from('prod_records').select('*').eq('lot_out', RP.lot).neq('status','void').order('created_at').limit(5000), sb.from('prod_records').select('*').contains('lots_in', [{lot: RP.lot}]).neq('status','void').order('created_at').limit(5000)]);
@@ -660,18 +669,66 @@ async function erpOfferComplete(ids, token){
   await syncWO(true); toast('작업지시를 완료로 바꿨습니다.');
 }
 // 월별 설비 점검표 (설비 × 일자): ✔ 이상 없음, ✕ NG, 빈칸 미점검 — 종이 점검표 대신 출력
-function chkMatrix(list){
+function chkMatrix(list, used){ used = used || new Set();
   const days = []; for (let d = new Date(RP.from + 'T00:00:00'); ymd(d) <= RP.to && days.length < 62; d.setDate(d.getDate() + 1)) days.push(ymd(d));
   const ms = M.mach.filter(m => m.active !== false && chkItemsFor(m).length);
   if (!ms.length) return '<p class="muted">점검 항목이 등록된 설비가 없습니다. 🛠 기준정보 → 점검 항목에서 먼저 등록하세요.</p>';
-  const cell = (m, d) => { const c = list.filter(x => x.machine_code === m.code && x.check_date === d); if (!c.length) return ''; return c.some(x => !x.all_ok) ? '<b style="color:var(--bad)">✕</b>' : '<span style="color:var(--ok)">✔</span>'; };
-  return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h2 style="margin:0">월별 설비 점검표</h2><span class="muted">✔ 이상 없음 · ✕ NG · 빈칸 미점검</span><span style="flex:1"></span><button class="btn" onclick="chkPrint()">🖨 점검표 출력</button></div>
+  const t = ymd(new Date());
+  const cell = (m, d) => { const c = list.filter(x => x.machine_code === m.code && x.check_date === d); if (!c.length) return used.has(m.code + '|' + d) ? '<b style="color:#fff;background:var(--bad);padding:0 5px;border-radius:4px" title="생산했는데 점검 기록 없음">!</b>' : (d <= t ? '<span style="color:#B8C2CC">－</span>' : ''); return c.some(x => !x.all_ok) ? '<b style="color:var(--bad)">✕</b>' : '<span style="color:var(--ok)">✔</span>'; };
+  const miss = ms.reduce((a, m) => a + days.filter(d => used.has(m.code + '|' + d) && !list.some(x => x.machine_code === m.code && x.check_date === d)).length, 0);
+  return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h2 style="margin:0">월별 설비 점검표</h2><span class="muted">✔ 이상 없음 · ✕ NG · － 생산 없음 · <b style="color:var(--bad)">!</b> 생산했는데 점검 누락</span>${miss ? `<b style="color:var(--bad)">누락 ${miss}건</b>` : '<span style="color:var(--ok)">누락 없음</span>'}<span style="flex:1"></span><button class="btn" onclick="chkPrint()">🖨 점검표 출력</button></div>
     <div style="overflow:auto" id="chk-mx"><table style="font-size:12px"><thead><tr><th>설비</th>${days.map(d => `<th style="padding:4px 3px;text-align:center">${+d.slice(8)}</th>`).join('')}</tr></thead><tbody>${ms.map(m => `<tr><td style="white-space:nowrap"><b>${E(m.name)}</b></td>${days.map(d => `<td style="text-align:center;padding:4px 3px">${cell(m, d)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+// ── 전자 검토·승인: 작성(시스템 자동) → 검토 → 승인. 승인 후 기록이 바뀌면 경고
+let AP = [];
+function apBox(doc, aps, changed){
+  AP = aps; const g = st => aps.find(a => a.step === st);
+  const cell = st => { const a = g(st); return `<td style="text-align:center;min-width:130px;padding:6px">${a ? `<b>${E(a.approver_name || a.approver_email)}</b><div class="muted">${E(ymd(a.approved_at) + ' ' + hm(a.approved_at))}</div>${ME.role === 'admin' ? `<a href="#" class="muted" onclick="event.preventDefault();apUndo('${doc}','${st}')">취소</a>` : ''}` : (ME.role === 'admin' && (st === '검토' || g('검토')) ? `<button class="btn pri" style="padding:6px 12px" onclick="apDo('${doc}','${st}')">${st}</button>` : '<span class="muted">대기</span>')}</td>`; };
+  return `<div style="display:flex;justify-content:flex-end;gap:12px;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap">
+    ${changed.length ? `<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:9px;padding:8px 12px;font-size:13px;max-width:420px"><b style="color:var(--bad)">⚠ 승인 후 기록이 ${changed.length}건 바뀌었습니다.</b> <a href="#" onclick="event.preventDefault();auditView('machine_checks')">수정 이력</a>을 확인하고 다시 검토·승인하세요.</div>` : ''}
+    <table style="width:auto"><thead><tr><th style="text-align:center">작성</th><th style="text-align:center">검토</th><th style="text-align:center">승인</th></tr></thead><tbody><tr><td style="text-align:center;min-width:130px;padding:6px"><b>MES 자동</b><div class="muted">${E(RP.from)} ~ ${E(RP.to)}</div></td>${cell('검토')}${cell('승인')}</tr></tbody></table></div>`;
+}
+function apPrintBox(doc){
+  const g = st => AP.find(a => a.step === st), c = st => { const a = g(st); return a ? `${E(a.approver_name || a.approver_email)}<br><small>${E(ymd(a.approved_at))}</small>` : ''; };
+  return `<table class="sg" style="float:right;margin-bottom:6px;border-collapse:collapse"><tr><th style="border:1px solid #555;width:80px">작성</th><th style="border:1px solid #555;width:80px">검토</th><th style="border:1px solid #555;width:80px">승인</th></tr><tr><td style="border:1px solid #555;height:40px;text-align:center">MES</td><td style="border:1px solid #555;text-align:center">${c('검토')}</td><td style="border:1px solid #555;text-align:center">${c('승인')}</td></tr></table>`;
+}
+async function apDo(doc, step){
+  if (step === '승인' && (AP.find(a => a.step === '검토') || {}).approver_email === ME.email && !confirm('검토와 승인을 같은 사람이 합니다. 그래도 승인할까요?')) return;
+  const cm = prompt(`${RP.from} ~ ${RP.to} 설비 점검표를 ${step}합니다.\n의견 (없으면 비워 두세요)`, ''); if (cm === null) return;
+  const r = await sb.from('approvals').insert({doc_type: doc, period: RP.from + '~' + RP.to, step, approver_name: ME.name || ME.email, comment: cm.trim() || null});
+  if (r.error) { alert(/duplicate|unique/i.test(r.error.message) ? '이미 ' + step + '되어 있습니다.' : '저장 실패: ' + r.error.message); return; }
+  toast(`✔ ${step} 완료`); loadReport();
+}
+async function apUndo(doc, step){
+  if (step === '검토' && AP.find(a => a.step === '승인')) { alert('승인을 먼저 취소하세요.'); return; }
+  if (!confirm(`${step}을(를) 취소할까요? (취소 기록은 수정 이력에 남습니다)`)) return;
+  const r = await sb.from('approvals').delete().match({doc_type: doc, period: RP.from + '~' + RP.to, step}); if (r.error) { alert(r.error.message); return; } loadReport();
+}
+// ── 점검 기록 수정·삭제 (관리자, 사유 필수 → audit_log에 자동 기록)
+async function chkEdit(id){
+  const c = (RP._chk || []).find(x => x.id === id); if (!c) return;
+  const nt = prompt('특이사항(메모) 수정', c.note || ''); if (nt === null) return;
+  const rs = prompt('수정 사유 (필수)', ''); if (!rs || !rs.trim()) { alert('사유를 넣어야 수정됩니다.'); return; }
+  const r = await sb.from('machine_checks').update({note: nt.trim() || null, edit_reason: rs.trim()}).match({id}); if (r.error) { alert(r.error.message); return; } toast('수정했습니다 — 이력에 남았습니다'); loadReport();
+}
+async function chkDel(id){
+  const rs = prompt('이 점검 기록을 삭제합니다. 삭제 사유 (필수)', ''); if (!rs || !rs.trim()) { alert('사유를 넣어야 삭제됩니다.'); return; }
+  await sb.from('machine_checks').update({edit_reason: rs.trim()}).match({id});
+  const r = await sb.from('machine_checks').delete().match({id}); if (r.error) { alert(r.error.message); return; } toast('삭제했습니다 — 이전 내용은 이력에 남았습니다'); loadReport();
+}
+async function auditView(tbl){
+  const r = await sb.from('audit_log').select('*').eq('tbl', tbl).order('at', {ascending: false}).limit(300);
+  if (r.error) { alert('이력을 볼 권한이 없습니다.'); return; }
+  const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+  const sm = o => o ? E([o.check_date, o.machine_code && machName(o.machine_code), o.all_ok === false ? 'NG' : o.all_ok ? 'OK' : '', o.note].filter(Boolean).join(' · ')) : '';
+  ov.innerHTML = `<div class="box" style="max-width:860px"><h2>수정 이력 <span class="muted">${E(tbl)} · 지울 수 없는 기록</span></h2><div style="overflow:auto;max-height:60vh"><table><thead><tr><th>시각</th><th>구분</th><th>수정자</th><th>사유</th><th>이전</th><th>이후</th></tr></thead><tbody>
+    ${(r.data || []).filter(a => !(a.action === 'update' && a.new_row && a.old_row && a.new_row.note === a.old_row.note && a.new_row.edit_reason !== a.old_row.edit_reason && JSON.stringify({...a.new_row, edit_reason: null}) === JSON.stringify({...a.old_row, edit_reason: null}))).map(a => `<tr><td>${E(ymd(a.at) + ' ' + hm(a.at))}</td><td>${a.action === 'delete' ? '<b style="color:var(--bad)">삭제</b>' : '수정'}</td><td>${E(a.by_email || '')}</td><td>${E(a.reason || '-')}</td><td class="muted">${sm(a.old_row)}</td><td>${sm(a.new_row)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">수정·삭제된 기록이 없습니다.</td></tr>'}</tbody></table></div>
+    <div style="text-align:right;margin-top:10px"><button class="btn" onclick="this.closest('.ov').remove()">닫기</button></div></div>`;
 }
 function chkPrint(){
   const mx = $('chk-mx'); if (!mx) return; const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>설비 일상점검표 ${RP.from.slice(0,7)}</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:"Malgun Gothic",sans-serif;font-size:10px}h1{font-size:17px;text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:3px 2px;text-align:center}td:first-child{text-align:left;white-space:nowrap}.sg{float:right;margin-bottom:6px}.sg td{width:66px;height:42px;vertical-align:top}b{color:#C00}</style></head><body>
-    <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr></table><h1 style="clear:both">설비 일상점검 관리표 (${RP.from} ~ ${RP.to})</h1><div style="margin-bottom:6px">THE GAUSS VINA · ✔ 이상 없음 / ✕ NG (조치 내용은 점검 기록 참조) / 빈칸 미점검·비가동</div>
+    ${apPrintBox('chk')}<h1 style="clear:both">설비 일상점검 관리표 (${RP.from} ~ ${RP.to})</h1><div style="margin-bottom:6px">THE GAUSS VINA · ✔ 이상 없음 / ✕ NG (조치 내용은 점검 기록 참조) / － 생산 없음 / ! 생산했는데 점검 누락 · 전자 기록(MES) 출력본</div>
     ${mx.innerHTML}<script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
 }
 function rpCSV(){ if (!RPD.rows.length) { alert('내보낼 자료가 없습니다.'); return; } const esc = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
