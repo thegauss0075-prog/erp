@@ -670,13 +670,15 @@ async function loadReport(){
     const [a, b] = await Promise.all([sb.from('prod_records').select('*').eq('lot_out', RP.lot).neq('status','void').order('created_at').limit(5000), sb.from('prod_records').select('*').contains('lots_in', [{lot: RP.lot}]).neq('status','void').order('created_at').limit(5000)]);
     const all = [...(a.data||[]).map(x => ['이 LOT 생산', x]), ...(b.data||[]).map(x => ['이 자재 LOT 투입', x])];
     RP._c4 = M.c4.filter(c => c.applied_at && all.some(([, x]) => (!c.process_code || c.process_code === x.process_code) && String(x.created_at) >= String(c.applied_at)));
+    try { const tr = await sb.from('test_results').select('sn,end_time,result,vals,source_file,wo_no').eq('lot', RP.lot).order('end_time').limit(20000); RP._tr = tr.error ? null : (tr.data || []); } catch (e) { RP._tr = null; }
     cols = ['구분','일시','작업지시','품목','공정','작업자','설비','양품','불량','투입 자재 LOT'];
     rows = all.map(([k, x]) => [k, ymd(x.created_at) + ' ' + hm(x.start_at || x.created_at), x.order_no, x.item_name, procName(x.process_code), workName(x.worker_code), x.machine_code ? machName(x.machine_code) : '', +x.good_qty||0, +x.ng_qty||0, (x.lots_in || []).map(l => l.lot + (l.code ? ` (${l.code})` : '')).join(', ')]);
   }
   RPD = {cols, rows};
   const numC = i => rows.length && typeof rows[0][i] === 'number';
   el.innerHTML = rows.length ? `<div class="muted" style="margin-bottom:6px">${rows.length}건</div><div style="overflow:auto"><table><thead><tr>${cols.map((c, i) => `<th class="${numC(i) ? 'r' : ''}">${E(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map((v, i) => `<td class="${typeof v === 'number' ? 'r' : ''}">${typeof v === 'number' ? N(v) : E(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
-    ${RP.tab === 'erp' ? erpPushBar() : ''}${RP.tab === 'lot' && (RP._c4 || []).length ? `<h2 style="margin-top:14px">🔁 이 LOT에 해당하는 4M 변경</h2><table><thead><tr><th>구분</th><th>내용</th><th>공정</th><th>문서</th><th>고객 승인</th><th>적용</th><th>초품</th></tr></thead><tbody>${RP._c4.map(c => `<tr><td>${E(C4K[c.kind])}</td><td>${E(c.title)}</td><td>${E(c.process_code ? procName(c.process_code) : '전체')}</td><td>${E(c.doc_no||'')}</td><td>${E(c.cust_approval||'미승인')}</td><td>${E(ymd(c.applied_at))}</td><td>${E(c.fa_result||'-')}</td></tr>`).join('')}</tbody></table>` : ''}` : (RP.tab === 'erp' ? erpPushBar() : '') + '<p class="muted">이 기간 자료가 없습니다.</p>';
+    ${RP.tab === 'erp' ? erpPushBar() : ''}${RP.tab === 'lot' && (RP._c4 || []).length ? `<h2 style="margin-top:14px">🔁 이 LOT에 해당하는 4M 변경</h2><table><thead><tr><th>구분</th><th>내용</th><th>공정</th><th>문서</th><th>고객 승인</th><th>적용</th><th>초품</th></tr></thead><tbody>${RP._c4.map(c => `<tr><td>${E(C4K[c.kind])}</td><td>${E(c.title)}</td><td>${E(c.process_code ? procName(c.process_code) : '전체')}</td><td>${E(c.doc_no||'')}</td><td>${E(c.cust_approval||'미승인')}</td><td>${E(ymd(c.applied_at))}</td><td>${E(c.fa_result||'-')}</td></tr>`).join('')}</tbody></table>` : ''}` : (RP.tab === 'erp' ? erpPushBar() : '') + `<p class="muted">${RP.tab === 'lot' ? 'MES 생산 기록이 없는 LOT입니다.' : '이 기간 자료가 없습니다.'}</p>`;
+  if (RP.tab === 'lot' && RP.lot && RP._tr && RP._tr.length) el.insertAdjacentHTML('beforeend', trBlock(RP._tr));
 }
 // ── MES 완성 수량 → ERP 작업지시 생산 실적
 //    마지막 공정(완성)의 양품만, 아직 안 보낸 것만 보낸다. 보내기 전에 erp_sent_at을 먼저 찍어
@@ -1276,6 +1278,26 @@ function ncrPrint(){
     <table><thead><tr><th>번호</th><th>발생일</th><th>작업지시 / LOT</th><th>공정</th><th>작업자</th><th>수량</th><th>불량 사유</th><th>발생 원인</th><th>재발 방지 대책</th><th>처리</th><th>결정</th><th>승인</th><th>상태</th></tr></thead><tbody>${tr || '<tr><td colspan="13">기록 없음</td></tr>'}</tbody></table>
     <h2 style="font-size:13px;margin-top:14px">불량 사유 파레토</h2>${ncrPareto(rows)}
     <script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
+}
+// ── 특성검사 결과 (ERP 출하검사에 첨부한 특성 데이터 파일을 서버가 읽어 test_results에 넣는다)
+function trStats(rows){
+  const keys = []; rows.forEach(r => Object.keys(r.vals || {}).forEach(k => { if (!keys.includes(k)) keys.push(k); }));
+  return keys.map(k => { const v = rows.map(r => +(r.vals || {})[k]).filter(x => isFinite(x));
+    const n = v.length, avg = n ? v.reduce((a, b) => a + b, 0) / n : 0, sd = n > 1 ? Math.sqrt(v.reduce((a, b) => a + (b - avg) ** 2, 0) / (n - 1)) : 0;
+    return {k, n, min: n ? Math.min(...v) : null, max: n ? Math.max(...v) : null, avg, sd}; }).filter(x => x.n);
+}
+function trFmt(v){ if (v === null || !isFinite(v)) return '-'; const a = Math.abs(v); return a >= 1000 ? Math.round(v).toLocaleString() : a >= 1 ? v.toFixed(2) : v.toFixed(4); }
+function trBlock(rows){
+  const ok = rows.filter(r => String(r.result || '').toUpperCase() === 'OK').length, ng = rows.length - ok;
+  const sns = new Set(rows.map(r => r.sn)), retest = rows.length - sns.size;
+  const files = [...new Set(rows.map(r => r.source_file).filter(Boolean))];
+  const t0 = rows[0].end_time, t1 = rows[rows.length - 1].end_time;
+  const st = trStats(rows);
+  return `<h2 style="margin-top:16px">🔬 특성검사 결과 <span class="muted">ERP 출하검사 첨부 파일에서 자동으로 읽음</span></h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">${[['검사', sns.size + '개'], ['OK', ok], ['NG', ng], ['재검사', retest], ['기간', ymd(t0) + ' ' + hm(t0) + ' ~ ' + ymd(t1) + ' ' + hm(t1)]].map(([l, v]) => `<div class="card" style="padding:8px 12px;margin:0"><div class="muted">${l}</div><div style="font-weight:800;${l === 'NG' && ng ? 'color:var(--bad)' : ''}">${v}</div></div>`).join('')}</div>
+    <div style="overflow:auto"><table><thead><tr><th>항목</th><th class="r">개수</th><th class="r">최소</th><th class="r">최대</th><th class="r">평균</th><th class="r">표준편차</th></tr></thead><tbody>${st.map(x => `<tr><td><b>${E(x.k)}</b></td><td class="r">${x.n}</td><td class="r">${trFmt(x.min)}</td><td class="r">${trFmt(x.max)}</td><td class="r">${trFmt(x.avg)}</td><td class="r">${trFmt(x.sd)}</td></tr>`).join('')}</tbody></table></div>
+    ${ng ? `<details style="margin-top:8px" open><summary style="cursor:pointer;font-weight:700;color:var(--bad)">NG ${ng}건</summary><table><thead><tr><th>시리얼</th><th>시각</th>${st.map(x => `<th class="r">${E(x.k)}</th>`).join('')}</tr></thead><tbody>${rows.filter(r => String(r.result || '').toUpperCase() !== 'OK').map(r => `<tr><td style="font-family:monospace">${E(r.sn)}</td><td>${E(ymd(r.end_time) + ' ' + hm(r.end_time))}</td>${st.map(x => `<td class="r">${trFmt(+(r.vals || {})[x.k])}</td>`).join('')}</tr>`).join('')}</tbody></table></details>` : ''}
+    <p class="muted">원본: ${files.map(E).join(', ') || '-'} · 단위는 특성검사기 파일 그대로입니다. 규격(상·하한)을 등록하면 공정능력(Cpk)도 계산할 수 있습니다.</p>`;
 }
 async function machBulk(){
   const cp = $('mb-code').value.trim().toUpperCase(), np = $('mb-name').value.trim(), pc = $('mb-proc').value, a = +$('mb-from').value || 1, n = Math.min(50, +$('mb-n').value || 0);

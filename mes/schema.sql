@@ -186,3 +186,4 @@ alter table routings add column if not exists unit_name text, add column if not 
 -- ── [2026-11-07] 수정 이력(audit_log + audit_trg 트리거) · 전자 검토·승인(approvals) (Supabase에 적용해 둠)
 -- ── [2026-11-07] machines.seq (공정 안 설비 순서)
 -- ── [2026-11-07] 부적합 대장(ncr): prod_records 불량 → ncr_sync 트리거로 자동 등록, ncr_guard(승인은 관리자만), audit 트리거, realtime
+-- ── [2026-11-07] test_results: ERP 출하검사 첨부 특성 데이터(xlsx/csv)를 Apps Script(MesTestData.gs)가 15분마다 읽어 넣음. insert는 system/admin 역할만
