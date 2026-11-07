@@ -544,6 +544,33 @@ function machGroups(ms){
   const rest = ms.filter(m => !m.process_code || !order.includes(m.process_code)); if (rest.length) g.push({pc: '', name: '기타', ms: rest});
   return g;
 }
+// 현황판 알림 띠: 4M 초품 필요 · 교정 기한 · 자격 만료
+function tvAlerts(){
+  const t = ymd(new Date()), soon = addMonths(t, 1), a = [];
+  M.c4.filter(c => c.status === '적용' && !c.fa_result).forEach(c => a.push(['bad', `🔁 4M 적용 중 — 초품 검사 필요 · ${c.title}${c.process_code ? ' (' + procName(c.process_code) + ')' : ''}`]));
+  M.gauge.filter(g => g.active !== false).forEach(g => { const s = gaugeState(g); if (s === 'over') a.push(['bad', `📏 교정 기한 지남 · ${g.name} (${g.next_due})`]); else if (s === 'soon') a.push(['warn', `📏 교정 임박 · ${g.name} (${g.next_due})`]); });
+  const ex = M.skill.filter(k => k.valid_until && k.valid_until < t), sn = M.skill.filter(k => k.valid_until && k.valid_until >= t && k.valid_until <= soon);
+  if (ex.length) a.push(['bad', `🎓 자격 만료 ${ex.length}건 · ${[...new Set(ex.map(k => workName(k.worker_code)))].slice(0, 4).join(', ')}`]);
+  if (sn.length) a.push(['warn', `🎓 30일 내 자격 만료 ${sn.length}건 · ${[...new Set(sn.map(k => workName(k.worker_code)))].slice(0, 4).join(', ')}`]);
+  if (!a.length) return '';
+  return `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">${a.map(([k, v]) => `<div style="padding:8px 14px;border-radius:9px;font-weight:700;font-size:15px;background:${k === 'bad' ? '#7F1D1D' : '#78350F'};color:${k === 'bad' ? '#FECACA' : '#FDE68A'};border:1px solid ${k === 'bad' ? '#B91C1C' : '#B45309'}">${E(v)}</div>`).join('')}</div>`;
+}
+// 진행 중 작업: 누가 어느 설비에서 무엇을 몇 분째
+function tvRunning(now){
+  const run = M.rec.filter(r => r.status === 'running').sort((a,b) => String(a.start_at).localeCompare(String(b.start_at)));
+  return `<div class="card"><h2 style="color:#E7EEF4">진행 중 작업 <span class="muted" style="font-weight:400">${run.length}건</span></h2>${run.length ? `<table><thead><tr><th>공정</th><th>작업자</th><th>설비</th><th>작업지시</th><th class="r">경과</th></tr></thead><tbody>${run.map(r => { const p = partOf(r.id), w = woOf(r.wo_id);
+    return `<tr><td><b>${E(procName(r.process_code))}</b></td><td style="font-size:15px">${E(workName(r.worker_code))}</td><td>${r.machine_code ? E(machName(r.machine_code)) : '<span class="muted">-</span>'}</td><td>${E(r.item_name || '')}<div class="muted">${E(r.order_no || '')}${w && w.cat ? ' · ' + E(w.cat) : ''}${p.n ? ` · 중간 저장 ${N(p.g)}` : ''}</div></td><td class="r" style="font-weight:700">${dur(now - new Date(r.start_at))}</td></tr>`; }).join('')}</tbody></table>` : '<p class="muted">지금 진행 중인 작업이 없습니다.</p>'}</div>`;
+}
+// 오늘 일상점검: 완료 / NG / 미점검
+function tvChecks(ms){
+  const tg = machGroups(ms).flatMap(g => g.ms).filter(m => chkItemsFor(m).length); if (!tg.length) return '';
+  const ok = tg.filter(m => (chkToday(m.code) || {}).all_ok === true), ng = tg.filter(m => chkToday(m.code) && !chkToday(m.code).all_ok), miss = tg.filter(m => !chkToday(m.code));
+  const box = (n, l, c) => `<div style="flex:1;text-align:center;padding:8px;border-radius:9px;background:#0F2233"><div style="font-size:28px;font-weight:800;color:${c}">${n}</div><div style="font-size:12.5px;color:#A9B8C6">${l}</div></div>`;
+  return `<div class="card"><h2 style="color:#E7EEF4">오늘 일상점검 <span class="muted" style="font-weight:400">${tg.length}대</span></h2>
+    <div style="display:flex;gap:8px">${box(ok.length, '이상 없음', '#4ADE80')}${box(ng.length, 'NG', ng.length ? '#F87171' : '#8FA6B8')}${box(miss.length, '미점검', miss.length ? '#FBBF24' : '#8FA6B8')}</div>
+    ${ng.length ? `<div style="margin-top:8px;color:#FCA5A5;font-size:14px"><b>NG:</b> ${ng.map(m => E(m.name) + (chkToday(m.code).note ? ' (' + E(chkToday(m.code).note) + ')' : '')).join(', ')}</div>` : ''}
+    ${miss.length ? `<div style="margin-top:6px;color:#FDE68A;font-size:14px"><b>미점검:</b> ${miss.map(m => E(m.name)).join(', ')}</div>` : ''}</div>`;
+}
 function tvView(){
   const t0 = today0().toISOString(), recs = M.rec.filter(r => r.status === 'done' && r.created_at >= t0);
   const finRecs = recs.filter(r => isFinalFor(woOf(r.wo_id) || {code: r.item_code}, r.process_code));
@@ -559,17 +586,19 @@ function tvView(){
       <div class="card"><div class="kpi"><small>설비 가동 중</small>${runN} <span style="font-size:22px;color:#8FA6B8">/ ${ms.length}</span></div></div>
       <div class="card"><div class="kpi" style="color:${av === null ? '#8FA6B8' : av >= 85 ? '#4ADE80' : av >= 70 ? '#FBBF24' : '#F87171'}"><small>오늘 가동률 (계획 정지 제외)</small>${av === null ? '-' : av.toFixed(1) + '%'}</div></div>
     </div>
-    <div class="grid" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)">
-      <div class="card"><h2 style="color:#E7EEF4">작업지시 진행 <span class="muted" style="font-weight:400">오늘 공정별 양품</span></h2>
+    ${tvAlerts()}
+    <div class="grid" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);align-items:start">
+      <div style="display:flex;flex-direction:column;gap:14px"><div class="card"><h2 style="color:#E7EEF4">작업지시 진행 <span class="muted" style="font-weight:400">오늘 공정별 양품</span></h2>
         <table><thead><tr><th>작업지시</th><th>공정별 오늘 양품</th><th class="r">완성</th><th class="r">불량</th></tr></thead><tbody>${wos.map(w => { const rs = recs.filter(r => r.wo_id === w.wo_id), rt = routeOf(w);
           const fin = rs.filter(r => isFinalFor(w, r.process_code)).reduce((a,r) => a + (+r.good_qty||0), 0);
           return `<tr><td><b style="font-size:16px">${E(w.name)}</b><div class="muted">${E(w.order_no)} · 계획 ${N(w.plan_qty)}</div></td>
             <td><div style="display:flex;flex-wrap:wrap;gap:4px">${rt.map(p => { const v = rs.filter(r => r.process_code === p.code).reduce((a,r) => a + (+r.good_qty||0), 0); return `<span style="padding:3px 8px;border-radius:6px;font-size:12.5px;background:${v ? '#0E7490' : '#1E3446'};color:${v ? '#fff' : '#8FA6B8'}">${E(p.name)} ${v ? '<b>' + N(v) + '</b>' : ''}</span>`; }).join('')}</div></td>
             <td class="r" style="font-size:20px;font-weight:800">${fin ? N(fin) : '-'}</td><td class="r" style="color:#F87171;font-weight:700">${(v => v ? N(v) : '-')(rs.reduce((a,r) => a + (+r.ng_qty||0), 0))}</td></tr>`; }).join('') || `<tr><td colspan="4" class="muted">오늘 실적이 아직 없습니다.</td></tr>`}</tbody></table></div>
-      <div class="card"><h2 style="color:#E7EEF4">설비 상태 <span style="font-size:12px;font-weight:400;opacity:.7">공정 순서</span></h2>${machGroups(ms).map((g, gi) => `<div style="display:flex;gap:8px;align-items:stretch;margin-bottom:5px">
+      ${tvRunning(now)}${tvChecks(ms)}</div>
+      <div style="display:flex;flex-direction:column;gap:14px"><div class="card"><h2 style="color:#E7EEF4">설비 상태 <span style="font-size:12px;font-weight:400;opacity:.7">공정 순서</span></h2>${machGroups(ms).map((g, gi) => `<div style="display:flex;gap:8px;align-items:stretch;margin-bottom:5px">
           <div style="flex:none;width:84px;display:flex;flex-direction:column;justify-content:center;font-size:12.5px;color:#A9B8C6;border-right:2px solid #2A3F55;padding-right:6px"><span style="font-weight:800;color:#E7EEF4;font-size:12.5px;line-height:1.25">${gi + 1}. ${E(g.name)}</span></div>
           <div style="flex:1;display:grid;gap:5px;grid-template-columns:repeat(auto-fill,minmax(104px,1fr))">${g.ms.map(m => { const s = machState(m.code), st = s ? s.state : 'idle', rs = s && s.reason_code ? (M.reasons.find(r => r.code === s.reason_code) || {}).name : '', a = availability(m.code, today0().getTime(), now), w = s && s.wo_id ? woOf(s.wo_id) : null;
-          return `<div class="mtile s-${st}" style="min-height:54px;padding:6px 8px;gap:2px"><div style="font-weight:800;font-size:13.5px;line-height:1.2">${E(m.name)}</div><div><div style="font-weight:700;font-size:12.5px">${lbl[st]}${rs ? ' · ' + E(rs) : ''}</div><div style="font-size:11.5px;opacity:.9">${s && s.started_at ? dur(now - new Date(s.started_at)) : ''}${a !== null ? ' · 가동률 ' + a.toFixed(0) + '%' : ''}${w ? ' · ' + E(w.cat || '') : ''}</div></div></div>`; }).join('')}</div></div>`).join('') || '<p class="muted">설비 없음</p>'}</div>
+          return `<div class="mtile s-${st}" style="min-height:54px;padding:6px 8px;gap:2px"><div style="font-weight:800;font-size:13.5px;line-height:1.2">${E(m.name)}</div><div><div style="font-weight:700;font-size:12.5px">${lbl[st]}${rs ? ' · ' + E(rs) : ''}</div><div style="font-size:11.5px;opacity:.9">${s && s.started_at ? dur(now - new Date(s.started_at)) : ''}${a !== null ? ' · 가동률 ' + a.toFixed(0) + '%' : ''}${w ? ' · ' + E(w.cat || '') : ''}</div></div></div>`; }).join('')}</div></div>`).join('') || '<p class="muted">설비 없음</p>'}</div></div>
     </div>
     <div class="muted" style="margin-top:10px;text-align:right">실시간 자동 갱신 · ${new Date().toLocaleTimeString('ko-KR')}</div>`;
 }
@@ -1049,7 +1078,8 @@ let _rt = null, _rtT = null;
 function realtime(){
   if (_rt) return;
   _rt = sb.channel('mes-live').on('postgres_changes', {event: '*', schema: 'public', table: 'prod_records'}, () => liveRefresh())
-    .on('postgres_changes', {event: '*', schema: 'public', table: 'machine_events'}, () => liveRefresh()).subscribe();
+    .on('postgres_changes', {event: '*', schema: 'public', table: 'machine_events'}, () => liveRefresh())
+    .on('postgres_changes', {event: '*', schema: 'public', table: 'machine_checks'}, () => liveRefresh()).subscribe();
 }
 function liveRefresh(){ clearTimeout(_rtT); _rtT = setTimeout(async () => { await loadLive(); if (!document.querySelector('.ov') && S.view !== 'report' && S.view !== 'admin') render(); }, 400); }
 setInterval(() => { if (sb && ME.role && (S.view === 'tv' || S.view === 'machine') && !document.querySelector('.ov')) render(); }, 30000);   // 경과 시간 표시 갱신
