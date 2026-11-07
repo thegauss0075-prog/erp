@@ -626,7 +626,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <th>품목코드 / Mã SP</th>
   <th>품명 / Tên SP</th>
   <th style="text-align:center">단위</th>
-  <th style="text-align:right">전월재고</th>
+  <th style="text-align:right">월초재고</th>
   <th style="text-align:right">현재고</th>
   <th style="text-align:right">재공</th>
   <th style="text-align:right">총합</th>
@@ -3433,7 +3433,7 @@ function exportInvExcel(){
     '코드': r.code,
     '품명': r.name,
     '단위': r.unit,
-    '전월': +r.prev || 0,
+    '월초재고': invMonthOpen(r),
     '현재고': +r.cur || 0,
     '재공': +r.wip || 0,
     '총합': +r.total || 0
@@ -3499,7 +3499,7 @@ function rRow(r,q){
        <button class="edit-btn" onclick="openItemDel('${r.code}','${r.cat}')" title="품목 숨김" style="margin-left:2px;background:#fee2e2;border-color:#fca5a5">🗑️</button>
        <button class="edit-btn" onclick="openItemPermDel('${r.code}','${r.cat}')" title="품목 완전삭제 (되돌릴 수 없음)" style="margin-left:2px;background:#450a0a;border-color:#7f1d1d;color:#fff">❌</button>`
     : '';
-  return`<tr ${r.active===false?'style="opacity:0.4"':''}><td><span class="badge ${CB[r.cat]}">${CL[r.cat]}</span></td><td style="font-family:monospace;font-size:11px">${hl(r.code,q)}</td><td><span onclick="nameClick('${r.code}','${r.cat}')" style="cursor:pointer;color:inherit" title="클릭하면 이력 추적">${hl(r.name,q)}</span></td><td style="color:#666;text-align:center">${r.unit}</td><td style="text-align:right">${n(r.prev)}</td><td style="text-align:right" class="${r.cur>0?'hi':''}">${n(r.cur)}</td><td style="text-align:right">${n(r.wip)}</td><td style="text-align:right;font-weight:700">${n(r.total)}</td><td class="no-print"><button class="edit-btn" onclick="prefillIO('${r.cat}','${r.code}')">🔄</button>${adminBtns}</td></tr>`;
+  return`<tr ${r.active===false?'style="opacity:0.4"':''}><td><span class="badge ${CB[r.cat]}">${CL[r.cat]}</span></td><td style="font-family:monospace;font-size:11px">${hl(r.code,q)}</td><td><span onclick="nameClick('${r.code}','${r.cat}')" style="cursor:pointer;color:inherit" title="클릭하면 이력 추적">${hl(r.name,q)}</span></td><td style="color:#666;text-align:center">${r.unit}</td><td style="text-align:right" title="월초 재고 = 현재고 − 이번 달 입고 + 이번 달 출고 (입출고 이력으로 계산)">${n(invMonthOpen(r))}</td><td style="text-align:right" class="${r.cur>0?'hi':''}">${n(r.cur)}</td><td style="text-align:right">${n(r.wip)}</td><td style="text-align:right;font-weight:700">${n(r.total)}</td><td class="no-print"><button class="edit-btn" onclick="prefillIO('${r.cat}','${r.code}')">🔄</button>${adminBtns}</td></tr>`;
 }
 
 function prefillIO(cat,code){
@@ -7643,14 +7643,33 @@ function ngmPrint(){
     w.focus(); w.print();
   } catch(x){} }, 400);
 }
+// ✅ [2026-11-07] 이력 시각: 서버 id는 저장 순간의 시각(ms)이라 가장 정확하다. dt('MM/dd HH:mm')는 연도가 없어
+//    Date.parse하면 2001년으로 읽히므로, id가 시각처럼 보이면 id를 쓰고 아니면 dt를 읽는다.
+function txTime(t){ const id = +t.id || 0; if (id > 1e12 && id < 4e12) return id; const d = Date.parse(t.dt); return isNaN(d) ? 0 : d; }
+function vnMonthStart(){ const now = new Date(Date.now() + 7*3600e3); return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 7*3600e3; }
+// ✅ [2026-11-07] 월초 재고 = 현재고 − 이번 달(베트남 1일 0시 이후) 입고 + 출고 ∓ 조정.
+//    예전 '전월재고'는 월말 마감 버튼으로 찍어둔 값이라 마감을 빠뜨리거나 저장이 잘못되면 틀린 채로 남았다.
+//    이제 이력으로 그때그때 계산한다. 구분(cat)이 없는 옛 이력은 그 코드가 한 구분에만 있을 때만 센다.
+function invMonthOpen(r){
+  const cat = String(r.cat || '').toUpperCase(), ms = vnMonthStart();
+  const shared = ['tp','btp','kr','vn','vtth'].filter(k => (DB[k]||[]).some(x => x.code === r.code)).length > 1;
+  let d = 0;
+  (typeof txLog !== 'undefined' ? txLog : []).forEach(t => {
+    if (t.code !== r.code) return;
+    const tc = String(t.cat || '').toUpperCase();
+    if (tc ? tc !== cat : shared) return;
+    if (txTime(t) < ms) return;
+    d += bdDelta(t);
+  });
+  return Math.round(((+r.cur || 0) - d) * 1000) / 1000;
+}
 function ngCalc(r){
   const now = new Date(Date.now() + 7*3600e3);
   const ms = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 7*3600e3;
-  const t = x => { const d = Date.parse(x); return isNaN(d) ? 0 : d; };
   let inM=0,outM=0,adjM=0,inA=0,outA=0,adjA=0;
-  (ngLog||[]).forEach(l => { if (l.code !== r.code) return; const q=+l.qty||0, isIn=l.type==='ng-in', m=t(l.dt)>=ms;
+  (ngLog||[]).forEach(l => { if (l.code !== r.code) return; const q=+l.qty||0, isIn=l.type==='ng-in', m=txTime(l)>=ms;
     if (isIn) { inA+=q; if (m) inM+=q; } else { outA+=q; if (m) outM+=q; } });
-  (typeof txLog!=='undefined'?txLog:[]).forEach(x => { if (x.code !== r.code || x.cat !== 'NG' || (x.type!=='adjust' && x.type!=='sync-fix')) return; const q=+x.qty||0; adjA+=q; if (t(x.dt)>=ms) adjM+=q; });
+  (typeof txLog!=='undefined'?txLog:[]).forEach(x => { if (x.code !== r.code || x.cat !== 'NG' || (x.type!=='adjust' && x.type!=='sync-fix')) return; const q=+x.qty||0; adjA+=q; if (txTime(x)>=ms) adjM+=q; });
   const cur = +r.cur||0, r2 = v => Math.round(v*100)/100;
   return { open: r2(cur - inM + outM - adjM), inM: r2(inM), outM: r2(outM), diff: r2(cur - ((+r.prev||0) + inA - outA + adjA)) };
 }
@@ -12210,7 +12229,8 @@ if (document.readyState === 'loading') {
   <div class="ov-box" style="max-width:460px;max-height:85vh;overflow-y:auto">
     <h3>📅 월말 마감</h3>
     <p style="font-size:13px;color:#555;margin-bottom:14px;line-height:1.6">
-      모든 품목의 <strong>현재고</strong>를 <strong>전월재고</strong>로 복사합니다.<br>
+      모든 품목의 <strong>현재고</strong>를 서버에 <strong>월말 재고 기록</strong>으로 남깁니다.<br>
+      <span style="color:#475569">재고 현황의 <b>월초재고</b>는 입출고 이력으로 자동 계산되므로, 마감을 하지 않아도 화면 숫자는 맞게 나옵니다.</span><br>
       <span style="color:#b91c1c;font-weight:600">⚠️ 이 작업은 되돌릴 수 없습니다.</span>
     </p>
     <div style="background:#faf5ff;border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">
@@ -12626,7 +12646,7 @@ else location.reload();
 //  - 완제품·반제품: 기초 + 생산입고 − 출고 + 조정 = 기말
 // ════════════════════════════════════════════════════════════
 let _bdLast = null;
-function bdTime(t){ const d = Date.parse(t.dt); return isNaN(d) ? (+t.id || 0) : d; }
+function bdTime(t){ return txTime(t); }
 function bdDelta(t){
   const q = +t.qty || 0;
   if (t.type === 'in' || t.type === 'tp-in') return q;
