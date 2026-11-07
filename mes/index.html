@@ -352,7 +352,7 @@ function startDlg(w){
   const busy = c => M.rec.find(r => r.status === 'running' && r.machine_code === c);
   return new Promise(res => {
     const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'sd'; document.body.appendChild(ov);
-    const add = v => { v = String(v||'').trim(); if (v && !st.lots.includes(v)) st.lots.push(v); draw(); setTimeout(() => $('sd-lot') && $('sd-lot').focus(), 30); };
+    const add = v => { v = String(v||'').trim(); if (v && !st.lots.includes(v) && lotOk(v)) st.lots.push(v); draw(); setTimeout(() => $('sd-lot') && $('sd-lot').focus(), 30); };
     const draw = () => { ov.innerHTML = `<div class="box"><h2>▶ 작업 시작 <span class="vi">Bắt đầu</span></h2><div class="muted" style="margin-bottom:10px">${E(w.order_no)} · ${E(w.name)} · ${E(procName(S.proc))}</div>
       ${ms.length ? `<div style="font-weight:700;margin-bottom:4px">설비 / Máy</div><div class="pick">${ms.map(m => { const b = busy(m.code); return `<button data-c="${E(m.code)}" class="${st.mach === m.code ? 'on' : ''}" ${b ? 'style="opacity:.55"' : ''}>${E(m.name)}${b ? `<span class="vi">사용 중 · ${E(workName(b.worker_code))}</span>` : ''}</button>`; }).join('')}<button data-c="" class="${st.mach === '' ? 'on' : ''}">설비 없음</button></div>` : ''}
       <div style="margin-top:12px;font-weight:700">작업자 / Công nhân ${skillOn(S.proc) ? '<span class="muted">(이 공정 자격 있는 사람만)</span>' : ''}</div><div class="pick">${wkList.map(x => `<button data-wk="${E(x.code)}" class="${st.worker === x.code ? 'on' : ''}">${E(x.name)}${(k => k ? `<span class="vi">${SKL[k.level][0]}</span>` : '')(skillOf(x.code, S.proc))}</button>`).join('') || '<span style="color:var(--bad)">이 공정 자격이 있는 작업자가 없습니다.</span>'}</div>
@@ -386,11 +386,23 @@ function startDlg(w){
 let FD = null;
 // 공정·품목별로 마지막에 찍은 자재 LOT을 태블릿이 기억 → 다음 실적에 자동으로 넣는다 (LOT이 바뀔 때만 다시 찍음)
 // ERP 수입검사 LOT 라벨 QR은 "MAT:자재코드:LOT" 형식 → 자재코드와 LOT으로 나눠 저장
-function parseLot(v){ v = String(v||'').trim(); const p = v.split(':'); return p[0] === 'MAT' && p.length >= 3 ? {code: p.slice(1, -1).join(':'), lot: p[p.length - 1]} : {lot: v}; }
-const lotRaw = l => l.code ? `MAT:${l.code}:${l.lot}` : l.lot;
-const lotChip = v => { const l = parseLot(v); return E(l.lot) + (l.code ? ` <span class="muted">${E(l.code)}</span>` : ''); };
+//   유효기간이 있는 자재는 "MAT:자재코드:LOT:E20270131" (E + 유효기간)
+function parseLot(v){ v = String(v||'').trim(); const p = v.split(':'); if (p[0] !== 'MAT' || p.length < 3) return {lot: v};
+  const e = /^E(\d{4})(\d{2})(\d{2})$/.exec(p[p.length - 1]);
+  if (e && p.length >= 4) return {code: p.slice(1, -2).join(':'), lot: p[p.length - 2], exp: `${e[1]}-${e[2]}-${e[3]}`};
+  return {code: p.slice(1, -1).join(':'), lot: p[p.length - 1]}; }
+const lotRaw = l => l.code ? `MAT:${l.code}:${l.lot}${l.exp ? ':E' + l.exp.replace(/-/g, '') : ''}` : l.lot;
+const lotChip = v => { const l = parseLot(v), t = ymd(new Date()); return E(l.lot) + (l.code ? ` <span class="muted">${E(l.code)}</span>` : '') + (l.exp ? ` <span style="color:${l.exp < t ? 'var(--bad)' : lotDays(l.exp) <= 7 ? '#B45309' : 'var(--sub)'};font-size:12px">~${E(l.exp)}</span>` : ''); };
+const lotDays = exp => Math.floor((new Date(exp + 'T23:59:59') - Date.now()) / 864e5);
+// 자재 LOT을 넣기 전에 유효기간 확인: 지났으면 막고, 7일 이내면 알림
+function lotOk(v){ const l = parseLot(v); if (!l.exp) return true; const d = lotDays(l.exp);
+  if (d < 0) { alert(`⛔ 유효기간이 지난 자재입니다. 사용할 수 없습니다.\nNVL đã hết hạn sử dụng.\n\n${l.code || ''} · LOT ${l.lot} · 유효기간 ${l.exp}\n\n자재를 격리하고 관리자에게 알리세요.`); return false; }
+  if (d <= 7) toast(`⏳ 유효기간 ${d}일 남음 · ${l.lot} (~${l.exp})`, 4000); return true; }
 const lotKey = w => 'mes_lot|' + S.proc + '|' + (w && w.code || '');
-function lotMem(w){ try { return JSON.parse(localStorage.getItem(lotKey(w)) || '[]'); } catch (e) { return []; } }
+function lotMem(w){ let a = []; try { a = JSON.parse(localStorage.getItem(lotKey(w)) || '[]'); } catch (e) {}
+  const gone = a.filter(v => { const l = parseLot(v); return l.exp && lotDays(l.exp) < 0; });   // 기억해 둔 LOT도 유효기간이 지나면 빼고 알린다
+  if (gone.length) setTimeout(() => toast(`⛔ 유효기간 지난 LOT ${gone.map(v => parseLot(v).lot).join(', ')}은(는) 뺐습니다. 새 자재를 찍으세요.`, 5000), 300);
+  return a.filter(v => !gone.includes(v)); }
 function lotMemSet(w, lots){ try { localStorage.setItem(lotKey(w), JSON.stringify(lots)); } catch (e) {} }
 const lotReq = w => !!(routeOf(w).find(p => p.code === S.proc) || {}).lot_required;
 // 입력 단위: 예) WIRE 재단은 "가닥"으로 세고 2가닥 = 단품 1개 → 저장은 단품(EA) 기준
@@ -419,7 +431,7 @@ function fdRender(){
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn big" onclick="$('fd').remove()">취소</button><button class="btn ok big" onclick="fdSave()">✔ 저장 / Lưu</button></div></div>`;
 }
 function fdKey(k){ const f = FD, cur = String(f[f.f] || ''); f[f.f] = k === 'C' ? '' : k === '⌫' ? cur.slice(0, -1) : (cur === '0' ? '' : cur) + k; if (k === 'C' || k === '⌫' || +f.ng === 0) {} fdRender(); }
-function fdLot(v){ v = String(v||'').trim(); if (v && !FD.lots.includes(v)) FD.lots.push(v); fdRender(); setTimeout(() => $('fd-lot') && $('fd-lot').focus(), 30); }
+function fdLot(v){ v = String(v||'').trim(); if (v && !FD.lots.includes(v) && lotOk(v)) FD.lots.push(v); fdRender(); setTimeout(() => $('fd-lot') && $('fd-lot').focus(), 30); }
 async function fdSave(){
   const f = FD, u = unitOf(f.wo), rawG = +f.good || 0, rawN = +f.ng || 0, good = rawG / u.per, ng = rawN / u.per;
   if (!good && !ng && !(f.id && !f.partial && partOf(f.id).n)) { alert('양품 또는 불량 수량을 넣어주세요.'); return; }
