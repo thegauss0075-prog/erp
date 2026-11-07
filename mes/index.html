@@ -734,7 +734,7 @@ async function erpOfferComplete(ids, token){
 // 월별 설비 점검표 (설비 × 일자): ✔ 이상 없음, ✕ NG, 빈칸 미점검 — 종이 점검표 대신 출력
 function chkMatrix(list, used){ used = used || new Set();
   const days = []; for (let d = new Date(RP.from + 'T00:00:00'); ymd(d) <= RP.to && days.length < 62; d.setDate(d.getDate() + 1)) days.push(ymd(d));
-  const ms = M.mach.filter(m => m.active !== false && chkItemsFor(m).length);
+  const ms = machGroups(M.mach.filter(m => m.active !== false && chkItemsFor(m).length)).flatMap(g => g.ms);   // 공정 순서대로
   if (!ms.length) return '<p class="muted">점검 항목이 등록된 설비가 없습니다. 🛠 기준정보 → 점검 항목에서 먼저 등록하세요.</p>';
   const t = ymd(new Date());
   const cell = (m, d) => { const c = list.filter(x => x.machine_code === m.code && x.check_date === d); if (!c.length) return used.has(m.code + '|' + d) ? '<b style="color:#fff;background:var(--bad);padding:0 5px;border-radius:4px" title="생산했는데 점검 기록 없음">!</b>' : (d <= t ? '<span style="color:#B8C2CC">－</span>' : ''); return c.some(x => !x.all_ok) ? '<b style="color:var(--bad)">✕</b>' : '<span style="color:var(--ok)">✔</span>'; };
