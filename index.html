@@ -595,7 +595,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <button onclick="mesOpenLocationAssign()" style="padding:7px 16px;border-radius:7px;border:1px solid #0369a1;background:#fff;color:#0369a1;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">📍 위치 배정</button>
     <button onclick="exportInvExcel()" style="padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">📊 엑셀 다운로드</button>
     <button id="add-item-btn" onclick="openAddItem()" style="display:none;padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 품목 추가</button>
-    <button id="month-close-btn" onclick="openMonthClose()" style="display:none;padding:7px 14px;border-radius:7px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(124,58,237,.3)">📅 월말 마감</button>
+    <button id="month-close-btn" onclick="openMonthClose()" style="display:none;padding:7px 14px;border-radius:7px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(124,58,237,.3)">📅 월말 재고 확정</button>
     <button id="sync-btn" onclick="syncNow(true)" style="padding:7px 14px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:13px;cursor:pointer;color:#555;white-space:nowrap">🔄 동기화</button>
     <div class="sw"><span class="si">🔍</span><input id="inv-q" placeholder="코드·품명 검색..." oninput="chkXb('inv-q','inv-xb');renderInv()"><button class="xb" id="inv-xb" onclick="clr('inv-q','inv-xb');renderInv()">✕</button></div>
     <select id="inv-cat" onchange="initMS();initSubFilter();renderInv()">
@@ -7650,19 +7650,7 @@ function vnMonthStart(){ const now = new Date(Date.now() + 7*3600e3); return Dat
 // ✅ [2026-11-07] 월초 재고 = 현재고 − 이번 달(베트남 1일 0시 이후) 입고 + 출고 ∓ 조정.
 //    예전 '전월재고'는 월말 마감 버튼으로 찍어둔 값이라 마감을 빠뜨리거나 저장이 잘못되면 틀린 채로 남았다.
 //    이제 이력으로 그때그때 계산한다. 구분(cat)이 없는 옛 이력은 그 코드가 한 구분에만 있을 때만 센다.
-function invMonthOpen(r){
-  const cat = String(r.cat || '').toUpperCase(), ms = vnMonthStart();
-  const shared = ['tp','btp','kr','vn','vtth'].filter(k => (DB[k]||[]).some(x => x.code === r.code)).length > 1;
-  let d = 0;
-  (typeof txLog !== 'undefined' ? txLog : []).forEach(t => {
-    if (t.code !== r.code) return;
-    const tc = String(t.cat || '').toUpperCase();
-    if (tc ? tc !== cat : shared) return;
-    if (txTime(t) < ms) return;
-    d += bdDelta(t);
-  });
-  return Math.round(((+r.cur || 0) - d) * 1000) / 1000;
-}
+function invMonthOpen(r){ return invStockAt(r, vnMonthStart()); }
 function ngCalc(r){
   const now = new Date(Date.now() + 7*3600e3);
   const ms = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 7*3600e3;
@@ -11555,76 +11543,122 @@ async function confirmNGCleanup(legacyItems, legacyLogs) {
         (serverOk ? '' : '\n\n⚠️ 서버(Sheets) 반영은 실패했습니다. Sheets에서 직접 삭제해주세요.'));
 }
 
+// ════════════════════════════════════════════════════════════
+//  ✅ [2026-11-07] 📅 월말 재고 확정 (관리자)
+//  - 고른 달의 말일 기준 재고를 입출고 이력으로 계산해(현재고 − 그 뒤 입출고) 미리 보여주고,
+//    확정하면 서버 MONTH_STOCK 시트에 월별로 쌓는다. 같은 달을 다시 확정하면 n차로 추가(지우지 않음).
+//  - 지난 달을 나중에 확정해도 말일 기준 숫자가 나온다. 재공(WIP)은 이력이 없어 확정 시점 값.
+//  - 📚 확정 기록에서 언제든 다시 열어 인쇄(결재란)·엑셀로 받는다.
+// ════════════════════════════════════════════════════════════
+function invStockAt(r, ts){
+  const cat = String(r.cat || '').toUpperCase();
+  const shared = ['tp','btp','kr','vn','vtth'].filter(k => (DB[k]||[]).some(x => x.code === r.code)).length > 1;
+  let d = 0;
+  (typeof txLog !== 'undefined' ? txLog : []).forEach(t => {
+    if (t.code !== r.code) return;
+    const tc = String(t.cat || '').toUpperCase();
+    if (tc ? tc !== cat : shared) return;
+    if (txTime(t) < ts) return;
+    d += bdDelta(t);
+  });
+  return Math.round(((+r.cur || 0) - d) * 1000) / 1000;
+}
+function ngStockAt(r, ts){
+  let d = 0;
+  (ngLog||[]).forEach(l => { if (l.code !== r.code || txTime(l) < ts) return; d += (l.type === 'ng-in' ? 1 : -1) * (+l.qty || 0); });
+  (typeof txLog !== 'undefined' ? txLog : []).forEach(x => { if (x.code !== r.code || x.cat !== 'NG' || (x.type !== 'adjust' && x.type !== 'sync-fix') || txTime(x) < ts) return; d += +x.qty || 0; });
+  return Math.round(((+r.cur || 0) - d) * 1000) / 1000;
+}
+function mcMonthEnd(ym){ const [y, m] = ym.split('-').map(Number); return Date.UTC(y, m, 1) - 7*3600e3; }   // 다음 달 1일 0시(베트남)
+const MC = {month:'', list:null};
+function mcSnapshot(ym){
+  const end = mcMonthEnd(ym), ts = Math.min(end, Date.now());
+  const items = [];
+  [['TP','tp'],['BTP','btp'],['KR','kr'],['VN','vn'],['VTTH','vtth']].forEach(([cat, k]) => (DB[k]||[]).forEach(r => {
+    if (r.active === false) return;
+    items.push({cat, code:r.code, name:r.name, unit:r.unit, qty: invStockAt({...r, cat}, ts), wip:+r.wip||0, model:r.model||''});
+  }));
+  const ng = (DB.ng||[]).filter(r => r.active !== false).map(r => ({type:r.type||'', code:r.code, name:r.name, unit:r.unit, qty: ngStockAt(r, ts), model:r.model||''}));
+  return {items, ng, ts, partial: end > Date.now()};
+}
+async function mcLoadList(){ const r = await api('getMonthStock', {}); MC.list = (r && r.ok) ? (r.list || []) : []; return MC.list; }
 function openMonthClose() {
   if(!isAdmin){ alert('관리자 로그인이 필요합니다.'); return; }
-
-  const itemCount = DB.tp.length + DB.btp.length + DB.kr.length + DB.vn.length + DB.vtth.length;
-  const ngCount = DB.ng.length;
-
-  document.getElementById('mc-cnt-items').textContent = itemCount + '개';
-  document.getElementById('mc-cnt-ng').textContent = ngCount + '개';
-  document.getElementById('mc-confirm-input').value = '';
-  const errEl = document.getElementById('mc-err');
-  if(errEl) errEl.style.display='none';
-
+  const now = vnNow(), d = new Date(now.getFullYear(), now.getMonth() - (now.getDate() <= 15 ? 1 : 0), 1);
+  MC.month = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   document.getElementById('month-close-ov').classList.add('show');
+  mcRender(); mcLoadList().then(mcRender);
 }
-
+function mcRender(){
+  const box = document.querySelector('#month-close-ov .ov-box'); if (!box) return;
+  const snap = mcSnapshot(MC.month), done = (MC.list||[]).filter(x => x.month === MC.month);
+  const sum = (arr, f) => arr.reduce((t, x) => t + (+f(x) || 0), 0);
+  const byCat = {}; snap.items.forEach(x => { (byCat[x.cat] = byCat[x.cat] || []).push(x); });
+  const fmt = v => (+v || 0).toLocaleString();
+  box.innerHTML = `<h3>📅 월말 재고 확정 <span style="font-size:12px;color:#888;font-weight:400">/ Chốt tồn kho cuối tháng</span></h3>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <label style="font-size:13px;font-weight:600">확정할 달</label><input type="month" id="mc-month" value="${MC.month}" onchange="MC.month=this.value;mcRender()" style="padding:6px 8px;border:1px solid #ccc;border-radius:6px">
+      <span style="flex:1"></span><button class="cp-back" onclick="mcHistory()">📚 확정 기록</button></div>
+    <p style="font-size:12.5px;color:#555;line-height:1.6;margin:0 0 10px">
+      ${+MC.month.slice(5)}월 말일 기준 재고를 입출고 이력으로 계산했습니다 (현재고 − 그 뒤 입출고). 실사 재고와 맞는지 확인한 뒤 확정하세요.<br>
+      재공(WIP)은 이력이 없어 지금 값으로 기록됩니다. 확정해도 현재고·월초재고는 바뀌지 않습니다.</p>
+    ${snap.partial ? `<div style="background:#fef3c7;border-radius:6px;padding:8px 10px;font-size:12.5px;margin-bottom:8px">⚠️ 이 달은 아직 끝나지 않았습니다. 지금 시점의 재고로 확정됩니다.</div>` : ''}
+    ${MC.list === null ? '<div style="font-size:12px;color:#888;margin-bottom:8px">확정 기록 불러오는 중…</div>' : done.length ? `<div style="background:#ede9fe;border-radius:6px;padding:8px 10px;font-size:12.5px;margin-bottom:8px">이미 확정된 달입니다: ${done.map(x => `<b>${x.rev}차</b> ${(x.closedAt||'').slice(0,10)} ${x.user}`).join(' · ')}<br>다시 확정하면 지우지 않고 <b>${done.length + 1}차</b>로 추가됩니다.</div>` : ''}
+    <div style="max-height:40vh;overflow:auto;border:1px solid #eee;border-radius:6px;margin-bottom:10px"><table style="width:100%;font-size:12px"><thead><tr><th>구분</th><th>코드</th><th>품명</th><th style="text-align:right">월말 재고</th><th style="text-align:right">재공</th></tr></thead><tbody>
+      ${Object.entries(byCat).map(([c, arr]) => arr.filter(x => x.qty || x.wip).map(x => `<tr><td>${CL[c]||c}</td><td style="font-family:monospace;font-size:11px">${x.code}</td><td>${x.name}</td><td style="text-align:right;font-weight:700;${x.qty < 0 ? 'color:#b91c1c' : ''}">${fmt(x.qty)}</td><td style="text-align:right">${x.wip ? fmt(x.wip) : '-'}</td></tr>`).join('')).join('')}
+      ${snap.ng.filter(x => x.qty).map(x => `<tr style="background:#fef2f2"><td>불량</td><td style="font-family:monospace;font-size:11px">${x.code}</td><td>${x.name}</td><td style="text-align:right;font-weight:700">${fmt(x.qty)}</td><td>-</td></tr>`).join('')}
+    </tbody></table></div>
+    <div style="font-size:12.5px;margin-bottom:8px">품목 ${snap.items.length}개 (재고 있는 품목 ${snap.items.filter(x => x.qty).length}개) · 불량 품목 ${snap.ng.length}개 · 월말 재고 합계 ${fmt(sum(snap.items, x => x.qty))}${snap.items.some(x => x.qty < 0) ? ' · <b style="color:#b91c1c">음수 재고가 있습니다 — 이력을 확인하세요</b>' : ''}</div>
+    <div class="ov-fr"><label>메모 (실사 결과 등)</label><input id="mc-note" placeholder="예) 11/01 실사 완료, 차이 없음"></div>
+    <div id="mc-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
+    <div class="ov-actions"><button class="cp-back" onclick="closeOv('month-close-ov')">닫기</button>
+      <button class="ov-save" id="mc-go" style="background:#7c3aed" onclick="confirmMonthClose()">📅 ${+MC.month.slice(5)}월 재고 확정</button></div>`;
+}
 async function confirmMonthClose() {
-  const input = (document.getElementById('mc-confirm-input').value||'').trim().toUpperCase();
-  const errEl = document.getElementById('mc-err');
-
-  if(input !== 'CONFIRM') {
-    errEl.textContent = '"CONFIRM"을 정확히 입력해주세요.';
-    errEl.style.display = 'block';
-    return;
-  }
-
-  const monthLabel = vnNow().getFullYear() + '.' + String(vnNow().getMonth()+1).padStart(2,'0');
-
-  // ✅ 일반 재고: 현재고 → 전월재고 복사 (로컬)
-  // ✅ [2026-11-07 원인 수정] 예전에는 {code, prev}만 보내서, 완제품(TP)과 반제품(BTP)이 같은 코드를 쓰는 품목은
-  //    서버가 코드로 찾은 첫 행(완제품)에 두 값을 차례로 덮어썼다 → 완제품 전월재고 = 반제품 재고, 반제품 전월재고는 안 바뀜.
-  //    화면은 마감 직후엔 맞아 보이다가 다음 동기화 때 서버 값으로 바뀌어 "마감할 때와 다른 숫자"가 됐다.
-  //    이제 구분(cat)을 함께 보내고, 불량 재고(전월재고·이번 달 입고 초기화)도 서버에 반영한다.
-  const allArrs = [['TP',DB.tp], ['BTP',DB.btp], ['KR',DB.kr], ['VN',DB.vn], ['VTTH',DB.vtth]];
-  let updatedItems = [];
-  allArrs.forEach(([cat, arr]) => {
-    (arr||[]).forEach(item => {
-      if(item.active === false) return; // 비활성 품목 제외
-      item.prev = +item.cur || 0;
-      updatedItems.push({code:item.code, cat: item.cat || cat, prev:item.prev});
-    });
-  });
-
-  // ✅ 불량 재고도 동일 처리
-  const ngItems = [];
-  DB.ng.forEach(item => {
-    if(item.active === false) return;
-    item.prev = +item.cur || 0;
-    item.inng = 0; // 이번달 불량입고 누계 초기화
-    ngItems.push({code:item.code, prev:item.prev, inng:0});
-  });
-
-  // ✅ 서버 반영 (Sheets ITEMS/NG_ITEMS의 prev 컬럼 일괄 업데이트)
-  if(API_URL || IS_GAS) {
-    const res = await api('monthClose', { items: updatedItems, ngItems, token: ADMIN_TOKEN });
-    if(res && !res.ok) {
-      errEl.textContent = '서버 반영 실패: ' + (res.error||'알 수 없는 오류') + ' (로컬은 반영됨)';
-      errEl.style.display = 'block';
-    }
-  }
-
-  // 마감 이력 기록
-  txLog.unshift({
-    id: Date.now(), type:'monthclose', code:'SYSTEM', name:`${monthLabel} 월말 마감`,
-    cat:'SYS', unit:'', qty:0, note:`전월재고 일괄 갱신 (${updatedItems.length}개 품목)`,
-    lot:'', dt:vnDt(), dest:'', user: CURRENT_USER||'관리자'
-  });
-
+  const btn = document.getElementById('mc-go'); if (btn && btn.disabled) return;
+  const snap = mcSnapshot(MC.month), errEl = document.getElementById('mc-err');
+  const done = (MC.list||[]).filter(x => x.month === MC.month).length;
+  if (!confirm(`${MC.month} 월말 재고를 확정합니다${done ? ` (${done + 1}차 — 이전 기록은 그대로 남습니다)` : ''}.\n품목 ${snap.items.length}개 · 불량 ${snap.ng.length}개\n\n진행할까요?`)) return;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 저장 중…'; }
+  const res = await api('closeMonth', {month: MC.month, cutoff: new Date(snap.ts).toISOString(), items: snap.items, ng: snap.ng,
+    note: (document.getElementById('mc-note').value || '').trim(), user: CURRENT_USER || '관리자', token: ADMIN_TOKEN});
+  if (!res || !res.ok) { errEl.textContent = '저장 실패: ' + ((res && res.error) || '서버 응답 없음'); errEl.style.display = 'block'; if (btn) { btn.disabled = false; btn.textContent = '📅 다시 시도'; } return; }
+  await mcLoadList();
   closeOv('month-close-ov');
-  renderInv(); renderNG(); initDashboard(); renderHist();
-  alert(`✅ ${monthLabel} 월말 마감 완료!\n${updatedItems.length}개 품목의 전월재고가 갱신됐습니다.`);
+  alert(`✅ ${MC.month} 월말 재고 확정 (${res.rev}차) — ${res.count}개 품목 저장\n📚 확정 기록에서 인쇄·엑셀로 받을 수 있습니다.`);
+}
+async function mcHistory(){
+  const box = document.querySelector('#month-close-ov .ov-box'); if (!box) return;
+  box.innerHTML = '<h3>📚 월말 재고 확정 기록</h3><p style="color:#888">불러오는 중…</p>';
+  const list = await mcLoadList();
+  box.innerHTML = `<h3>📚 월말 재고 확정 기록 <span style="font-size:12px;color:#888;font-weight:400">/ Lịch sử chốt tồn</span></h3>
+    ${list.length ? `<table style="width:100%;font-size:12.5px"><thead><tr><th>월</th><th>차수</th><th>확정</th><th>품목</th><th>메모</th><th></th></tr></thead><tbody>${list.map(x => `<tr><td><b>${x.month}</b></td><td>${x.rev}차</td><td>${(x.closedAt||'').slice(0,10)}<div style="font-size:11px;color:#888">${x.user}</div></td><td>${x.items}${x.ng ? ' + 불량 ' + x.ng : ''}</td><td style="font-size:11px;color:#555">${x.note||''}</td>
+      <td style="white-space:nowrap"><button class="edit-btn" onclick="mcOpen('${x.closeId}','print')" title="인쇄">🖨️</button> <button class="edit-btn" onclick="mcOpen('${x.closeId}','xlsx')" title="엑셀">📊</button></td></tr>`).join('')}</tbody></table>` : '<p style="color:#888">아직 확정 기록이 없습니다.</p>'}
+    <div class="ov-actions"><button class="cp-back" onclick="mcRender()">← 확정 화면</button><button class="cp-back" onclick="closeOv('month-close-ov')">닫기</button></div>`;
+}
+async function mcOpen(closeId, mode){
+  const r = await api('getMonthStock', {closeId});
+  if (!r || !r.ok) { alert('불러오기 실패: ' + ((r && r.error) || '')); return; }
+  const meta = (r.list||[]).find(x => x.closeId === closeId) || {}, rows = r.rows || [];
+  const items = rows.filter(x => x.kind !== 'NG'), ng = rows.filter(x => x.kind === 'NG');
+  if (mode === 'xlsx') {
+    if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(items.map(x => ({'구분': CL[x.cat]||x.cat, '코드': x.code, '품명': x.name, '단위': x.unit, '월말 재고': x.qty, '재공': x.wip, '모델': x.model}))), '재고');
+    if (ng.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ng.map(x => ({'유형': x.cat, '코드': x.code, '품명': x.name, '단위': x.unit, '월말 재고': x.qty, '모델': x.model}))), '불량');
+    XLSX.writeFile(wb, `월말재고_${meta.month||closeId}_${meta.rev||1}차.xlsx`); return;
+  }
+  const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
+  const grp = {}; items.forEach(x => (grp[x.cat] = grp[x.cat] || []).push(x));
+  const f = v => (+v||0).toLocaleString();
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>월말 재고표 ${meta.month||''}</title><style>@page{size:A4;margin:10mm}body{font-family:"Malgun Gothic",sans-serif;font-size:11px}h1{font-size:18px;text-align:center;clear:both}table{width:100%;border-collapse:collapse;margin-bottom:10px}th,td{border:1px solid #666;padding:3px 5px}th{background:#eee}td.n{text-align:right}.sg{float:right;width:auto}.sg td{width:70px;height:44px;vertical-align:top;text-align:center}h2{font-size:13px;margin:12px 0 4px}</style></head><body>
+    <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr></table>
+    <h1>월말 재고표 (${meta.month||''})</h1>
+    <div style="margin-bottom:8px">THE GAUSS VINA · ${meta.rev||1}차 확정 ${(meta.closedAt||'').slice(0,10)} · 확정자 ${meta.user||''} · 기준 ${meta.month||''} 말일${meta.note ? ' · 메모: ' + meta.note : ''}</div>
+    ${Object.entries(grp).map(([c, arr]) => `<h2>${CL[c]||c} (${arr.length})</h2><table><thead><tr><th>코드</th><th>품명</th><th>단위</th><th>월말 재고</th><th>재공</th></tr></thead><tbody>${arr.map(x => `<tr><td>${x.code}</td><td>${x.name}</td><td>${x.unit}</td><td class="n">${f(x.qty)}</td><td class="n">${x.wip ? f(x.wip) : ''}</td></tr>`).join('')}</tbody></table>`).join('')}
+    ${ng.length ? `<h2>불량(NG) (${ng.length})</h2><table><thead><tr><th>코드</th><th>품명</th><th>단위</th><th>월말 재고</th></tr></thead><tbody>${ng.map(x => `<tr><td>${x.code}</td><td>${x.name}</td><td>${x.unit}</td><td class="n">${f(x.qty)}</td></tr>`).join('')}</tbody></table>` : ''}
+    <script>setTimeout(()=>print(),300)<\/script></body></html>`);
+  w.document.close();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -12226,7 +12260,7 @@ if (document.readyState === 'loading') {
 
 <!-- ── 월말 마감 모달 (관리자) ── -->
 <div class="ov-bg" id="month-close-ov">
-  <div class="ov-box" style="max-width:460px;max-height:85vh;overflow-y:auto">
+  <div class="ov-box" style="max-width:760px;max-height:90vh;overflow-y:auto">
     <h3>📅 월말 마감</h3>
     <p style="font-size:13px;color:#555;margin-bottom:14px;line-height:1.6">
       모든 품목의 <strong>현재고</strong>를 서버에 <strong>월말 재고 기록</strong>으로 남깁니다.<br>
