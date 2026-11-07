@@ -5765,8 +5765,29 @@ function toggleBOMPanel() {
   icon.textContent = willShow ? '접기 ▴' : '펼치기 ▾';
 }
 
+// ✅ [2026-11-07] 자재 출고 방식: 와이어처럼 롤(=LOT) 단위로만 나가는 자재는 소요량을 채우는
+//    만큼 "롤 통째로" 선입선출 출고한다. 남은 건 작업 후 ↩ 반납(같은 LOT)으로 돌려받는다.
+let MATCFG = null;
+async function loadMatCfg(){ const r = await api('getHQStore', {store: 'matcfg'}); MATCFG = r && r.ok ? (r.data || []) : []; }
+const isRollIssue = (code, cat) => !!(MATCFG || []).find(x => x.id === code + '|' + cat && x.unit === 'lot');
+async function toggleRollIssue(code, cat, name){
+  const on = !isRollIssue(code, cat);
+  if (!confirm(on ? `"${name}"을(를) 롤(LOT) 단위 출고로 바꿀까요?\n소요량 자동 입력 때 필요한 만큼 롤을 통째로 출고하고, 남은 건 작업 후 ↩ 반납합니다.` : `"${name}"을(를) 소요량만큼 출고하는 방식으로 되돌릴까요?`)) return;
+  const res = await api('saveHQStore', {store: 'matcfg', rec: {id: code + '|' + cat, code, cat, name, unit: on ? 'lot' : 'qty'}});
+  if (!res || !res.ok) { alert('저장 실패: ' + (res && res.error === 'bad store' ? '서버(Code.gs)를 새 버전으로 배포해야 합니다.' : (res && res.error) || '')); return; }
+  await loadMatCfg(); renderBOMList();
+}
+// 필요 수량을 채울 만큼 오래된 LOT(롤)부터 통째로 고른다
+function rollPick(code, cat, need){
+  const {inType, outType} = woMatLotTypes(cat);
+  const {activeLots} = computeActiveLots(code, inType, outType, cat);
+  const picks = []; let sum = 0;
+  for (const l of activeLots) { if (sum >= need - 1e-9) break; if (!(l.remain > 0)) continue; picks.push({lot: l.lot, qty: l.remain}); sum += l.remain; }
+  return {picks, sum, short: Math.max(0, need - sum)};
+}
 function renderBOMList() {
   if (!woTraceTarget) return;
+  if (MATCFG === null) { MATCFG = []; loadMatCfg().then(renderBOMList); }
   const items = BOM.filter(b => b.productCode === woTraceTarget.code && effectiveBOMCat(b) === woTraceTarget.cat);
   const listEl = document.getElementById('bom-list');
   listEl.innerHTML = items.length ? items.map(b => {
@@ -5779,6 +5800,7 @@ function renderBOMList() {
     <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #e0e7ff;font-size:12px">
       <span>${b.materialName} <span style="color:#aaa;font-family:monospace;font-size:10px">${b.materialCode}</span></span>
       <span>1개당 <strong>${(+b.qtyPerUnit||0).toLocaleString()}</strong> ${displayUnit}
+        ${USER_ROLE !== 'viewer' ? `<button onclick="toggleRollIssue('${b.materialCode}','${b.materialCat}','${String(b.materialName||'').replace(/'/g,'')}')" title="롤(LOT) 단위로 통째 출고" style="margin-left:6px;padding:1px 7px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid ${isRollIssue(b.materialCode, b.materialCat) ? '#92400e;background:#fef3c7;color:#92400e;font-weight:700' : '#ccd;background:#fff;color:#888'}">${isRollIssue(b.materialCode, b.materialCat) ? '🧵 롤 단위' : '롤 단위?'}</button>` : ''}
         ${isAdmin ? `<button onclick="deleteBOMItemUI(${b.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button>` : ''}
       </span>
     </div>`;
@@ -6046,22 +6068,27 @@ async function applyBOMSuggestion() {
   document.getElementById('wo-trace-mat-filled-only').checked = false; // ✅ 자동입력 계산 전에는 항상 전체 목록을 기준으로 자재를 찾아야 하는데, 이 체크박스가 이미 켜져 있으면(값이 아직 하나도 안 채워진 상태라) 목록이 텅 비어 모든 자재가 "재고 없음, 목록에 없음"으로 잘못 뜬다.
   renderWOMatBrowse();
 
+  if (MATCFG === null) await loadMatCfg();
   const planQty = +woTraceTarget.planQty || 0;
-  const warnings = [];
+  const warnings = [], rolls = [];
   items.forEach(b => {
     const needQty = (+b.qtyPerUnit || 0) * planQty;
     const input = document.querySelector(`#wo-trace-mat-browse .wmb-qty[data-code="${b.materialCode}"][data-cat="${b.materialCat}"]`);
     if (!input) { warnings.push(`${b.materialName} (재고 없음, 목록에 없음)`); return; }
     const remain = +input.dataset.remain || 0;
-    const applyQty = Math.min(needQty, remain);
+    let applyQty = Math.min(needQty, remain);
+    if (isRollIssue(b.materialCode, b.materialCat) && needQty > 0) {   // 롤 단위: 필요량을 덮는 롤 전체
+      const rp = rollPick(b.materialCode, b.materialCat, needQty);
+      if (rp.sum > 0) { applyQty = Math.min(rp.sum, remain); rolls.push(`🧵 ${b.materialName}: 필요 ${needQty.toLocaleString()} → 롤 ${rp.picks.length}개 ${rp.sum.toLocaleString()} 출고 (${rp.picks.map(p => p.lot).join(', ')})`); }
+    }
     input.value = applyQty > 0 ? applyQty : '';
     if (needQty > remain) warnings.push(`${b.materialName} (필요 ${needQty.toLocaleString()} · 재고 ${remain.toLocaleString()}만 채움)`);
   });
 
   const noteEl = document.getElementById('bom-suggest-note');
-  noteEl.textContent = warnings.length
+  noteEl.textContent = (warnings.length
     ? `⚠️ 일부 재고 부족: ${warnings.join(', ')}`
-    : `계획수량 ${planQty.toLocaleString()} ${woTraceTarget.unit} 기준으로 전부 채웠습니다.`;
+    : `계획수량 ${planQty.toLocaleString()} ${woTraceTarget.unit} 기준으로 전부 채웠습니다.`) + (rolls.length ? ` · ${rolls.join(' · ')} — 작업 후 남은 양은 ↩ 반납하세요.` : '');
 
   // ✅ 자동으로 채운 자재만 바로 보이도록, 목록을 "입력된 것만" 필터로 다시 그린다
   //    (수백 개 목록을 스크롤해서 찾을 필요 없게).
