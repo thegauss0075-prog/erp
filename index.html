@@ -520,7 +520,6 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <button class="tb" onclick="go('hist')">📋 이력<span class="vi">Lịch sử</span></button>
   <button class="tb" onclick="go('ng')">⚠️ 불량(NG)<span class="vi">Hàng lỗi (NG)</span></button>
   <button class="tb" onclick="go('po')">📧 발주관리<span class="vi">Quản lý đặt hàng</span></button>
-  <button class="tb" onclick="go('mes')">📷 현장입력<span class="vi">Nhập liệu tại xưởng</span></button>
   <button class="tb" id="tb-ship" onclick="go('ship')">🚚 출고<span class="vi">Xuất hàng</span></button>
   <button class="tb" id="tb-shipstat" onclick="go('shipstat')">📊 출고 실적<span class="vi">Kết quả xuất</span></button>
   <button class="tb" id="tb-cost" onclick="go('cost')" style="display:none">💰 제조원가<span class="vi">Giá thành SX</span></button>
@@ -594,6 +593,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   </div>
   <div class="toolbar">
     <button onclick="window.print()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🖨️ 인쇄 / In</button>
+    <button onclick="mesOpenLocationAssign()" style="padding:7px 16px;border-radius:7px;border:1px solid #0369a1;background:#fff;color:#0369a1;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">📍 위치 배정</button>
     <button onclick="exportInvExcel()" style="padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">📊 엑셀 다운로드</button>
     <button id="add-item-btn" onclick="openAddItem()" style="display:none;padding:7px 16px;border-radius:7px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 품목 추가</button>
     <button id="month-close-btn" onclick="openMonthClose()" style="display:none;padding:7px 14px;border-radius:7px;border:2px solid #7c3aed;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:700;white-space:nowrap;box-shadow:0 1px 3px rgba(124,58,237,.3)">📅 월말 마감</button>
@@ -1358,7 +1358,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
         </div>
         <div id="routing-panel" style="display:none;margin-top:8px">
           <div id="routing-list" style="margin-bottom:8px"></div>
-          <div style="font-size:11px;color:#888;margin-bottom:6px">등록해두면 현장입력의 "공정별 작업일지"에서 이 제품에 해당하는 공정만 순서대로 표시됩니다. (작업표준서는 현장에 실물로 비치)</div>
+          <div style="font-size:11px;color:#888;margin-bottom:6px">등록해두면 작업지시의 "공정별 작업일지"에서 이 제품에 해당하는 공정만 순서대로 표시됩니다. (작업표준서는 현장에 실물로 비치)</div>
           <div style="display:grid;grid-template-columns:2fr 1fr;gap:6px;margin-bottom:6px">
             <select id="routing-process-name" onchange="onRoutingProcessNameChange()">
               <option value="권선">권선</option>
@@ -1836,9 +1836,6 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   </div>
 </div>
 
-<!-- ✅ MES 현장입력: 태블릿/폰 카메라로 작업지시 QR을 스캔해서 생산실적/불량을
-     그 자리에서 바로 등록하는 화면. 큰 버튼·큰 글씨로 현장에서 쓰기 쉽게 만들었고,
-     실제 데이터 반영은 기존에 이미 검증된 openWOProd()/addNG()를 그대로 재사용한다. -->
 <div id="tab-cost" class="sec">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;flex-wrap:wrap;gap:8px">
     <h2 style="margin:0">💰 제조원가 관리 <span style="font-size:13px;font-weight:400;color:#888">/ Giá thành sản xuất theo model</span></h2>
@@ -1951,84 +1948,6 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 
 <div id="tab-shipstat" class="sec">
   <div id="d-ship-panel" class="ds-panel"></div>
-</div>
-
-<div id="tab-mes" class="sec">
-  <div style="max-width:640px;margin:0 auto">
-    <div style="text-align:center;padding:16px 0 14px">
-      <div style="font-size:21px;font-weight:800;color:#1a1a2e">📷 현장입력</div>
-      <div style="font-size:14px;color:#888;margin-top:2px">작업지시 QR을 스캔하거나 검색해서 선택하세요</div>
-    </div>
-
-    <!-- ✅ MES 1단계: 수입검사 — 원자재 입고 시에는 아직 작업지시가 없으므로, 작업지시
-         선택과 무관하게 항상 눌러서 바로 등록할 수 있게 최상단에 별도로 둔다. 새 로직을
-         만들지 않고 품질검사 탭의 "➕ 품질검사 기록 추가" 모달(이미 검증됨, 수입검사가
-         기본값)을 그대로 재사용한다 — 합격 시 자동 입고, 원자재(KR) 첨부파일 필수 등. -->
-    <button data-dept="quality" onclick="mesOpenInspection()" style="width:100%;padding:22px 10px;font-size:19px;font-weight:800;border-radius:14px;border:none;background:#0d9488;color:#fff;cursor:pointer;margin-bottom:8px">🔬 수입검사 등록 (원자재 입고 시)</button>
-
-    <!-- ✅ MES 마지막 단계: 출하검사 — 이미 "완료"된 작업지시를 검사하는 것이므로
-         (완료된 지시서는 아래 작업지시 검색 목록에서 일부러 제외돼 있음), 수입검사와
-         마찬가지로 작업지시 선택과 무관하게 최상단에 따로 둔다. 새 로직을 만들지 않고
-         품질검사 탭의 "➕ 품질검사 기록 추가" 모달을 "출하검사" 유형으로 그대로 연다 —
-         완료된 지시서 자동완성 검색(acSearchQCWO), 합격 시 자동 완제품 입고까지 기존
-         로직 그대로 재사용. -->
-    <button data-dept="quality" onclick="mesOpenShipInspection()" style="width:100%;padding:22px 10px;font-size:19px;font-weight:800;border-radius:14px;border:none;background:#7c3aed;color:#fff;cursor:pointer;margin-bottom:8px">📦 출하검사 등록 (생산 완료 후)</button>
-
-    <!-- ✅ 자재팀 전용: 위치 배정 — 수입검사/출하검사 합격으로 자동 입고된 LOT(원자재·
-         완제품 구분 없음)에 보관 위치를 지정한다. 품질/생산이 검사·실적을 등록하는
-         시점엔 위치를 모르니(자재팀이 실제로 갖다 놓는 사람) 별도 단계로 완전히 분리했다. -->
-    <button data-dept="materials" onclick="mesOpenLocationAssign()" style="width:100%;padding:22px 10px;font-size:19px;font-weight:800;border-radius:14px;border:none;background:#0369a1;color:#fff;cursor:pointer;margin-bottom:8px">📍 위치 배정 (입고 LOT 보관위치 지정)</button>
-    <div style="text-align:center;color:#aaa;font-size:12px;margin:2px 0 18px">— 작업지시와 무관하게 언제든 등록 가능 —</div>
-    <div style="border-top:1px dashed #dde;margin-bottom:16px"></div>
-
-    <div style="text-align:center;font-size:13px;color:#888;font-weight:700;margin-bottom:10px">작업지시 기반 입력 (생산실적 · 불량)</div>
-
-    <div id="mes-select-box">
-      <button id="mes-scan-btn" onclick="mesStartScan()" style="width:100%;padding:22px 10px;font-size:19px;font-weight:800;border-radius:14px;border:none;background:#185FA5;color:#fff;cursor:pointer;margin-bottom:14px">📷 QR 스캔으로 작업지시 찾기</button>
-
-      <div id="mes-scan-panel" style="display:none;margin-bottom:16px;background:#000;border-radius:14px;overflow:hidden;position:relative">
-        <video id="mes-video" style="width:100%;display:block" playsinline muted></video>
-        <button onclick="mesStopScan()" style="position:absolute;top:10px;right:10px;padding:9px 16px;border-radius:8px;border:none;background:rgba(255,255,255,.92);font-weight:700;font-size:14px;cursor:pointer">✕ 닫기</button>
-        <div id="mes-scan-status" style="position:absolute;bottom:0;left:0;right:0;padding:9px;text-align:center;color:#fff;background:rgba(0,0,0,.55);font-size:13px">카메라를 QR코드에 비춰주세요</div>
-      </div>
-
-      <div style="text-align:center;color:#aaa;font-size:12px;margin:12px 0 8px">또는 직접 검색</div>
-      <input id="mes-search" oninput="renderMESList()" placeholder="지시번호·품명·코드 검색..." style="width:100%;font-size:17px;padding:14px;border-radius:10px;border:1px solid #dde;margin-bottom:10px;box-sizing:border-box">
-      <div id="mes-list" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto"></div>
-    </div>
-
-    <div id="mes-target-box" style="display:none">
-      <div id="mes-target-info" style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:10px;padding:16px;font-size:16px;line-height:1.7;margin-bottom:16px"></div>
-      <!-- ✅ 실제 공정 순서대로 배치: 자재투입(생산 시작 전) → 생산실적 입력(생산 중/후)
-           → 불량 등록(발생 시점마다). 세 버튼 모두 새 로직이 아니라, 이미 검증된 기존
-           화면(전공정 추적 / 실적입력 / addNG)을 그대로 재사용한다. -->
-      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:14px">
-        <button data-dept="production" onclick="mesOpenMaterial()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#92400e;color:#fff;cursor:pointer;line-height:1.4">📦 자재투입 (전공정 추적)</button>
-        <button data-dept="production" onclick="mesOpenProcessLog()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#7c3aed;color:#fff;cursor:pointer;line-height:1.4">🏭 공정별 작업일지</button>
-        <button data-dept="quality" onclick="mesOpenProcessInspection()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#0d9488;color:#fff;cursor:pointer;line-height:1.4">🔬 공정검사 등록</button>
-        <button data-dept="production" onclick="mesOpenProd()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#166534;color:#fff;cursor:pointer;line-height:1.4">📈 생산실적 입력</button>
-        <button data-dept="production" onclick="mesOpenDefect()" style="padding:22px 8px;font-size:18px;font-weight:800;border-radius:14px;border:none;background:#b91c1c;color:#fff;cursor:pointer;line-height:1.4">⚠️ 불량 등록</button>
-      </div>
-      <button onclick="mesClearTarget()" style="width:100%;padding:13px;font-size:15px;border-radius:10px;border:1px solid #dde;background:#fff;color:#555;cursor:pointer">↩ 다른 작업지시 선택</button>
-    </div>
-
-    <div id="mes-defect-box" style="display:none">
-      <div id="mes-defect-info" style="background:#fef2f2;border-left:4px solid #b91c1c;border-radius:10px;padding:16px;font-size:16px;line-height:1.7;margin-bottom:16px"></div>
-      <div style="margin-bottom:14px">
-        <label style="display:block;font-size:14px;font-weight:700;color:#555;margin-bottom:6px">불량 수량 *</label>
-        <input id="mes-defect-qty" type="number" placeholder="0" style="width:100%;font-size:26px;padding:16px;border-radius:10px;border:1px solid #dde;box-sizing:border-box">
-      </div>
-      <div style="margin-bottom:16px">
-        <label style="display:block;font-size:14px;font-weight:700;color:#555;margin-bottom:6px">불량 사유</label>
-        <input id="mes-defect-reason" type="text" placeholder="예: 치수불량, 외관불량 등" style="width:100%;font-size:16px;padding:14px;border-radius:10px;border:1px solid #dde;box-sizing:border-box">
-      </div>
-      <div id="mes-defect-err" style="color:#b91c1c;font-size:13px;margin-bottom:10px;display:none"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <button onclick="mesCancelDefect()" style="padding:18px;font-size:16px;border-radius:12px;border:1px solid #dde;background:#fff;color:#555;cursor:pointer">취소</button>
-        <button id="mes-defect-submit-btn" onclick="mesSubmitDefect()" style="padding:18px;font-size:16px;font-weight:800;border-radius:12px;border:none;background:#b91c1c;color:#fff;cursor:pointer">⚠️ 등록</button>
-      </div>
-    </div>
-  </div>
 </div>
 
 <!-- 수정 모달 -->
@@ -2649,7 +2568,6 @@ function go(id){
   if(id==='hist') renderHist();
   if(id==='ng'){renderNG();renderNGLog();initNGLogModel();}
   if(id==='po') { renderPO({soft:true}); _goPO(); }
-  if(id==='mes') renderMES();
   if(id==='cost') renderCost();
   if(id==='ship') { renderShipPlans(); renderInvPanel(); loadShipPlans().then(() => { renderShipPlans(); renderInvPanel(); }); }
   if(id==='shipstat') renderShipPanel();
@@ -3917,7 +3835,7 @@ function _renderWOBody() {
         <button class="edit-btn" onclick="openWOTrace(${r.id})" title="전공정 추적">🔗</button>
         <button class="edit-btn" onclick="openWOProcess(${r.id})" title="공정별 작업일지">🏭</button>
         <button class="edit-btn" onclick="printWO(${r.id})" title="작업지시서 인쇄 (자재 요청/자재부서 서명란 포함)">🖨️</button>
-        <button class="edit-btn" onclick="printWOQR(${r.id})" title="QR 라벨 인쇄 (현장입력 탭에서 스캔용)">🔖</button>
+        <button class="edit-btn" onclick="printWOQR(${r.id})" title="QR 라벨 인쇄 (MES에서 스캔용)">🔖</button>
         <button class="edit-btn" onclick="cycleWOStatus(${r.id},'${r.status||'대기'}')" title="상태 변경">🔁</button>
         ${isAdmin ? `<button class="edit-btn" onclick="deleteWO(${r.id})" title="삭제">🗑️</button>` : ''}
       </td>
@@ -7751,117 +7669,9 @@ function confirmDel(){
 }
 function closeOv(id){document.getElementById(id).classList.remove('show');}
 
-// ════════════════════════════════════════════════
-//  MES 현장입력 (생산실적 입력 / 불량 등록) — QR 스캔 우선, 검색은 대체 수단
-//  ✅ 실제 데이터 반영은 새로 만들지 않고 기존에 검증된 로직을 그대로 재사용한다:
-//     - 생산실적 입력 → openWOProd()/submitWOProd() (작업지시 탭의 "📈 실적입력"과 동일)
-//     - 불량 등록     → addNG() (완제품→NG 이동 시 쓰는 것과 같은, 불량 등록 전용 엔드포인트)
-// ════════════════════════════════════════════════
-let mesTarget = null;
-let mesQrScanner = null;
-
-async function renderMES() {
-  mesStopScan();
-  mesTarget = null;
-  document.getElementById('mes-select-box').style.display = 'block';
-  document.getElementById('mes-target-box').style.display = 'none';
-  document.getElementById('mes-defect-box').style.display = 'none';
-  const s = document.getElementById('mes-search'); if (s) s.value = '';
-  await loadWO();
-  renderMESList();
-}
-
-function renderMESList() {
-  const listEl = document.getElementById('mes-list');
-  if (!listEl) return;
-  const q = (document.getElementById('mes-search').value || '').toLowerCase().trim();
-  let rows = (WO || []).filter(r => r.status !== '완료');
-  if (q) rows = rows.filter(r =>
-    (r.orderNo||'').toLowerCase().includes(q) ||
-    (r.code||'').toLowerCase().includes(q) ||
-    (r.name||'').toLowerCase().includes(q)
-  );
-  rows = rows.slice(0, 30);
-  if (!rows.length) {
-    listEl.innerHTML = `<div style="text-align:center;color:#aaa;padding:20px;font-size:14px">${q ? '검색 결과가 없습니다.' : '진행 중인 작업지시가 없습니다.'}</div>`;
-    return;
-  }
-  listEl.innerHTML = rows.map(r => `
-    <div onclick="mesSelectWO(${r.id})" style="padding:14px 16px;border:1px solid #e5e7eb;border-radius:10px;cursor:pointer;background:#fff">
-      <div style="font-weight:700;font-size:15px;color:#1a1a2e">${r.orderNo||''} · ${r.name||''}</div>
-      <div style="font-size:12px;color:#888;margin-top:3px">${r.code||''} · LOT ${r.lot||'미지정'} · ${(+r.producedQty||0).toLocaleString()}/${(+r.planQty||0).toLocaleString()} ${r.unit||''} · ${r.status||'대기'}</div>
-    </div>
-  `).join('');
-}
-
-function mesSelectWO(id) {
-  const wo = (WO || []).find(r => r.id === id);
-  if (!wo) { alert('작업지시를 찾을 수 없습니다.'); return; }
-  mesTarget = wo;
-  mesStopScan();
-  document.getElementById('mes-select-box').style.display = 'none';
-  document.getElementById('mes-defect-box').style.display = 'none';
-  document.getElementById('mes-target-box').style.display = 'block';
-  const plan = +wo.planQty || 0, produced = +wo.producedQty || 0;
-  document.getElementById('mes-target-info').innerHTML =
-    `<strong style="font-size:18px">${wo.orderNo||''}</strong><br>${wo.name||''} <span style="color:#aaa;font-family:monospace;font-size:13px">${wo.code||''}</span><br>
-     계획 ${plan.toLocaleString()} ${wo.unit||''} · 실적 ${produced.toLocaleString()} ${wo.unit||''} · 잔여 ${Math.max(0,plan-produced).toLocaleString()} ${wo.unit||''}<br>
-     LOT: <span style="color:#1d4ed8;font-weight:700;font-family:monospace">${wo.lot||'미지정'}</span>`;
-}
-
-function mesClearTarget() {
-  mesTarget = null;
-  document.getElementById('mes-defect-box').style.display = 'none';
-  document.getElementById('mes-target-box').style.display = 'none';
-  document.getElementById('mes-select-box').style.display = 'block';
-  renderMESList();
-}
-
-function mesOpenProd() {
-  if (!mesTarget) return;
-  // ✅ 작업지시 탭의 "📈 실적입력"과 완전히 동일한 로직(자재 미투입 경고, 계획초과
-  //    확인, 산출LOT 이력 기록 등)을 그대로 재사용 — 현장입력용으로 따로 만들지 않는다.
-  openWOProd(mesTarget.id);
-}
-
-// ✅ MES 2단계(자재투입): 작업지시 목록의 "🔗 전공정 추적" 모달을 그대로 연다.
-//    BOM 기반 자동 소요량 계산, 재고 있는 자재 검색, 선입선출(FIFO) 자동 출고 등
-//    이미 검증된 로직을 그대로 재사용한다 — 현장입력용으로 따로 만들지 않는다.
-function mesOpenMaterial() {
-  if (!mesTarget) return;
-  openWOTrace(mesTarget.id);
-}
-
-// ✅ 공정별 작업일지(권선/디핑/조립1·2·3/경화/EOL검사/DCB/본딩 등) — 작업지시 목록의
-//    "🏭 공정별 작업일지" 모달을 그대로 연다. 공정마다 작업자·시작/종료시간·적합/부적합
-//    수량·중점관리항목(파라미터)까지 이미 다 갖춰져 있어 새로 만들 필요가 없다.
-//    관리자 권한이 없어도 기록 추가는 가능하게 되어 있어(삭제만 관리자 전용) 현장에서도
-//    그대로 쓸 수 있다.
-function mesOpenProcessLog() {
-  if (!mesTarget) return;
-  openWOProcess(mesTarget.id);
-}
-
-// ✅ MES 1단계(수입검사): 품질검사 탭의 "➕ 품질검사 기록 추가" 모달을 그대로 연다.
-//    openAddQC()는 이미 검사유형 기본값이 "수입검사"라서 별도 분기 없이 그대로 재사용
-//    가능하다 — 합격 시 자동 입고(autoInboundFromQC), 원자재(KR) 첨부파일 필수 등
-//    기존에 검증된 로직을 그대로 탄다.
-function mesOpenInspection() {
-  openAddQC();
-}
-
-// ✅ MES 마지막 단계(출하검사): 품질검사 탭의 "➕ 품질검사 기록 추가" 모달을
-//    "출하검사" 유형으로 그대로 연다. openAddQC('출하검사')가 onQCTypeChange()를
-//    거치면서 화면을 자동으로 "완료된 작업지시 검색" 모드로 바꿔주므로(품목 직접
-//    검색이 아니라 acSearchQCWO/acPickQCWO로 완료 지시서를 골라 LOT·수량 자동 채움),
-//    여기서는 새 로직 없이 그대로 위임만 한다.
-function mesOpenShipInspection() {
-  openAddQC('출하검사');
-}
-
-// ✅ 자재팀 전용: 위치 배정 — 수입검사/출하검사 합격으로 자동 입고된 LOT(원자재·
+// ✅ 위치 배정 — 수입검사/출하검사 합격으로 자동 입고된 LOT(원자재·
 //    완제품 구분 없음)에 보관 위치를 지정/이동한다. 작업지시 선택과 무관하게
-//    수입검사/출하검사와 마찬가지로 항상 바로 열 수 있다.
+//    재고 현황 탭의 "📍 위치 배정" 버튼에서 연다. (옛 현장입력 탭은 MES로 대체되어 삭제)
 async function mesOpenLocationAssign() {
   await loadLocations();
   await loadLotLocations();
@@ -7877,185 +7687,6 @@ async function mesOpenLocationAssign() {
   if (errEl) errEl.style.display = 'none';
   renderLocationAssignList();
   document.getElementById('loc-assign-ov').classList.add('show');
-}
-
-// ✅ MES 공정검사(중간검사): 이미 선택된 작업지시가 있으므로, 품질검사 모달을
-//    "공정검사" 유형으로 열고 품목을 다시 검색하지 않아도 되게 작업지시 정보로
-//    바로 채워준다. openAddQC()가 폼을 전부 초기화한 "이후"에 값을 채워야 하므로
-//    openAddQC의 완료를 기다렸다가(await) 이어서 채운다.
-async function mesOpenProcessInspection() {
-  if (!mesTarget) return;
-  await openAddQC('공정검사');
-  qcSelectedItem = { code: mesTarget.code, name: mesTarget.name, cat: mesTarget.cat, unit: mesTarget.unit };
-  document.getElementById('qc-item-q').value = (mesTarget.code || '') + ' — ' + (mesTarget.name || '');
-  document.getElementById('qc-code').value = mesTarget.code || '';
-  document.getElementById('qc-name').value = mesTarget.name || '';
-  fillQCWoOptions(mesTarget.code);
-  const woSel = document.getElementById('qc-wo');
-  if (woSel && [...woSel.options].some(o => o.value === String(mesTarget.id))) {
-    woSel.value = String(mesTarget.id);
-  }
-  updateQCCoreMakerVisibility();
-  updateQCAttachmentLabel();
-  // ✅ 공정검사는 지금 생산 중인 이 작업지시의 LOT을 그대로 따라가야 한다 — 새 LOT을
-  //    만들면 같은 배치인데 LOT이 갈라져서 추적이 끊긴다(출하검사가 완료된 작업지시의
-  //    LOT을 그대로 쓰는 것과 같은 이유, acPickQCWO 참고). updateQCCoreMakerVisibility()가
-  //    LOT 생성 버튼을 다시 보이게 만들 수 있으므로, 반드시 그 다음에 마지막으로 덮어쓴다.
-  const lotEl = document.getElementById('qc-lot');
-  const genBtn = document.getElementById('qc-lot-gen-btn');
-  if (mesTarget.lot) {
-    lotEl.value = mesTarget.lot;
-    lotEl.readOnly = true;
-    lotEl.style.background = '#f5f6f8';
-    if (genBtn) genBtn.style.display = 'none';
-    document.getElementById('qc-lot-label').firstChild.textContent = '작업지시의 LOT (자동 채워짐) ';
-  } else {
-    // 예전 방식으로 등록되어 LOT이 없는 작업지시 — 직접 입력할 수 있게 열어둔다
-    lotEl.value = '';
-    lotEl.readOnly = false;
-    lotEl.style.background = '#fff';
-    lotEl.placeholder = '⚠️ 이 작업지시엔 LOT이 없습니다 (직접 입력해주세요)';
-  }
-}
-
-function mesOpenDefect() {
-  if (!mesTarget) return;
-  document.getElementById('mes-target-box').style.display = 'none';
-  document.getElementById('mes-defect-box').style.display = 'block';
-  document.getElementById('mes-defect-info').innerHTML =
-    `<strong style="font-size:18px">${mesTarget.orderNo||''}</strong> · ${mesTarget.name||''}<br>LOT <span style="font-family:monospace;font-weight:700">${mesTarget.lot||'미지정'}</span>`;
-  document.getElementById('mes-defect-qty').value = '';
-  document.getElementById('mes-defect-reason').value = '';
-  document.getElementById('mes-defect-err').style.display = 'none';
-}
-
-function mesCancelDefect() {
-  document.getElementById('mes-defect-box').style.display = 'none';
-  document.getElementById('mes-target-box').style.display = 'block';
-}
-
-async function mesSubmitDefect() {
-  const errEl = document.getElementById('mes-defect-err');
-  errEl.style.display = 'none';
-  if (!mesTarget) return;
-  const qty = parseFloat(document.getElementById('mes-defect-qty').value);
-  if (isNaN(qty) || qty <= 0) { errEl.textContent = '불량 수량을 올바르게 입력해주세요.'; errEl.style.display = 'block'; return; }
-  const reason = document.getElementById('mes-defect-reason').value.trim();
-  const btn = document.getElementById('mes-defect-submit-btn');
-  btn.disabled = true; btn.textContent = '저장 중...';
-
-  const ngLogEntry = {
-    id: Date.now(), type: 'ng-in', code: mesTarget.code, name: mesTarget.name,
-    cat: mesTarget.cat || 'TP', unit: mesTarget.unit, qty,
-    note: `[작업지시 ${mesTarget.orderNo||''} 현장입력] 불량 등록`,
-    reason, dt: vnDt(), user: CURRENT_USER || ''
-  };
-  let res = await api('addNG', { ...ngLogEntry, token: ADMIN_TOKEN });
-  if (!res || !res.ok) res = await api('addNG', { ...ngLogEntry, token: ADMIN_TOKEN }); // 1회 재시도
-  btn.disabled = false; btn.textContent = '⚠️ 등록';
-
-  if (!res || !res.ok) {
-    errEl.textContent = '서버 저장 실패: ' + (res && res.error ? res.error : '알 수 없는 오류');
-    errEl.style.display = 'block';
-    return;
-  }
-  if (typeof renderNG === 'function') renderNG();
-  if (typeof renderNGLog === 'function') renderNGLog();
-  if (typeof initNGModel === 'function') initNGModel();
-  if (typeof initNGLogModel === 'function') initNGLogModel();
-  alert(`✅ 불량 ${qty.toLocaleString()} ${mesTarget.unit||''} 등록 완료`);
-  mesCancelDefect();
-}
-
-// ── QR 스캔 (카메라, jsQR 기반의 qr-scanner 라이브러리 사용) ──
-let mesQrLibLoading = null;
-function mesLoadQrLib() {
-  if (window.QrScanner) return Promise.resolve();
-  if (mesQrLibLoading) return mesQrLibLoading;
-  mesQrLibLoading = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner.umd.min.js';
-    s.onload = () => {
-      window.QrScanner.WORKER_PATH = 'https://cdnjs.cloudflare.com/ajax/libs/qr-scanner/1.4.2/qr-scanner-worker.min.js';
-      resolve();
-    };
-    s.onerror = () => reject(new Error('QR 스캔 라이브러리 로드 실패'));
-    document.head.appendChild(s);
-  });
-  return mesQrLibLoading;
-}
-
-async function mesStartScan() {
-  try {
-    await mesLoadQrLib();
-  } catch (e) {
-    alert('QR 스캔 기능을 불러오지 못했습니다. 인터넷 연결을 확인해주세요.\n(검색으로도 작업지시를 찾을 수 있습니다)');
-    return;
-  }
-  const video = document.getElementById('mes-video');
-  document.getElementById('mes-scan-panel').style.display = 'block';
-  document.getElementById('mes-scan-status').textContent = '카메라를 QR코드에 비춰주세요';
-  // ✅ http로 접속했거나 브라우저가 카메라 API 자체를 지원하지 않으면 권한 요청까지도
-  //    못 가고 여기서 막힌다 — 이 경우 "권한을 확인해주세요"라고 하면 사용자가 계속
-  //    권한만 들여다보게 되므로 원인을 구분해서 안내한다.
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    document.getElementById('mes-scan-status').textContent = '이 브라우저 또는 접속 방식(http)에서는 카메라를 사용할 수 없습니다. https 주소로 접속했는지 확인해주세요.';
-    return;
-  }
-  if (mesQrScanner) {
-    try { await mesQrScanner.start(); }
-    catch (e) { document.getElementById('mes-scan-status').textContent = mesCameraErrorMessage(e); }
-    return;
-  }
-  mesQrScanner = new QrScanner(video, result => {
-    const text = (typeof result === 'string' ? result : (result && result.data) || '').trim();
-    mesHandleScan(text);
-  }, { highlightScanRegion: true, highlightCodeOutline: true, maxScansPerSecond: 5 });
-  try {
-    await mesQrScanner.start();
-  } catch (e) {
-    document.getElementById('mes-scan-status').textContent = mesCameraErrorMessage(e);
-  }
-}
-
-// ✅ 카메라 시작 실패 원인별로 다른 안내 — "권한을 확인해주세요"라는 문구 하나로는
-//    권한 문제가 아닌 경우(카메라가 없음/다른 앱이 점유 중)에 사용자가 계속 권한
-//    설정만 들여다보게 되어 헷갈린다. 브라우저의 DOMException.name으로 구분한다.
-function mesCameraErrorMessage(e) {
-  const name = e && e.name;
-  if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
-    return '카메라 권한이 거부되어 있습니다. 주소창의 자물쇠(또는 카메라) 아이콘을 눌러 이 사이트의 카메라 접근을 허용한 뒤 다시 시도해주세요.';
-  }
-  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-    return '이 기기에서 사용 가능한 카메라를 찾을 수 없습니다. 검색으로 작업지시를 찾아주세요.';
-  }
-  if (name === 'NotReadableError' || name === 'TrackStartError') {
-    return '카메라가 다른 앱에서 사용 중입니다. 카메라를 쓰는 다른 앱(화상회의 등)을 끄고 다시 시도해주세요.';
-  }
-  if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
-    return '요청한 카메라 설정을 지원하지 않습니다. 기기의 다른 카메라를 사용해보세요.';
-  }
-  return '카메라를 시작할 수 없습니다. 브라우저의 카메라 권한을 확인해주세요.';
-}
-
-function mesStopScan() {
-  if (mesQrScanner) { try { mesQrScanner.stop(); } catch(e) {} }
-  const panel = document.getElementById('mes-scan-panel');
-  if (panel) panel.style.display = 'none';
-}
-
-function mesHandleScan(text) {
-  if (!text) return;
-  // QR 안에는 작업지시번호(orderNo)를 그대로 넣는다 (printWOQR로 인쇄한 라벨과 짝이 맞음)
-  const code = text.replace(/^WO:/i, '').trim();
-  const wo = (WO || []).find(r => String(r.orderNo) === code || String(r.id) === code);
-  if (!wo) {
-    const st = document.getElementById('mes-scan-status');
-    if (st) st.textContent = `⚠️ "${code}" 에 해당하는 작업지시를 찾을 수 없습니다. 계속 스캔 중...`;
-    return;
-  }
-  mesStopScan();
-  mesSelectWO(wo.id);
 }
 
 // ── QR 라벨 생성/인쇄 (작업지시 목록 🔖 버튼) ──
@@ -10386,11 +10017,6 @@ function applyRoleUI() {
         b.style.pointerEvents = 'none';
         b.title = '열람 전용 - 입출고 등록 불가';
       }
-      if (b.textContent.includes('현장입력')) {
-        b.style.opacity = '0.4';
-        b.style.pointerEvents = 'none';
-        b.title = '열람 전용 - 현장입력 불가';
-      }
     });
     const blk = document.getElementById('io-viewer-block');
     const cnt = document.getElementById('io-content');
@@ -10433,16 +10059,8 @@ function applyRoleUI() {
 //    열리고 다시 해제하면 즉시 현장입력만 남는다.
 // ⚠️ 이 함수는 손대지 않는다 (simulate_floor_mode.js 13개 테스트가 현재 동작에 의존).
 function applyFloorModeUI() {
-  if (!IS_FLOOR) return;
-  // 한국 열람(viewer) 로그인은 원래 현장입력 자체를 막아두므로(위 분기 참고) 이
-  // 제한과 겹치면 아무 탭도 못 보게 되니 그 경우엔 건드리지 않는다 — 실제로는
-  // 현장 기기에서 열람으로 로그인할 일이 없으니 발생하지 않는 조합이다.
-  if (USER_ROLE === 'viewer') return;
-  const restrict = !isAdmin;
-  document.querySelectorAll('.tb').forEach(b => {
-    if (!b.textContent.includes('현장입력')) b.style.display = restrict ? 'none' : '';
-  });
-  if (restrict) go('mes');
+  // 옛 현장입력 탭은 MES(/erp/mes/)로 대체되어 삭제됨 — ?mode=floor 기기도 일반 화면과 동일하게 쓴다.
+  return;
 }
 
 // ✅ 베트남 생산(production)/품질(quality) 일반 직원 로그인은 관리자가 아니면
@@ -10963,7 +10581,7 @@ function showLoginModal() {
     if (kk) kk.style.display = 'none';
     // ✅ 현장 전용 기기임을 로그인 화면에서부터 알 수 있게 (URL을 잘못 열었을 때 바로 확인 가능)
     const vnSub = document.getElementById('login-vn-sub');
-    if (vnSub) vnSub.textContent = IS_FLOOR ? '🏭 생산 현장 전용 기기 · 관리자 외에는 현장입력만 가능' : '베트남 로그인 / Đăng nhập';
+    if (vnSub) vnSub.textContent = '베트남 로그인 / Đăng nhập';
     setTimeout(()=>{ const el=document.getElementById('vn-name-input'); if(el)el.focus(); },100);
   } else {
     if (kk) kk.style.display = 'block';
