@@ -3831,9 +3831,9 @@ function _renderWOBody() {
       <td class="no-print wo-actions">
         ${isAdmin ? `<button class="edit-btn" onclick="openEditWO(${r.id})" title="수정">✏️</button>` : ''}
         ${qcSt[r.id] && qcSt[r.id].k === 'wait' ? `<button class="edit-btn" onclick="woStartShipQC(${r.id})" title="출하검사 등록 / Kiểm tra xuất hàng" style="background:#FFFBEB;border-color:#d97706">🔬</button>` : ''}
-        <button class="edit-btn" onclick="openWOProd(${r.id})" title="실적 입력">📈</button>
+        <button class="edit-btn" onclick="openWOProd(${r.id})" title="${isMesWO(r) ? 'PCDU는 MES에서 입력' : '실적 입력'}"${isMesWO(r) ? ' style="opacity:.35"' : ''}>📈</button>
         <button class="edit-btn" onclick="openWOTrace(${r.id})" title="전공정 추적">🔗</button>
-        <button class="edit-btn" onclick="openWOProcess(${r.id})" title="공정별 작업일지">🏭</button>
+        <button class="edit-btn" onclick="openWOProcess(${r.id})" title="${isMesWO(r) ? 'PCDU는 MES에서 입력' : '공정별 작업일지'}"${isMesWO(r) ? ' style="opacity:.35"' : ''}>🏭</button>
         <button class="edit-btn" onclick="printWO(${r.id})" title="작업지시서 인쇄 (자재 요청/자재부서 서명란 포함)">🖨️</button>
         <button class="edit-btn" onclick="printWOQR(${r.id})" title="QR 라벨 인쇄 (MES에서 스캔용)">🔖</button>
         <button class="edit-btn" onclick="cycleWOStatus(${r.id},'${r.status||'대기'}')" title="상태 변경">🔁</button>
@@ -4264,8 +4264,14 @@ async function submitEditWO() {
 }
 
 // ── 실적 입력 ──────────────────────────────
+// ✅ PCDU 제품은 MES(/erp/mes/)에서만 실적·공정일지를 입력한다 (ERP 중복 입력 방지)
+const isMesWO = w => !!w && /PCDU/i.test(String(w.code || '') + ' ' + String(w.name || ''));
+function mesOnlyAlert(w) {
+  if (confirm(`${w.orderNo || ''} ${w.name || ''}\n\nPCDU 제품은 MES에서만 실적·공정 작업일지를 입력합니다.\nERP에서는 입력할 수 없습니다.\n\nMES를 열까요?`)) window.open('mes/', '_blank');
+}
 function openWOProd(id) {
   const wo = WO.find(r => r.id === id); if (!wo) return;
+  if (isMesWO(wo)) { mesOnlyAlert(wo); return; }
   woProdTarget = wo;
   const plan = +wo.planQty || 0, produced = +wo.producedQty || 0;
   document.getElementById('wo-prod-info').innerHTML =
@@ -6663,6 +6669,7 @@ function renderWPProcessGuide() {
 }
 
 async function openWOProcess(id) {
+  { const w = (WO || []).find(r => r.id === id); if (isMesWO(w)) { mesOnlyAlert(w); return; } }
   // ✅ 전공정 추적(openWOTrace)과 완전히 같은 원인의 같은 증상 — 서로 무관한 서버
   //    조회 3건(라우팅/공정일지/공정변수)을 순서대로 하나씩 기다렸다가 전부 끝나야만
   //    창을 띄웠다. 연결이 느리면 지연이 그대로 다 더해지고, 다시 누르면 중첩까지

@@ -704,7 +704,7 @@ async function erpPush(){
       const got = c.data || [], qty = got.reduce((a, x) => a + (+x.good_qty||0), 0), ids = got.map(x => x.id);
       if (!qty) continue;   // 다른 기기가 먼저 보냄
       const undo = () => sb.from('prod_records').update({erp_sent_at: null}).in('id', ids);
-      const res = await erpCall('updateWorkOrder', {id: wo_id, addProducedQty: qty}, token);
+      const res = await erpCall('updateWorkOrder', {id: wo_id, addProducedQty: qty, src: 'mes'}, token);
       if (res && res.ok) {
         if (o.wo && o.wo.lot) await erpCall('addWOOutputLot', {workOrderId: wo_id, orderNo: o.order_no, lot: o.wo.lot, qty, unit: o.wo.unit || 'Ea'}, token);
         ok.push(`${o.order_no} +${N(qty)}`);
