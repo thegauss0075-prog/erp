@@ -2467,8 +2467,7 @@ function go(id){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('.tb').forEach(b=>b.classList.remove('on'));
   document.getElementById('tab-'+id).classList.add('on');
-  const order={dashboard:0,inv:1,io:2,wo:3,dt:4,qc:5,hist:6,ng:7,po:8,mes:9,ship:10,shipstat:11,cost:12,hq:13};
-  document.querySelectorAll('.tb')[order[id]].classList.add('on');
+  document.querySelectorAll('.tb').forEach(b=>{ if((b.getAttribute('onclick')||'').includes("go('"+id+"')")) b.classList.add('on'); });
   if(id==='inv'){initMS();renderInv();}
   if(id==='io') renderIOTable();
   if(id==='wo') renderWO({soft:true});
