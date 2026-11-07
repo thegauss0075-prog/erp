@@ -894,7 +894,51 @@ function adminView(){
     <div class="card" style="margin-top:12px"><h2>이 기기</h2><div class="muted">기기 이름: <b>${E(S.device)}</b> <button class="btn" style="padding:4px 10px" onclick="const n=prompt('기기 이름',S.device);if(n){S.device=n;LS.set('mes_device',n);render()}">바꾸기</button> · 로그인: ${E(ME.email)} (${E(ME.role)})</div></div>`;
 }
 function adminTabs(){ return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn ${AD.t === 'wo' ? 'pri' : ''}" onclick="AD.t='wo';render()">작업지시</button><button class="btn ${AD.t === 'route' ? 'pri' : ''}" onclick="AD.t='route';render()">공정 순서(품목별)</button><button class="btn ${AD.t === 'chkitem' ? 'pri' : ''}" onclick="AD.t='chkitem';render()">점검 항목</button><button class="btn ${AD.t === 'skill' ? 'pri' : ''}" onclick="AD.t='skill';render()">작업자 자격</button><button class="btn ${AD.t === 'c4' ? 'pri' : ''}" onclick="AD.t='c4';render()">4M 변경</button>${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
-      <button class="btn ok" onclick="syncWO(false).then(()=>{AD.t='wo';render()})">🔄 ERP 작업지시 받기</button></div>`; }
+      ${bkBtn()}<button class="btn ok" onclick="syncWO(false).then(()=>{AD.t='wo';render()})">🔄 ERP 작업지시 받기</button></div>`; }
+// ── 📥 전체 백업: 모든 테이블을 엑셀 파일 하나로 내려받기 (회사 드라이브 + 보조 사본에 보관)
+const BK_TABLES = [['prod_records','실적','id'],['ncr','부적합','id'],['machine_checks','설비점검','id'],['machine_events','설비이벤트','id'],['gauges','계측기','code'],['gauge_cals','교정이력','id'],
+  ['worker_skills','작업자자격','worker_code'],['changes_4m','4M변경','id'],['approvals','전자승인','id'],['audit_log','수정이력','id'],['work_orders','작업지시','wo_id'],['routings','공정순서','item_code'],
+  ['processes','공정','code'],['machines','설비','code'],['workers','작업자','code'],['check_items','점검항목','id'],['stop_reasons','비가동사유','code'],['app_users','계정','email']];
+function bkLast(){ try { return LS.get('mes_backup_at', ''); } catch (e) { return ''; } }
+function bkBtn(){ const t = bkLast(), d = t ? Math.floor((Date.now() - new Date(t)) / 864e5) : null;
+  return `<span class="muted" style="font-size:12px;${d === null || d > 7 ? 'color:var(--bad);font-weight:700' : ''}">${d === null ? '이 기기에서 백업한 적 없음' : '마지막 백업 ' + ymd(t) + (d ? ` (${d}일 전)` : ' (오늘)')}</span><button class="btn" id="bk-btn" onclick="mesBackup()">📥 전체 백업</button>`; }
+let _xlsxP = null;
+function loadXLSX(){ if (window.XLSX) return Promise.resolve(); return _xlsxP = _xlsxP || new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; sc.onload = ok; sc.onerror = () => { _xlsxP = null; no(new Error('엑셀 라이브러리를 불러오지 못했습니다')); }; document.head.appendChild(sc); }); }
+async function bkFetch(t, ord){
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const r = await sb.from(t).select('*').order(ord, {ascending: true}).range(from, from + 999);
+    if (r.error) throw r.error;
+    out.push(...(r.data || [])); if ((r.data || []).length < 1000) break;
+  }
+  return out;
+}
+async function mesBackup(){
+  const btn = $('bk-btn'); if (btn && btn.disabled) return; if (btn) { btn.disabled = true; btn.textContent = '⏳ 준비 중…'; }
+  try {
+    await loadXLSX();
+    const wb = XLSX.utils.book_new(), sum = [], cut = [];
+    for (const [t, ko, ord] of BK_TABLES) {
+      if (btn) btn.textContent = `⏳ ${ko} 읽는 중…`;
+      let rows = [], err = '';
+      try { rows = await bkFetch(t, ord); } catch (e) { err = e.message || String(e); }
+      const flat = rows.map(r => { const o = {}; for (const [k, v] of Object.entries(r)) { let x = v !== null && typeof v === 'object' ? JSON.stringify(v) : v; if (typeof x === 'string' && x.length > 32000) { x = x.slice(0, 32000) + '…(잘림)'; cut.push(t + '.' + k); } o[k] = x; } return o; });
+      const ws = flat.length ? XLSX.utils.json_to_sheet(flat) : XLSX.utils.aoa_to_sheet([[err ? '읽기 실패: ' + err : '자료 없음']]);
+      XLSX.utils.book_append_sheet(wb, ws, (ko + '_' + t).slice(0, 31));
+      sum.push({'표': ko, '테이블': t, '행 수': rows.length, '상태': err ? '실패: ' + err : '정상'});
+    }
+    const now = new Date();
+    const info = XLSX.utils.aoa_to_sheet([['THE GAUSS VINA MES 전체 백업'], ['백업 시각', now.toLocaleString('ko-KR')], ['백업한 사람', ME.name || ME.email], ['기기', S.device], ['보관', '회사 드라이브 MES 백업 폴더 + 보조 사본(외장 저장장치). 개인정보(작업자 이름 등) 포함 — 외부 공유 금지'], []]);
+    XLSX.utils.sheet_add_json(info, sum, {origin: 'A7'});
+    wb.SheetNames.unshift('요약'); wb.Sheets['요약'] = info;
+    const name = `MES_backup_${ymd(now)}_${hm(now).replace(':', '')}.xlsx`;
+    XLSX.writeFile(wb, name);
+    LS.set('mes_backup_at', now.toISOString());
+    const bad = sum.filter(x => x['상태'] !== '정상');
+    alert(`📥 ${name}\n\n${sum.map(x => `${x['표']} ${x['행 수']}행${x['상태'] !== '정상' ? ' ⚠️' : ''}`).join(' · ')}` + (bad.length ? `\n\n⚠️ 읽지 못한 표: ${bad.map(x => x['표']).join(', ')}` : '') + (cut.length ? `\n⚠️ 너무 긴 칸은 잘렸습니다: ${[...new Set(cut)].join(', ')}` : '') + '\n\n회사 드라이브 MES 백업 폴더에 올려 두세요.');
+  } catch (e) { alert('백업 실패: ' + (e.message || e)); }
+  finally { render(); }
+}
 function adCell(f, v, rid){ const id = `ad-${rid}-${f[0]}`;
   if (f[2] === 'bool') return `<input type="checkbox" id="${id}" ${v ? 'checked' : ''} style="width:20px;height:20px">`;
   if (f[2] === 'proc') return `<select id="${id}" style="padding:6px"><option value="">(전체)</option>${M.proc.map(p => `<option value="${E(p.code)}" ${v === p.code ? 'selected' : ''}>${E(p.name)}</option>`).join('')}</select>`;
