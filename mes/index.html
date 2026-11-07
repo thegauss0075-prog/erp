@@ -269,8 +269,8 @@ function floorView(){
       ${'BarcodeDetector' in window ? '<button class="btn" onclick="camScan()">📷 카메라</button>' : ''}
     </div>
     ${running.length ? `<div class="card" style="margin-bottom:12px;border-color:#86EFAC;background:#F0FDF4"><h2>⏱ 진행 중 <span class="vi">Đang làm</span></h2>${running.map(r => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #D1FAE5;flex-wrap:wrap">
-        <div style="flex:1;min-width:200px"><b>${E(r.item_name||'')}</b> <span class="muted">${E(r.order_no||'')} · ${E(workName(r.worker_code))}${r.machine_code ? ' · ' + E(machName(r.machine_code)) : ''}</span><div class="muted">시작 ${hm(r.start_at)} · ${dur(Date.now() - new Date(r.start_at))} 경과</div></div>
-        <button class="btn" onclick="cancelRun(${r.id})" title="잘못 시작한 작업 취소">✕ 시작 취소</button><button class="btn ok big" onclick="finishDlg(${r.id})">■ 종료·실적 입력</button></div>`).join('')}</div>` : ''}
+        <div style="flex:1;min-width:200px"><b>${E(r.item_name||'')}</b> <span class="muted">${E(r.order_no||'')} · ${E(workName(r.worker_code))}${r.machine_code ? ' · ' + E(machName(r.machine_code)) : ''}</span><div class="muted">시작 ${hm(r.start_at)} · ${dur(Date.now() - new Date(r.start_at))} 경과${(p => p.n ? ` · <b style="color:var(--ok)">중간 저장 ${p.n}회 · 양품 ${N(p.g)}</b>` : '')(partOf(r.id))}</div></div>
+        ${partOf(r.id).n ? '' : `<button class="btn" onclick="cancelRun(${r.id})" title="잘못 시작한 작업 취소">✕ 시작 취소</button>`}<button class="btn big" style="border-color:var(--ok);color:var(--ok)" onclick="finishDlg(${r.id}, true)" title="작업은 계속하고 지금까지 수량만 저장">📥 중간 저장<span class="vi">Lưu giữa ca</span></button><button class="btn ok big" onclick="finishDlg(${r.id})">■ 종료·실적 입력</button></div>`).join('')}</div>` : ''}
     <div class="grid" style="grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)">
       <div class="card"><h2>작업지시 <span class="vi">Lệnh sản xuất</span></h2>
         <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">${wos.map(w => { const ps = procSum(w.wo_id), done = ps[S.proc] || 0, pct = w.plan_qty ? Math.min(100, done / w.plan_qty * 100) : 0;
@@ -386,14 +386,16 @@ function lotMemSet(w, lots){ try { localStorage.setItem(lotKey(w), JSON.stringif
 const lotReq = w => !!(routeOf(w).find(p => p.code === S.proc) || {}).lot_required;
 // 입력 단위: 예) WIRE 재단은 "가닥"으로 세고 2가닥 = 단품 1개 → 저장은 단품(EA) 기준
 const unitOf = w => { const p = routeOf(w).find(x => x.code === S.proc) || {}; return {name: p.unit_per > 1 ? (p.unit_name || '개') : '', per: p.unit_per > 1 ? p.unit_per : 1}; };
-function finishDlg(id){
+// 중간 저장: 진행 중 작업(#id)은 그대로 두고 지금까지 넘긴 수량만 별도 실적으로 저장 (note에 "중간 저장 #id")
+const partOf = id => { const ps = M.rec.filter(x => x.status === 'done' && String(x.note || '').includes('중간 저장 #' + id)); return {n: ps.length, g: ps.reduce((a, x) => a + (+x.good_qty||0), 0)}; };
+function finishDlg(id, partial){
   const r = id ? M.rec.find(x => x.id === id) : null, w = r ? woOf(r.wo_id) : woOf(S.wo); if (!w && !r) return;
-  FD = {id, wo: w || {wo_id: r.wo_id, order_no: r.order_no, code: r.item_code, name: r.item_name, lot: r.lot_out}, good: '', ng: '', reason: '', lots: r && (r.lots_in || []).length ? r.lots_in.map(lotRaw) : lotMem(w || {code: r && r.item_code}), f: 'good', mach: r ? r.machine_code : ''};
+  FD = {id, wo: w || {wo_id: r.wo_id, order_no: r.order_no, code: r.item_code, name: r.item_name, lot: r.lot_out}, good: '', ng: '', reason: '', lots: r && (r.lots_in || []).length ? r.lots_in.map(lotRaw) : lotMem(w || {code: r && r.item_code}), f: 'good', mach: r ? r.machine_code : '', partial: !!partial, run: r};
   const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'fd'; document.body.appendChild(ov); fdRender();
 }
 function fdRender(){
   const f = FD, reasons = ['권선 불량','L값 불량','내전압 불량','외관 불량','치수 불량','납땜 불량','자재 불량','기타'];
-  $('fd').innerHTML = `<div class="box"><h2>■ 실적 입력 <span class="vi">Nhập kết quả</span></h2><div class="muted" style="margin-bottom:10px">${E(f.wo.order_no)} · ${E(f.wo.name)} · ${E(procName(S.proc))} · ${E(workName(S.worker))}</div>
+  $('fd').innerHTML = `<div class="box"><h2>${f.partial ? '📥 중간 저장 <span class="vi">Lưu giữa ca</span>' : '■ 실적 입력 <span class="vi">Nhập kết quả</span>'}</h2>${f.partial ? '<div style="background:#F0FDF4;border-radius:9px;padding:8px 12px;margin-bottom:8px;font-size:14px">이번에 넘기는 수량만 넣으세요. 작업은 계속 진행 중으로 남습니다.</div>' : (f.id && partOf(f.id).n ? `<div style="background:#F0FDF4;border-radius:9px;padding:8px 12px;margin-bottom:8px;font-size:14px">중간 저장 ${partOf(f.id).n}회 · 양품 ${N(partOf(f.id).g)} 이미 저장됨 → <b>마지막 남은 수량만</b> 넣으세요. (없으면 0으로 종료)</div>` : '')}<div class="muted" style="margin-bottom:10px">${E(f.wo.order_no)} · ${E(f.wo.name)} · ${E(procName(S.proc))} · ${E(workName(S.worker))}</div>
     <div class="grid" style="grid-template-columns:1fr 1fr">
       <div><div style="font-weight:700;margin-bottom:4px">양품 / Đạt${unitOf(f.wo).per > 1 ? ` <span style="color:var(--pri)">(${E(unitOf(f.wo).name)})</span>` : ''}</div><input class="num" id="fd-good" value="${E(f.good)}" readonly onclick="FD.f='good';fdRender()" style="${f.f === 'good' ? 'border-color:var(--ok)' : ''}"></div>
       <div><div style="font-weight:700;margin-bottom:4px;color:var(--bad)">불량 / Lỗi${unitOf(f.wo).per > 1 ? ` (${E(unitOf(f.wo).name)})` : ''}</div><input class="num" id="fd-ng" value="${E(f.ng)}" readonly onclick="FD.f='ng';fdRender()" style="${f.f === 'ng' ? 'border-color:var(--bad)' : ''}"></div>
@@ -411,7 +413,7 @@ function fdKey(k){ const f = FD, cur = String(f[f.f] || ''); f[f.f] = k === 'C' 
 function fdLot(v){ v = String(v||'').trim(); if (v && !FD.lots.includes(v)) FD.lots.push(v); fdRender(); setTimeout(() => $('fd-lot') && $('fd-lot').focus(), 30); }
 async function fdSave(){
   const f = FD, u = unitOf(f.wo), rawG = +f.good || 0, rawN = +f.ng || 0, good = rawG / u.per, ng = rawN / u.per;
-  if (!good && !ng) { alert('양품 또는 불량 수량을 넣어주세요.'); return; }
+  if (!good && !ng && !(f.id && !f.partial && partOf(f.id).n)) { alert('양품 또는 불량 수량을 넣어주세요.'); return; }
   if (u.per > 1 && rawG % u.per && !confirm(`양품 ${N(rawG)}${u.name}은 ${N(u.per)}${u.name}씩 맞지 않습니다 (단품 ${N(good)}개).\n그래도 저장할까요?`)) return;
   const rawNote = u.per > 1 ? `입력: 양품 ${rawG}${u.name}${rawN ? ' · 불량 ' + rawN + u.name : ''} (${u.per}${u.name}=1)` : null;
   if (ng && !f.reason) { alert('불량 사유를 골라주세요.'); return; }
@@ -424,11 +426,13 @@ async function fdSave(){
   const lots = f.lots.map(parseLot);
   const mach = $('f-mach') ? $('f-mach').value : f.mach;
   let r;
-  if (f.id) r = await dbWrite({t: 'update', table: 'prod_records', match: {id: f.id}, row: {end_at: new Date().toISOString(), good_qty: good, ng_qty: ng, ng_reason: f.reason || null, lots_in: lots, ...(rawNote ? {note: rawNote} : {}), status: 'done', updated_at: new Date().toISOString()}});
+  const now = new Date().toISOString();
+  if (f.partial && f.run) r = await dbWrite({t: 'insert', table: 'prod_records', row: {wo_id: f.run.wo_id, order_no: f.run.order_no, item_code: f.run.item_code, item_name: f.run.item_name, process_code: f.run.process_code, worker_code: f.run.worker_code, machine_code: f.run.machine_code || null, start_at: now, end_at: now, good_qty: good, ng_qty: ng, ng_reason: f.reason || null, lots_in: lots, note: '중간 저장 #' + f.id + (rawNote ? ' · ' + rawNote : ''), lot_out: f.run.lot_out || f.wo.lot || null, status: 'done', device: S.device}});
+  else if (f.id) r = await dbWrite({t: 'update', table: 'prod_records', match: {id: f.id}, row: {end_at: new Date().toISOString(), good_qty: good, ng_qty: ng, ng_reason: f.reason || null, lots_in: lots, ...(rawNote ? {note: rawNote} : {}), status: 'done', updated_at: new Date().toISOString()}});
   else r = await dbWrite({t: 'insert', table: 'prod_records', row: {wo_id: f.wo.wo_id, order_no: f.wo.order_no, item_code: f.wo.code, item_name: f.wo.name, process_code: S.proc, worker_code: S.worker, machine_code: mach || null, start_at: new Date().toISOString(), end_at: new Date().toISOString(), good_qty: good, ng_qty: ng, ng_reason: f.reason || null, lots_in: lots, note: rawNote, lot_out: f.wo.lot || null, status: 'done', device: S.device}});
   if (!r) return;
   lotMemSet(f.wo, f.lots);
-  $('fd').remove(); await loadLive(); render(); toast(`✔ 양품 ${N(good)}${ng ? ' · 불량 ' + N(ng) : ''} 저장`);
+  $('fd').remove(); await loadLive(); render(); toast(f.partial ? `📥 중간 저장 — 양품 ${N(good)}${ng ? ' · 불량 ' + N(ng) : ''} (작업 계속)` : `✔ 양품 ${N(good)}${ng ? ' · 불량 ' + N(ng) : ''} 저장`);
 }
 async function cancelRun(id){ if (!confirm('이 작업 시작을 취소할까요? (실적 없이 "취소"로 남습니다)')) return; const r = await dbWrite({t: 'update', table: 'prod_records', match: {id}, row: {status: 'void', note: '시작 취소', updated_at: new Date().toISOString()}}); if (r) { await loadLive(); render(); toast('시작을 취소했습니다'); } }
 async function voidRec(id){ if (!confirm('이 실적을 취소할까요? (기록은 "취소"로 남습니다)')) return; const r = await dbWrite({t: 'update', table: 'prod_records', match: {id}, row: {status: 'void', updated_at: new Date().toISOString()}}); if (r) { await loadLive(); render(); } }
