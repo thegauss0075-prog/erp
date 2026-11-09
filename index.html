@@ -13147,22 +13147,23 @@ function hqMRP(){
   const btpGross = {};
   Object.entries(demand).forEach(([k, q]) => {
     const [code, cat] = k.split('|');
-    let net = q; if (HQ.mrpTpStock) net = Math.max(0, q - capStock(code, cat));
+    let net = q; if (HQ.mrpTpStock) net = Math.max(0, q - capStock(code, cat) - hqPendOut(code, cat));
     if (!net) return;
     if (cat === 'BTP') { btpGross[code] = (btpGross[code]||0) + net; return; }
     const bom = capBom(code, 'TP'); if (!bom.length) { noBom.add(code); return; }
     bom.forEach(b => { const per = +b.qtyPerUnit || 0; if (String(b.materialCat||'').toUpperCase() === 'BTP') btpGross[b.materialCode] = (btpGross[b.materialCode]||0) + per * net; else add(b.materialCode, b.materialCat, per * net, ((hqItem(code, 'TP') || {}).name || code) + ' 생산용'); });
   });
   Object.entries(btpGross).forEach(([code, q]) => {
-    const net = Math.max(0, q - capStock(code, 'BTP')); if (!net) return;
+    const net = Math.max(0, q - capStock(code, 'BTP') - hqPendOut(code, 'BTP')); if (!net) return;
     const bom = capBom(code, 'BTP'); if (!bom.length) { noBom.add(code + ' (BTP)'); return; }
     bom.forEach(b => add(b.materialCode, b.materialCat, (+b.qtyPerUnit||0) * net, ((hqItem(code, 'BTP') || {}).name || code) + ' 생산용'));
   });
   // ✅ 생산 출고분(2026-11-09): 미완료 작업지시에 이미 출고된 자재는 창고 재고에서 빠졌지만 아직 생산 현장에 있다(롤째 나간 코일 등).
-  //    출하검사 합격으로 제품이 입고된 만큼은 소모된 것으로 보고 뺀다.
+  //    실적(생산 수량)만큼은 제품을 만드는 데 쓴 것으로 보고 빼서, 현장에 남은 자재만 센다.
+  //    그렇게 만든 제품 중 아직 출하검사(입고) 전인 수량은 hqPendOut으로 생산 필요에서 뺀다.
   const wipMat = {};
   (WO||[]).filter(w => w.status !== '완료').forEach(w => {
-    const passed = (QC||[]).filter(q => q.inspType === '출하검사' && q.result === '합격' && String(q.workOrderId) === String(w.id)).reduce((a, q) => a + (+q.totalQty||0), 0);
+    const passed = +w.producedQty || 0;
     const issued = {};
     (WO_MAT||[]).filter(m => String(m.workOrderId) === String(w.id)).forEach(m => { const k = m.code + '|' + String(m.cat||'').toUpperCase(); issued[k] = (issued[k]||0) + (+m.qty||0); });
     const per = {}; capBom(w.code, w.cat).forEach(b => { per[b.materialCode + '|' + String(b.materialCat||'').toUpperCase()] = +b.qtyPerUnit || 0; });
@@ -13177,25 +13178,33 @@ function hqMRP(){
   }).sort((a,b) => (b.short > 0) - (a.short > 0) || String(a.cat).localeCompare(String(b.cat)) || String(a.name).localeCompare(String(b.name)));
   return {rows, demand, mats, noBom: [...noBom], refs};
 }
+// 실적은 입력됐지만 출하검사 합격(입고) 전인 제품 수량 — 곧 재고가 될 제품
+function hqPendOut(code, cat){
+  cat = String(cat||'').toUpperCase(); let p = 0;
+  (WO||[]).forEach(w => { if (w.code !== code || String(w.cat||'').toUpperCase() !== cat || w.status === '보류') return;
+    const passed = (QC||[]).filter(q => q.inspType === '출하검사' && q.result === '합격' && String(q.workOrderId) === String(w.id)).reduce((a, q) => a + (+q.totalQty||0), 0);
+    p += Math.max(0, (+w.producedQty||0) - passed); });
+  return p;
+}
 function hqMRPView(){
   const m = hqMRP(), short = m.mats.filter(x => x.short > 0);
   short.forEach(x => { if (HQ.mrpSel[x.k] === undefined) HQ.mrpSel[x.k] = true; });
-  const dem = Object.entries(m.demand).map(([k, q]) => { const [code, cat] = k.split('|'), it = hqItem(code, cat) || {}; return {code, cat, name: it.name || code, q, st: capStock(code, cat), refs: [...(m.refs[k]||[])].join(', ')}; });
+  const dem = Object.entries(m.demand).map(([k, q]) => { const [code, cat] = k.split('|'), it = hqItem(code, cat) || {}; return {code, cat, name: it.name || code, q, st: capStock(code, cat), pend: hqPendOut(code, cat), refs: [...(m.refs[k]||[])].join(', ')}; });
   return `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:13px">
       <label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${HQ.mrpSolum!==false?'checked':''} onchange="HQ.mrpSolum=this.checked;renderHQ()" style="width:auto;margin:0"> 솔루엠 PO 잔량 포함 (발주관리)</label>
       <label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${HQ.mrpFc?'checked':''} onchange="HQ.mrpFc=this.checked;renderHQ()" style="width:auto;margin:0"> 접수·회신 단계 PO도 포함 (예측)</label>
       <label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${HQ.mrpTpStock?'checked':''} onchange="HQ.mrpTpStock=this.checked;renderHQ()" style="width:auto;margin:0"> 완제품·반제품 재고 먼저 차감</label>
     </div>
     <div style="font-size:13px;font-weight:700;margin-bottom:6px">① 생산 필요 (PO 잔량)</div>
-    ${dem.length ? `<div class="tw" style="margin-bottom:12px"><table><thead><tr><th>품목</th><th>코드</th><th style="text-align:right">PO 잔량</th><th style="text-align:right">현재고</th><th>근거 PO</th></tr></thead><tbody>${
-      dem.map(d => `<tr><td>${hqE(d.name)}</td><td style="font-family:monospace;font-size:12px">${hqE(d.code)} <span style="color:#8A95A3">${hqE(d.cat)}</span></td><td style="text-align:right;font-weight:700">${hqN(d.q)}</td><td style="text-align:right">${hqN(d.st)}</td><td style="font-size:12px;color:#5D6977">${hqE(d.refs)}</td></tr>`).join('')}</tbody></table></div>`
+    ${dem.length ? `<div class="tw" style="margin-bottom:12px"><table><thead><tr><th>품목</th><th>코드</th><th style="text-align:right">PO 잔량</th><th style="text-align:right">현재고</th><th style="text-align:right" title="실적 입력, 출하검사 전">생산 중</th><th>근거 PO</th></tr></thead><tbody>${
+      dem.map(d => `<tr><td>${hqE(d.name)}</td><td style="font-family:monospace;font-size:12px">${hqE(d.code)} <span style="color:#8A95A3">${hqE(d.cat)}</span></td><td style="text-align:right;font-weight:700">${hqN(d.q)}</td><td style="text-align:right">${hqN(d.st)}</td><td style="text-align:right">${d.pend ? hqN(d.pend) : '-'}</td><td style="font-size:12px;color:#5D6977">${hqE(d.refs)}</td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty" style="margin-bottom:12px">PO 잔량이 없습니다. 솔루엠 PO는 발주관리 탭에, 다른 고객 PO는 영업 → 고객 PO에 "확정"으로 등록하면 여기서 계산됩니다.</div>'}
     ${m.noBom.length ? `<div style="background:#FEF3C7;color:#92400e;padding:7px 10px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠️ BOM이 없어 자재를 계산하지 못한 품목: ${m.noBom.map(hqE).join(', ')} — 작업지시 화면에서 BOM을 먼저 등록하세요.</div>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
       <div style="font-size:13px;font-weight:700">② 자재 소요·부족 <span style="font-weight:400;color:#5D6977">부족 ${short.length}건</span></div>
       <button id="mrp-go" onclick="hqMRPToPR()" style="padding:7px 14px;border-radius:8px;border:1px solid #b45309;background:#b45309;color:#fff;font-weight:600;cursor:pointer">📝 선택한 자재로 구매요청 만들기</button>
     </div>
-    ${m.mats.length ? `<div class="tw"><table><thead><tr><th></th><th>자재<span class="vi">NVL</span></th><th>구분</th><th style="text-align:right">총 소요<span class="vi">Nhu cầu</span></th><th style="text-align:right">재고</th><th style="text-align:right" title="미완료 작업지시에 이미 출고된 자재(출하검사 합격분 제외)">생산 출고</th><th style="text-align:right">입고 예정<span class="vi">Sắp nhập</span></th><th style="text-align:right">요청 중<span class="vi">Đang YC</span></th><th style="text-align:right">부족</th><th>구매 수량</th><th>공급사</th></tr></thead><tbody>${
+    ${m.mats.length ? `<div class="tw"><table><thead><tr><th></th><th>자재<span class="vi">NVL</span></th><th>구분</th><th style="text-align:right">총 소요<span class="vi">Nhu cầu</span></th><th style="text-align:right">재고</th><th style="text-align:right" title="미완료 작업지시에 출고된 자재 − 실적만큼 사용한 양 = 현장에 남은 자재">생산 출고</th><th style="text-align:right">입고 예정<span class="vi">Sắp nhập</span></th><th style="text-align:right">요청 중<span class="vi">Đang YC</span></th><th style="text-align:right">부족</th><th>구매 수량</th><th>공급사</th></tr></thead><tbody>${
       m.mats.map((x, i) => `<tr style="${x.short > 0 ? '' : 'color:#8A95A3'}">
         <td><input type="checkbox" id="mrp-c-${i}" ${HQ.mrpSel[x.k] ? 'checked' : ''} onchange="HQ.mrpSel['${hqE(x.k)}']=this.checked;hqMRPBtn()" style="width:auto;margin:0"></td>
         <td>${hqE(x.name)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(x.code)}</div></td><td>${hqE(x.cat)}</td>
@@ -13203,7 +13212,7 @@ function hqMRPView(){
         <td style="text-align:right;font-weight:700;color:${x.short > 0 ? '#b91c1c' : '#166534'}">${x.short > 0 ? hqN(x.short) : '충분'}</td>
         <td style="white-space:nowrap"><input type="number" min="0" value="${hqE(HQ.mrpQty[x.k] ?? (x.short > 0 ? hqMRPDefQty(x) : ''))}" placeholder="${x.short > 0 ? '' : '0'}" oninput="HQ.mrpQty['${hqE(x.k)}']=this.value;HQ.mrpSel['${hqE(x.k)}']=+this.value>0;const c=document.getElementById('mrp-c-${i}');if(c)c.checked=+this.value>0;hqMRPBtn()" style="${HQ_IN};width:100px;color:#1f2937">${x.roll ? `<div style="font-size:11px;color:#7c3aed;margin-top:2px">🧵 롤 단위 출고</div>` : ''}</td>
         <td><input value="${hqE(HQ.mrpSup[x.k] ?? x.sup)}" oninput="HQ.mrpSup['${hqE(x.k)}']=this.value" placeholder="공급사" style="${HQ_IN};width:130px;color:#1f2937"></td></tr>`).join('')}</tbody></table></div>` : ''}
-    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">구매 수량은 부족 수량이 기본으로 들어가 있고, 최소 주문 수량(MOQ)·롤 무게에 맞춰 바꿀 수 있습니다. 충분한 자재도 수량을 넣으면 같이 요청됩니다. 부족 = 총 소요 − 법인 재고 − 생산 출고(미완료 작업지시에 나가 있는 자재, 출하검사 합격분 제외) − 입고 예정(미입고 발주) − 요청 중(승인 전·발주 전 구매요청). 반제품은 반제품 재고를 먼저 쓰고 모자란 만큼만 원자재로 펼칩니다.</div>`;
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">구매 수량은 부족 수량이 기본으로 들어가 있고, 최소 주문 수량(MOQ)·롤 무게에 맞춰 바꿀 수 있습니다. 충분한 자재도 수량을 넣으면 같이 요청됩니다. 부족 = 총 소요 − 법인 재고 − 생산 출고(미완료 작업지시에 나가 있는 자재 중 실적만큼 쓴 양을 뺀 현장 잔량) − 입고 예정(미입고 발주) − 요청 중(승인 전·발주 전 구매요청). 반제품은 반제품 재고를 먼저 쓰고 모자란 만큼만 원자재로 펼칩니다.</div>`;
 }
 // 기본 구매 수량: 부족 수량. 롤 단위 자재는 1롤 수량의 배수로 올림
 function hqMRPDefQty(x){ return Math.ceil(x.short); }
