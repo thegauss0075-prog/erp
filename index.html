@@ -1975,15 +1975,15 @@ const DB={
     {code:'ML27M040143A',name:'40KW PFC',unit:'Ea',prev:0,cur:0,wip:0,total:0},
   ],
   btp:[
-    {code:'ML27A040118A',name:'3.2KW OUT L (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
-    {code:'ML27A040090A',name:'30KW OUT L2 (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
-    {code:'ML27A040127A',name:'30KW OUT L3 (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
-    {code:'ML27A040112A',name:'30KW PFC INDUCTOR (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
-    {code:'ML27M020003A',name:'50KW DM (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
-    {code:'ML27M040025A',name:'50KW PFC INDUCTOR (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
-    {code:'ML27M040143A',name:'40KW PFC (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
-    {code:'ML27M040145A',name:'40KW OUT L (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
-    {code:'ML27A040091A',name:'30KW OUT L1 (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
+    {code:'ML27A040118A-BTP',name:'3.2KW OUT L (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
+    {code:'ML27A040090A-BTP',name:'30KW OUT L2 (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
+    {code:'ML27A040127A-BTP',name:'30KW OUT L3 (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
+    {code:'ML27A040112A-BTP',name:'30KW PFC INDUCTOR (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
+    {code:'ML27M020003A-BTP',name:'50KW DM (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
+    {code:'ML27M040025A-BTP',name:'50KW PFC INDUCTOR (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
+    {code:'ML27M040143A-BTP',name:'40KW PFC (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
+    {code:'ML27M040145A-BTP',name:'40KW OUT L (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
+    {code:'ML27A040091A-BTP',name:'30KW OUT L1 (BTP)',unit:'Ea',prev:0,cur:0,wip:0,total:0},
   ],
   kr:[
     /* ── 30KW PFC INDUCTOR ── */
@@ -9592,6 +9592,8 @@ async function syncNow(force) {
         return [...updated, ...remoteOnly];
       };
       DB.tp   = mergeAll(DB.tp,   reclassified.tp);
+      // ✅ [2026-11-09] 반제품 코드 -BTP 전환: 서버에 짝(코드±'-BTP')만 있고 자기 코드는 없는 로컬 반제품은 옛/새 코드 잔상이므로 버린다
+      if (reclassified.btp && reclassified.btp.length) { const rs = new Set(reclassified.btp.map(r => r.code)); DB.btp = DB.btp.filter(it => rs.has(it.code) || !rs.has(/-BTP$/.test(it.code) ? it.code.replace(/-BTP$/, '') : it.code + '-BTP')); }
       DB.btp  = mergeAll(DB.btp,  reclassified.btp);
       DB.kr   = mergeAll(DB.kr,   reclassified.kr);
       DB.vn   = mergeAll(DB.vn,   reclassified.vn);
@@ -10097,6 +10099,8 @@ async function submitItem() {
     sub:   (document.getElementById('item-sub')||{}).value||'',
   };
   body.wip=0; body.total=body.cur;
+  // ✅ [2026-11-09] 반제품 코드는 완제품과 겹치지 않게 항상 끝에 -BTP를 붙인다 (예: ML27A040118A-BTP)
+  if (!itemEditMode && body.cat === 'btp' && body.code && !/-BTP$/i.test(body.code)) body.code += '-BTP';
   const errEl=document.getElementById('item-ov-err');
   if (!body.code||!body.name||!body.unit) {
     if(errEl){errEl.textContent='코드, 품명, 단위는 필수입니다.';errEl.style.display='block';}
