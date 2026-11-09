@@ -12995,7 +12995,8 @@ function hqCanWrite(){
 function hqApplyRO(root){
   if (!root || hqCan(hqAreaOf(HQ.dept), 'W')) return;
   root.querySelectorAll('button').forEach(b => { const t = (b.textContent || '').trim();
-    if (/^(➕|💾|📝 선택한|🚢 공급사 발주|📋 발주에서|📦 출고에서|✔|발주 등록|선택한 )/.test(t) || /요청 올리기|저장/.test(t)) b.style.display = 'none'; });
+    if (b.dataset.keep) return;   // 승인·반려 버튼은 '구매 승인' 권한으로 따로 정한다
+    if (/^(➕|💾|📝 선택한|🚢 공급사 발주|📋 발주에서|📦 출고에서|발주 등록|선택한 )/.test(t) || /요청 올리기|저장/.test(t)) b.style.display = 'none'; });
 }
 const HQ_PERM_AREAS = [['sales','💼 영업'],['buy','🛒 구매'],['qa','🔬 품질'],['cost','💰 원가'],['vn','🏭 법인 현황']];
 const HQ_PERM_OPTS = [['','없음'],['R','읽기'],['RW','읽기+수정'],['RWD','+삭제']];
@@ -13539,8 +13540,8 @@ function hqPRRender(){
       <div style="display:flex;gap:6px">${!isNew && hqCan('buy','D') ? `<button onclick="hqPRDelete('${r.id}')" style="padding:7px 12px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap"><button onclick="hqClose('hq-pr')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
         ${editable ? `<button id="hqpr-go" onclick="hqPRSubmit(${isNew})" style="padding:7px 16px;border-radius:8px;border:1px solid #b45309;background:#b45309;color:#fff;font-weight:600;cursor:pointer">💾 ${isNew ? '요청 올리기' : '저장'}</button>` : ''}
-        ${!isNew && r.status === '요청' && hqCan('buy','A') ? `<button onclick="hqPRDecide('반려')" style="padding:7px 14px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer">반려</button><button onclick="hqPRDecide('승인')" style="padding:7px 16px;border-radius:8px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-weight:600;cursor:pointer">✔ 승인</button>` : ''}
-        ${!isNew && r.status === '요청' && !isMaster ? '<span style="font-size:12px;color:#8A95A3;align-self:center">승인은 마스터 로그인에서 합니다</span>' : ''}
+        ${!isNew && r.status === '요청' && hqCan('buy','A') ? `<button data-keep="1" onclick="hqPRDecide('반려')" style="padding:7px 14px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer">반려</button><button data-keep="1" onclick="hqPRDecide('승인')" style="padding:7px 16px;border-radius:8px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-weight:600;cursor:pointer">✔ 승인</button>` : ''}
+        ${!isNew && r.status === '요청' && !hqCan('buy','A') ? '<span style="font-size:12px;color:#8A95A3;align-self:center">승인은 본사 \'구매 승인\' 권한자가 합니다</span>' : ''}
         ${r.status === '승인' ? `<button onclick="hqPRToPO()" style="padding:7px 16px;border-radius:8px;border:1px solid #166534;background:#166534;color:#fff;font-weight:600;cursor:pointer">🚢 공급사 발주로 전환</button>` : ''}
       </div></div>`, 1150);
   hqPRTot();
