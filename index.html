@@ -13183,25 +13183,27 @@ function hqMRPView(){
     ${m.noBom.length ? `<div style="background:#FEF3C7;color:#92400e;padding:7px 10px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠️ BOM이 없어 자재를 계산하지 못한 품목: ${m.noBom.map(hqE).join(', ')} — 작업지시 화면에서 BOM을 먼저 등록하세요.</div>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
       <div style="font-size:13px;font-weight:700">② 자재 소요·부족 <span style="font-weight:400;color:#5D6977">부족 ${short.length}건</span></div>
-      <button onclick="hqMRPToPR()" ${short.length ? '' : 'disabled'} style="padding:7px 14px;border-radius:8px;border:1px solid #b45309;background:${short.length ? '#b45309' : '#ccc'};color:#fff;font-weight:600;cursor:pointer">📝 선택한 부족 자재로 구매요청 만들기</button>
+      <button id="mrp-go" onclick="hqMRPToPR()" style="padding:7px 14px;border-radius:8px;border:1px solid #b45309;background:#b45309;color:#fff;font-weight:600;cursor:pointer">📝 선택한 자재로 구매요청 만들기</button>
     </div>
-    ${m.mats.length ? `<div class="tw"><table><thead><tr><th></th><th>자재<span class="vi">NVL</span></th><th>구분</th><th style="text-align:right">총 소요<span class="vi">Nhu cầu</span></th><th style="text-align:right">재고<span class="vi">Tồn</span></th><th style="text-align:right">입고 예정<span class="vi">Sắp nhập</span></th><th style="text-align:right">요청 중<span class="vi">Đang YC</span></th><th style="text-align:right">부족<span class="vi">Thiếu</span></th><th>요청 수량</th><th>공급사</th></tr></thead><tbody>${
-      m.mats.map(x => `<tr style="${x.short > 0 ? '' : 'color:#8A95A3'}">
-        <td>${x.short > 0 ? `<input type="checkbox" ${HQ.mrpSel[x.k] ? 'checked' : ''} onchange="HQ.mrpSel['${hqE(x.k)}']=this.checked" style="width:auto;margin:0">` : ''}</td>
+    ${m.mats.length ? `<div class="tw"><table><thead><tr><th></th><th>자재<span class="vi">NVL</span></th><th>구분</th><th style="text-align:right">총 소요<span class="vi">Nhu cầu</span></th><th style="text-align:right">재고<span class="vi">Tồn</span></th><th style="text-align:right">입고 예정<span class="vi">Sắp nhập</span></th><th style="text-align:right">요청 중<span class="vi">Đang YC</span></th><th style="text-align:right">부족</th><th>구매 수량</th><th>공급사</th></tr></thead><tbody>${
+      m.mats.map((x, i) => `<tr style="${x.short > 0 ? '' : 'color:#8A95A3'}">
+        <td><input type="checkbox" id="mrp-c-${i}" ${HQ.mrpSel[x.k] ? 'checked' : ''} onchange="HQ.mrpSel['${hqE(x.k)}']=this.checked;hqMRPBtn()" style="width:auto;margin:0"></td>
         <td>${hqE(x.name)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(x.code)}</div></td><td>${hqE(x.cat)}</td>
         <td style="text-align:right">${hqN(x.need)} ${hqE(x.unit)}</td><td style="text-align:right">${hqN(x.st)}</td><td style="text-align:right">${x.inc ? hqN(x.inc) : '-'}</td><td style="text-align:right">${x.req ? hqN(x.req) : '-'}</td>
         <td style="text-align:right;font-weight:700;color:${x.short > 0 ? '#b91c1c' : '#166534'}">${x.short > 0 ? hqN(x.short) : '충분'}</td>
-        <td>${x.short > 0 ? `<input type="number" value="${hqE(HQ.mrpQty[x.k] ?? Math.ceil(x.short))}" oninput="HQ.mrpQty['${hqE(x.k)}']=this.value" style="${HQ_IN};width:100px">` : ''}</td>
-        <td>${x.short > 0 ? `<input value="${hqE(HQ.mrpSup[x.k] ?? x.sup)}" oninput="HQ.mrpSup['${hqE(x.k)}']=this.value" placeholder="공급사" style="${HQ_IN};width:130px">` : hqE(x.sup)}</td></tr>`).join('')}</tbody></table></div>` : ''}
-    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">부족 = 총 소요 − 법인 재고 − 입고 예정(미입고 발주) − 요청 중(승인 전·발주 전 구매요청). 반제품은 반제품 재고를 먼저 쓰고 모자란 만큼만 원자재로 펼칩니다.</div>`;
+        <td><input type="number" min="0" value="${hqE(HQ.mrpQty[x.k] ?? (x.short > 0 ? Math.ceil(x.short) : ''))}" placeholder="${x.short > 0 ? '' : '0'}" oninput="HQ.mrpQty['${hqE(x.k)}']=this.value;HQ.mrpSel['${hqE(x.k)}']=+this.value>0;const c=document.getElementById('mrp-c-${i}');if(c)c.checked=+this.value>0;hqMRPBtn()" style="${HQ_IN};width:100px;color:#1f2937"></td>
+        <td><input value="${hqE(HQ.mrpSup[x.k] ?? x.sup)}" oninput="HQ.mrpSup['${hqE(x.k)}']=this.value" placeholder="공급사" style="${HQ_IN};width:130px;color:#1f2937"></td></tr>`).join('')}</tbody></table></div>` : ''}
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">구매 수량은 부족 수량이 기본으로 들어가 있고, 최소 주문 수량(MOQ)·포장 단위에 맞춰 바꿀 수 있습니다. 충분한 자재도 수량을 넣으면 같이 요청됩니다. 부족 = 총 소요 − 법인 재고 − 입고 예정(미입고 발주) − 요청 중(승인 전·발주 전 구매요청). 반제품은 반제품 재고를 먼저 쓰고 모자란 만큼만 원자재로 펼칩니다.</div>`;
 }
+function hqMRPBtn(){ const b = document.getElementById('mrp-go'); if (b) { const n = Object.values(HQ.mrpSel).filter(Boolean).length; b.textContent = `📝 선택한 자재 ${n}건으로 구매요청 만들기`; } }
 async function hqMRPToPR(){
   if (!hqCanWrite()) return;
-  const m = hqMRP(), sel = m.mats.filter(x => x.short > 0 && HQ.mrpSel[x.k]);
-  if (!sel.length) { alert('구매요청할 자재를 선택해주세요.'); return; }
+  const m = hqMRP(), sel = m.mats.filter(x => HQ.mrpSel[x.k]);
+  if (!sel.length) { alert('구매할 자재를 체크하거나 구매 수량을 넣어주세요.'); return; }
   const lines = sel.map(x => ({code: x.code, name: x.name, cat: x.cat, unit: x.unit, qty: +(HQ.mrpQty[x.k] ?? Math.ceil(x.short)) || 0, supplier: (HQ.mrpSup[x.k] ?? x.sup) || '', note: x.from})).filter(l => l.qty > 0);
   const dues = m.rows.flatMap(r => r.ls.filter(l => l.rem > 0).map(l => l.replyDue || l.due)).filter(Boolean).sort();
-  const pr = {id: String(Date.now()), date: hqToday(), status: '요청', lines, needBy: dues[0] ? hqAddDays(dues[0], -21) : '', basis: [...new Set(m.rows.map(r => r.cpoNo))].join(', '), reason: '고객 PO 자재 소요 계산(MRP)', history: []};
+  if (!lines.length) { alert('구매 수량이 0입니다. 수량을 넣어주세요.'); return; }
+  const pr = {id: String(Date.now()), date: hqToday(), status: '요청', lines, needBy: dues[0] ? hqAddDays(dues[0], -21) : '', basis: [...new Set(Object.values(m.refs).flatMap(s => [...s]))].join(', '), reason: '고객 PO 자재 소요 계산(MRP)', history: []};
   HQ.mrpSel = {}; HQ.mrpQty = {}; HQ.mrpSup = {};
   hqPREdit(null, pr);
 }
