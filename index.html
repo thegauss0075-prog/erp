@@ -14806,7 +14806,7 @@ async function hqRecvDel(id, i){
 // ✈️ 베트남 발송 (항공/해상/특송) — 본사 보관분에서 나눠 보낼 수 있다
 const HQ_SHIP_PORTS = {
   AIR: {load: 'INCHEON INT\'L AIRPORT, KOREA', dest: 'NOI BAI INT\'L AIRPORT, HANOI, VIETNAM', blLbl: 'AWB No', carLbl: 'Flight No'},
-  SEA: {load: 'BUSAN PORT, KOREA', dest: 'HAI PHONG PORT, VIETNAM', blLbl: 'B/L No', carLbl: 'Vessel / Voyage'},
+  SEA: {load: 'BUSAN PORT, KOREA', dest: 'HAI PHONG PORT, VIETNAM', blLbl: 'B/L No', carLbl: 'Vessel / Voyage', loads: ['BUSAN PORT, KOREA', 'INCHEON PORT, KOREA']},
   EXPRESS: {load: 'INCHEON, KOREA', dest: 'HAI PHONG, VIETNAM', blLbl: 'Tracking (AWB) No', carLbl: 'Courier (DHL / FedEx…)'}
 };
 function hqVNInvNo(date){
@@ -14815,10 +14815,10 @@ function hqVNInvNo(date){
   return pre + String((n.length ? Math.max(...n) : 0) + 1).padStart(2, '0');
 }
 function hqLastHS(code){ for (const h of [...HQS.hqship].sort((a,b) => String(b.shipDate||'').localeCompare(String(a.shipDate||'')))) { const l = (h.lines||[]).find(x => x.code === code && x.hs); if (l) return l.hs; } return ''; }
-function hqVNShipEdit(id){
+function hqVNShipEdit(id, preset){
   const h = id ? HQS.hqship.find(x => String(x.id) === String(id)) : null;
   const mode = h ? h.mode : 'SEA';
-  HQS.ed = h ? JSON.parse(JSON.stringify(h)) : {id: String(Date.now()), invNo: hqVNInvNo(), shipDate: hqToday(), mode, status: '준비', loadPort: HQ_SHIP_PORTS[mode].load, destPort: HQ_SHIP_PORTS[mode].dest, lines: []};
+  HQS.ed = preset ? preset : h ? JSON.parse(JSON.stringify(h)) : {id: String(Date.now()), invNo: hqVNInvNo(), shipDate: hqToday(), mode, status: '준비', loadPort: HQ_SHIP_PORTS[mode].load, destPort: HQ_SHIP_PORTS[mode].dest, lines: []};
   const e = HQS.ed, mine = {}; (e.lines||[]).forEach(l => mine[l.spoId] = l);
   // 고를 수 있는 줄: 본사 보관이 있는 줄 + 이 발송에 이미 들어 있는 줄
   const cand = SPO.filter(p => p.route === 'hq').map(p => ({p, avail: Math.max(0, +(hqRecvQty(p) - hqSentQty(p.id, e.id)).toFixed(4)), l: mine[p.id]})).filter(x => x.avail > 0 || x.l);
@@ -14831,7 +14831,7 @@ function hqVNShipEdit(id){
       ${hqFld('상태','', `<select id="hqv-status" style="${HQ_IN}">${HQ_SHIP_ST.concat(['취소']).map(s => `<option ${e.status===s?'selected':''}>${s}</option>`).join('')}</select>`)}
       ${f('etd','ETD (출발)','date')}${f('eta','ETA (도착)','date')}
       ${f('carrier', P.carLbl)}${f('blNo', P.blLbl)}
-      ${f('loadPort','From (출발지)')}${f('destPort','To (도착지)')}
+      ${hqFld('From (출발지)','', `<input id="hqv-loadPort" list="hqv-loads" value="${hqE(e.loadPort ?? '')}" style="${HQ_IN}"><datalist id="hqv-loads">${[...new Set(Object.values(HQ_SHIP_PORTS).flatMap(x => x.loads || [x.load]))].map(v => `<option value="${hqE(v)}">`).join('')}</datalist>${e.mode === 'SEA' ? `<div style="display:flex;gap:4px;margin-top:4px">${HQ_SHIP_PORTS.SEA.loads.map(v => `<button type="button" onclick="document.getElementById('hqv-loadPort').value='${v}'" style="font-size:11px;padding:2px 8px;border:1px solid #DCE1E7;border-radius:6px;background:#fff;cursor:pointer">${v.startsWith('BUSAN') ? '부산항' : '인천항'}</button>`).join('')}</div>` : ''}`)}${f('destPort','To (도착지)')}
       ${f('pkgs','포장 수 (CT/PLT)','', '예: 3 PLT / 12 CT')}${f('gw','G.W. (kg)','number')}${f('nw','N.W. (kg)','number')}${f('cbm','CBM','number')}
       ${f('note','비고','', '')}
     </div>
@@ -14853,10 +14853,10 @@ function hqVNGrab(){
 }
 function hqVNMode(m){
   const g = hqVNGrab(), e = HQS.ed, old = HQ_SHIP_PORTS[e.mode] || {};
-  if (!e.loadPort || e.loadPort === old.load) e.loadPort = HQ_SHIP_PORTS[m].load;
+  if (!e.loadPort || e.loadPort === old.load || (old.loads || []).includes(e.loadPort)) e.loadPort = HQ_SHIP_PORTS[m].load;
   if (!e.destPort || e.destPort === old.dest) e.destPort = HQ_SHIP_PORTS[m].dest;
   e.mode = m; const keep = JSON.parse(JSON.stringify(e)); const id = HQS.hqship.some(x => String(x.id) === String(e.id)) ? e.id : null;
-  hqVNShipEdit(id); HQS.ed = keep; hqVNShipEditRestore(g);
+  hqVNShipEdit(id, keep); hqVNShipEditRestore(g);
 }
 function hqVNShipEditRestore(g){
   const e = HQS.ed; ['invNo','shipDate','etd','eta','carrier','blNo','loadPort','destPort','pkgs','gw','nw','cbm','note'].forEach(k => { const i = document.getElementById('hqv-' + k); if (i) i.value = e[k] ?? ''; });
