@@ -1075,7 +1075,12 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <div class="ov-box" style="max-height:85vh;overflow-y:auto">
     <h3>📈 실적 입력</h3>
     <div id="wo-prod-info" style="font-size:13px;color:#555;margin-bottom:.75rem;line-height:1.6;background:#f5f3ff;border-radius:8px;padding:.75rem 1rem;border-left:4px solid #7c3aed"></div>
-    <div class="ov-fr"><label>생산 실적 수량 * (지금까지 만든 총 누적 수량)</label><input id="wo-prod-qty" type="number" placeholder="0"></div>
+    <div class="ov-fr"><label>양품 수량 * (지금까지 만든 양품 총 누적 수량) / SL đạt (lũy kế)</label><input id="wo-prod-qty" type="number" placeholder="0"></div>
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px">
+      <div class="ov-fr"><label>불량 수량 (이번에 새로 나온 것) / SL lỗi</label><input id="wo-prod-ng" type="number" min="0" placeholder="0" oninput="document.getElementById('wo-prod-ng-r').style.display=(+this.value>0)?'':'none'"></div>
+      <div class="ov-fr" id="wo-prod-ng-r" style="display:none"><label>불량 사유 * / Lý do lỗi</label><input id="wo-prod-ng-reason" placeholder="예: L값 불량, 코어 크랙, 단선"></div>
+    </div>
+    <div id="wo-prod-ng-info" style="font-size:12px;color:#5D6977;margin-top:-4px"></div>
     <div id="wo-prod-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
     <div id="wo-prod-mat-warning" style="display:none;background:#fee2e2;border:2px solid #b91c1c;border-radius:8px 8px 0 0;padding:10px 12px;margin-top:14px;margin-bottom:-1px;color:#b91c1c;font-weight:700;font-size:13px;position:relative;z-index:2">
       ⚠️ 이 작업지시엔 아직 투입 자재 기록이 없습니다.<br><span style="font-weight:400;font-size:12px">전공정 추적에서 자재를 출고 처리하지 않았습니다. 그래도 진행하시려면 아래 <strong>"⚠️ 그래도 반영"</strong>을 한 번 더 눌러주세요.</span>
@@ -4187,6 +4192,11 @@ function openWOProd(id) {
   // ✅ 지금까지의 누적 실적을 기본값으로 채워둔다 — "추가로 더할 값"이 아니라
   //    "지금 총 몇 개 만들었는지"를 그대로 확인/수정하면 되도록.
   document.getElementById('wo-prod-qty').value = produced || '';
+  document.getElementById('wo-prod-ng').value = '';
+  document.getElementById('wo-prod-ng-reason').value = '';
+  document.getElementById('wo-prod-ng-r').style.display = 'none';
+  const ngSoFar = woNgSoFar(wo);
+  document.getElementById('wo-prod-ng-info').innerHTML = `불량 수량은 저장하면 <b>불량(NG) 재고에 자동 입고</b>됩니다 (${String(wo.cat||'').toUpperCase()==='BTP'?'반제품':'완제품'} 불량). 이 작업지시 누적 불량: <b style="color:#b91c1c">${ngSoFar.toLocaleString()}</b> ${wo.unit||''}`;
   document.getElementById('wo-prod-err').style.display = 'none';
   document.getElementById('wo-prod-mat-warning').style.display = 'none';
   document.getElementById('wo-prod-submit-btn').textContent = '📈 반영';
@@ -4194,6 +4204,8 @@ function openWOProd(id) {
   document.getElementById('wo-prod-ov').classList.add('show');
 }
 
+// 이 작업지시로 실적 입력에서 자동 입고된 불량 누적 (NG 이력 비고의 [실적 작업지시번호] 표시로 찾는다)
+function woNgSoFar(wo){ const tag = `[실적 ${wo.orderNo}]`; return (ngLog||[]).filter(t => t.code === wo.code && String(t.note||'').indexOf(tag) >= 0).reduce((a,t) => a + (t.type === 'ng-in' ? 1 : -1) * (+t.qty||0), 0); }
 // ✅ 이 작업지시로 자재를 한 번이라도 투입(전공정추적에서 출고)했는지 확인한다.
 //    실적입력·완료전환 시 "자재 없이 진행되는" 걸 막기 위한 검증용 헬퍼.
 async function hasMaterialInput(workOrderId) {
@@ -4207,12 +4219,16 @@ async function submitWOProd() {
   if (!woProdTarget) return;
   const newTotal = parseFloat(document.getElementById('wo-prod-qty').value);
   if (isNaN(newTotal) || newTotal < 0) { errEl.textContent = '수량을 입력해주세요.'; errEl.style.display='block'; return; }
+  const ngQ = parseFloat(document.getElementById('wo-prod-ng').value) || 0, ngReason = document.getElementById('wo-prod-ng-reason').value.trim();
+  if (ngQ < 0) { errEl.textContent = '불량 수량이 잘못됐습니다.'; errEl.style.display='block'; return; }
+  if (ngQ > 0 && !ngReason) { errEl.textContent = '불량 사유를 입력해주세요.'; errEl.style.display='block'; return; }
 
   const planQty = +woProdTarget.planQty || 0;
   const currentProduced = +woProdTarget.producedQty || 0;
   const delta = newTotal - currentProduced; // 서버는 여전히 델타(증감분)로 반영하므로 여기서 계산
 
-  if (delta === 0) { errEl.textContent = '기존 실적과 같습니다. 값을 바꿔서 입력해주세요.'; errEl.style.display='block'; return; }
+  if (delta === 0 && !(ngQ > 0)) { errEl.textContent = '기존 실적과 같습니다. 양품 또는 불량 수량을 입력해주세요.'; errEl.style.display='block'; return; }
+  if (ngQ > 0 && !confirm(`불량 ${ngQ.toLocaleString()} ${woProdTarget.unit||''} (${woProdTarget.name})을 불량(NG) 재고에 입고합니다.\n사유: ${ngReason}\n\n진행할까요?`)) return;
 
   // ✅ 검증 1: 자재투입 기록이 하나도 없는데 실적(생산량)을 입력하려는 경우 경고.
   //    브라우저 기본 confirm()은 색/위치를 바꿀 수 없어서, 반영 버튼 바로 위에
@@ -4242,6 +4258,7 @@ async function submitWOProd() {
     const guard = withButtonGuard('#wo-prod-submit-btn', '⏳ 처리 중...');
     if (guard === null) return; // 이미 처리 중 - 중복 클릭 무시
     try {
+      if (delta !== 0) {
       const res = await retrySafe(() => api('updateWorkOrder', body));
       if (!res || !res.ok) { errEl.textContent = '서버 처리 실패: ' + (res && res.error ? res.error : '알 수 없는 오류'); errEl.style.display='block'; return; }
 
@@ -4250,6 +4267,16 @@ async function submitWOProd() {
       if (outLot && delta > 0) {
         const lotBody = { workOrderId: woProdTarget.id, orderNo: woProdTarget.orderNo, lot: outLot, qty: delta, unit: woProdTarget.unit, token: ADMIN_TOKEN, user: CURRENT_USER || '' };
         await retrySafe(() => api('addWOOutputLot', lotBody));
+      }
+      }
+      // 불량 수량 → 불량(NG) 재고 자동 입고 (제품 불량)
+      if (ngQ > 0) {
+        const w = woProdTarget, cat = String(w.cat || 'TP').toUpperCase();
+        const ng = {id: Date.now(), type: 'ng-in', code: w.code, name: w.name, cat, unit: w.unit, qty: ngQ,
+          note: `[실적 ${w.orderNo}] LOT ${w.lot || '-'}`, reason: ngReason, dt: vnDt(), user: CURRENT_USER || '', model: getModel(w.code, w.name)};
+        const r = await retrySafe(() => api('addNG', {...ng, token: ADMIN_TOKEN}));
+        if (!r || !r.ok) { errEl.textContent = (delta !== 0 ? '⚠️ 양품 실적은 반영됐지만 ' : '') + '불량 입고 실패: ' + (r && r.error || '서버 응답 없음') + ' — 불량(NG) 탭에서 직접 입고해주세요.'; errEl.style.display='block'; document.getElementById('wo-prod-qty').value = newTotal; woProdTarget.producedQty = newTotal; return; }
+        try { await syncNow(); } catch (e) {}
       }
     } finally {
       guard.release();
