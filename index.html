@@ -9853,9 +9853,14 @@ async function loginViewer() {
   const guard = withButtonGuard('button[onclick="loginViewer()"]', '⏳ 확인 중...');
   if (guard === null) return;
   let r;
-  // ✅ [2026-11-09] 회사 이메일이면 본사 개인 계정으로 로그인 (메뉴별 읽기·수정·삭제 권한)
-  if (name.includes('@')) {
-    try { r = await api('hqUserLogin', {email: name, password: pw}); } catch (e) { r = null; } finally { guard.release(); }
+  // ✅ [2026-11-09] 회사 이메일 아이디면 본사 개인 계정으로 로그인 (메뉴별 읽기·수정·삭제 권한)
+  //    아이디만 넣으면 뒤에 @thegauss.com 을 붙인다. 한글 이름처럼 아이디가 아닌 값은 예전 열람 로그인으로.
+  const HQ_DOMAIN = '@thegauss.com';
+  const isId = /^[A-Za-z0-9._-]+$/.test(name);
+  if (name.includes('@') || isId) {
+    const email = (name.includes('@') ? name : name + HQ_DOMAIN).toLowerCase();
+    try { r = await api('hqUserLogin', {email, password: pw}); } catch (e) { r = null; } finally { guard.release(); }
+    if (r && r.ok) { try { safeLSSet('hq_last_id', name.includes('@') ? name : name); } catch (e) {} }
     if (r && r.ok) {
       HQ_ME = {...r.user};
       ADMIN_TOKEN = r.token; CURRENT_USER = r.user.name || r.user.email; USER_ROLE = 'hq';
@@ -9864,7 +9869,7 @@ async function loginViewer() {
       closeLoginModal(); applyRoleUI(); startAutoSync();
       return;
     }
-    if (r && r.error === 'NO_USERS') return err('아직 본사 개인 계정이 만들어지지 않았습니다. 이름으로 열람 로그인하세요.');
+    if (r && r.error === 'NO_USERS') return err('아직 본사 개인 계정이 만들어지지 않았습니다. 법인장에게 계정을 요청하세요.');
     if (r && /unknown action/i.test(r.error || '')) return err('서버 업데이트 전입니다. 이름으로 열람 로그인하세요.');
     return err(r && r.error ? r.error : '서버에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.');
   }
@@ -10384,7 +10389,7 @@ function showLoginModal() {
   } else {
     if (kk) kk.style.display = 'block';
     if (vv) vv.style.display = 'none';
-    setTimeout(()=>{ const el=document.getElementById('user-name-input'); if(el)el.focus(); },100);
+    setTimeout(()=>{ const el=document.getElementById('user-name-input'); if(el){ try { const last = safeLSGet('hq_last_id',''); if (last && !el.value) { el.value = last; const pw = document.getElementById('user-pw-input'); if (pw) { pw.focus(); return; } } } catch(e){} el.focus(); } },100);
   }
   setSyncBadge('offline');
 }
@@ -12316,8 +12321,8 @@ if (document.readyState === 'loading') {
       <h3 style="margin-bottom:6px">베트남 법인 통합 ERP</h3>
       <p style="font-size:13px;color:#666;margin-bottom:16px">한국 열람 전용 · 읽기만 가능</p>
       <div class="ov-fr" style="text-align:left">
-        <label>회사 이메일 (개인 계정) 또는 이름</label>
-        <input id="user-name-input" placeholder="예: name@thegauss.com" maxlength="60" autocomplete="username">
+        <label>아이디 (회사 이메일 앞부분)</label>
+        <div style="display:flex;align-items:center;gap:6px"><input id="user-name-input" placeholder="예: gykim" maxlength="60" autocomplete="username" style="flex:1;min-width:0"><span style="color:#5D6977;font-size:14px;white-space:nowrap">@thegauss.com</span></div>
       </div>
       <div class="ov-fr" style="text-align:left;margin-top:8px">
         <label>비밀번호</label>
