@@ -9816,9 +9816,22 @@ function applyDeptUI() {
 }
 
 // ── 한국 열람 로그인
-function loginViewer() {
+// ✅ [2026-11-09] 한국 열람도 비밀번호로 접속한다 (서버 viewerLogin이 확인하고 14일짜리 열람 토큰을 준다)
+async function loginViewer() {
   const name = (document.getElementById('user-name-input').value||'').trim();
-  if (!name) { alert('이름을 입력해주세요.'); return; }
+  const pw = (document.getElementById('user-pw-input').value||'').trim();
+  const errEl = document.getElementById('viewer-login-err'), err = t => { errEl.textContent = t; errEl.style.display = 'block'; };
+  errEl.style.display = 'none';
+  if (!name) return err('이름을 입력해주세요.');
+  if (!pw) return err('비밀번호를 입력해주세요.');
+  const guard = withButtonGuard('button[onclick="loginViewer()"]', '⏳ 확인 중...');
+  if (guard === null) return;
+  let r;
+  try { r = await api('viewerLogin', {password: pw}); } catch (e) { r = null; } finally { guard.release(); }
+  if (r && !r.ok && /unknown action/i.test(r.error || '')) r = {ok: true, token: ''};   // 서버(Code.gs)가 아직 옛 버전이면 예전처럼 통과
+  if (!r || !r.ok) return err(r && r.error ? (r.error === '비밀번호 오류' ? '비밀번호가 틀렸습니다.' : r.error) : '서버에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.');
+  try { safeLSSet('_vwr', r.token); } catch (e) {}
+  document.getElementById('user-pw-input').value = '';
   CURRENT_USER = name;
   USER_ROLE    = 'viewer';
   try { if(!IS_GAS){ safeLSSet('erp_username',name); safeLSSet('erp_role','viewer'); } } catch(e){}
@@ -9892,7 +9905,7 @@ function saveUserName() { IS_VN ? loginVN() : loginViewer(); }
 
 function logoutUser() {
   if (!confirm('로그아웃 하시겠습니까?')) return;
-  try { safeLSRemove('erp_username'); safeLSRemove('erp_role'); safeLSRemove('erp_dept'); } catch(e){}
+  try { safeLSRemove('erp_username'); safeLSRemove('erp_role'); safeLSRemove('erp_dept'); safeLSRemove('_vwr'); } catch(e){}
   try { safeLSRemove('_adm'); safeLSRemove('_stf'); } catch(e){}  // ✅ staff 토큰도 삭제
   CURRENT_USER=''; USER_ROLE='viewer'; isAdmin=false; setMaster(false); ADMIN_TOKEN=''; STAFF_DEPT='';
   applyAdminUI(false);
@@ -10271,6 +10284,12 @@ function initMultiUser() {
           ADMIN_TOKEN = safeLSGet('_adm','') || '';
           isMaster = !!ADMIN_TOKEN && safeLSGet('_mst','') === '1';
           if (!ADMIN_TOKEN) { showLoginModal(); return; }
+        } else if (savedRole === 'viewer') {
+          // ✅ [2026-11-09] 열람 토큰이 없거나 만료됐으면 다시 비밀번호로 로그인 (서버가 아직 옛 버전이면 예전처럼 통과)
+          const vt = safeLSGet('_vwr','') || '';
+          api('checkLogin', {token: vt}).then(r => {
+            if (r && r.ok === false && !/unknown action/i.test(r.error || '')) { try { safeLSRemove('_vwr'); safeLSRemove('erp_role'); } catch (e) {} USER_ROLE = ''; showLoginModal(); }
+          }).catch(() => {});
         } else if (savedRole === 'user') {
           // ✅ staff 토큰 복원 - 없으면 재로그인 유도
           const stfToken = safeLSGet('_stf','') || '';
@@ -12247,9 +12266,13 @@ if (document.readyState === 'loading') {
       <p style="font-size:13px;color:#666;margin-bottom:16px">한국 열람 전용 · 읽기만 가능</p>
       <div class="ov-fr" style="text-align:left">
         <label>이름 / 소속</label>
-        <input id="user-name-input" placeholder="예: 김철수 (구매팀)" maxlength="30"
-          onkeydown="if(event.key==='Enter')loginViewer()">
+        <input id="user-name-input" placeholder="예: 김철수 (구매팀)" maxlength="30">
       </div>
+      <div class="ov-fr" style="text-align:left;margin-top:8px">
+        <label>비밀번호</label>
+        <input id="user-pw-input" type="password" placeholder="비밀번호 입력" onkeydown="if(event.key==='Enter')loginViewer()">
+      </div>
+      <div id="viewer-login-err" style="color:#b91c1c;font-size:12px;margin-top:6px;display:none"></div>
       <button class="ov-save" style="width:100%;padding:11px;margin-top:12px" onclick="loginViewer()">👁️ 열람 시작</button>
     </div>
 
