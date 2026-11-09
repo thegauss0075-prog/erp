@@ -13050,7 +13050,7 @@ function hqCPORender(){
   const total = (r.lines||[]).reduce((a,l) => a + (+l.qty||0) * (+l.price||0), 0);
   hqModal('hq-ed', `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
-      <h3 style="margin:0;font-size:16px">${isNew ? '➕ 고객 PO 접수' : '✏️ ' + hqE(r.cpoNo)} <span style="font-weight:400;color:#5D6977;font-size:12.5px">/ PO khách hàng</span></h3>
+      <h3 style="margin:0;font-size:16px">${isNew ? '➕ 고객 PO 접수' : '✏️ ' + hqE(r.cpoNo)}</h3>
       ${r.status ? hqPill(r.status, HQ_CPO_COL[r.status]) : ''}</div>
     <datalist id="hq-custs">${custs.map(c => `<option value="${hqE(c)}">`).join('')}</datalist>
     <datalist id="hq-items">${items.map(x => `<option value="${hqE(x.code)} — ${hqE(x.name)}">`).join('')}</datalist>
@@ -13065,7 +13065,7 @@ function hqCPORender(){
       ${hqFld('회신일','Ngày phản hồi', `<input type="date" value="${hqE(r.replyDate||'')}" ${set('replyDate')} style="${HQ_IN}">`)}
       ${hqFld('고객 담당자','Người liên hệ', `<input value="${hqE(r.contact||'')}" ${set('contact')} style="${HQ_IN}">`)}
     </div>
-    <div style="font-size:13px;font-weight:700;margin:14px 0 6px">품목 / Mã hàng</div>
+    <div style="font-size:13px;font-weight:700;margin:14px 0 6px">품목</div>
     <div class="tw"><table><thead><tr><th style="min-width:230px">품목 *</th><th>수량 *</th><th>단가 (${hqE(r.cur)})</th><th>고객 요청 납기</th><th>회신 납기<span class="vi">Hạn phản hồi</span></th><th>출하${isNew ? '' : ' (자동)'}</th><th>금액</th><th></th></tr></thead><tbody>${
       (r.lines||[]).map((l, i) => `<tr>
         <td><input list="hq-items" value="${hqE(l.code ? l.code + (l.name ? ' — ' + l.name : '') : '')}" onchange="hqCPOLine(${i},'item',this.value)" style="${HQ_IN}"></td>
