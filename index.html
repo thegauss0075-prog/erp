@@ -13151,12 +13151,12 @@ function hqMRP(){
     if (!net) return;
     if (cat === 'BTP') { btpGross[code] = (btpGross[code]||0) + net; return; }
     const bom = capBom(code, 'TP'); if (!bom.length) { noBom.add(code); return; }
-    bom.forEach(b => { const per = +b.qtyPerUnit || 0; if (String(b.materialCat||'').toUpperCase() === 'BTP') btpGross[b.materialCode] = (btpGross[b.materialCode]||0) + per * net; else add(b.materialCode, b.materialCat, per * net, code); });
+    bom.forEach(b => { const per = +b.qtyPerUnit || 0; if (String(b.materialCat||'').toUpperCase() === 'BTP') btpGross[b.materialCode] = (btpGross[b.materialCode]||0) + per * net; else add(b.materialCode, b.materialCat, per * net, ((hqItem(code, 'TP') || {}).name || code) + ' 생산용'); });
   });
   Object.entries(btpGross).forEach(([code, q]) => {
     const net = Math.max(0, q - capStock(code, 'BTP')); if (!net) return;
     const bom = capBom(code, 'BTP'); if (!bom.length) { noBom.add(code + ' (BTP)'); return; }
-    bom.forEach(b => add(b.materialCode, b.materialCat, (+b.qtyPerUnit||0) * net, code + ' BTP'));
+    bom.forEach(b => add(b.materialCode, b.materialCat, (+b.qtyPerUnit||0) * net, ((hqItem(code, 'BTP') || {}).name || code) + ' 생산용'));
   });
   const prOpen = {}; HQ.pr.filter(p => p.status === '요청' || p.status === '승인').forEach(p => (p.lines||[]).forEach(l => { prOpen[l.code] = (prOpen[l.code]||0) + (+l.qty||0); }));
   const lastSup = {}; [...SPO].sort((a,b) => String(a.orderDate||'').localeCompare(String(b.orderDate||''))).forEach(p => { if (p.supplier) lastSup[p.code] = p.supplier; });
