@@ -1688,7 +1688,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 <div id="tab-hq" class="sec">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
     <h2 style="margin:0;font-size:18px">🏢 본사 업무</h2>
-    <button onclick="renderHQ({reload:true})" style="padding:7px 14px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">🔄 새로고침</button>
+    <div style="display:flex;gap:6px"><button id="hq-mypw" onclick="hqPwChange(false)" style="display:none;padding:7px 12px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer" title="내 비밀번호 변경">🔑</button><button onclick="renderHQ({reload:true})" style="padding:7px 14px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">🔄 새로고침</button></div>
   </div>
   <div id="hq-depts" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
   <div id="hq-tabs" class="period-btns" style="margin-bottom:12px;flex-wrap:wrap"></div>
@@ -5434,7 +5434,7 @@ function renderBOMList() {
     <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #e0e7ff;font-size:12px">
       <span>${b.materialName} <span style="color:#aaa;font-family:monospace;font-size:10px">${b.materialCode}</span></span>
       <span>1개당 <strong>${(+b.qtyPerUnit||0).toLocaleString()}</strong> ${displayUnit}
-        ${USER_ROLE !== 'viewer' ? `<button onclick="toggleRollIssue('${b.materialCode}','${b.materialCat}','${String(b.materialName||'').replace(/'/g,'')}')" title="롤(LOT) 단위로 통째 출고" style="margin-left:6px;padding:1px 7px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid ${isRollIssue(b.materialCode, b.materialCat) ? '#92400e;background:#fef3c7;color:#92400e;font-weight:700' : '#ccd;background:#fff;color:#888'}">${isRollIssue(b.materialCode, b.materialCat) ? '🧵 롤 단위' : '롤 단위?'}</button>` : ''}
+        ${!['viewer','hq'].includes(USER_ROLE) ? `<button onclick="toggleRollIssue('${b.materialCode}','${b.materialCat}','${String(b.materialName||'').replace(/'/g,'')}')" title="롤(LOT) 단위로 통째 출고" style="margin-left:6px;padding:1px 7px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid ${isRollIssue(b.materialCode, b.materialCat) ? '#92400e;background:#fef3c7;color:#92400e;font-weight:700' : '#ccd;background:#fff;color:#888'}">${isRollIssue(b.materialCode, b.materialCat) ? '🧵 롤 단위' : '롤 단위?'}</button>` : ''}
         ${isAdmin ? `<button onclick="deleteBOMItemUI(${b.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button>` : ''}
       </span>
     </div>`;
@@ -5763,7 +5763,7 @@ function renderWOTraceLists() {
       : '';
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#fffbeb;border-radius:6px;margin-bottom:4px;font-size:12px">
       <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · ${qcLink}<span style="font-family:monospace;color:#92400e">${lotDisplay}</span>${ngRefBadge}</span>
-      <span style="white-space:nowrap">${(+r.qty||0).toLocaleString()} ${r.unit||''}${USER_ROLE !== 'viewer' ? `<button onclick="woReturnMat(${r.id})" title="남은 자재 창고로 반납 / Trả NVL về kho" style="margin-left:6px;padding:2px 8px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:11.5px">↩ 반납</button>` : ''}${isAdmin ? `<button onclick="deleteWOMaterialUI(${r.id})" title="잘못 등록한 투입 기록 삭제 (재고로 되돌림)" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button>` : ''}</span>
+      <span style="white-space:nowrap">${(+r.qty||0).toLocaleString()} ${r.unit||''}${!['viewer','hq'].includes(USER_ROLE) ? `<button onclick="woReturnMat(${r.id})" title="남은 자재 창고로 반납 / Trả NVL về kho" style="margin-left:6px;padding:2px 8px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:11.5px">↩ 반납</button>` : ''}${isAdmin ? `<button onclick="deleteWOMaterialUI(${r.id})" title="잘못 등록한 투입 기록 삭제 (재고로 되돌림)" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button>` : ''}</span>
     </div>`;
   }).join('') : `<div style="color:#aaa;font-size:12px">아직 투입 자재 기록이 없습니다.</div>`;
 
@@ -8278,7 +8278,7 @@ function initDashboard(){
 //    ✅ 한국 뷰어(KR viewer, USER_ROLE==='viewer') 화면은 건드리지 않는다 - 대상 제외.
 let _vnSafetyAlertShownThisSession = false;
 function checkVNSafetyStockAlert() {
-  if (USER_ROLE === 'viewer') return;
+  if (['viewer','hq'].includes(USER_ROLE)) return;
   if (_vnSafetyAlertShownThisSession) return;
   const lowVN = (DB.vn || [])
     .filter(r => r.active !== false && (+r.min || 0) > 0 && (+r.cur || 0) < (+r.min || 0))
@@ -8343,7 +8343,7 @@ function setMaster(on){
   // 권한이 바뀌면 원가 데이터를 다시 불러오게 하고, 마스터가 아니면 메모리에 남은 원가·매출 데이터도 지운다
   try { _dsCostTried = false; } catch(e){}
   try { _invCostTried = false; } catch(e){}
-  if (!isMaster && USER_ROLE !== 'viewer') { try { COST = {price:{}, month:{}, model:{}, out:{}}; COST_SERVER_OK = null; } catch(e){} }
+  if (!isMaster && !['viewer','hq'].includes(USER_ROLE)) { try { COST = {price:{}, month:{}, model:{}, out:{}}; COST_SERVER_OK = null; } catch(e){} }
   try { if (typeof applyCostTabUI === 'function') applyCostTabUI(); } catch(e){}
 }
 var syncTimer    = null;
@@ -8374,7 +8374,7 @@ var IS_GAS = (typeof google !== 'undefined' && google.script && google.script.ru
 let _authPromptAt = 0;
 function isAuthError(r) { return !!(r && r.ok === false && /인증 실패|세션 만료|토큰 없음|다시 로그인/.test(String(r.error||''))); }
 function promptReLogin() {
-  if (USER_ROLE === 'viewer') return;
+  if (['viewer','hq'].includes(USER_ROLE)) return;
   const now = Date.now(); if (now - _authPromptAt < 5000) return; _authPromptAt = now;
   try { safeLSRemove('_adm'); safeLSRemove('_stf'); } catch(e){}
   ADMIN_TOKEN = ''; isAdmin = false; setMaster(false); try { applyAdminUI(false); } catch(e){}
@@ -8557,7 +8557,7 @@ const COST_MODEL_ORDER = ['ML27A040118A','ML27A040091A','ML27A040090A','ML27A040
 function costEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 // 베트남 시간 기준 YYYY-MM
 function costYM(dt){ const d=new Date(dt); if(isNaN(d)) return String(dt||'').slice(0,7); return new Date(d.getTime()+7*3600e3).toISOString().slice(0,7); }
-function costCanEdit(){ return !!isMaster; }
+function costCanEdit(){ return !!isMaster || (USER_ROLE === 'hq' && hqCan('cost', 'W')); }
 
 async function loadCost(){
   if (!(API_URL || IS_GAS)) return;
@@ -9435,15 +9435,17 @@ function exportCostExcel(){
 // 원가 탭은 관리자(입력)와 한국 열람(본사 조회)만 보인다 — 베트남 일반 직원에게는 숨김(급여 등 민감 정보)
 function applyCostTabUI() {
   const b = document.getElementById('tb-cost'); if (!b) return;
-  const show = isMaster || USER_ROLE === 'viewer';
+  const show = isMaster || USER_ROLE === 'viewer' || (USER_ROLE === 'hq' && hqCan('cost', 'R'));
   b.style.display = show ? '' : 'none';
   const sec = document.getElementById('tab-cost');
   if (!show && sec && sec.classList.contains('on')) go('dashboard');
   else if (show && sec && sec.classList.contains('on')) renderCostBody();
   // 🏢 본사 업무 탭은 마스터 화면에서만 보인다
   const hb = document.getElementById('tb-hq'), hs = document.getElementById('tab-hq');
-  if (hb) hb.style.display = isMaster ? '' : 'none';
-  if (!isMaster && hs && hs.classList.contains('on')) go('dashboard');
+  const hqOK = isMaster || USER_ROLE === 'hq';
+  if (hb) hb.style.display = hqOK ? '' : 'none';
+  const kb = document.getElementById('hq-mypw'); if (kb) kb.style.display = USER_ROLE === 'hq' ? '' : 'none';
+  if (!hqOK && hs && hs.classList.contains('on')) go('dashboard');
 }
 
 // ── 동기화 배지
@@ -9735,7 +9737,7 @@ function applyRoleUI() {
   const ioTab   = document.getElementById('tab-io');
   // ngTab 참조 제거 (사용 안 함)
 
-  if (USER_ROLE === 'viewer') {
+  if (USER_ROLE === 'viewer' || USER_ROLE === 'hq') {
     // 한국: 입출고 탭 잠금
     document.querySelectorAll('.tb').forEach(b => {
       if (b.textContent.includes('입출고')) {
@@ -9751,7 +9753,15 @@ function applyRoleUI() {
     if (adminBtn) adminBtn.style.display='none';
     // 수정/삭제 버튼 숨김
     document.querySelectorAll('.edit-btn,.del-btn,.ov-del-btn').forEach(el=>{el.style.display='none';});
-    setSyncBadge('ok', '👁️ 열람 모드 (한국)');
+    setSyncBadge('ok', USER_ROLE === 'hq' ? '👤 본사 · ' + ((HQ_ME && HQ_ME.name) || CURRENT_USER || '') : '👁️ 열람 모드 (한국)');
+    if (USER_ROLE === 'hq') {
+      // 본사 개인 계정: 법인 현황(재고·생산·출고 등) 권한이 없으면 그 탭들을 숨기고 본사 업무만 보이게
+      const vnOK = hqCan('vn', 'R');
+      document.querySelectorAll('.tb').forEach(b => { if (b.id === 'tb-hq' || b.id === 'tb-cost') return; if (!vnOK) b.style.display = 'none'; });
+      try { applyCostTabUI(); } catch (e) {}
+      if (!vnOK) setTimeout(() => { try { go('hq'); } catch (e) {} }, 0);
+      if (HQ_ME && HQ_ME.mustChange) setTimeout(() => hqPwChange(true), 300);
+    }
     if (badge) badge.style.background = '#f0fdf4';
     if (badge) badge.style.color = '#166534';
 
@@ -9827,6 +9837,21 @@ async function loginViewer() {
   const guard = withButtonGuard('button[onclick="loginViewer()"]', '⏳ 확인 중...');
   if (guard === null) return;
   let r;
+  // ✅ [2026-11-09] 회사 이메일이면 본사 개인 계정으로 로그인 (메뉴별 읽기·수정·삭제 권한)
+  if (name.includes('@')) {
+    try { r = await api('hqUserLogin', {email: name, password: pw}); } catch (e) { r = null; } finally { guard.release(); }
+    if (r && r.ok) {
+      HQ_ME = {...r.user};
+      ADMIN_TOKEN = r.token; CURRENT_USER = r.user.name || r.user.email; USER_ROLE = 'hq';
+      try { safeLSSet('_hqt', r.token); safeLSSet('_hqu', JSON.stringify(HQ_ME)); safeLSSet('erp_username', CURRENT_USER); safeLSSet('erp_role', 'hq'); } catch (e) {}
+      document.getElementById('user-pw-input').value = '';
+      closeLoginModal(); applyRoleUI(); startAutoSync();
+      return;
+    }
+    if (r && r.error === 'NO_USERS') return err('아직 본사 개인 계정이 만들어지지 않았습니다. 이름으로 열람 로그인하세요.');
+    if (r && /unknown action/i.test(r.error || '')) return err('서버 업데이트 전입니다. 이름으로 열람 로그인하세요.');
+    return err(r && r.error ? r.error : '서버에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.');
+  }
   try { r = await api('viewerLogin', {password: pw}); } catch (e) { r = null; } finally { guard.release(); }
   if (r && !r.ok && /unknown action/i.test(r.error || '')) r = {ok: true, token: ''};   // 서버(Code.gs)가 아직 옛 버전이면 예전처럼 통과
   if (!r || !r.ok) return err(r && r.error ? (r.error === '비밀번호 오류' ? '비밀번호가 틀렸습니다.' : r.error) : '서버에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.');
@@ -9905,7 +9930,8 @@ function saveUserName() { IS_VN ? loginVN() : loginViewer(); }
 
 function logoutUser() {
   if (!confirm('로그아웃 하시겠습니까?')) return;
-  try { safeLSRemove('erp_username'); safeLSRemove('erp_role'); safeLSRemove('erp_dept'); safeLSRemove('_vwr'); } catch(e){}
+  try { safeLSRemove('erp_username'); safeLSRemove('erp_role'); safeLSRemove('erp_dept'); safeLSRemove('_vwr'); safeLSRemove('_hqt'); safeLSRemove('_hqu'); } catch(e){}
+  HQ_ME = null;
   try { safeLSRemove('_adm'); safeLSRemove('_stf'); } catch(e){}  // ✅ staff 토큰도 삭제
   CURRENT_USER=''; USER_ROLE='viewer'; isAdmin=false; setMaster(false); ADMIN_TOKEN=''; STAFF_DEPT='';
   applyAdminUI(false);
@@ -10284,6 +10310,15 @@ function initMultiUser() {
           ADMIN_TOKEN = safeLSGet('_adm','') || '';
           isMaster = !!ADMIN_TOKEN && safeLSGet('_mst','') === '1';
           if (!ADMIN_TOKEN) { showLoginModal(); return; }
+        } else if (savedRole === 'hq') {
+          ADMIN_TOKEN = safeLSGet('_hqt','') || '';
+          try { HQ_ME = JSON.parse(safeLSGet('_hqu','') || 'null'); } catch (e) { HQ_ME = null; }
+          if (!ADMIN_TOKEN || !HQ_ME) { showLoginModal(); return; }
+          // 권한이 바뀌었을 수 있으니 서버에서 다시 받아 온다 (정지·만료면 로그인 화면)
+          api('checkLogin', {token: ADMIN_TOKEN}).then(r => {
+            if (r && r.ok && r.user) { HQ_ME = r.user; try { safeLSSet('_hqu', JSON.stringify(HQ_ME)); } catch (e) {} applyRoleUI(); if (document.getElementById('tab-hq')?.classList.contains('on')) renderHQ(); }
+            else if (r && r.ok === false) { try { safeLSRemove('_hqt'); safeLSRemove('_hqu'); safeLSRemove('erp_role'); } catch (e) {} USER_ROLE = ''; ADMIN_TOKEN = ''; HQ_ME = null; showLoginModal(); }
+          }).catch(() => {});
         } else if (savedRole === 'viewer') {
           // ✅ [2026-11-09] 열람 토큰이 없거나 만료됐으면 다시 비밀번호로 로그인 (서버가 아직 옛 버전이면 예전처럼 통과)
           const vt = safeLSGet('_vwr','') || '';
@@ -12265,8 +12300,8 @@ if (document.readyState === 'loading') {
       <h3 style="margin-bottom:6px">베트남 법인 통합 ERP</h3>
       <p style="font-size:13px;color:#666;margin-bottom:16px">한국 열람 전용 · 읽기만 가능</p>
       <div class="ov-fr" style="text-align:left">
-        <label>이름 / 소속</label>
-        <input id="user-name-input" placeholder="예: 김철수 (구매팀)" maxlength="30">
+        <label>회사 이메일 (개인 계정) 또는 이름</label>
+        <input id="user-name-input" placeholder="예: name@thegauss.com" maxlength="60" autocomplete="username">
       </div>
       <div class="ov-fr" style="text-align:left;margin-top:8px">
         <label>비밀번호</label>
@@ -12914,7 +12949,135 @@ function hqAddDays(ymd, d){ const t = new Date(ymd + 'T00:00:00Z'); t.setUTCDate
 function hqNextNo(pre, list, key, date){ const d = String(date || hqToday()).replace(/-/g,'').slice(2), p = pre + '-' + d + '-';
   const n = list.map(r => String(r[key]||'')).filter(x => x.startsWith(p)).map(x => +x.slice(p.length) || 0); return p + String((n.length ? Math.max(...n) : 0) + 1).padStart(2,'0'); }
 function hqItem(code, cat){ return allRows().find(x => x.code === code && (!cat || x.cat === String(cat).toUpperCase())) || allRows().find(x => x.code === code) || null; }
-function hqCanWrite(){ if (!ADMIN_TOKEN) { alert('로그인(직원 이상) 후 사용할 수 있습니다.'); return false; } return true; }
+// ════════════════════════════════════════════════════════════
+//  👥 본사 개인 계정 권한 (2026-11-09)
+//  HQ_ME.perms = {sales, buy, qa, cost, vn: '' | 'R' | 'RW' | 'RWD', approve: bool}
+//  마스터는 전부 가능. 법인 관리자·직원은 예전처럼 저장(W)만. 서버(authHQ_)도 같은 규칙으로 다시 확인한다.
+// ════════════════════════════════════════════════════════════
+let HQ_ME = null;
+function hqAreaOf(dept){ return dept === 'sales' ? 'sales' : dept === 'qa' ? 'qa' : dept === 'buy' ? 'buy' : dept; }
+function hqCan(area, op){
+  if (isMaster) return true;
+  if (USER_ROLE === 'hq') { const p = (HQ_ME && HQ_ME.perms) || {}; if (op === 'A') return !!p.approve; return String(p[area] || '').includes(op); }
+  if (op === 'R') return true;
+  if (op === 'W') return !!ADMIN_TOKEN && USER_ROLE !== 'viewer';
+  return false;
+}
+function hqCanWrite(){
+  if (!ADMIN_TOKEN) { alert('로그인 후 사용할 수 있습니다.'); return false; }
+  if (!hqCan(hqAreaOf(HQ.dept), 'W')) { alert('이 메뉴의 입력·수정 권한이 없습니다. 법인장에게 요청하세요.'); return false; }
+  return true;
+}
+// 입력 권한이 없는 메뉴에서는 입력·저장 버튼을 숨긴다 (서버도 막는다)
+function hqApplyRO(root){
+  if (!root || hqCan(hqAreaOf(HQ.dept), 'W')) return;
+  root.querySelectorAll('button').forEach(b => { const t = (b.textContent || '').trim();
+    if (/^(➕|💾|📝 선택한|🚢 공급사 발주|📋 발주에서|📦 출고에서|✔|발주 등록|선택한 )/.test(t) || /요청 올리기|저장/.test(t)) b.style.display = 'none'; });
+}
+const HQ_PERM_AREAS = [['sales','💼 영업'],['buy','🛒 구매'],['qa','🔬 품질'],['cost','💰 원가'],['vn','🏭 법인 현황']];
+const HQ_PERM_OPTS = [['','없음'],['R','읽기'],['RW','읽기+수정'],['RWD','+삭제']];
+// 조직도 기준 권한 묶음 (계정 만들 때 고르면 칸이 채워진다)
+const HQ_PERM_PRESETS = {
+  '대표이사·부사장': {sales:'R', buy:'R', qa:'R', cost:'R', vn:'R', approve:true},
+  '경영지원': {sales:'RW', buy:'RW', qa:'R', cost:'R', vn:'R'},
+  '구매': {sales:'R', buy:'RWD', qa:'R', cost:'', vn:'R'},
+  '기술연구소 수석': {sales:'R', buy:'R', qa:'R', cost:'R', vn:'R'},
+  '제조기술·개발구매·원가': {sales:'R', buy:'RW', qa:'R', cost:'RW', vn:'R'},
+  '개발팀': {sales:'', buy:'R', qa:'R', cost:'', vn:'R'},
+  '개발품질': {sales:'', buy:'R', qa:'RWD', cost:'', vn:'R'},
+  '과제기획': {sales:'R', buy:'R', qa:'R', cost:'', vn:'R'},
+  '개발영업·영업관리': {sales:'RWD', buy:'R', qa:'R', cost:'', vn:'R'},
+  '열람만': {sales:'R', buy:'R', qa:'R', cost:'', vn:'R'}};
+let HQU = {list: [], loaded: false, ed: null};
+async function hqUsersLoad(){ const r = await api('hqUserList', {}); if (r && r.ok) { HQU.list = r.data || []; HQU.loaded = true; } else { HQU.err = (r && r.error) || '서버 응답 없음'; } }
+function hqPermTxt(v){ return ({R:'읽기', RW:'수정', RWD:'삭제까지'})[v] || '—'; }
+function hqUsersView(){
+  if (!isMaster) return '<div class="empty">마스터만 볼 수 있습니다.</div>';
+  if (!HQU.loaded) { hqUsersLoad().then(() => renderHQ()); return `<div class="empty">${HQU.err ? '불러오기 실패: ' + hqE(HQU.err) + (/unknown action/i.test(HQU.err) ? ' — 서버(Code.gs)를 새 버전으로 배포해야 합니다.' : '') : '⏳ 불러오는 중…'}</div>`; }
+  const rows = HQU.list.slice().sort((a,b) => (b.active - a.active) || String(a.name).localeCompare(String(b.name)));
+  return `<div class="toolbar" style="gap:6px"><button onclick="hqUserEdit(null)" style="padding:7px 14px;border-radius:8px;border:1px solid #334155;background:#334155;color:#fff;font-weight:600;cursor:pointer">➕ 계정 만들기</button>
+      <div style="font-size:12px;color:#5D6977">본사 직원 개인 계정과 메뉴별 권한. 바꾼 권한은 그 사람의 다음 저장·삭제부터 바로 적용됩니다.</div></div>
+    ${rows.length ? `<div class="tw"><table><thead><tr><th>이름</th><th>이메일</th><th>직책·부서</th>${HQ_PERM_AREAS.map(a => `<th>${a[1]}</th>`).join('')}<th>구매 승인</th><th>상태</th><th>최근 로그인</th><th></th></tr></thead><tbody>${
+      rows.map(u => `<tr style="${u.active ? '' : 'color:#94a3b8'}"><td style="font-weight:600">${hqE(u.name)}</td><td style="font-size:12px">${hqE(u.email)}</td><td>${hqE(u.title)}</td>
+        ${HQ_PERM_AREAS.map(a => `<td>${hqPermTxt((u.perms||{})[a[0]])}</td>`).join('')}<td>${(u.perms||{}).approve ? '✔' : ''}</td>
+        <td>${!u.active ? '정지' : u.mustChange ? '<span style="color:#b45309">첫 로그인 전</span>' : '사용 중'}</td><td style="font-size:12px">${hqE(String(u.lastLogin||'').slice(0,10))}</td>
+        <td style="white-space:nowrap"><button class="edit-btn" title="수정" onclick="hqUserEdit('${hqE(u.email)}')">✏️</button></td></tr>`).join('')}</tbody></table></div>`
+      : '<div class="empty">아직 계정이 없습니다. ➕ 계정 만들기로 시작하세요.</div>'}
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">읽기 = 화면 조회 · 수정 = 입력·수정 · 삭제까지 = 삭제도 가능 · 구매 승인 = 구매요청 승인·반려. 원가 "없음"이면 원가 탭이 보이지 않고, 법인 현황 "없음"이면 재고·생산·출고 화면이 보이지 않습니다.</div>`;
+}
+function hqUserEdit(email){
+  const u = email ? HQU.list.find(x => x.email === email) : null;
+  HQU.ed = u ? JSON.parse(JSON.stringify(u)) : {email: '', name: '', title: '', perms: {...HQ_PERM_PRESETS['열람만']}, active: true};
+  const r = HQU.ed, isNew = !u;
+  hqModal('hq-user', `<h3 style="margin:0 0 10px;font-size:16px">${isNew ? '➕ 계정 만들기' : '✏️ ' + hqE(r.name || r.email)}</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+      ${hqFld('회사 이메일 *', '', `<input id="hqu-email" type="email" ${isNew ? '' : 'disabled'} value="${hqE(r.email)}" placeholder="name@thegauss.com" style="${HQ_IN}">`)}
+      ${hqFld('이름 *', '', `<input id="hqu-name" value="${hqE(r.name)}" style="${HQ_IN}">`)}
+      ${hqFld('직책·부서', '', `<input id="hqu-title" value="${hqE(r.title)}" placeholder="예: 구매 과장" style="${HQ_IN}">`)}
+      ${hqFld('권한 묶음 (조직도 기준)', '', `<select onchange="if(this.value){const p=HQ_PERM_PRESETS[this.value];HQ_PERM_AREAS.forEach(([k])=>{const s=document.getElementById('hqu-p-'+k);if(s)s.value=p[k]||''});document.getElementById('hqu-ap').checked=!!p.approve}" style="${HQ_IN}"><option value="">— 고르면 아래 칸이 채워짐 —</option>${Object.keys(HQ_PERM_PRESETS).map(k => `<option>${k}</option>`).join('')}</select>`)}
+    </div>
+    <div class="tw" style="margin-top:12px"><table><thead><tr>${HQ_PERM_AREAS.map(a => `<th>${a[1]}</th>`).join('')}<th>구매 승인</th></tr></thead><tbody><tr>${
+      HQ_PERM_AREAS.map(([k]) => `<td><select id="hqu-p-${k}" style="${HQ_IN}">${(k === 'vn' || k === 'cost' ? HQ_PERM_OPTS.slice(0, k === 'vn' ? 2 : 3) : HQ_PERM_OPTS).map(([v, l]) => `<option value="${v}" ${(r.perms||{})[k] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td>`).join('')}
+      <td style="text-align:center"><input id="hqu-ap" type="checkbox" ${(r.perms||{}).approve ? 'checked' : ''} style="width:auto"></td></tr></tbody></table></div>
+    <label style="display:flex;gap:6px;align-items:center;margin-top:10px;font-size:13px"><input id="hqu-active" type="checkbox" ${r.active !== false ? 'checked' : ''} style="width:auto;margin:0"> 사용 중 (끄면 바로 로그인·저장이 막힙니다 — 퇴사·휴직 시)</label>
+    <div id="hqu-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:space-between;gap:6px;margin-top:12px"><div>${isNew ? '' : `<button onclick="hqUserReset('${hqE(r.email)}')" style="padding:7px 12px;border-radius:8px;border:1px solid #b45309;background:#fff;color:#b45309;cursor:pointer">🔑 비밀번호 초기화</button>`}</div>
+      <div style="display:flex;gap:6px"><button onclick="hqClose('hq-user')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
+      <button id="hqu-go" onclick="hqUserSave(${isNew})" style="padding:7px 16px;border-radius:8px;border:1px solid #334155;background:#334155;color:#fff;font-weight:600;cursor:pointer">💾 ${isNew ? '계정 만들기' : '저장'}</button></div></div>`, 760);
+}
+function hqShowTempPw(email, pw, title){
+  hqModal('hq-upw', `<div style="text-align:center"><h3 style="margin:0 0 6px">${hqE(title)}</h3><div style="color:#5D6977;font-size:13px">${hqE(email)}</div>
+    <div style="font:700 28px/1.4 monospace;letter-spacing:3px;margin:14px 0;user-select:all">${hqE(pw)}</div>
+    <div style="font-size:12.5px;color:#5D6977;line-height:1.6">이 창을 닫으면 다시 볼 수 없습니다. 본인에게 직접 전달하세요.<br>첫 로그인 때 새 비밀번호로 바꾸게 됩니다.</div>
+    <button onclick="hqClose('hq-upw')" style="margin-top:14px;padding:8px 18px;border-radius:8px;border:none;background:#334155;color:#fff;font-weight:600;cursor:pointer">닫기</button></div>`, 420);
+}
+async function hqUserSave(isNew){
+  const v = id => document.getElementById(id).value.trim(), err = document.getElementById('hqu-err'), btn = document.getElementById('hqu-go');
+  const rec = {email: isNew ? v('hqu-email').toLowerCase() : HQU.ed.email, name: v('hqu-name'), title: v('hqu-title'), active: document.getElementById('hqu-active').checked, perms: {approve: document.getElementById('hqu-ap').checked}};
+  HQ_PERM_AREAS.forEach(([k]) => rec.perms[k] = document.getElementById('hqu-p-' + k).value);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rec.email)) { err.textContent = '회사 이메일을 정확히 넣어주세요.'; return; }
+  if (!rec.name) { err.textContent = '이름을 넣어주세요.'; return; }
+  if (isNew && HQU.list.some(u => u.email === rec.email)) { err.textContent = '이미 있는 계정입니다.'; return; }
+  btn.disabled = true; btn.textContent = '⏳ 저장 중…';
+  const r = await api('hqUserSave', {rec});
+  btn.disabled = false; btn.textContent = isNew ? '💾 계정 만들기' : '💾 저장';
+  if (!r || !r.ok) { err.textContent = '저장 실패: ' + ((r && r.error) || '서버 응답 없음') + (/unknown action/i.test(r && r.error || '') ? ' — 서버(Code.gs)를 새 버전으로 배포해야 합니다.' : ''); return; }
+  const i = HQU.list.findIndex(u => u.email === r.user.email); if (i >= 0) HQU.list[i] = r.user; else HQU.list.push(r.user);
+  hqClose('hq-user'); renderHQ();
+  if (r.tempPw) hqShowTempPw(rec.email, r.tempPw, `${rec.name} 계정을 만들었습니다 — 임시 비밀번호`); else hqToast(`✅ ${rec.name} 권한을 저장했습니다`);
+}
+async function hqUserReset(email){
+  if (!confirm(`${email} 비밀번호를 초기화할까요?\n그 사람은 지금 로그인된 곳에서도 모두 로그아웃됩니다.`)) return;
+  const r = await api('hqUserResetPw', {email});
+  if (!r || !r.ok) { alert('초기화 실패: ' + ((r && r.error) || '')); return; }
+  const u = HQU.list.find(x => x.email === email); if (u) u.mustChange = true;
+  hqClose('hq-user'); renderHQ(); hqShowTempPw(email, r.tempPw, '임시 비밀번호');
+}
+// 본사 계정 비밀번호 변경 (첫 로그인 때는 반드시)
+function hqPwChange(forced){
+  hqModal('hq-pw', `<h3 style="margin:0 0 8px;font-size:16px">🔑 비밀번호 변경</h3>
+    ${forced ? '<p style="color:#b91c1c;font-size:13px;margin:0 0 8px">임시 비밀번호로 로그인했습니다. 새 비밀번호로 바꾼 뒤 사용할 수 있습니다.</p>' : ''}
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:8px">${hqE((HQ_ME && HQ_ME.email) || '')}</div>
+    ${hqFld(forced ? '임시 비밀번호' : '현재 비밀번호', '', `<input id="hqpw-old" type="password" style="${HQ_IN}">`)}
+    <div style="height:8px"></div>${hqFld('새 비밀번호 (8자 이상)', '', `<input id="hqpw-new" type="password" style="${HQ_IN}">`)}
+    <div style="height:8px"></div>${hqFld('새 비밀번호 확인', '', `<input id="hqpw-new2" type="password" style="${HQ_IN}" onkeydown="if(event.key==='Enter')hqPwSave(${forced})">`)}
+    <div id="hqpw-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px">${forced ? `<button onclick="hqClose('hq-pw');logoutUser()" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">로그아웃</button>` : `<button onclick="hqClose('hq-pw')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>`}
+      <button id="hqpw-go" onclick="hqPwSave(${forced})" style="padding:7px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:600;cursor:pointer">변경</button></div>`, 420);
+  setTimeout(() => { const e = document.getElementById('hqpw-old'); if (e) e.focus(); }, 50);
+}
+async function hqPwSave(forced){
+  const o = document.getElementById('hqpw-old').value, n = document.getElementById('hqpw-new').value, n2 = document.getElementById('hqpw-new2').value, err = document.getElementById('hqpw-err');
+  if (!o) { err.textContent = '현재 비밀번호를 넣어주세요.'; return; }
+  if (n.length < 8) { err.textContent = '새 비밀번호는 8자 이상이어야 합니다.'; return; }
+  if (n !== n2) { err.textContent = '새 비밀번호 두 칸이 다릅니다.'; return; }
+  if (n === o) { err.textContent = '지금과 다른 비밀번호를 쓰세요.'; return; }
+  const b = document.getElementById('hqpw-go'); b.disabled = true;
+  const r = await api('hqUserChangePw', {oldPw: o, newPw: n}); b.disabled = false;
+  if (!r || !r.ok) { err.textContent = (r && r.error) || '서버 응답 없음'; return; }
+  if (HQ_ME) { HQ_ME.mustChange = false; try { safeLSSet('_hqu', JSON.stringify(HQ_ME)); } catch (e) {} }
+  hqClose('hq-pw'); alert('비밀번호를 바꿨습니다.');
+}
 
 async function loadHQ(force){
   if (!(API_URL || IS_GAS)) return;
@@ -12931,13 +13094,17 @@ const HQ_DEPTS = [
   {k:'sales', l:'💼 영업', vi:'Kinh doanh', col:'#5b21b6', tabs:[['quote','📝 견적서'],['cpo','📥 주문서 (고객 PO)'],['sale','🧾 판매'],['ar','💰 수금·채권'],['cust','🏷️ 거래처']]},
   {k:'buy',   l:'🛒 구매', vi:'Mua hàng',   col:'#b45309', tabs:[['mrp','🧮 자재 소요 계산'],['pr','📝 구매요청·승인'],['ship','🚢 발주서·선적·입고'],['purch','🧾 구매(매입)'],['ap','💸 지급·채무'],['sup','🏭 공급사']]},
   {k:'qa',    l:'🔬 품질', vi:'Chất lượng', col:'#0f766e', tabs:[['qain','📥 본사 수입검사'],['qadr','📈 월별 불량률'],['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]},
-  {k:'rep',   l:'📑 출력물', vi:'Báo cáo',    col:'#334155', tabs:[['rep','📑 출력물']]}];
+  {k:'rep',   l:'📑 출력물', vi:'Báo cáo',    col:'#334155', tabs:[['rep','📑 출력물']]},
+  {k:'users', l:'👥 사용자', vi:'', col:'#0f172a', tabs:[['users','👥 사용자·권한']]}];
+// 이 사람이 볼 수 있는 부서 버튼 (본사 개인 계정은 권한이 '없음'인 부서를 숨김, 사용자 관리는 마스터만)
+function hqDeptsVisible(){ return HQ_DEPTS.filter(x => x.k === 'users' ? isMaster : x.k === 'rep' ? true : hqCan(x.k, 'R')); }
 function hqSetDept(k){ const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0]; HQ.dept = d.k; HQ.tab = d.tabs[0][0]; HQ.q = ''; HQ.st = ''; try { localStorage.setItem('hq_dept', d.k); } catch(e) {} renderHQ(); }
 function hqNav(){
-  const d = HQ_DEPTS.find(x => x.k === HQ.dept) || HQ_DEPTS[0];
+  const VD = hqDeptsVisible(); if (!VD.some(x => x.k === HQ.dept) && VD.length) { HQ.dept = VD[0].k; HQ.tab = VD[0].tabs[0][0]; }
+  const d = VD.find(x => x.k === HQ.dept) || VD[0] || HQ_DEPTS[0];
   const cnt = {rep: 0, sales: HQ.cpo.filter(c => (c.status || '접수') === '접수').length + (HQS.quote||[]).filter(q => q.status === '제출').length, buy: HQ.pr.filter(p => p.status === '요청' || p.status === '승인').length, qa: 0};
   const de = document.getElementById('hq-depts'), te = document.getElementById('hq-tabs'); if (!de || !te) return;
-  de.innerHTML = HQ_DEPTS.map(x => { const on = x.k === d.k;
+  de.innerHTML = VD.map(x => { const on = x.k === d.k;
     return `<button onclick="hqSetDept('${x.k}')" style="padding:9px 18px;border-radius:10px;border:2px solid ${x.col};background:${on ? x.col : '#fff'};color:${on ? '#fff' : x.col};font-weight:700;font-size:14px;cursor:pointer">${x.l} ${cnt[x.k] ? ` <span style="background:${on ? '#fff' : x.col};color:${on ? x.col : '#fff'};border-radius:999px;padding:0 7px;font-size:11.5px;margin-left:2px">${cnt[x.k]}</span>` : ''}</button>`; }).join('');
   te.innerHTML = d.tabs.length > 1 ? d.tabs.map(([k, l]) => `<button class="period-btn ${HQ.tab === k ? 'on' : ''}" onclick="hqSetTab('${k}')">${l}</button>`).join('') : '';
 }
@@ -12956,7 +13123,8 @@ async function renderHQ(opts){
   hqNav();
   const warn = HQ.err === 'server' ? '<div style="background:#FEF3C7;color:#92400e;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:13px">⚠️ 서버(Code.gs)를 새 버전으로 배포해야 본사 업무 데이터가 저장·조회됩니다.</div>' : '';
   HQS._bal = null;
-  el.innerHTML = warn + (HQ.tab === 'rep' ? hqRepView() : HQ.tab === 'purch' ? hqPurchView() : HQ.tab === 'ap' ? hqAPView() : HQ.tab === 'sup' ? hqSupView() : HQ.tab === 'quote' ? hqQuoteView() : HQ.tab === 'sale' ? hqSaleView() : HQ.tab === 'ar' ? hqARView() : HQ.tab === 'cust' ? hqCustView() : HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'qadr' ? hqDefectView() : HQ.tab === 'qain' ? hqQAView(false, true) : hqQAView(HQ.tab === 'qang'));
+  el.innerHTML = warn + (HQ.tab === 'users' ? hqUsersView() : HQ.tab === 'rep' ? hqRepView() : HQ.tab === 'purch' ? hqPurchView() : HQ.tab === 'ap' ? hqAPView() : HQ.tab === 'sup' ? hqSupView() : HQ.tab === 'quote' ? hqQuoteView() : HQ.tab === 'sale' ? hqSaleView() : HQ.tab === 'ar' ? hqARView() : HQ.tab === 'cust' ? hqCustView() : HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'qadr' ? hqDefectView() : HQ.tab === 'qain' ? hqQAView(false, true) : hqQAView(HQ.tab === 'qang'));
+  hqApplyRO(el);
 }
 function hqSetTab(k){ HQ.tab = k; const d = HQ_DEPTS.find(x => x.tabs.some(t => t[0] === k)); if (d) HQ.dept = d.k; HQ.q = ''; HQ.st = ''; renderHQ(); }
 
@@ -13032,6 +13200,7 @@ function hqModal(id, html, w){
   let m = document.getElementById(id);
   if (!m) { m = document.createElement('div'); m.id = id; m.className = 'hq-ov'; m.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9992;display:flex;align-items:center;justify-content:center;padding:14px'; document.body.appendChild(m); }
   m.innerHTML = `<div style="background:#fff;border-radius:12px;width:min(${w||900}px,100%);max-height:94vh;overflow:auto;padding:18px 20px">${html}</div>`;
+  if (!['hq-user','hq-upw','hq-pw'].includes(id)) hqApplyRO(m);
 }
 function hqClose(id){ const m = document.getElementById(id); if (m) m.remove(); }
 const HQ_IN = 'width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #DCE1E7;border-radius:7px;font-size:13px';
@@ -13083,7 +13252,7 @@ function hqCPORender(){
     ${(r.history||[]).length ? `<div style="font-size:11.5px;color:#8A95A3;margin-top:6px">이력: ${r.history.map(h => `${hqE(String(h.at||'').slice(0,10))} ${hqE(h.by||'')} ${hqE(h.status||'')}`).join(' → ')}</div>` : ''}
     <div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
     <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px">
-      <div>${!isNew && isMaster ? `<button onclick="hqCPODelete('${r.id}')" style="padding:7px 12px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}</div>
+      <div>${!isNew && hqCan('sales','D') ? `<button onclick="hqCPODelete('${r.id}')" style="padding:7px 12px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}</div>
       <div style="display:flex;gap:6px"><button onclick="hqClose('hq-ed')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
       <button id="hq-save" onclick="hqCPOSave()" style="padding:7px 18px;border-radius:8px;border:1px solid #5b21b6;background:#5b21b6;color:#fff;font-weight:600;cursor:pointer">💾 저장</button></div></div>`, 1000);
 }
@@ -13333,10 +13502,10 @@ function hqPRRender(){
     ${(r.history||[]).length ? `<div style="font-size:11.5px;color:#8A95A3;margin-top:6px">이력: ${r.history.map(h => `${hqE(String(h.at||'').slice(0,10))} ${hqE(h.by||'')} ${hqE(h.status||'')}`).join(' → ')}</div>` : ''}
     <div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
     <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-wrap:wrap">
-      <div style="display:flex;gap:6px">${!isNew && isMaster ? `<button onclick="hqPRDelete('${r.id}')" style="padding:7px 12px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}</div>
+      <div style="display:flex;gap:6px">${!isNew && hqCan('buy','D') ? `<button onclick="hqPRDelete('${r.id}')" style="padding:7px 12px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap"><button onclick="hqClose('hq-pr')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
         ${editable ? `<button id="hqpr-go" onclick="hqPRSubmit(${isNew})" style="padding:7px 16px;border-radius:8px;border:1px solid #b45309;background:#b45309;color:#fff;font-weight:600;cursor:pointer">💾 ${isNew ? '요청 올리기' : '저장'}</button>` : ''}
-        ${!isNew && r.status === '요청' && isMaster ? `<button onclick="hqPRDecide('반려')" style="padding:7px 14px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer">반려</button><button onclick="hqPRDecide('승인')" style="padding:7px 16px;border-radius:8px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-weight:600;cursor:pointer">✔ 승인</button>` : ''}
+        ${!isNew && r.status === '요청' && hqCan('buy','A') ? `<button onclick="hqPRDecide('반려')" style="padding:7px 14px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer">반려</button><button onclick="hqPRDecide('승인')" style="padding:7px 16px;border-radius:8px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-weight:600;cursor:pointer">✔ 승인</button>` : ''}
         ${!isNew && r.status === '요청' && !isMaster ? '<span style="font-size:12px;color:#8A95A3;align-self:center">승인은 마스터 로그인에서 합니다</span>' : ''}
         ${r.status === '승인' ? `<button onclick="hqPRToPO()" style="padding:7px 16px;border-radius:8px;border:1px solid #166534;background:#166534;color:#fff;font-weight:600;cursor:pointer">🚢 공급사 발주로 전환</button>` : ''}
       </div></div>`, 1150);
@@ -13568,7 +13737,7 @@ function hqCustEdit(id, name){
       ${hqFld('담당자','Người LH', f('contact'))}${hqFld('전화','ĐT', f('phone'))}${hqFld('이메일','Email', f('email'))}
       ${hqFld('주소','Địa chỉ', f('addr'), true)}${hqFld('비고','Ghi chú', f('note'), true)}
     </div><div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
-    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('cust','${c.id}','${hqE(c.name)}').then(ok=>{if(ok){hqClose('hq-cu');renderHQ()}})`, '#b91c1c') : ''}</div>
+    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${!isNew && hqCan('sales','D') ? hqsBtn('🗑 삭제', `hqsDelete('cust','${c.id}','${hqE(c.name)}').then(ok=>{if(ok){hqClose('hq-cu');renderHQ()}})`, '#b91c1c') : ''}</div>
       <div style="display:flex;gap:6px">${hqsBtn('닫기', "hqClose('hq-cu')", '#64748b')}${hqsBtn('💾 저장', 'hqCustSave()', '#5b21b6', true)}</div></div>`, 760);
 }
 async function hqCustSave(){
@@ -13618,7 +13787,7 @@ function hqQuoteRender(){
     ${hqFld('비고 (견적서에 인쇄)','Ghi chú', `<textarea rows="2" ${set('note')} style="${HQ_IN};font-family:inherit">${hqE(r.note||'')}</textarea>`, true)}
     ${r.status === '실주' ? hqFld('실주 사유','', `<input value="${hqE(r.lostReason||'')}" ${set('lostReason')} style="${HQ_IN}">`, true) : ''}
     <div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
-    <div style="display:flex;justify-content:space-between;gap:6px;margin-top:12px;flex-wrap:wrap"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('quote','${r.id}','${hqE(r.qNo)}').then(ok=>{if(ok){hqClose('hq-q');renderHQ()}})`, '#b91c1c') : ''}</div>
+    <div style="display:flex;justify-content:space-between;gap:6px;margin-top:12px;flex-wrap:wrap"><div>${!isNew && hqCan('sales','D') ? hqsBtn('🗑 삭제', `hqsDelete('quote','${r.id}','${hqE(r.qNo)}').then(ok=>{if(ok){hqClose('hq-q');renderHQ()}})`, '#b91c1c') : ''}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${hqsBtn('닫기', "hqClose('hq-q')", '#64748b')}${!isNew ? hqsBtn('🖨️ 인쇄', `hqQuotePrint('${r.id}')`, '#185FA5') : ''}${hqsBtn('💾 저장', 'hqQuoteSave()', '#5b21b6', true)}</div></div>`, 1000);
 }
 async function hqQuoteSave(){
@@ -13696,7 +13865,7 @@ function hqSaleRender(){
     ${(r.lines||[]).some(l => (l.txIds||[]).length) ? '<div style="font-size:11.5px;color:#0f766e;margin-top:4px">📦 법인 출고 기록과 연결된 판매입니다 (같은 출고가 두 번 매출로 잡히지 않음).</div>' : ''}
     ${hqFld('비고','Ghi chú', `<textarea rows="2" ${set('note')} style="${HQ_IN};font-family:inherit">${hqE(r.note||'')}</textarea>`, true)}
     <div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
-    <div style="display:flex;justify-content:space-between;gap:6px;margin-top:12px;flex-wrap:wrap"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('sale','${r.id}','${hqE(r.sNo)}').then(ok=>{if(ok){hqClose('hq-s');renderHQ()}})`, '#b91c1c') : ''}</div>
+    <div style="display:flex;justify-content:space-between;gap:6px;margin-top:12px;flex-wrap:wrap"><div>${!isNew && hqCan('sales','D') ? hqsBtn('🗑 삭제', `hqsDelete('sale','${r.id}','${hqE(r.sNo)}').then(ok=>{if(ok){hqClose('hq-s');renderHQ()}})`, '#b91c1c') : ''}</div>
       <div style="display:flex;gap:6px">${hqsBtn('닫기', "hqClose('hq-s')", '#64748b')}${!isNew ? hqsBtn('🖨️ 거래명세서', `hqSalePrint('${r.id}')`, '#185FA5') : ''}${hqsBtn('💾 저장', 'hqSaleSave()', '#5b21b6', true)}</div></div>`, 1000);
 }
 async function hqSaleSave(){
@@ -13805,7 +13974,7 @@ function hqPayRender(){
       ${hqFld('판매번호 (선택)','', `<select onchange="HQS.ed.saleNo=this.value" style="${HQ_IN}"><option value="">(오래된 판매부터 자동)</option>${sales.map(s => `<option value="${hqE(s.sNo)}" ${p.saleNo===s.sNo?'selected':''}>${hqE(s.sNo)} · ${hqE(s.date)} · 미수 ${hqM(HQS._bal[s.id]||0, s.cur)}</option>`).join('')}</select>`)}
       ${hqFld('비고','', `<input value="${hqE(p.note||'')}" oninput="HQS.ed.note=this.value" style="${HQ_IN}">`, true)}
     </div><div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
-    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('pay','${p.id}','수금 ${hqE(p.date)}').then(ok=>{if(ok){hqClose('hq-p');renderHQ()}})`, '#b91c1c') : ''}</div>
+    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${!isNew && hqCan('sales','D') ? hqsBtn('🗑 삭제', `hqsDelete('pay','${p.id}','수금 ${hqE(p.date)}').then(ok=>{if(ok){hqClose('hq-p');renderHQ()}})`, '#b91c1c') : ''}</div>
       <div style="display:flex;gap:6px">${hqsBtn('닫기', "hqClose('hq-p')", '#64748b')}${hqsBtn('💾 저장', 'hqPaySave()', '#166534', true)}</div></div>`, 760);
 }
 async function hqPaySave(){
@@ -13861,7 +14030,7 @@ function hqSupEdit(id, name){
       ${hqFld('담당자','', f('contact'))}${hqFld('전화','', f('phone'))}${hqFld('이메일','', f('email'))}
       ${hqFld('주소','', f('addr'), true)}${hqFld('비고','', f('note'), true)}
     </div><div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
-    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('sup','${c.id}','${hqE(c.name)}').then(ok=>{if(ok){hqClose('hq-su');renderHQ()}})`, '#b91c1c') : ''}</div>
+    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${!isNew && hqCan('buy','D') ? hqsBtn('🗑 삭제', `hqsDelete('sup','${c.id}','${hqE(c.name)}').then(ok=>{if(ok){hqClose('hq-su');renderHQ()}})`, '#b91c1c') : ''}</div>
       <div style="display:flex;gap:6px">${hqsBtn('닫기', "hqClose('hq-su')", '#64748b')}${hqsBtn('💾 저장', 'hqSupSave()', '#b45309', true)}</div></div>`, 760);
 }
 async function hqSupSave(){
@@ -13919,7 +14088,7 @@ function hqPurchRender(){
     <div id="hqp-tot" style="text-align:right;margin-top:6px">${hqsTotHtml(r)}</div>
     ${hqFld('비고','', `<textarea rows="2" ${set('note')} style="${HQ_IN};font-family:inherit">${hqE(r.note||'')}</textarea>`, true)}
     <div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
-    <div style="display:flex;justify-content:space-between;gap:6px;margin-top:12px"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('purch','${r.id}','${hqE(r.pNo)}').then(ok=>{if(ok){hqClose('hq-pu');renderHQ()}})`, '#b91c1c') : ''}</div>
+    <div style="display:flex;justify-content:space-between;gap:6px;margin-top:12px"><div>${!isNew && hqCan('buy','D') ? hqsBtn('🗑 삭제', `hqsDelete('purch','${r.id}','${hqE(r.pNo)}').then(ok=>{if(ok){hqClose('hq-pu');renderHQ()}})`, '#b91c1c') : ''}</div>
       <div style="display:flex;gap:6px">${hqsBtn('닫기', "hqClose('hq-pu')", '#64748b')}${hqsBtn('💾 저장', 'hqPurchSave()', '#b45309', true)}</div></div>`, 1000);
 }
 async function hqPurchSave(){
@@ -14020,7 +14189,7 @@ function hqPPayRender(){
       ${hqFld('구매번호 (선택)','', `<select onchange="HQS.ed.purchNo=this.value" style="${HQ_IN}"><option value="">(오래된 구매부터 자동)</option>${list.map(s => `<option value="${hqE(s.pNo)}" ${p.purchNo===s.pNo?'selected':''}>${hqE(s.pNo)} · ${hqE(s.date)} · 미지급 ${hqM(bal[s.id]||0, s.cur)}</option>`).join('')}</select>`)}
       ${hqFld('비고','', `<input value="${hqE(p.note||'')}" oninput="HQS.ed.note=this.value" style="${HQ_IN}">`, true)}
     </div><div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
-    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${!isNew && isMaster ? hqsBtn('🗑 삭제', `hqsDelete('ppay','${p.id}','지급 ${hqE(p.date)}').then(ok=>{if(ok){hqClose('hq-pp');renderHQ()}})`, '#b91c1c') : ''}</div>
+    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${!isNew && hqCan('buy','D') ? hqsBtn('🗑 삭제', `hqsDelete('ppay','${p.id}','지급 ${hqE(p.date)}').then(ok=>{if(ok){hqClose('hq-pp');renderHQ()}})`, '#b91c1c') : ''}</div>
       <div style="display:flex;gap:6px">${hqsBtn('닫기', "hqClose('hq-pp')", '#64748b')}${hqsBtn('💾 저장', 'hqPPaySave()', '#b45309', true)}</div></div>`, 760);
 }
 async function hqPPaySave(){
@@ -14366,7 +14535,7 @@ function hqShipView(){
         <td style="text-align:right;white-space:nowrap">${hqN(x.got)} / ${hqN(x.qty)}</td><td style="text-align:right;white-space:nowrap">${x.amt ? hqM(x.amt, x.cur) : '-'}</td>
         <td style="white-space:nowrap">${hqE(x.etd||'-')}</td><td style="white-space:nowrap;${x.late ? 'color:#b91c1c;font-weight:700' : ''}">${hqE(x.eta || (x.dueDate ? '(예정 ' + x.dueDate + ')' : '-'))}</td>
         <td style="font-size:12px">${hqE(x.blNo||'')}${x.invNo ? `<div>${hqE(x.invNo)}</div>` : ''}</td><td>${step(x.stage)}</td>
-        <td style="white-space:nowrap"><button onclick="hqShipEdit('${hqE(x.poNo)}')" class="edit-btn" title="단계·서류 수정">✏️</button><button onclick="hqPOPrint('${hqE(x.poNo)}')" class="edit-btn" title="공급사별 발주서 인쇄">🖨️</button><button onclick="hqPOExcel('${hqE(x.poNo)}')" class="edit-btn" title="발주서 엑셀">📄</button>${isMaster ? `<button onclick="hqShipDelete('${hqE(x.poNo)}')" class="edit-btn" title="발주 삭제">🗑️</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+        <td style="white-space:nowrap"><button onclick="hqShipEdit('${hqE(x.poNo)}')" class="edit-btn" title="단계·서류 수정">✏️</button><button onclick="hqPOPrint('${hqE(x.poNo)}')" class="edit-btn" title="공급사별 발주서 인쇄">🖨️</button><button onclick="hqPOExcel('${hqE(x.poNo)}')" class="edit-btn" title="발주서 엑셀">📄</button>${hqCan('buy','D') ? `<button onclick="hqShipDelete('${hqE(x.poNo)}')" class="edit-btn" title="발주 삭제">🗑️</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty">진행 중인 자재 발주가 없습니다.</div>'}
     <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">입고 수량은 법인 입출고 탭의 자재 입고를 등록하면 같은 자재의 오래된 발주부터 자동으로 채워집니다. 다 들어오면 "입고 완료"가 됩니다.</div>`;
 }
@@ -14540,7 +14709,7 @@ function renderSupplyPO(){
       <td>${r.dueDate||'-'}</td>
       <td><span style="color:${lbl[r.status][1]};font-weight:600">${lbl[r.status][0]}</span>${r.closed&&r.got<r.q?' <span style="color:#8A95A3;font-size:11px">(종결)</span>':''}</td>
       <td style="white-space:normal;color:#5D6977;font-size:12px">${r.note||''}</td>
-      <td class="no-print">${USER_ROLE!=='viewer'?`<button class="edit-btn" title="수정" onclick="openSupplyPO('${r.id}')">✏️</button>`:''}${isMaster?`<button class="edit-btn" title="삭제" onclick="deleteSupplyPOUI('${r.id}')">🗑️</button>`:''}</td>
+      <td class="no-print">${!['viewer','hq'].includes(USER_ROLE)?`<button class="edit-btn" title="수정" onclick="openSupplyPO('${r.id}')">✏️</button>`:''}${isMaster?`<button class="edit-btn" title="삭제" onclick="deleteSupplyPOUI('${r.id}')">🗑️</button>`:''}</td>
     </tr>`).join('') : `<tr><td colspan="12" class="empty">${SPO.length ? '조건에 맞는 발주가 없습니다.' : '등록된 자재 발주가 없습니다. "➕ 자재 발주 등록"으로 시작하세요.'}</td></tr>`;
   document.getElementById('spo-add-btn').style.display = USER_ROLE === 'viewer' ? 'none' : '';
 }
@@ -15158,7 +15327,7 @@ function dsSetMode(md){ _dsMode = md; renderShipPanel(); }
 function renderShipPanel(){
   const box = document.getElementById('d-ship-panel'); if (!box) return;
   // 매출 표시용 원가 데이터: 관리자·본사 열람이면 한 번만 불러온다
-  if (!_dsCostTried && (isMaster || USER_ROLE === 'viewer') && COST_SERVER_OK !== true && typeof loadCost === 'function' && (API_URL || IS_GAS)) {
+  if (!_dsCostTried && (isMaster || ['viewer','hq'].includes(USER_ROLE)) && COST_SERVER_OK !== true && typeof loadCost === 'function' && (API_URL || IS_GAS)) {
     _dsCostTried = true; loadCost().then(() => { if (dsCanRev()) renderShipPanel(); });
   }
   const now = dsNowYM(); const m = _dsMonth || now; _dsMonth = m;
@@ -15241,7 +15410,7 @@ function renderShipPanel(){
     }<tr style="font-weight:700;background:#F6F8FA"><td>합계 / Tổng</td><td style="text-align:right">${n(cTot.q)}</td>${canRev?`<td style="text-align:right">${usd(cTot.inv)}</td><td style="text-align:right">${usd(cTot.pinv)}</td>`:`<td style="text-align:right">${n(cTot.pq)}</td>`}<td style="text-align:right">${canRev?usd(cTot.yinv):n(cTot.yq)}</td>${canRev?'<td></td>':''}</tr></tbody></table></div>` : '';
   const revNote = canRev
     ? `<div style="font-size:11px;color:#8A95A3;margin-top:6px">매출 = 출고 수량 × 판매가·임가공비 (제조원가 탭 ② 모델 정보 기준)${noPrice.length?` · ⚠️ 판매가 없음: ${noPrice.join(', ')}`:''}</div>`
-    : (USER_ROLE === 'viewer' && COST_SERVER_OK === 'auth' ? `<div style="font-size:11px;color:#8A95A3;margin-top:6px">매출은 💰 제조원가 탭에서 조회 비밀번호를 입력하면 함께 표시됩니다.</div>` : '');
+    : (['viewer','hq'].includes(USER_ROLE) && COST_SERVER_OK === 'auth' ? `<div style="font-size:11px;color:#8A95A3;margin-top:6px">매출은 💰 제조원가 탭에서 조회 비밀번호를 입력하면 함께 표시됩니다.</div>` : '');
 
   box.innerHTML = `
     <div class="ds-head">
@@ -16114,7 +16283,7 @@ function renderShipPlans(){
     if (gone.length) { gone.forEach(no => splUnlinkInvoice(no).then(renderShipPlans)); }
   }
   if (!_splLoaded && (API_URL || IS_GAS)) { loadShipPlans().then(renderShipPlans); }
-  const canEdit = USER_ROLE !== 'viewer';
+  const canEdit = !['viewer','hq'].includes(USER_ROLE);
   const n = v => (+v||0).toLocaleString();
   const showDone = document.getElementById('spl-show-done') ? document.getElementById('spl-show-done').checked : false;
   const list = SPL.filter(p => showDone || p.status === 'wait' || p.status === 'inv')
@@ -16158,7 +16327,7 @@ function renderShipPlans(){
     if ((p.status === 'wait' || p.status === 'inv') && isMaster) act.push(`<button onclick="invFromPlan('${p.id}')" style="padding:4px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer;font-size:12px">${p.invNo ? '인보이스 열기' : '인보이스 작성'}</button>`);
     if ((p.status === 'wait' || p.status === 'inv') && canEdit) act.push(`<button onclick="splEdit('${p.id}')" title="LOT·수량 수정" class="edit-btn">✏️</button>`);
     if ((p.status === 'wait' || p.status === 'inv') && canEdit) act.push(`<button onclick="splCancel('${p.id}')" title="출고 예정 취소 / Hủy" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>`);
-    if ((p.status === 'inv' || p.status === 'done') && p.invFileId && USER_ROLE !== 'viewer') act.push(`<button onclick="splDownloadInv('${p.id}')" title="${(p.invFileName||'').replace(/"/g,'')}" style="padding:4px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer;font-size:12px">📄 인보이스 받기 / Tải Invoice</button>`);
+    if ((p.status === 'inv' || p.status === 'done') && p.invFileId && !['viewer','hq'].includes(USER_ROLE)) act.push(`<button onclick="splDownloadInv('${p.id}')" title="${(p.invFileName||'').replace(/"/g,'')}" style="padding:4px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer;font-size:12px">📄 인보이스 받기 / Tải Invoice</button>`);
     if (p.status === 'done' && isAdmin) act.push(`<button onclick="splUndoConfirm('${p.id}')" title="출고 확정 취소 — 재고·PO 잔량 되돌림" style="padding:4px 10px;border-radius:6px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer;font-size:12px">↩ 출고 취소 / Hủy xuất</button>`);
     if (p.status === 'cancel' && isMaster) act.push(`<button onclick="splPurge('${p.id}')" title="완전 삭제" style="padding:4px 10px;border-radius:6px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer;font-size:12px">🗑 완전 삭제</button>`);
     return `<tr>
