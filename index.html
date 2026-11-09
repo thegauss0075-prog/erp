@@ -14806,7 +14806,7 @@ async function hqRecvDel(id, i){
 // ✈️ 베트남 발송 (항공/해상/특송) — 본사 보관분에서 나눠 보낼 수 있다
 const HQ_SHIP_PORTS = {
   AIR: {load: 'INCHEON INT\'L AIRPORT, KOREA', dest: 'NOI BAI INT\'L AIRPORT, HANOI, VIETNAM', blLbl: 'AWB No', carLbl: 'Flight No'},
-  SEA: {load: 'BUSAN PORT, KOREA', dest: 'HAI PHONG PORT, VIETNAM', blLbl: 'B/L No', carLbl: 'Vessel / Voyage', loads: ['BUSAN PORT, KOREA', 'INCHEON PORT, KOREA']},
+  SEA: {load: 'INCHEON PORT, KOREA', dest: 'HAI PHONG PORT, VIETNAM', blLbl: 'B/L No', carLbl: 'Vessel / Voyage', loads: ['INCHEON PORT, KOREA', 'BUSAN PORT, KOREA']},
   EXPRESS: {load: 'INCHEON, KOREA', dest: 'HAI PHONG, VIETNAM', blLbl: 'Tracking (AWB) No', carLbl: 'Courier (DHL / FedEx…)'}
 };
 function hqVNInvNo(date){
