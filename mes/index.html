@@ -237,6 +237,7 @@ async function doLogin(){
 }
 // ── 🔑 비밀번호 변경 (본인) · 관리자 초기화 후에는 첫 로그인 때 반드시 변경
 function pwChange(forced){
+  if (ME.role === 'floor') { alert('현장 공용 계정은 태블릿에서 비밀번호를 바꿀 수 없습니다. 관리자에게 요청하세요.'); return; }
   if (ME.role === 'system') { alert('백업 전용 계정은 여기서 바꾸지 마세요. 바꾸면 Apps Script 속성 MES_BK_PW도 같이 바꿔야 자동 백업이 계속됩니다.'); return; }
   const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'pw'; document.body.appendChild(ov);
   ov.innerHTML = `<div class="box" style="max-width:420px"><h2>🔑 비밀번호 변경 <span class="vi">Đổi mật khẩu</span></h2>
@@ -273,9 +274,9 @@ async function pwUsersCard(){
   const r = await sb.from('app_users').select('email,name,role,must_change_pw').order('email');
   const el = $('pw-users'); if (!el) return;
   const list = (r.data || []).filter(u => u.role !== 'system');
-  el.innerHTML = `<table><thead><tr><th>계정</th><th>이름</th><th>권한</th><th>상태</th><th></th></tr></thead><tbody>${list.map(u => `<tr><td>${E(u.email)}</td><td>${E(u.name || '')}</td><td>${E(u.role)}</td><td>${u.must_change_pw ? '<span style="color:var(--warn,#b7791f)">초기화됨 · 변경 대기</span>' : ''}</td>
+  el.innerHTML = `<table><thead><tr><th>계정</th><th>이름</th><th>권한</th><th>상태</th><th></th></tr></thead><tbody>${list.map(u => `<tr><td>${E(u.email)}</td><td>${E(u.name || '')}</td><td>${E(u.role)}</td><td>${u.role === 'floor' ? '<span class="muted">현장 공용 · 관리자만 변경</span>' : u.must_change_pw ? '<span style="color:var(--warn,#b7791f)">초기화됨 · 변경 대기</span>' : ''}</td>
     <td>${u.email.toLowerCase() === ME.email.toLowerCase() ? '<button class="btn" style="padding:4px 10px" onclick="pwChange(false)">🔑 내 비밀번호 변경</button>' : `<button class="btn" style="padding:4px 10px" onclick="pwReset('${E(u.email)}')">비밀번호 초기화</button>`}</td></tr>`).join('')}</tbody></table>
-    <p class="muted" style="margin-top:8px">초기화하면 임시 비밀번호가 한 번만 표시됩니다. 작업자에게 직접 전달하세요. 작업자는 다음 로그인 때 새 비밀번호로 바꿔야 합니다. 기록은 수정 이력(audit_log)에 남습니다.<br>백업 전용 계정은 여기 나오지 않습니다. 법인장 계정 비밀번호를 잊으면 Supabase 관리 화면 Users에서 iskim 계정에 재설정 메일을 보내세요.</p>`;
+    <p class="muted" style="margin-top:8px">초기화하면 임시 비밀번호가 한 번만 표시됩니다. 작업자에게 직접 전달하세요. 관리자·조회 계정은 다음 로그인 때 새 비밀번호로 바꿔야 합니다. <b>현장 공용(floor) 계정</b>은 태블릿에서 바꿀 수 없고, 초기화하면 그 계정을 쓰는 태블릿이 모두 로그아웃되니 임시 비밀번호를 각 태블릿에 다시 입력하세요(근무 시간 외에 하세요). 기록은 수정 이력(audit_log)에 남습니다.<br>백업 전용 계정은 여기 나오지 않습니다. 법인장 계정 비밀번호를 잊으면 Supabase 관리 화면 Users에서 iskim 계정에 재설정 메일을 보내세요.</p>`;
 }
 async function pwReset(email){
   const why = prompt(`${email} 비밀번호를 초기화합니다.\n사유 (예: 비밀번호 분실)`, '비밀번호 분실'); if (why === null) return;
@@ -1396,7 +1397,7 @@ async function boot(){
   ME.role = r.data && r.data.role || ''; ME.name = r.data && r.data.name || u.email;
   if (!ME.role) { $('app').innerHTML = `<div class="card" style="max-width:520px;margin:30px auto"><h2>권한 없음</h2><p>${E(u.email)} 계정이 MES 사용자(app_users)에 등록되지 않았습니다. 관리자에게 요청하세요.</p><button class="btn" onclick="logout()">로그아웃</button></div>`; return; }
   $('who').textContent = `👤 ${r.data.name || u.email} · ${ME.role}`;
-  $('pwc').style.display = '';
+  $('pwc').style.display = ME.role === 'floor' ? 'none' : '';   // 현장 공용 계정은 태블릿에서 비밀번호 변경 불가 (관리자만 초기화)
   ME.mustPw = !!r.data.must_change_pw;
   if (r.data.must_change_pw) { $('app').innerHTML = '<div class="card" style="max-width:420px;margin:40px auto">새 비밀번호로 바꾼 뒤 사용할 수 있습니다.</div>'; if (!$('pw')) pwChange(true); return; }
   await loadMaster(); await loadLive(); setNet(true); realtime(); flushQ();
