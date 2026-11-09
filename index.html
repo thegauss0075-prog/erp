@@ -22,6 +22,7 @@ body{font-family:'Malgun Gothic','맑은 고딕',Arial,sans-serif;font-size:14px
 .tb{padding:7px 16px;border-radius:7px;border:1px solid #dde;background:#fff;font-size:14px;cursor:pointer;color:#555;transition:all .15s}
 .tb.on{background:#185FA5;border-color:#185FA5;color:#fff;font-weight:600}
 /* 한국어 아래에 작게 붙는 베트남어 병기 (메인 화면) */
+#tab-hq .vi,.hq-ov .vi{display:none!important}
 .vi{display:block;font-size:10px;font-weight:400;line-height:1.2;opacity:.8;margin-top:1px}
 .tb{line-height:1.2}
 .tb:hover:not(.on){background:#eef2fb}
@@ -522,7 +523,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <button class="tb" id="tb-ship" onclick="go('ship')">🚚 출고<span class="vi">Xuất hàng</span></button>
   <button class="tb" id="tb-shipstat" onclick="go('shipstat')">📊 출고 실적<span class="vi">Kết quả xuất</span></button>
   <button class="tb" id="tb-cost" onclick="go('cost')" style="display:none">💰 제조원가<span class="vi">Giá thành SX</span></button>
-  <button class="tb" id="tb-hq" onclick="go('hq')" style="display:none">🏢 본사 업무<span class="vi">Trụ sở</span></button>
+  <button class="tb" id="tb-hq" onclick="go('hq')" style="display:none">🏢 본사 업무</button>
 </div>
 
 <!-- DASHBOARD -->
@@ -1686,7 +1687,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 <!-- 🏢 본사 업무 (2026-11-06): 고객 PO 접수 → 자재 소요 → 구매요청·승인 → 공급사 발주·선적 -->
 <div id="tab-hq" class="sec">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-    <h2 style="margin:0;font-size:18px">🏢 본사 업무 <span style="font-weight:400;color:#5D6977;font-size:13px">/ Nghiệp vụ trụ sở</span></h2>
+    <h2 style="margin:0;font-size:18px">🏢 본사 업무</h2>
     <button onclick="renderHQ({reload:true})" style="padding:7px 14px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">🔄 새로고침</button>
   </div>
   <div id="hq-depts" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
@@ -12890,7 +12891,7 @@ function hqAddDays(ymd, d){ const t = new Date(ymd + 'T00:00:00Z'); t.setUTCDate
 function hqNextNo(pre, list, key, date){ const d = String(date || hqToday()).replace(/-/g,'').slice(2), p = pre + '-' + d + '-';
   const n = list.map(r => String(r[key]||'')).filter(x => x.startsWith(p)).map(x => +x.slice(p.length) || 0); return p + String((n.length ? Math.max(...n) : 0) + 1).padStart(2,'0'); }
 function hqItem(code, cat){ return allRows().find(x => x.code === code && (!cat || x.cat === String(cat).toUpperCase())) || allRows().find(x => x.code === code) || null; }
-function hqCanWrite(){ if (!ADMIN_TOKEN) { alert('로그인(직원 이상) 후 사용할 수 있습니다. / Vui lòng đăng nhập.'); return false; } return true; }
+function hqCanWrite(){ if (!ADMIN_TOKEN) { alert('로그인(직원 이상) 후 사용할 수 있습니다.'); return false; } return true; }
 
 async function loadHQ(force){
   if (!(API_URL || IS_GAS)) return;
@@ -12914,13 +12915,13 @@ function hqNav(){
   const cnt = {rep: 0, sales: HQ.cpo.filter(c => (c.status || '접수') === '접수').length + (HQS.quote||[]).filter(q => q.status === '제출').length, buy: HQ.pr.filter(p => p.status === '요청' || p.status === '승인').length, qa: 0};
   const de = document.getElementById('hq-depts'), te = document.getElementById('hq-tabs'); if (!de || !te) return;
   de.innerHTML = HQ_DEPTS.map(x => { const on = x.k === d.k;
-    return `<button onclick="hqSetDept('${x.k}')" style="padding:9px 18px;border-radius:10px;border:2px solid ${x.col};background:${on ? x.col : '#fff'};color:${on ? '#fff' : x.col};font-weight:700;font-size:14px;cursor:pointer">${x.l} <span style="font-weight:400;font-size:11.5px;opacity:.85">${x.vi}</span>${cnt[x.k] ? ` <span style="background:${on ? '#fff' : x.col};color:${on ? x.col : '#fff'};border-radius:999px;padding:0 7px;font-size:11.5px;margin-left:2px">${cnt[x.k]}</span>` : ''}</button>`; }).join('');
+    return `<button onclick="hqSetDept('${x.k}')" style="padding:9px 18px;border-radius:10px;border:2px solid ${x.col};background:${on ? x.col : '#fff'};color:${on ? '#fff' : x.col};font-weight:700;font-size:14px;cursor:pointer">${x.l} ${cnt[x.k] ? ` <span style="background:${on ? '#fff' : x.col};color:${on ? x.col : '#fff'};border-radius:999px;padding:0 7px;font-size:11.5px;margin-left:2px">${cnt[x.k]}</span>` : ''}</button>`; }).join('');
   te.innerHTML = d.tabs.length > 1 ? d.tabs.map(([k, l]) => `<button class="period-btn ${HQ.tab === k ? 'on' : ''}" onclick="hqSetTab('${k}')">${l}</button>`).join('') : '';
 }
 async function renderHQ(opts){
   const el = document.getElementById('hq-body'); if (!el) return;
   if (!HQ._deptInit) { HQ._deptInit = true; try { const k = localStorage.getItem('hq_dept'); if (k && HQ_DEPTS.some(x => x.k === k)) { HQ.dept = k; HQ.tab = HQ_DEPTS.find(x => x.k === k).tabs[0][0]; } } catch(e) {} }
-  if (!HQ.loaded || (opts && opts.reload)) { el.innerHTML = '<div class="empty">⏳ 불러오는 중… / Đang tải…</div>'; await loadHQ(true); }
+  if (!HQ.loaded || (opts && opts.reload)) { el.innerHTML = '<div class="empty">⏳ 불러오는 중…</div>'; await loadHQ(true); }
   if ((HQ.dept === 'qa') && (!_loadedAt.qc || (opts && opts.reload))) { el.innerHTML = '<div class="empty">⏳ 품질검사 기록 불러오는 중…</div>'; await loadQC().catch(()=>{}); }
   if ((HQ.tab === 'sale' || HQ.tab === 'rep') && !txLog.length) { try { const b = await api('getFullSyncBundle', {}); const arr = v => Array.isArray(v) ? v : (v && v.data) || []; if (!txLog.length) txLog = arr(b.tx).map(r => ({...r, id:+r.id||0, qty:+r.qty||0})); } catch(e) {} }
   // 불량률은 입출고·불량 이력이 필요 — 아직 동기화 전이면(본사 열람 화면 등) 직접 받아온다
@@ -12977,7 +12978,7 @@ function hqCPOView(){
     && (!q || [r.cpoNo, r.customer, r.custPoNo, ...(r.ls||[]).map(l => l.code + ' ' + l.name)].join(' ').toLowerCase().includes(q)))
     .sort((a,b) => (a.late === b.late ? 0 : a.late ? -1 : 1) || String(b.recvDate||'').localeCompare(String(a.recvDate||'')));
   const open = all.filter(r => ['확정','출하중'].includes(r.st));
-  const tile = (l, vi, v, sub, col) => `<div style="flex:1;min-width:140px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${l} <span style="color:#8A95A3;font-size:11px">${vi}</span></div><div style="font-size:21px;font-weight:700;color:${col||'#18212B'}">${v}</div><div style="font-size:11px;color:#8A95A3">${sub||''}</div></div>`;
+  const tile = (l, vi, v, sub, col) => `<div style="flex:1;min-width:140px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${l}</div><div style="font-size:21px;font-weight:700;color:${col||'#18212B'}">${v}</div><div style="font-size:11px;color:#8A95A3">${sub||''}</div></div>`;
   const remBy = {}; open.forEach(r => r.ls.forEach(l => { if (l.rem > 0) remBy[l.name || l.code] = (remBy[l.name || l.code] || 0) + l.rem; }));
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       ${tile('회신 대기','Chờ phản hồi', all.filter(r => r.st === '접수').length + '건', '접수 후 납기 회신 전', all.some(r => r.st === '접수') ? '#b45309' : '')}
@@ -12986,7 +12987,7 @@ function hqCPOView(){
       ${tile('납기 지연','Trễ hạn', all.filter(r => r.late).length + '건', '', all.some(r => r.late) ? '#b91c1c' : '#166534')}
     </div>
     <div class="toolbar" style="gap:6px;flex-wrap:wrap">
-      <button onclick="hqCPOEdit(null)" style="padding:7px 14px;border-radius:8px;border:1px solid #5b21b6;background:#5b21b6;color:#fff;font-weight:600;cursor:pointer">➕ 고객 PO 접수 / Thêm PO</button>
+      <button onclick="hqCPOEdit(null)" style="padding:7px 14px;border-radius:8px;border:1px solid #5b21b6;background:#5b21b6;color:#fff;font-weight:600;cursor:pointer">➕ 고객 PO 접수</button>
       <div class="sw"><span class="si">🔍</span><input placeholder="고객사·PO No·품목 검색" value="${hqE(HQ.q)}" oninput="HQ.q=this.value;clearTimeout(window._hqT);window._hqT=setTimeout(()=>{renderHQ();const i=document.querySelector('#hq-body .sw input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>
       <select onchange="HQ.st=this.value;renderHQ()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px"><option value="">상태 전체</option><option value="진행" ${HQ.st==='진행'?'selected':''}>진행 중(완료·취소 제외)</option>${HQ_CPO_ST.map(s => `<option ${HQ.st===s?'selected':''}>${s}</option>`).join('')}</select>
       <button onclick="hqCPOExcel()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer">📊 엑셀</button>
@@ -13006,12 +13007,12 @@ function hqCPOView(){
 let HQ_EDIT = null;
 function hqModal(id, html, w){
   let m = document.getElementById(id);
-  if (!m) { m = document.createElement('div'); m.id = id; m.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9992;display:flex;align-items:center;justify-content:center;padding:14px'; document.body.appendChild(m); }
+  if (!m) { m = document.createElement('div'); m.id = id; m.className = 'hq-ov'; m.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9992;display:flex;align-items:center;justify-content:center;padding:14px'; document.body.appendChild(m); }
   m.innerHTML = `<div style="background:#fff;border-radius:12px;width:min(${w||900}px,100%);max-height:94vh;overflow:auto;padding:18px 20px">${html}</div>`;
 }
 function hqClose(id){ const m = document.getElementById(id); if (m) m.remove(); }
 const HQ_IN = 'width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #DCE1E7;border-radius:7px;font-size:13px';
-function hqFld(lbl, vi, html, span){ return `<label style="display:block;${span ? 'grid-column:1/-1;' : ''}"><div style="font-size:12px;font-weight:600;color:#33404D;margin-bottom:3px">${lbl} <span style="font-weight:400;color:#8A95A3;font-size:11px">${vi||''}</span></div>${html}</label>`; }
+function hqFld(lbl, vi, html, span){ return `<label style="display:block;${span ? 'grid-column:1/-1;' : ''}"><div style="font-size:12px;font-weight:600;color:#33404D;margin-bottom:3px">${lbl}</div>${html}</label>`; }
 function hqCPOEdit(id){
   const r = id ? HQ.cpo.find(x => String(x.id) === String(id)) : null;
   HQ_EDIT = r ? JSON.parse(JSON.stringify(r)) : {id: String(Date.now()), recvDate: hqToday(), status: '접수', cur: 'USD', lines: [{code:'', name:'', qty:'', price:'', due:''}], history: []};
@@ -13034,7 +13035,7 @@ function hqCPORender(){
       ${hqFld('고객사 *','Khách hàng', `<input list="hq-custs" value="${hqE(r.customer||'')}" ${set('customer')} style="${HQ_IN}">`)}
       ${hqFld('고객 PO No *','Số PO KH', `<input value="${hqE(r.custPoNo||'')}" ${set('custPoNo')} style="${HQ_IN}">`)}
       ${hqFld('접수일 *','Ngày nhận', `<input type="date" value="${hqE(r.recvDate||'')}" ${set('recvDate')} style="${HQ_IN}">`)}
-      ${hqFld('상태','Trạng thái', `<select onchange="HQ_EDIT.status=this.value" style="${HQ_IN}">${HQ_CPO_ST.map(s => `<option value="${s}" ${r.status===s?'selected':''}>${s} / ${HQ_CPO_VI[s]}</option>`).join('')}</select>`)}
+      ${hqFld('상태','Trạng thái', `<select onchange="HQ_EDIT.status=this.value" style="${HQ_IN}">${HQ_CPO_ST.map(s => `<option value="${s}" ${r.status===s?'selected':''}>${s}</option>`).join('')}</select>`)}
       ${hqFld('통화','Tiền tệ', `<select onchange="HQ_EDIT.cur=this.value;hqCPORender()" style="${HQ_IN}">${['USD','KRW','VND'].map(c => `<option ${r.cur===c?'selected':''}>${c}</option>`).join('')}</select>`)}
       ${hqFld('인도조건','Incoterm', `<input value="${hqE(r.incoterm||'')}" placeholder="DDP / EXW / FOB…" ${set('incoterm')} style="${HQ_IN}">`)}
       ${hqFld('납품처','Nơi giao', `<input value="${hqE(r.shipTo||'')}" ${set('shipTo')} style="${HQ_IN}">`)}
@@ -13061,7 +13062,7 @@ function hqCPORender(){
     <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px">
       <div>${!isNew && isMaster ? `<button onclick="hqCPODelete('${r.id}')" style="padding:7px 12px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}</div>
       <div style="display:flex;gap:6px"><button onclick="hqClose('hq-ed')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
-      <button id="hq-save" onclick="hqCPOSave()" style="padding:7px 18px;border-radius:8px;border:1px solid #5b21b6;background:#5b21b6;color:#fff;font-weight:600;cursor:pointer">💾 저장 / Lưu</button></div></div>`, 1000);
+      <button id="hq-save" onclick="hqCPOSave()" style="padding:7px 18px;border-radius:8px;border:1px solid #5b21b6;background:#5b21b6;color:#fff;font-weight:600;cursor:pointer">💾 저장</button></div></div>`, 1000);
 }
 function hqCPOLine(i, k, v){
   const l = HQ_EDIT.lines[i]; if (!l) return;
@@ -13100,7 +13101,7 @@ async function hqCPOSave(){
     r.mrpNote = short.length ? `부족 자재 ${short.length}건 → 구매요청 자동 생성` : (m.noBom.filter(c => mine.has(c)).length ? `BOM 없음 — 자재 확인 불가 (${m.noBom.join(', ')})` : '자재 충분 — 구매요청 없음');
   }
   const res = await retrySafe(() => api('saveHQCPO', {rec: r}));
-  if (!res || !res.ok) { btn.disabled = false; btn.textContent = '💾 저장 / Lưu'; err.textContent = '저장 실패: ' + ((res && res.error) || '서버 응답 없음') + (/unknown action/i.test(res && res.error || '') ? ' — 서버(Code.gs)를 새 버전으로 배포해야 합니다.' : ''); return; }
+  if (!res || !res.ok) { btn.disabled = false; btn.textContent = '💾 저장'; err.textContent = '저장 실패: ' + ((res && res.error) || '서버 응답 없음') + (/unknown action/i.test(res && res.error || '') ? ' — 서버(Code.gs)를 새 버전으로 배포해야 합니다.' : ''); return; }
   const i = HQ.cpo.findIndex(x => String(x.id) === String(r.id)); if (i >= 0) HQ.cpo[i] = r; else HQ.cpo.push(r);
   hqClose('hq-ed');
   if (r.quoteId) { const q = HQS.quote.find(x => x.id === r.quoteId); if (q && q.status !== '수주') { const q2 = {...q, status: '수주', cpoId: r.id, cpoNo: r.cpoNo}; await hqsSave('quote', q2); } }
@@ -13175,13 +13176,13 @@ function hqMRPView(){
       <label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${HQ.mrpFc?'checked':''} onchange="HQ.mrpFc=this.checked;renderHQ()" style="width:auto;margin:0"> 접수·회신 단계 PO도 포함 (예측)</label>
       <label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${HQ.mrpTpStock?'checked':''} onchange="HQ.mrpTpStock=this.checked;renderHQ()" style="width:auto;margin:0"> 완제품·반제품 재고 먼저 차감</label>
     </div>
-    <div style="font-size:13px;font-weight:700;margin-bottom:6px">① 생산 필요 (PO 잔량) / Nhu cầu SX</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px">① 생산 필요 (PO 잔량)</div>
     ${dem.length ? `<div class="tw" style="margin-bottom:12px"><table><thead><tr><th>품목</th><th>코드</th><th style="text-align:right">PO 잔량</th><th style="text-align:right">현재고</th><th>근거 PO</th></tr></thead><tbody>${
       dem.map(d => `<tr><td>${hqE(d.name)}</td><td style="font-family:monospace;font-size:12px">${hqE(d.code)} <span style="color:#8A95A3">${hqE(d.cat)}</span></td><td style="text-align:right;font-weight:700">${hqN(d.q)}</td><td style="text-align:right">${hqN(d.st)}</td><td style="font-size:12px;color:#5D6977">${hqE(d.refs)}</td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty" style="margin-bottom:12px">PO 잔량이 없습니다. 솔루엠 PO는 발주관리 탭에, 다른 고객 PO는 영업 → 고객 PO에 "확정"으로 등록하면 여기서 계산됩니다.</div>'}
     ${m.noBom.length ? `<div style="background:#FEF3C7;color:#92400e;padding:7px 10px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠️ BOM이 없어 자재를 계산하지 못한 품목: ${m.noBom.map(hqE).join(', ')} — 작업지시 화면에서 BOM을 먼저 등록하세요.</div>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-      <div style="font-size:13px;font-weight:700">② 자재 소요·부족 / Nhu cầu NVL <span style="font-weight:400;color:#5D6977">부족 ${short.length}건</span></div>
+      <div style="font-size:13px;font-weight:700">② 자재 소요·부족 <span style="font-weight:400;color:#5D6977">부족 ${short.length}건</span></div>
       <button onclick="hqMRPToPR()" ${short.length ? '' : 'disabled'} style="padding:7px 14px;border-radius:8px;border:1px solid #b45309;background:${short.length ? '#b45309' : '#ccc'};color:#fff;font-weight:600;cursor:pointer">📝 선택한 부족 자재로 구매요청 만들기</button>
     </div>
     ${m.mats.length ? `<div class="tw"><table><thead><tr><th></th><th>자재<span class="vi">NVL</span></th><th>구분</th><th style="text-align:right">총 소요<span class="vi">Nhu cầu</span></th><th style="text-align:right">재고<span class="vi">Tồn</span></th><th style="text-align:right">입고 예정<span class="vi">Sắp nhập</span></th><th style="text-align:right">요청 중<span class="vi">Đang YC</span></th><th style="text-align:right">부족<span class="vi">Thiếu</span></th><th>요청 수량</th><th>공급사</th></tr></thead><tbody>${
@@ -13236,7 +13237,7 @@ function hqPRRender(){
   const ro = editable ? '' : 'disabled';
   hqModal('hq-pr', `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
-      <h3 style="margin:0;font-size:16px">${isNew ? '📝 구매요청 작성' : '📝 ' + hqE(r.prNo)} <span style="font-weight:400;color:#5D6977;font-size:12.5px">/ Yêu cầu mua hàng</span></h3>${hqPill(r.status, HQ_PR_COL[r.status])}</div>
+      <h3 style="margin:0;font-size:16px">${isNew ? '📝 구매요청 작성' : '📝 ' + hqE(r.prNo)} <span style="font-weight:400;color:#5D6977;font-size:12.5px"></span></h3>${hqPill(r.status, HQ_PR_COL[r.status])}</div>
     <datalist id="hq-mats">${items.map(x => `<option value="${hqE(x.code)} — ${hqE(x.name)}">`).join('')}</datalist>
     <datalist id="hq-sups">${sups.map(s => `<option value="${hqE(s)}">`).join('')}</datalist>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
@@ -13286,7 +13287,7 @@ async function hqPRSave(status, extra){
 }
 async function hqPRDecide(st){
   let note = '';
-  if (st === '반려') { note = prompt('반려 사유를 입력해주세요 / Lý do từ chối'); if (note === null) return; }
+  if (st === '반려') { note = prompt('반려 사유를 입력해주세요'); if (note === null) return; }
   const ok = await hqPRSave(st, st === '승인' ? {approver: CURRENT_USER||'', approvedAt: new Date().toISOString()} : {rejectNote: note, approver: CURRENT_USER||'', approvedAt: new Date().toISOString()});
   if (ok) { if (st === '승인') hqPRRender(); else { hqClose('hq-pr'); } HQ.tab = 'pr'; HQ.dept = 'buy'; renderHQ(); }
 }
@@ -13687,7 +13688,7 @@ function hqARView(){
       <div style="flex:1;min-width:180px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">미수 잔액 합계</div><div style="font-size:18px;font-weight:700">${money(totBal)}</div></div>
       <div style="flex:1;min-width:180px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#991b1b">결제일 지난 미수</div><div style="font-size:18px;font-weight:700;color:#b91c1c">${money(overdue)}</div></div>
     </div>
-    <div style="font-size:13px;font-weight:700;margin-bottom:6px">거래처별 채권 / Công nợ theo KH</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px">거래처별 채권</div>
     ${ar.length ? `<div class="tw" style="margin-bottom:14px"><table><thead><tr><th>거래처</th><th style="text-align:right">매출</th><th style="text-align:right">수금</th><th style="text-align:right">잔액</th>${AG.map(a => `<th style="text-align:right">${a}</th>`).join('')}</tr></thead><tbody>${
       ar.filter(o => !q || o.customer.toLowerCase().includes(q)).map(o => `<tr><td><b>${hqE(o.customer)}</b></td><td style="text-align:right;white-space:nowrap">${money(o.sales)}</td><td style="text-align:right;white-space:nowrap">${money(o.paid)}</td><td style="text-align:right;white-space:nowrap;font-weight:700">${money(o.bal)}</td>
         ${AG.map(a => `<td style="text-align:right;white-space:nowrap;${a !== '미도래' ? 'color:#b91c1c' : ''}">${money(Object.fromEntries(Object.entries(o.age).map(([c, x]) => [c, x[a] || 0])))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<div class="empty" style="margin-bottom:14px">판매 기록이 없습니다.</div>'}
@@ -13903,7 +13904,7 @@ function hqAPView(){
       <div style="flex:1;min-width:170px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#92400e">7일 안에 지급할 금액</div><div style="font-size:18px;font-weight:700;color:#b45309">${money(soon)}</div></div>
       <div style="flex:1;min-width:170px;background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#991b1b">지급일 지난 금액</div><div style="font-size:18px;font-weight:700;color:#b91c1c">${money(overdue)}</div></div>
     </div>
-    <div style="font-size:13px;font-weight:700;margin-bottom:6px">공급사별 채무 / Công nợ NCC</div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px">공급사별 채무</div>
     ${ap.length ? `<div class="tw" style="margin-bottom:14px"><table><thead><tr><th>공급사</th><th style="text-align:right">구매</th><th style="text-align:right">지급</th><th style="text-align:right">잔액</th>${AG.map(a => `<th style="text-align:right">${a}</th>`).join('')}</tr></thead><tbody>${
       ap.filter(o => !q || o.supplier.toLowerCase().includes(q)).map(o => `<tr><td><b>${hqE(o.supplier)}</b></td><td style="text-align:right;white-space:nowrap">${money(o.buy)}</td><td style="text-align:right;white-space:nowrap">${money(o.paid)}</td><td style="text-align:right;white-space:nowrap;font-weight:700">${money(o.bal)}</td>
         ${AG.map(a => `<td style="text-align:right;white-space:nowrap;${a !== '미도래' ? 'color:#b91c1c' : ''}">${money(Object.fromEntries(Object.entries(o.age).map(([c, x]) => [c, x[a] || 0])))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '<div class="empty" style="margin-bottom:14px">구매 기록이 없습니다.</div>'}
@@ -14210,7 +14211,7 @@ function hqDefectView(){
   const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;max-height:240px">${g}${line(d.ins, '#7c3aed', true)}${line(d.shp, '#0ea5e9', true)}${line(d.proc, '#dc2626')}
     ${d.proc.map((v,i) => v !== null && i === cur ? `<text x="${x(i)}" y="${yy(v)-8}" text-anchor="middle" font-size="11" font-weight="700" fill="#dc2626">${f(v)}</text>` : '').join('')}</svg>`;
   const lg = (c, t, dash) => `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px"><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="${c}" stroke-width="2.4" ${dash ? 'stroke-dasharray="5 3"' : ''}/></svg>${t}</span>`;
-  const tile = (l, vi, v, sub, c) => `<div style="flex:1;min-width:150px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${l} <span style="color:#8A95A3;font-size:11px">${vi}</span></div><div style="font-size:22px;font-weight:700;color:${c||'#18212B'}">${v}</div><div style="font-size:11px;color:#8A95A3">${sub||''}</div></div>`;
+  const tile = (l, vi, v, sub, c) => `<div style="flex:1;min-width:150px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${l}</div><div style="font-size:22px;font-weight:700;color:${c||'#18212B'}">${v}</div><div style="font-size:11px;color:#8A95A3">${sub||''}</div></div>`;
   const diff = last !== null && prev !== null ? (last - prev) : null;
   const row = (lbl, arr, fmt, strong) => `<tr${strong ? ' style="font-weight:700"' : ''}><td style="white-space:nowrap;text-align:left">${lbl}</td>${arr.map((v,i) => `<td style="text-align:right;${i === cur ? 'background:#F8FAFC;' : ''}${fmt === 'r' ? 'color:' + col(v) : ''}">${fmt === 'r' ? f(v) : (v ? hqN(v) : '-')}</td>`).join('')}</tr>`;
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
@@ -14284,7 +14285,7 @@ function hqShipEdit(poNo){
   const x = hqShipGroups().find(g => g.poNo === poNo); if (!x) return;
   hqModal('hq-sh', `<h3 style="margin:0 0 10px;font-size:16px">✏️ ${hqE(poNo)} <span style="font-weight:400;color:#5D6977;font-size:12.5px">${hqE(x.supplier||'')}</span></h3>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
-      ${hqFld('단계','Giai đoạn', `<select id="hqs-stage" style="${HQ_IN}">${HQ_STAGES.slice(0, -1).map(s => `<option value="${s}" ${x.stage===s?'selected':''}>${s} / ${HQ_STAGE_VI[s]}</option>`).join('')}</select>`)}
+      ${hqFld('단계','Giai đoạn', `<select id="hqs-stage" style="${HQ_IN}">${HQ_STAGES.slice(0, -1).map(s => `<option value="${s}" ${x.stage===s?'selected':''}>${s}</option>`).join('')}</select>`)}
       ${hqFld('ETD (출항)','', `<input id="hqs-etd" type="date" value="${hqE(x.etd)}" style="${HQ_IN}">`)}
       ${hqFld('ETA (도착)','', `<input id="hqs-eta" type="date" value="${hqE(x.eta)}" style="${HQ_IN}">`)}
       ${hqFld('B/L · AWB No','', `<input id="hqs-bl" value="${hqE(x.blNo)}" style="${HQ_IN}">`)}
