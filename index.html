@@ -5404,6 +5404,15 @@ function toggleBOMPanel() {
 let MATCFG = null;
 async function loadMatCfg(){ const r = await api('getHQStore', {store: 'matcfg'}); MATCFG = r && r.ok ? (r.data || []) : []; }
 const isRollIssue = (code, cat) => !!(MATCFG || []).find(x => x.id === code + '|' + cat && x.unit === 'lot');
+// 1롤 수량 (구매를 롤 단위로 올림할 때 씀, 2026-11-09). 본사 자재 소요 계산에서 입력한다
+const rollSizeOf = (code, cat) => +(((MATCFG || []).find(x => x.id === code + '|' + cat) || {}).rollSize) || 0;
+async function setRollSize(code, cat, name, v){
+  const cur = (MATCFG || []).find(x => x.id === code + '|' + cat) || {id: code + '|' + cat, code, cat, name, unit: 'lot'};
+  const res = await api('saveHQStore', {store: 'matcfg', rec: {...cur, rollSize: +v > 0 ? +v : ''}});
+  if (!res || !res.ok) { alert('저장 실패: ' + ((res && res.error) || '')); return; }
+  await loadMatCfg(); if (typeof renderHQ === 'function' && S_TAB_IS_HQ()) renderHQ();
+}
+function S_TAB_IS_HQ(){ const t = document.getElementById('tab-hq'); return !!(t && t.classList.contains('on')); }
 async function toggleRollIssue(code, cat, name){
   const on = !isRollIssue(code, cat);
   if (!confirm(on ? `"${name}"을(를) 롤(LOT) 단위 출고로 바꿀까요?\n소요량 자동 입력 때 필요한 만큼 롤을 통째로 출고하고, 남은 건 작업 후 ↩ 반납합니다.` : `"${name}"을(를) 소요량만큼 출고하는 방식으로 되돌릴까요?`)) return;
@@ -12896,7 +12905,7 @@ function hqCanWrite(){ if (!ADMIN_TOKEN) { alert('로그인(직원 이상) 후 �
 async function loadHQ(force){
   if (!(API_URL || IS_GAS)) return;
   if (HQ.loaded && !force) return;
-  const [a, b] = await Promise.all([api('getHQCPO', {}), api('getHQPR', {}), loadSupplyPO(true).catch(()=>{}), (BOM && BOM.length) ? null : loadBOM().catch(()=>{})]);
+  const [a, b] = await Promise.all([api('getHQCPO', {}), api('getHQPR', {}), loadSupplyPO(true).catch(()=>{}), (BOM && BOM.length) ? null : loadBOM().catch(()=>{}), loadMatCfg().catch(()=>{})]);
   if (a && a.ok) HQ.cpo = a.data || [];
   try { await loadHQS(true); } catch(e) {}
   if (b && b.ok) HQ.pr = b.data || [];
@@ -13097,7 +13106,7 @@ async function hqCPOSave(){
     const dues = r.lines.map(l => l.replyDue || l.due).filter(Boolean).sort();
     if (short.length) autoPR = {id: String(Date.now() + 1), date: hqToday(), status: '요청', auto: true, needBy: dues[0] ? hqAddDays(dues[0], -21) : '',
       basis: r.cpoNo, reason: `고객 PO 확정 자동 생성 (${r.customer} ${r.custPoNo})`, history: [],
-      lines: short.map(x => ({code: x.code, name: x.name, cat: x.cat, unit: x.unit, qty: Math.ceil(x.short), supplier: x.sup || '', note: x.from}))};
+      lines: short.map(x => ({code: x.code, name: x.name, cat: x.cat, unit: x.unit, qty: hqMRPDefQty(x), supplier: x.sup || '', note: x.from}))};
     r.mrpNote = short.length ? `부족 자재 ${short.length}건 → 구매요청 자동 생성` : (m.noBom.filter(c => mine.has(c)).length ? `BOM 없음 — 자재 확인 불가 (${m.noBom.join(', ')})` : '자재 충분 — 구매요청 없음');
   }
   const res = await retrySafe(() => api('saveHQCPO', {rec: r}));
@@ -13163,7 +13172,7 @@ function hqMRP(){
   const mats = Object.entries(need).map(([k, q]) => {
     const [code, cat] = k.split('|'), it = hqItem(code, cat) || {}, st = capStock(code, cat), inc = spoOpenQty(code), req = prOpen[code] || 0;
     const short = Math.max(0, Math.round((q - st - inc - req) * 1000) / 1000);
-    return {k, code, cat, name: it.name || code, unit: it.unit || '', need: q, st, inc, req, short, sup: lastSup[code] || '', from: [...(src[k]||[])].join(', ')};
+    return {k, code, cat, name: it.name || code, unit: it.unit || '', need: q, st, inc, req, short, sup: lastSup[code] || '', from: [...(src[k]||[])].join(', '), roll: isRollIssue(code, cat), rollSize: rollSizeOf(code, cat)};
   }).sort((a,b) => (b.short > 0) - (a.short > 0) || String(a.cat).localeCompare(String(b.cat)) || String(a.name).localeCompare(String(b.name)));
   return {rows, demand, mats, noBom: [...noBom], refs};
 }
@@ -13191,16 +13200,18 @@ function hqMRPView(){
         <td>${hqE(x.name)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(x.code)}</div></td><td>${hqE(x.cat)}</td>
         <td style="text-align:right">${hqN(x.need)} ${hqE(x.unit)}</td><td style="text-align:right">${hqN(x.st)}</td><td style="text-align:right">${x.inc ? hqN(x.inc) : '-'}</td><td style="text-align:right">${x.req ? hqN(x.req) : '-'}</td>
         <td style="text-align:right;font-weight:700;color:${x.short > 0 ? '#b91c1c' : '#166534'}">${x.short > 0 ? hqN(x.short) : '충분'}</td>
-        <td><input type="number" min="0" value="${hqE(HQ.mrpQty[x.k] ?? (x.short > 0 ? Math.ceil(x.short) : ''))}" placeholder="${x.short > 0 ? '' : '0'}" oninput="HQ.mrpQty['${hqE(x.k)}']=this.value;HQ.mrpSel['${hqE(x.k)}']=+this.value>0;const c=document.getElementById('mrp-c-${i}');if(c)c.checked=+this.value>0;hqMRPBtn()" style="${HQ_IN};width:100px;color:#1f2937"></td>
+        <td style="white-space:nowrap"><input type="number" min="0" value="${hqE(HQ.mrpQty[x.k] ?? (x.short > 0 ? hqMRPDefQty(x) : ''))}" placeholder="${x.short > 0 ? '' : '0'}" oninput="HQ.mrpQty['${hqE(x.k)}']=this.value;HQ.mrpSel['${hqE(x.k)}']=+this.value>0;const c=document.getElementById('mrp-c-${i}');if(c)c.checked=+this.value>0;hqMRPBtn()" style="${HQ_IN};width:100px;color:#1f2937">${x.roll ? `<div style="font-size:11px;color:#7c3aed;margin-top:2px">🧵 롤 단위 · 1롤 <input type="number" min="0" step="any" value="${x.rollSize || ''}" placeholder="수량" onchange="setRollSize('${hqE(x.code)}','${hqE(x.cat)}','${hqE(String(x.name).replace(/'/g,''))}',this.value)" style="width:64px;padding:1px 4px;border:1px solid #DCE1E7;border-radius:5px;font-size:11px"> ${hqE(x.unit)}${x.rollSize && (+(HQ.mrpQty[x.k] ?? hqMRPDefQty(x)) > 0) ? ` = <b>${Math.ceil((+(HQ.mrpQty[x.k] ?? hqMRPDefQty(x)) - 1e-9) / x.rollSize)}롤</b>` : ''}</div>` : ''}</td>
         <td><input value="${hqE(HQ.mrpSup[x.k] ?? x.sup)}" oninput="HQ.mrpSup['${hqE(x.k)}']=this.value" placeholder="공급사" style="${HQ_IN};width:130px;color:#1f2937"></td></tr>`).join('')}</tbody></table></div>` : ''}
     <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">구매 수량은 부족 수량이 기본으로 들어가 있고, 최소 주문 수량(MOQ)·포장 단위에 맞춰 바꿀 수 있습니다. 충분한 자재도 수량을 넣으면 같이 요청됩니다. 부족 = 총 소요 − 법인 재고 − 입고 예정(미입고 발주) − 요청 중(승인 전·발주 전 구매요청). 반제품은 반제품 재고를 먼저 쓰고 모자란 만큼만 원자재로 펼칩니다.</div>`;
 }
+// 기본 구매 수량: 부족 수량. 롤 단위 자재는 1롤 수량의 배수로 올림
+function hqMRPDefQty(x){ const q = Math.ceil(x.short); return (x.roll && x.rollSize > 0) ? Math.ceil(x.short / x.rollSize - 1e-9) * x.rollSize : q; }
 function hqMRPBtn(){ const b = document.getElementById('mrp-go'); if (b) { const n = Object.values(HQ.mrpSel).filter(Boolean).length; b.textContent = `📝 선택한 자재 ${n}건으로 구매요청 만들기`; } }
 async function hqMRPToPR(){
   if (!hqCanWrite()) return;
   const m = hqMRP(), sel = m.mats.filter(x => HQ.mrpSel[x.k]);
   if (!sel.length) { alert('구매할 자재를 체크하거나 구매 수량을 넣어주세요.'); return; }
-  const lines = sel.map(x => ({code: x.code, name: x.name, cat: x.cat, unit: x.unit, qty: +(HQ.mrpQty[x.k] ?? Math.ceil(x.short)) || 0, supplier: (HQ.mrpSup[x.k] ?? x.sup) || '', note: x.from})).filter(l => l.qty > 0);
+  const lines = sel.map(x => ({code: x.code, name: x.name, cat: x.cat, unit: x.unit, qty: +(HQ.mrpQty[x.k] ?? hqMRPDefQty(x)) || 0, supplier: (HQ.mrpSup[x.k] ?? x.sup) || '', note: x.from})).filter(l => l.qty > 0);
   const dues = m.rows.flatMap(r => r.ls.filter(l => l.rem > 0).map(l => l.replyDue || l.due)).filter(Boolean).sort();
   if (!lines.length) { alert('구매 수량이 0입니다. 수량을 넣어주세요.'); return; }
   const pr = {id: String(Date.now()), date: hqToday(), status: '요청', lines, needBy: dues[0] ? hqAddDays(dues[0], -21) : '', basis: [...new Set(Object.values(m.refs).flatMap(s => [...s]))].join(', '), reason: '고객 PO 자재 소요 계산(MRP)', history: []};
