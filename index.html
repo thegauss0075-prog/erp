@@ -13290,15 +13290,16 @@ function hqPRRender(){
       ${hqFld('근거 PO','PO căn cứ', `<input ${ro} value="${hqE(r.basis||'')}" oninput="HQ_PR.basis=this.value" style="${HQ_IN}">`)}
       ${hqFld('요청 사유','Lý do', `<input ${ro} value="${hqE(r.reason||'')}" oninput="HQ_PR.reason=this.value" style="${HQ_IN}">`)}
     </div>
-    <div class="tw" style="margin-top:12px"><table><thead><tr><th style="min-width:340px">자재 *</th><th>수량 *</th><th>단위</th><th>공급사</th><th>단가 · 통화</th><th style="text-align:right">금액</th><th>비고</th><th></th></tr></thead><tbody>${
-      (r.lines||[]).map((l, i) => `<tr>
-        <td><input list="hq-mats" ${ro} value="${hqE(l.code ? l.code + (l.name ? ' — ' + l.name : '') : '')}" onchange="hqPRLine(${i},'item',this.value)" style="${HQ_IN}" title="${hqE(l.name||'')}">${l.name ? `<div style="font-size:12px;color:#33404D;margin-top:3px;line-height:1.35;white-space:normal;word-break:break-word">${hqE(l.name)}</div>` : ''}</td>
-        <td><input type="number" ${ro} value="${hqE(l.qty)}" oninput="HQ_PR.lines[${i}].qty=this.value;hqPRTot()" style="${HQ_IN};width:100px"></td><td>${hqE(l.unit||'')}</td>
-        <td><input list="hq-sups" ${ro} value="${hqE(l.supplier||'')}" oninput="HQ_PR.lines[${i}].supplier=this.value" onchange="hqPRSupPrice(${i})" style="${HQ_IN};width:140px"></td>
-        <td style="white-space:nowrap"><input type="number" step="0.0001" ${ro} value="${hqE(l.price ?? '')}" oninput="HQ_PR.lines[${i}].price=this.value;HQ_PR.lines[${i}].priceAuto=false;hqPRTot()" style="${HQ_IN};width:100px" placeholder="단가"> <select ${ro} onchange="HQ_PR.lines[${i}].cur=this.value;hqPRTot()" style="${HQ_IN};width:72px">${HQ_PR_CURS.map(c => `<option ${hqPRCur(l)===c?'selected':''}>${c}</option>`).join('')}</select>${l.priceAuto ? '<div style="font-size:10.5px;color:#8A95A3">최근 구매가</div>' : ''}</td>
-        <td id="hqpr-amt-${i}" style="text-align:right;white-space:nowrap;font-weight:600"></td>
-        <td><input ${ro} value="${hqE(l.note||'')}" oninput="HQ_PR.lines[${i}].note=this.value" style="${HQ_IN}"></td>
-        <td>${editable ? `<button onclick="HQ_PR.lines.splice(${i},1);hqPRRender()" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
+    <div class="tw" style="margin-top:12px"><table style="font-size:13px"><thead><tr><th style="width:34px;text-align:center">No</th><th>자재</th><th style="text-align:right;width:110px">수량</th><th style="width:150px">공급사</th><th style="width:190px">단가 · 통화</th><th style="text-align:right;width:130px">금액</th><th style="width:30px"></th></tr></thead><tbody>${
+      (r.lines||[]).map((l, i) => `<tr style="vertical-align:middle">
+        <td style="text-align:center;color:#8A95A3">${i + 1}</td>
+        <td>${l.code && l.name ? `<div style="font-weight:600;line-height:1.35;white-space:normal;word-break:break-word">${hqE(l.name)}</div><div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(l.code)}${l.cat ? ' · ' + hqE(l.cat) : ''}</div>`
+          : `<input list="hq-mats" ${ro} value="${hqE(l.code||'')}" onchange="hqPRLine(${i},'item',this.value)" placeholder="자재 코드·이름 검색" style="${HQ_IN}">`}</td>
+        <td style="text-align:right;white-space:nowrap"><input type="number" ${ro} value="${hqE(l.qty)}" oninput="HQ_PR.lines[${i}].qty=this.value;hqPRTot()" style="${HQ_IN};width:80px;text-align:right"> <span style="color:#5D6977;font-size:12px">${hqE(l.unit||'')}</span></td>
+        <td><input list="hq-sups" ${ro} value="${hqE(l.supplier||'')}" oninput="HQ_PR.lines[${i}].supplier=this.value" onchange="hqPRSupPrice(${i})" placeholder="공급사" style="${HQ_IN}"></td>
+        <td style="white-space:nowrap"><input type="number" step="0.0001" ${ro} value="${hqE(l.price ?? '')}" oninput="HQ_PR.lines[${i}].price=this.value;HQ_PR.lines[${i}].priceAuto=false;hqPRTot()" style="${HQ_IN};width:96px;text-align:right" placeholder="단가"> <select ${ro} onchange="HQ_PR.lines[${i}].cur=this.value;hqPRTot()" style="${HQ_IN};width:70px">${HQ_PR_CURS.map(c => `<option ${hqPRCur(l)===c?'selected':''}>${c}</option>`).join('')}</select>${l.priceAuto ? '<div style="font-size:10.5px;color:#8A95A3">최근 구매가</div>' : ''}</td>
+        <td id="hqpr-amt-${i}" style="text-align:right;white-space:nowrap;font-weight:700"></td>
+        <td>${editable ? `<button onclick="HQ_PR.lines.splice(${i},1);hqPRRender()" title="삭제" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
     <div id="hqpr-tot" style="text-align:right;font-size:14px;margin-top:8px"></div>
     ${editable ? `<button onclick="HQ_PR.lines.push({code:'',name:'',qty:'',supplier:''});hqPRRender()" style="margin-top:6px;padding:5px 12px;border-radius:7px;border:1px dashed #b45309;background:#fff;color:#b45309;cursor:pointer">＋ 자재 추가</button>` : ''}
     ${r.status === '반려' && r.rejectNote ? `<div style="margin-top:8px;color:#b91c1c;font-size:13px">반려 사유: ${hqE(r.rejectNote)} — 수정 후 다시 저장하면 "요청"으로 올라갑니다.</div>` : ''}
