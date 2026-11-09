@@ -9777,6 +9777,7 @@ function applyRoleUI() {
         if (curId === 'hq' || allow.has(curId) || (curId === 'cost' && hqCan('cost', 'R'))) return;
         const first = ['dashboard', 'inv', 'po', 'ship', 'shipstat', 'qc'].find(x => allow.has(x)); if (first) go(first); else { const v = hqDeptsVisible(); hqTop(v.length ? v[0].k : 'rep'); } } catch (e) {} }, 0);
       if (HQ_ME && HQ_ME.mustChange) setTimeout(() => hqPwChange(true), 300);
+      else setTimeout(() => hqApprovalCheck(true), 800);
     }
     if (badge) badge.style.background = '#f0fdf4';
     if (badge) badge.style.color = '#166534';
@@ -13125,11 +13126,33 @@ function hqDeptsVisible(){ return HQ_DEPTS.filter(x => x.k === 'users' ? isMaste
 // 상단 부서 탭에서 연다: 화면은 하나(tab-hq), 부서만 바꾸고 그 탭에 불을 켠다
 function hqTop(k){
   const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0];
+  HQ._deptInit = true;   // 상단 탭으로 부서를 정했으니 저장된 부서로 덮어쓰지 않는다
   if (HQ.dept !== d.k) { HQ.dept = d.k; HQ.tab = d.tabs[0][0]; HQ.q = ''; HQ.st = ''; }
   try { localStorage.setItem('hq_dept', d.k); } catch(e) {}
   go('hq');
   document.querySelectorAll('.tb').forEach(b => b.classList.remove('on'));
   const b = document.getElementById('tb-hq-' + d.k); if (b) b.classList.add('on');
+}
+// ── 🔔 승인 대기 표시 (2026-11-09): '구매 승인' 권한자가 로그인하면 승인 대기 구매요청 수를
+//    🛒 구매 탭에 빨간 숫자로 띄우고, 처음 한 번은 안내 창을 보여 준다. 3분마다 다시 확인한다.
+let _hqApvTimer = null, _hqApvShown = false;
+async function hqApprovalCheck(popup){
+  if (!hqCan('buy', 'A')) return;
+  let list = HQ.pr;
+  try { const r = await api('getHQPR', {}); if (r && r.ok) { list = r.data || []; HQ.pr = list; } } catch (e) {}
+  const wait = (list || []).filter(p => p.status === '요청');
+  const tb = document.getElementById('tb-hq-buy');
+  if (tb) { let bd = tb.querySelector('.hq-apv'); if (!bd) { bd = document.createElement('span'); bd.className = 'hq-apv'; bd.style.cssText = 'position:absolute;top:0;right:-4px;background:#dc2626;color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:0 6px;line-height:17px'; tb.style.position = 'relative'; tb.appendChild(bd); }
+    bd.textContent = wait.length; bd.style.display = wait.length ? '' : 'none'; tb.title = wait.length ? `승인 대기 구매요청 ${wait.length}건` : ''; }
+  if (popup && wait.length && !_hqApvShown) {
+    _hqApvShown = true;
+    hqModal('hq-apv', `<div style="text-align:center"><div style="font-size:34px">🔔</div><h3 style="margin:6px 0">승인 대기 구매요청 ${wait.length}건</h3>
+      <div class="tw" style="margin:10px 0;text-align:left"><table><thead><tr><th>요청번호</th><th>요청자</th><th>자재</th><th style="text-align:right">금액</th></tr></thead><tbody>${
+        wait.slice(0, 8).map(p => `<tr><td style="font-family:monospace;font-size:12px">${hqE(p.prNo || '')}</td><td>${hqE(p.createdBy || '')}</td><td>${hqE(((p.lines||[])[0]||{}).name || '')}${(p.lines||[]).length > 1 ? ` <span style="color:#8A95A3">외 ${(p.lines||[]).length - 1}</span>` : ''}</td><td style="text-align:right">${hqPRSumTxt(p) || '-'}</td></tr>`).join('')}</tbody></table></div>
+      <div style="display:flex;justify-content:center;gap:8px"><button onclick="hqClose('hq-apv')" style="padding:8px 16px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">나중에</button>
+      <button onclick="hqClose('hq-apv');HQ.dept='buy';HQ.tab='pr';HQ.q='';HQ.st='요청';hqTop('buy')" style="padding:8px 18px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:600;cursor:pointer">지금 보기</button></div></div>`, 560);
+  }
+  if (!_hqApvTimer) _hqApvTimer = setInterval(() => hqApprovalCheck(false), 180000);
 }
 function hqSetDept(k){ const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0]; HQ.dept = d.k; HQ.tab = d.tabs[0][0]; HQ.q = ''; HQ.st = ''; try { localStorage.setItem('hq_dept', d.k); } catch(e) {} renderHQ(); }
 function hqNav(){
@@ -13583,7 +13606,7 @@ async function hqPRDecide(st){
   let note = '';
   if (st === '반려') { note = prompt('반려 사유를 입력해주세요'); if (note === null) return; }
   const ok = await hqPRSave(st, st === '승인' ? {approver: CURRENT_USER||'', approvedAt: new Date().toISOString()} : {rejectNote: note, approver: CURRENT_USER||'', approvedAt: new Date().toISOString()});
-  if (ok) { if (st === '승인') hqPRRender(); else { hqClose('hq-pr'); } HQ.tab = 'pr'; HQ.dept = 'buy'; renderHQ(); hqToast(st === '승인' ? `✅ ${HQ_PR.prNo} 승인했습니다 — "🚢 공급사 발주로 전환"으로 발주하세요` : `↩ ${HQ_PR.prNo} 반려했습니다`); }
+  if (ok) { if (st === '승인') hqPRRender(); else { hqClose('hq-pr'); } HQ.tab = 'pr'; HQ.dept = 'buy'; renderHQ(); hqApprovalCheck(false); hqToast(st === '승인' ? `✅ ${HQ_PR.prNo} 승인했습니다 — "🚢 공급사 발주로 전환"으로 발주하세요` : `↩ ${HQ_PR.prNo} 반려했습니다`); }
 }
 async function hqPRDelete(id){
   const r = HQ.pr.find(x => String(x.id) === String(id)); if (!r || !confirm(`${r.prNo} 구매요청을 삭제할까요?`)) return;
