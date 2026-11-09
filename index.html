@@ -13220,7 +13220,7 @@ function hqPRView(){
     ${rows.length ? `<div class="tw"><table><thead><tr><th>요청일</th><th>요청번호</th><th>자재</th><th style="text-align:right">품목 수</th><th style="text-align:right">금액</th><th>필요일</th><th>요청자</th><th>승인</th><th>발주번호</th><th>상태</th></tr></thead><tbody>${
       rows.map(p => `<tr style="cursor:pointer" onclick="hqPREdit('${p.id}')"><td style="white-space:nowrap">${hqE(p.date)}</td><td style="font-family:monospace;font-size:12px">${hqE(p.prNo)}</td>
         <td>${hqE(((p.lines||[])[0]||{}).name || '-')}${(p.lines||[]).length > 1 ? ` <span style="color:#8A95A3">외 ${(p.lines||[]).length-1}</span>` : ''}</td><td style="text-align:right">${(p.lines||[]).length}</td>
-        <td style="text-align:right;white-space:nowrap">${(() => { const ls = p.lines||[], t = ls.reduce((a, l) => a + (hqPRAmt(l) || 0), 0); return t ? hqM(t, p.cur || 'USD') + (ls.some(l => hqPRAmt(l) == null) ? ' <span style="color:#b45309">*</span>' : '') : '<span style="color:#8A95A3">-</span>'; })()}</td>
+        <td style="text-align:right;white-space:nowrap">${(() => { const txt = hqPRSumTxt(p); return txt ? txt + (hqPRSum(p).miss ? ' <span style="color:#b45309">*</span>' : '') : '<span style="color:#8A95A3">-</span>'; })()}</td>
         <td style="white-space:nowrap">${hqE(p.needBy||'-')}</td><td>${hqE(p.createdBy||'')}</td><td>${hqE(p.approver||'')}${p.approvedAt ? `<div style="font-size:11px;color:#8A95A3">${hqE(String(p.approvedAt).slice(0,10))}</div>` : ''}</td>
         <td style="font-family:monospace;font-size:12px">${hqE(p.poNo||'')}</td><td>${hqPill(p.status, HQ_PR_COL[p.status])}</td></tr>`).join('')}</tbody></table></div>`
       : `<div class="empty">${HQ.pr.length ? '조건에 맞는 구매요청이 없습니다.' : '아직 구매요청이 없습니다. "🧮 자재 소요" 화면에서 부족 자재로 만들거나 직접 작성하세요.'}</div>`}`;
@@ -13232,13 +13232,32 @@ function hqPREdit(id, preset){
   hqPRRender();
 }
 // 구매요청 단가·금액 (2026-11-09): 단가가 비어 있으면 그 공급사(없으면 아무 공급사)의 최근 구매가로 채운다
-function hqPRAutoPrice(l){ if (!l.code || (l.price !== undefined && l.price !== '' && !l.priceAuto)) return; const p = hqsLastBuyPrice(l.supplier || '', l.code); const p2 = p === '' ? hqsLastBuyPrice('', l.code) : p; if (p2 !== '') { l.price = p2; l.priceAuto = true; } }
-function hqPRSupPrice(i){ const l = HQ_PR.lines[i]; if (l.priceAuto || l.price === undefined || l.price === '') { l.price = undefined; l.priceAuto = false; hqPRAutoPrice(l); hqPRRender(); } }
+const HQ_PR_CURS = ['USD', 'KRW'];   // 구매는 달러·원화
+function hqPRCur(l){ return l.cur || (HQ_PR && HQ_PR.cur) || 'USD'; }
+// 최근 구매가와 그 통화: 구매(매입) → 공급사 발주 순서로 찾는다
+function hqPRLast(sup, code){
+  const a = HQS.purch.filter(x => !sup || x.supplier === sup).sort((x,y) => String(y.date||'').localeCompare(String(x.date||''))).flatMap(x => (x.lines||[]).filter(y => y.code === code && y.price !== '' && y.price != null).map(y => ({price: +y.price, cur: x.cur})));
+  if (a.length) return a[0];
+  const b = [...SPO].filter(p => p.code === code && (!sup || p.supplier === sup) && p.price !== '' && p.price != null).sort((x,y) => String(y.orderDate||'').localeCompare(String(x.orderDate||'')));
+  return b.length ? {price: +b[0].price, cur: b[0].cur} : null;
+}
+function hqPRAutoPrice(l){
+  if (!l.code) return;
+  if (!l.cur) { const sc = (hqsSup(l.supplier || '') || {}).cur; if (HQ_PR_CURS.includes(sc)) l.cur = sc; }
+  if (l.price !== undefined && l.price !== '' && !l.priceAuto) return;
+  const p = hqPRLast(l.supplier || '', l.code) || hqPRLast('', l.code);
+  if (p) { l.price = p.price; l.priceAuto = true; if (HQ_PR_CURS.includes(p.cur)) l.cur = p.cur; }
+}
+function hqPRSupPrice(i){ const l = HQ_PR.lines[i]; const sc = (hqsSup(l.supplier || '') || {}).cur; if (HQ_PR_CURS.includes(sc)) l.cur = sc; if (l.priceAuto || l.price === undefined || l.price === '') { l.price = undefined; l.priceAuto = false; hqPRAutoPrice(l); } hqPRRender(); }
 function hqPRAmt(l){ return (l.price === '' || l.price == null) ? null : (+l.qty || 0) * (+l.price || 0); }
+// 통화별 합계 (달러·원화를 섞어 더하지 않는다)
+function hqPRSum(p){ const t = {}; let miss = 0; (p.lines||[]).forEach(l => { const a = hqPRAmt(l); if (a == null) { if (l.code) miss++; return; } const c = l.cur || p.cur || 'USD'; t[c] = (t[c]||0) + a; }); return {t, miss}; }
+function hqPRSumTxt(p){ const {t} = hqPRSum(p); return HQ_PR_CURS.concat(Object.keys(t).filter(c => !HQ_PR_CURS.includes(c))).filter(c => t[c]).map(c => hqM(t[c], c)).join(' + '); }
 function hqPRTot(){
-  const r = HQ_PR; if (!r) return; let tot = 0, miss = 0;
-  (r.lines||[]).forEach((l, i) => { const a = hqPRAmt(l), el = document.getElementById('hqpr-amt-' + i); if (a == null) { if (l.code) miss++; } else tot += a; if (el) el.textContent = a == null ? '-' : hqM(a, r.cur || 'USD'); });
-  const t = document.getElementById('hqpr-tot'); if (t) t.innerHTML = `총 금액 <b style="font-size:16px">${hqM(tot, r.cur || 'USD')}</b>${miss ? ` <span style="color:#b45309;font-size:12px">· 단가 없는 자재 ${miss}건 제외</span>` : ''}`;
+  const r = HQ_PR; if (!r) return;
+  (r.lines||[]).forEach((l, i) => { const a = hqPRAmt(l), el = document.getElementById('hqpr-amt-' + i); if (el) el.textContent = a == null ? '-' : hqM(a, hqPRCur(l)); });
+  const {miss} = hqPRSum(r), txt = hqPRSumTxt(r);
+  const t = document.getElementById('hqpr-tot'); if (t) t.innerHTML = `총 금액 <b style="font-size:16px">${txt || '-'}</b>${miss ? ` <span style="color:#b45309;font-size:12px">· 단가 없는 자재 ${miss}건 제외</span>` : ''}`;
 }
 function hqPRRender(){
   const r = HQ_PR, isNew = !HQ.pr.some(x => String(x.id) === String(r.id)), editable = r.status === '요청' || r.status === '반려';
@@ -13256,14 +13275,13 @@ function hqPRRender(){
       ${hqFld('필요일 (입고 희망)','Cần trước', `<input type="date" ${ro} value="${hqE(r.needBy||'')}" oninput="HQ_PR.needBy=this.value" style="${HQ_IN}">`)}
       ${hqFld('근거 PO','PO căn cứ', `<input ${ro} value="${hqE(r.basis||'')}" oninput="HQ_PR.basis=this.value" style="${HQ_IN}">`)}
       ${hqFld('요청 사유','Lý do', `<input ${ro} value="${hqE(r.reason||'')}" oninput="HQ_PR.reason=this.value" style="${HQ_IN}">`)}
-      ${hqFld('통화', '', `<select ${ro} onchange="HQ_PR.cur=this.value;hqPRTot()" style="${HQ_IN}">${['USD','KRW','VND','CNY','JPY'].map(c => `<option ${(r.cur||'USD')===c?'selected':''}>${c}</option>`).join('')}</select>`)}
     </div>
-    <div class="tw" style="margin-top:12px"><table><thead><tr><th style="min-width:340px">자재 *</th><th>수량 *</th><th>단위</th><th>공급사</th><th>단가</th><th style="text-align:right">금액</th><th>비고</th><th></th></tr></thead><tbody>${
+    <div class="tw" style="margin-top:12px"><table><thead><tr><th style="min-width:340px">자재 *</th><th>수량 *</th><th>단위</th><th>공급사</th><th>단가 · 통화</th><th style="text-align:right">금액</th><th>비고</th><th></th></tr></thead><tbody>${
       (r.lines||[]).map((l, i) => `<tr>
         <td><input list="hq-mats" ${ro} value="${hqE(l.code ? l.code + (l.name ? ' — ' + l.name : '') : '')}" onchange="hqPRLine(${i},'item',this.value)" style="${HQ_IN}" title="${hqE(l.name||'')}">${l.name ? `<div style="font-size:12px;color:#33404D;margin-top:3px;line-height:1.35;white-space:normal;word-break:break-word">${hqE(l.name)}</div>` : ''}</td>
         <td><input type="number" ${ro} value="${hqE(l.qty)}" oninput="HQ_PR.lines[${i}].qty=this.value;hqPRTot()" style="${HQ_IN};width:100px"></td><td>${hqE(l.unit||'')}</td>
         <td><input list="hq-sups" ${ro} value="${hqE(l.supplier||'')}" oninput="HQ_PR.lines[${i}].supplier=this.value" onchange="hqPRSupPrice(${i})" style="${HQ_IN};width:140px"></td>
-        <td><input type="number" step="0.0001" ${ro} value="${hqE(l.price ?? '')}" oninput="HQ_PR.lines[${i}].price=this.value;hqPRTot()" style="${HQ_IN};width:100px" placeholder="단가">${l.priceAuto ? '<div style="font-size:10.5px;color:#8A95A3">최근 구매가</div>' : ''}</td>
+        <td style="white-space:nowrap"><input type="number" step="0.0001" ${ro} value="${hqE(l.price ?? '')}" oninput="HQ_PR.lines[${i}].price=this.value;HQ_PR.lines[${i}].priceAuto=false;hqPRTot()" style="${HQ_IN};width:100px" placeholder="단가"> <select ${ro} onchange="HQ_PR.lines[${i}].cur=this.value;hqPRTot()" style="${HQ_IN};width:72px">${HQ_PR_CURS.map(c => `<option ${hqPRCur(l)===c?'selected':''}>${c}</option>`).join('')}</select>${l.priceAuto ? '<div style="font-size:10.5px;color:#8A95A3">최근 구매가</div>' : ''}</td>
         <td id="hqpr-amt-${i}" style="text-align:right;white-space:nowrap;font-weight:600"></td>
         <td><input ${ro} value="${hqE(l.note||'')}" oninput="HQ_PR.lines[${i}].note=this.value" style="${HQ_IN}"></td>
         <td>${editable ? `<button onclick="HQ_PR.lines.splice(${i},1);hqPRRender()" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
@@ -13323,14 +13341,13 @@ function hqPRToPO(){
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px">
       ${hqFld('발주일','Ngày đặt', `<input id="hqpo-date" type="date" value="${hqToday()}" style="${HQ_IN}">`)}
       ${hqFld('입고 예정일','Dự kiến nhập', `<input id="hqpo-due" type="date" value="${due}" style="${HQ_IN}">`)}
-      ${hqFld('통화','Tiền tệ', `<select id="hqpo-cur" style="${HQ_IN}">${['USD','KRW','VND','CNY','JPY'].map(c => `<option ${(r.cur||'USD')===c?'selected':''}>${c}</option>`).join('')}</select>`)}
       ${hqFld('인도조건','Incoterm', `<input id="hqpo-inc" placeholder="FOB / CIF / DAP…" style="${HQ_IN}">`)}
     </div>
-    <div class="tw"><table><thead><tr><th>공급사</th><th>발주번호</th><th>자재</th><th style="text-align:right">수량</th><th>단가</th></tr></thead><tbody>${
+    <div class="tw"><table><thead><tr><th>공급사</th><th>발주번호</th><th>자재</th><th style="text-align:right">수량</th><th>단가 · 통화</th></tr></thead><tbody>${
       r.lines.map((l, i) => { const s = l.supplier || '(공급사 미정)', si = sups.indexOf(s);
         return `<tr><td>${hqE(s)}</td><td>${r.lines.findIndex(x => (x.supplier || '(공급사 미정)') === s) === i ? `<input class="hqpo-no" data-s="${si}" value="${hqE(hqPONos(sups.length)[si])}" style="${HQ_IN};width:150px">` : '<span style="color:#8A95A3">↑ 같은 발주</span>'}</td>
           <td>${hqE(l.name)} <span style="font-size:11px;color:#8A95A3">${hqE(l.code)}</span></td><td style="text-align:right">${hqN(l.qty)} ${hqE(l.unit||'')}</td>
-          <td><input class="hqpo-price" data-i="${i}" type="number" step="0.0001" value="${hqE(l.price ?? '')}" style="${HQ_IN};width:100px"></td></tr>`; }).join('')}</tbody></table></div>
+          <td style="white-space:nowrap"><input class="hqpo-price" data-i="${i}" type="number" step="0.0001" value="${hqE(l.price ?? '')}" style="${HQ_IN};width:100px"> <select class="hqpo-lcur" data-i="${i}" style="${HQ_IN};width:72px">${HQ_PR_CURS.map(c => `<option ${hqPRCur(l)===c?'selected':''}>${c}</option>`).join('')}</select></td></tr>`; }).join('')}</tbody></table></div>
     <div id="hqpo-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
     <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px"><button onclick="hqClose('hq-po')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button>
       <button id="hqpo-go" onclick="hqPRToPOGo()" style="padding:7px 16px;border-radius:8px;border:1px solid #166534;background:#166534;color:#fff;font-weight:600;cursor:pointer">발주 등록</button></div>`, 860);
@@ -13340,14 +13357,14 @@ async function hqPRToPOGo(){
   const sups = [...new Set(r.lines.map(l => l.supplier || '(공급사 미정)'))];
   const nos = {}; document.querySelectorAll('#hq-po .hqpo-no').forEach(i => nos[sups[+i.dataset.s]] = i.value.trim());
   if (Object.values(nos).some(v => !v)) { err.textContent = '발주번호를 넣어주세요.'; return; }
-  const date = document.getElementById('hqpo-date').value, due = document.getElementById('hqpo-due').value, cur = document.getElementById('hqpo-cur').value, inc = document.getElementById('hqpo-inc').value.trim();
-  const prices = {}; document.querySelectorAll('#hq-po .hqpo-price').forEach(i => prices[+i.dataset.i] = i.value);
+  const date = document.getElementById('hqpo-date').value, due = document.getElementById('hqpo-due').value, inc = document.getElementById('hqpo-inc').value.trim();
+  const prices = {}, curs = {}; document.querySelectorAll('#hq-po .hqpo-price').forEach(i => prices[+i.dataset.i] = i.value); document.querySelectorAll('#hq-po .hqpo-lcur').forEach(i => curs[+i.dataset.i] = i.value);
   btn.disabled = true; btn.textContent = '⏳ 등록 중…';
   const made = [];
   for (let i = 0; i < r.lines.length; i++) {
     const l = r.lines[i], s = l.supplier || '(공급사 미정)';
     const rec = {id: String(Date.now()) + '_' + i, poNo: nos[s], supplier: l.supplier || '', code: l.code, name: l.name, cat: l.cat, unit: l.unit, qty: +l.qty, orderDate: date, dueDate: due,
-      note: `구매요청 ${r.prNo}${l.note ? ' · ' + l.note : ''}`, price: prices[i] === '' ? '' : +prices[i], cur, incoterm: inc, prId: r.id, prNo: r.prNo, stage: '발주',
+      note: `구매요청 ${r.prNo}${l.note ? ' · ' + l.note : ''}`, price: prices[i] === '' ? '' : +prices[i], cur: curs[i] || hqPRCur(l), incoterm: inc, prId: r.id, prNo: r.prNo, stage: '발주',
       stageLog: [{stage: '발주', at: new Date().toISOString(), by: CURRENT_USER||''}], createdBy: CURRENT_USER||'', createdAt: new Date().toISOString()};
     const res = await retrySafe(() => api('saveSupplyPO', {rec}));
     if (!res || !res.ok) { btn.disabled = false; btn.textContent = '발주 등록'; err.textContent = `${l.name} 발주 저장 실패: ` + ((res && res.error) || '') + (made.length ? ` (앞의 ${made.length}건은 저장됨)` : ''); return; }
