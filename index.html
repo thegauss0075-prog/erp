@@ -523,7 +523,12 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <button class="tb" id="tb-ship" onclick="go('ship')">🚚 출고<span class="vi">Xuất hàng</span></button>
   <button class="tb" id="tb-shipstat" onclick="go('shipstat')">📊 출고 실적<span class="vi">Kết quả xuất</span></button>
   <button class="tb" id="tb-cost" onclick="go('cost')" style="display:none">💰 제조원가<span class="vi">Giá thành SX</span></button>
-  <button class="tb" id="tb-hq" onclick="go('hq')" style="display:none">🏢 본사 업무</button>
+  <!-- 🏢 본사 업무: 부서별로 따로 된 상단 탭 (2026-11-09) — 모두 같은 화면(tab-hq)을 부서만 바꿔 연다 -->
+  <button class="tb tb-hq" id="tb-hq-sales" onclick="hqTop('sales')" style="display:none">💼 영업<span class="vi">본사</span></button>
+  <button class="tb tb-hq" id="tb-hq-buy" onclick="hqTop('buy')" style="display:none">🛒 구매<span class="vi">본사</span></button>
+  <button class="tb tb-hq" id="tb-hq-qa" onclick="hqTop('qa')" style="display:none">🔬 품질<span class="vi">본사</span></button>
+  <button class="tb tb-hq" id="tb-hq-rep" onclick="hqTop('rep')" style="display:none">📑 출력물<span class="vi">본사</span></button>
+  <button class="tb tb-hq" id="tb-hq-users" onclick="hqTop('users')" style="display:none">👥 사용자<span class="vi">본사</span></button>
 </div>
 
 <!-- DASHBOARD -->
@@ -1687,10 +1692,10 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 <!-- 🏢 본사 업무 (2026-11-06): 고객 PO 접수 → 자재 소요 → 구매요청·승인 → 공급사 발주·선적 -->
 <div id="tab-hq" class="sec">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-    <h2 style="margin:0;font-size:18px">🏢 본사 업무</h2>
+    <h2 id="hq-title" style="margin:0;font-size:18px">🏢 본사 업무</h2>
     <div style="display:flex;gap:6px"><button id="hq-mypw" onclick="hqPwChange(false)" style="display:none;padding:7px 12px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer" title="내 비밀번호 변경">🔑</button><button onclick="renderHQ({reload:true})" style="padding:7px 14px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">🔄 새로고침</button></div>
   </div>
-  <div id="hq-depts" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"></div>
+  <div id="hq-depts" style="display:none"></div>
   <div id="hq-tabs" class="period-btns" style="margin-bottom:12px;flex-wrap:wrap"></div>
   <div id="hq-body"></div>
 </div>
@@ -9441,9 +9446,10 @@ function applyCostTabUI() {
   if (!show && sec && sec.classList.contains('on')) go('dashboard');
   else if (show && sec && sec.classList.contains('on')) renderCostBody();
   // 🏢 본사 업무 탭은 마스터 화면에서만 보인다
-  const hb = document.getElementById('tb-hq'), hs = document.getElementById('tab-hq');
+  const hs = document.getElementById('tab-hq');
   const hqOK = isMaster || USER_ROLE === 'hq';
-  if (hb) hb.style.display = hqOK ? '' : 'none';
+  const vis = hqOK ? hqDeptsVisible().map(x => x.k) : [];
+  ['sales','buy','qa','rep','users'].forEach(k => { const b = document.getElementById('tb-hq-' + k); if (b) b.style.display = vis.includes(k) ? '' : 'none'; });
   const kb = document.getElementById('hq-mypw'); if (kb) kb.style.display = USER_ROLE === 'hq' ? '' : 'none';
   if (!hqOK && hs && hs.classList.contains('on')) go('dashboard');
 }
@@ -9757,9 +9763,9 @@ function applyRoleUI() {
     if (USER_ROLE === 'hq') {
       // 본사 개인 계정: 법인 현황(재고·생산·출고 등) 권한이 없으면 그 탭들을 숨기고 본사 업무만 보이게
       const vnOK = hqCan('vn', 'R');
-      document.querySelectorAll('.tb').forEach(b => { if (b.id === 'tb-hq' || b.id === 'tb-cost') return; if (!vnOK) b.style.display = 'none'; });
+      document.querySelectorAll('.tb').forEach(b => { if (b.classList.contains('tb-hq') || b.id === 'tb-cost') return; if (!vnOK) b.style.display = 'none'; });
       try { applyCostTabUI(); } catch (e) {}
-      if (!vnOK) setTimeout(() => { try { go('hq'); } catch (e) {} }, 0);
+      if (!vnOK) setTimeout(() => { try { const v = hqDeptsVisible(); hqTop(v.length ? v[0].k : 'rep'); } catch (e) {} }, 0);
       if (HQ_ME && HQ_ME.mustChange) setTimeout(() => hqPwChange(true), 300);
     }
     if (badge) badge.style.background = '#f0fdf4';
@@ -13098,12 +13104,23 @@ const HQ_DEPTS = [
   {k:'users', l:'👥 사용자', vi:'', col:'#0f172a', tabs:[['users','👥 사용자·권한']]}];
 // 이 사람이 볼 수 있는 부서 버튼 (본사 개인 계정은 권한이 '없음'인 부서를 숨김, 사용자 관리는 마스터만)
 function hqDeptsVisible(){ return HQ_DEPTS.filter(x => x.k === 'users' ? isMaster : x.k === 'rep' ? true : hqCan(x.k, 'R')); }
+// 상단 부서 탭에서 연다: 화면은 하나(tab-hq), 부서만 바꾸고 그 탭에 불을 켠다
+function hqTop(k){
+  const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0];
+  if (HQ.dept !== d.k) { HQ.dept = d.k; HQ.tab = d.tabs[0][0]; HQ.q = ''; HQ.st = ''; }
+  try { localStorage.setItem('hq_dept', d.k); } catch(e) {}
+  go('hq');
+  document.querySelectorAll('.tb').forEach(b => b.classList.remove('on'));
+  const b = document.getElementById('tb-hq-' + d.k); if (b) b.classList.add('on');
+}
 function hqSetDept(k){ const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0]; HQ.dept = d.k; HQ.tab = d.tabs[0][0]; HQ.q = ''; HQ.st = ''; try { localStorage.setItem('hq_dept', d.k); } catch(e) {} renderHQ(); }
 function hqNav(){
   const VD = hqDeptsVisible(); if (!VD.some(x => x.k === HQ.dept) && VD.length) { HQ.dept = VD[0].k; HQ.tab = VD[0].tabs[0][0]; }
   const d = VD.find(x => x.k === HQ.dept) || VD[0] || HQ_DEPTS[0];
   const cnt = {rep: 0, sales: HQ.cpo.filter(c => (c.status || '접수') === '접수').length + (HQS.quote||[]).filter(q => q.status === '제출').length, buy: HQ.pr.filter(p => p.status === '요청' || p.status === '승인').length, qa: 0};
   const de = document.getElementById('hq-depts'), te = document.getElementById('hq-tabs'); if (!de || !te) return;
+  const ti = document.getElementById('hq-title'); if (ti) ti.textContent = d.l + ' · 본사';
+  document.querySelectorAll('.tb-hq').forEach(b => b.classList.toggle('on', b.id === 'tb-hq-' + d.k && document.getElementById('tab-hq').classList.contains('on')));
   de.innerHTML = VD.map(x => { const on = x.k === d.k;
     return `<button onclick="hqSetDept('${x.k}')" style="padding:9px 18px;border-radius:10px;border:2px solid ${x.col};background:${on ? x.col : '#fff'};color:${on ? '#fff' : x.col};font-weight:700;font-size:14px;cursor:pointer">${x.l} ${cnt[x.k] ? ` <span style="background:${on ? '#fff' : x.col};color:${on ? x.col : '#fff'};border-radius:999px;padding:0 7px;font-size:11.5px;margin-left:2px">${cnt[x.k]}</span>` : ''}</button>`; }).join('');
   te.innerHTML = d.tabs.length > 1 ? d.tabs.map(([k, l]) => `<button class="period-btn ${HQ.tab === k ? 'on' : ''}" onclick="hqSetTab('${k}')">${l}</button>`).join('') : '';
