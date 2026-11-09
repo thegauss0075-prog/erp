@@ -13246,9 +13246,9 @@ function hqPRRender(){
       ${hqFld('근거 PO','PO căn cứ', `<input ${ro} value="${hqE(r.basis||'')}" oninput="HQ_PR.basis=this.value" style="${HQ_IN}">`)}
       ${hqFld('요청 사유','Lý do', `<input ${ro} value="${hqE(r.reason||'')}" oninput="HQ_PR.reason=this.value" style="${HQ_IN}">`)}
     </div>
-    <div class="tw" style="margin-top:12px"><table><thead><tr><th style="min-width:230px">자재 *</th><th>수량 *</th><th>단위</th><th>공급사</th><th>비고</th><th></th></tr></thead><tbody>${
+    <div class="tw" style="margin-top:12px"><table><thead><tr><th style="min-width:340px">자재 *</th><th>수량 *</th><th>단위</th><th>공급사</th><th>비고</th><th></th></tr></thead><tbody>${
       (r.lines||[]).map((l, i) => `<tr>
-        <td><input list="hq-mats" ${ro} value="${hqE(l.code ? l.code + (l.name ? ' — ' + l.name : '') : '')}" onchange="hqPRLine(${i},'item',this.value)" style="${HQ_IN}"></td>
+        <td><input list="hq-mats" ${ro} value="${hqE(l.code ? l.code + (l.name ? ' — ' + l.name : '') : '')}" onchange="hqPRLine(${i},'item',this.value)" style="${HQ_IN}" title="${hqE(l.name||'')}">${l.name ? `<div style="font-size:12px;color:#33404D;margin-top:3px;line-height:1.35;white-space:normal;word-break:break-word">${hqE(l.name)}</div>` : ''}</td>
         <td><input type="number" ${ro} value="${hqE(l.qty)}" oninput="HQ_PR.lines[${i}].qty=this.value" style="${HQ_IN};width:100px"></td><td>${hqE(l.unit||'')}</td>
         <td><input list="hq-sups" ${ro} value="${hqE(l.supplier||'')}" oninput="HQ_PR.lines[${i}].supplier=this.value" style="${HQ_IN};width:140px"></td>
         <td><input ${ro} value="${hqE(l.note||'')}" oninput="HQ_PR.lines[${i}].note=this.value" style="${HQ_IN}"></td>
@@ -13265,7 +13265,7 @@ function hqPRRender(){
         ${!isNew && r.status === '요청' && isMaster ? `<button onclick="hqPRDecide('반려')" style="padding:7px 14px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-weight:600;cursor:pointer">반려</button><button onclick="hqPRDecide('승인')" style="padding:7px 16px;border-radius:8px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-weight:600;cursor:pointer">✔ 승인</button>` : ''}
         ${!isNew && r.status === '요청' && !isMaster ? '<span style="font-size:12px;color:#8A95A3;align-self:center">승인은 마스터 로그인에서 합니다</span>' : ''}
         ${r.status === '승인' ? `<button onclick="hqPRToPO()" style="padding:7px 16px;border-radius:8px;border:1px solid #166534;background:#166534;color:#fff;font-weight:600;cursor:pointer">🚢 공급사 발주로 전환</button>` : ''}
-      </div></div>`, 960);
+      </div></div>`, 1150);
 }
 function hqPRLine(i, k, v){ const l = HQ_PR.lines[i]; const code = String(v).split(' — ')[0].trim(), it = allRows().find(x => x.code === code);
   if (it) { l.code = it.code; l.name = it.name; l.cat = it.cat; l.unit = it.unit; } else { l.code = code; l.name = ''; } setTimeout(hqPRRender, 0); }
