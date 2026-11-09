@@ -14658,18 +14658,31 @@ let CAP = {target: {}, open: null, q: ''};
 function capStock(code, cat){ const arr = {TP:DB.tp, BTP:DB.btp, KR:DB.kr, VN:DB.vn, VTTH:DB.vtth}[String(cat||'').toUpperCase()]; const it = (arr||[]).find(x => x.code === code); return it ? Math.max(0, +it.cur || 0) : 0; }
 function capItem(code, cat){ const arr = {TP:DB.tp, BTP:DB.btp, KR:DB.kr, VN:DB.vn, VTTH:DB.vtth}[String(cat||'').toUpperCase()]; return (arr||[]).find(x => x.code === code) || {}; }
 function capBom(code, cat){ const isB = String(cat).toUpperCase() === 'BTP'; return (BOM||[]).filter(b => b.productCode === code && (isB ? String(b.productCat||'').toUpperCase() === 'BTP' : String(b.productCat||'').toUpperCase() !== 'BTP') && +b.qtyPerUnit > 0); }
+// 생산 중 반제품 (2026-11-09): 반제품 작업지시에 실적은 입력됐지만 아직 출하검사 합격(=반제품 입고) 전인 수량.
+//   완제품 작업지시를 낼 때 곧 들어올 반제품으로 본다. 작업지시별 (실적 − 출하검사 합격 수량).
+function btpPending(code){
+  let pend = 0; const wos = [];
+  for (const w of (WO||[])) {
+    if (w.code !== code || String(w.cat||'').toUpperCase() !== 'BTP' || w.status === '보류') continue;
+    const passed = (QC||[]).filter(q => q.inspType === '출하검사' && q.result === '합격' && String(q.workOrderId) === String(w.id)).reduce((a, q) => a + (+q.totalQty||0), 0);
+    const p = Math.max(0, (+w.producedQty||0) - passed);
+    if (p > 0) { pend += p; wos.push({orderNo: w.orderNo, p}); }
+  }
+  return {pend, wos};
+}
 // 반제품: 원자재로 더 만들 수 있는 수량
-function capBTPMake(code){ const bom = capBom(code, 'BTP'); if (!bom.length) return {make: 0, mats: []};
-  const mats = bom.map(b => { const st = capStock(b.materialCode, b.materialCat); return {b, st, can: Math.floor(st / (+b.qtyPerUnit) + 1e-9)}; });
+//   생산 중 반제품의 원자재는 출하검사 합격 때 자동 차감되므로, 그만큼은 미리 빼고 계산한다 (이중 계산 방지)
+function capBTPMake(code, pend){ const bom = capBom(code, 'BTP'); if (!bom.length) return {make: 0, mats: []};
+  const mats = bom.map(b => { const st = Math.max(0, capStock(b.materialCode, b.materialCat) - (+b.qtyPerUnit) * (pend||0)); return {b, st, can: Math.floor(st / (+b.qtyPerUnit) + 1e-9)}; });
   return {make: Math.min(...mats.map(m => m.can)), mats}; }
 function capCalc(code, cat){
   cat = String(cat||'TP').toUpperCase();
   const bom = capBom(code, cat); if (!bom.length) return null;
   const mats = bom.map(b => {
     const mc = String(b.materialCat||'').toUpperCase(), per = +b.qtyPerUnit;
-    let st = capStock(b.materialCode, mc), extra = 0, sub = null;
-    if (mc === 'BTP' && cat === 'TP') { sub = capBTPMake(b.materialCode); extra = sub.make; }
-    return {b, mc, per, st, extra, sub, can: Math.floor((st + extra) / per + 1e-9)};
+    let st = capStock(b.materialCode, mc), extra = 0, sub = null, pend = 0, pendWos = [];
+    if (mc === 'BTP' && cat === 'TP') { const pp = btpPending(b.materialCode); pend = pp.pend; pendWos = pp.wos; sub = capBTPMake(b.materialCode, pend); extra = sub.make; }
+    return {b, mc, per, st, extra, sub, pend, pendWos, can: Math.floor((st + pend + extra) / per + 1e-9)};
   });
   const can = Math.min(...mats.map(m => m.can));
   return {code, cat, mats, can, neck: mats.filter(m => m.can === can)};
@@ -14691,7 +14704,7 @@ function woCapCheck(code, cat, plan, wo){
   const c = capCalc(code, cat); if (!c) return null;
   const mats = c.mats.map(m => {
     const issued = wo ? (WO_MAT||[]).filter(x => String(x.workOrderId) === String(wo.id) && x.code === m.b.materialCode).reduce((a, x) => a + (+x.qty||0), 0) : 0;
-    const have = m.st + (m.extra||0) + issued, need = m.per * plan;
+    const have = m.st + (m.pend||0) + (m.extra||0) + issued, need = m.per * plan;
     return {...m, issued, have, need, short: Math.max(0, Math.round((need - have)*1000)/1000), can2: Math.floor(have / m.per + 1e-9), resv: woCapOpenReserve(m.b.materialCode, wo && wo.id)};
   });
   const can = Math.min(...mats.map(m => m.can2));
@@ -14702,7 +14715,7 @@ function woCapEnsure(){
   // BOM·투입자재를 한 번 불러오고 1분 동안은 다시 부르지 않는다 (입력할 때마다 서버 호출 방지)
   if (_woCapP && Date.now() - _woCapAt < 60000) return _woCapP;
   _woCapAt = Date.now();
-  _woCapP = Promise.all([(BOM && BOM.length) ? null : loadBOM(), loadWOMaterials()]).catch(() => {});
+  _woCapP = Promise.all([(BOM && BOM.length) ? null : loadBOM(), loadWOMaterials(), (QC && QC.length) ? null : loadQC()]).catch(() => {});
   return _woCapP;
 }
 async function woCapHint(mode){
@@ -14718,6 +14731,7 @@ async function woCapHint(mode){
   if (!r) { el.innerHTML = '<span style="color:#8A95A3">BOM 없음 — 자재 확인 불가 / Chưa có BOM</span>'; return; }
   const neck = r.neck.map(m => esc(m.b.materialName || m.b.materialCode)).join(', ');
   let h = `<div style="color:#185FA5">🏭 생산 가능 <b title="클릭하면 계획수량에 입력" style="cursor:pointer;text-decoration:underline" onclick="const i=document.getElementById('${mode === 'edit' ? 'wo-edit-plan-qty' : 'wo-plan-qty'}');i.value=${r.can};woCapHint('${mode}')">${n(r.can)}</b>개 <span style="color:#5D6977">(병목: ${neck})</span>${wo ? ' <span style="color:#8A95A3">· 이미 투입분 포함</span>' : ''}</div>`;
+  r.mats.filter(m => m.pend > 0).forEach(m => { h += `<div style="color:#7c3aed;margin-top:2px">🔄 생산 중 반제품 포함: ${esc(m.b.materialName || m.b.materialCode)} ${n(m.pend)}개 <span style="color:#8A95A3">(실적 입력 · 출하검사 전 — ${m.pendWos.map(w => esc(w.orderNo) + ' ' + n(w.p)).join(', ')})</span></div>`; });
   if (plan > 0 && r.short.length) h += `<div style="color:#b91c1c;font-weight:600;margin-top:2px">⚠️ 자재 부족 / Thiếu NVL: ${r.short.map(m => `${esc(m.b.materialName || m.b.materialCode)} ${n(m.short)} 부족`).join(', ')}</div>`;
   else if (plan > 0 && r.resvShort.length) h += `<div style="color:#b45309;margin-top:2px">ℹ️ 재고는 있지만 다른 미완료 작업지시도 쓸 예정: ${r.resvShort.map(m => `${esc(m.b.materialName || m.b.materialCode)} (예정 ${n(m.resv)})`).join(', ')}</div>`;
   else if (plan > 0) h += `<div style="color:#166534;margin-top:2px">✅ 자재 충분 / Đủ NVL</div>`;
@@ -14754,11 +14768,11 @@ function renderCapacity(){
     let detail = '';
     if (open) {
       const line = (m, lvl) => {
-        const need = tgt ? tgt * m.per : 0, have = m.st + (m.extra || 0), short = tgt ? Math.max(0, need - have) : 0;
+        const need = tgt ? tgt * m.per : 0, have = m.st + (m.pend || 0) + (m.extra || 0), short = tgt ? Math.max(0, need - have) : 0;
         return `<tr style="${c.neck.includes(m) && lvl === 0 ? 'background:#FEF2F2' : ''}">
           <td style="padding:4px 6px 4px ${6 + lvl*18}px;white-space:normal"><span class="badge ${CB[m.mc]||''}">${CL[m.mc]||m.mc}</span> ${esc(m.b.materialName||'')} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${esc(m.b.materialCode)}</span></td>
           <td style="padding:4px 6px;text-align:right">${n(m.per)}</td>
-          <td style="padding:4px 6px;text-align:right">${n(m.st)}${m.extra ? `<div style="font-size:11px;color:#185FA5">+ 자재로 ${n(m.extra)}개 더</div>` : ''}</td>
+          <td style="padding:4px 6px;text-align:right">${n(m.st)}${m.pend ? `<div style="font-size:11px;color:#7c3aed">+ 생산 중 ${n(m.pend)}개</div>` : ''}${m.extra ? `<div style="font-size:11px;color:#185FA5">+ 자재로 ${n(m.extra)}개 더</div>` : ''}</td>
           <td style="padding:4px 6px;text-align:right;font-weight:700;color:${c.neck.includes(m) && lvl === 0 ? '#b91c1c' : '#18212B'}">${lvl === 0 ? n(m.can) : n(Math.floor(m.st / m.per + 1e-9))}</td>
           ${tgt ? `<td style="padding:4px 6px;text-align:right">${n(need)}</td><td style="padding:4px 6px;text-align:right;font-weight:700;color:${short ? '#b91c1c' : '#166534'}">${short ? n(short) : '충분'}</td>` : ''}</tr>` +
           (m.sub && m.sub.mats.length ? m.sub.mats.map(sm => {
