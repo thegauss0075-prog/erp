@@ -13107,7 +13107,17 @@ async function hqPwSave(forced){
 async function loadHQ(force){
   if (!(API_URL || IS_GAS)) return;
   if (HQ.loaded && !force) return;
-  const [a, b] = await Promise.all([api('getHQCPO', {}), api('getHQPR', {}), loadSupplyPO(true).catch(()=>{}), (BOM && BOM.length) ? null : loadBOM().catch(()=>{}), loadMatCfg().catch(()=>{}), loadWOMaterials().catch(()=>{}), (QC && QC.length) ? null : loadQC().catch(()=>{})]);
+  // ✅ [2026-11-09 속도] 본사 데이터는 서버 1회 호출(getHQBundle)로 받는다. BOM·투입자재·품질검사는 비어 있을 때만 같이 받는다.
+  const extra = [(BOM && BOM.length) ? null : loadBOM().catch(()=>{}), (WO_MAT && WO_MAT.length) ? null : loadWOMaterials().catch(()=>{}), (QC && QC.length) ? null : loadQC().catch(()=>{})];
+  const bd = await api('getHQBundle', {});
+  if (bd && bd.ok) {
+    HQ.cpo = bd.cpo || []; HQ.pr = bd.pr || [];
+    ['cust','quote','sale','pay','sup','purch','ppay'].forEach(k => { HQS[k] = (bd.stores || {})[k] || []; }); HQS.loaded = true;
+    MATCFG = (bd.stores || {}).matcfg || []; SPO = bd.spo || []; _spoLoaded = true; _spoTried = true;
+    await Promise.all(extra); HQ.err = ''; HQ.loaded = true; return;
+  }
+  // 서버가 옛 버전이면 예전 방식
+  const [a, b] = await Promise.all([api('getHQCPO', {}), api('getHQPR', {}), loadSupplyPO(true).catch(()=>{}), loadMatCfg().catch(()=>{}), ...extra]);
   if (a && a.ok) HQ.cpo = a.data || [];
   try { await loadHQS(true); } catch(e) {}
   if (b && b.ok) HQ.pr = b.data || [];
