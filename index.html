@@ -10894,7 +10894,8 @@ function openTrace(code, catHint) {
     </div>`;
 
   // ── LOT별 입고 집계
-  const adjTxs = txs.filter(t => t.type === 'adjust');
+  // ✅ 'sync-fix'(재고진단 복구)도 재고를 직접 바꾼 조정이다 — 빠지면 진단이 틀린 '불일치'를 띄운다 (2026-11-09 30KW OUT L3 BTP 사례)
+  const adjTxs = txs.filter(t => t.type === 'adjust' || t.type === 'sync-fix');
   const lotMap = {};
   // ✅ '__nolot__'은 LOT 자동분배 로직에서 "LOT 미지정 재고"를 나타낼 때 쓰는 내부
   //    표기다 — 화면엔 빈 LOT과 똑같이 "(LOT 없음)"으로 묶어서 보여준다(원래 코드도
@@ -10937,7 +10938,7 @@ function openTrace(code, catHint) {
   const allSameCodeTxs = txLog.filter(t => t.code === code);
   const codeOnlyIn  = allSameCodeTxs.filter(t=>['in','tp-in'].includes(t.type)).reduce((s,t)=>s+(+t.qty||0),0);
   const codeOnlyOut = allSameCodeTxs.filter(t=>['omt','otp'].includes(t.type)).reduce((s,t)=>s+(+t.qty||0),0);
-  const codeOnlyAdj = allSameCodeTxs.filter(t=>t.type==='adjust').reduce((s,t)=>s+(+t.qty||0),0);
+  const codeOnlyAdj = allSameCodeTxs.filter(t=>t.type==='adjust'||t.type==='sync-fix').reduce((s,t)=>s+(+t.qty||0),0);
   const codeOnlyTotal = codeOnlyIn - codeOnlyOut + codeOnlyAdj;
   const storedCur = +item.cur || 0;
   const mismatchCatOk = Math.abs(codeAndCatTotal - storedCur) > 0.001;
