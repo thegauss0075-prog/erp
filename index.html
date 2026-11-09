@@ -9762,10 +9762,20 @@ function applyRoleUI() {
     setSyncBadge('ok', USER_ROLE === 'hq' ? '👤 본사 · ' + ((HQ_ME && HQ_ME.name) || CURRENT_USER || '') : '👁️ 열람 모드 (한국)');
     if (USER_ROLE === 'hq') {
       // 본사 개인 계정: 법인 현황(재고·생산·출고 등) 권한이 없으면 그 탭들을 숨기고 본사 업무만 보이게
-      const vnOK = hqCan('vn', 'R');
-      document.querySelectorAll('.tb').forEach(b => { if (b.classList.contains('tb-hq') || b.id === 'tb-cost') return; if (!vnOK) b.style.display = 'none'; });
+      // ✅ [2026-11-09] 본사 계정이 보는 베트남 법인 화면: 법인 현황 권한 → 재고 현황·발주관리·출고·출고 실적만,
+      //    본사 품질 권한 → 베트남 품질검사(읽기). 대시보드·입출고·작업지시·이력·불량은 보이지 않는다.
+      const allow = new Set();
+      if (hqCan('vn', 'R')) ['inv', 'po', 'ship', 'shipstat'].forEach(x => allow.add(x));
+      if (hqCan('qa', 'R')) allow.add('qc');
+      document.querySelectorAll('.tb').forEach(b => {
+        if (b.classList.contains('tb-hq') || b.id === 'tb-cost') return;
+        const m = /go\('([^']+)'\)/.exec(b.getAttribute('onclick') || ''); b.style.display = (m && allow.has(m[1])) ? '' : 'none';
+      });
       try { applyCostTabUI(); } catch (e) {}
-      if (!vnOK) setTimeout(() => { try { const v = hqDeptsVisible(); hqTop(v.length ? v[0].k : 'rep'); } catch (e) {} }, 0);
+      // 처음 화면(대시보드)은 숨겼으니 볼 수 있는 첫 화면으로 옮긴다
+      setTimeout(() => { try { const cur = document.querySelector('.sec.on'); const curId = cur ? cur.id.replace('tab-', '') : '';
+        if (curId === 'hq' || allow.has(curId) || (curId === 'cost' && hqCan('cost', 'R'))) return;
+        const first = ['inv', 'po', 'ship', 'shipstat', 'qc'].find(x => allow.has(x)); if (first) go(first); else { const v = hqDeptsVisible(); hqTop(v.length ? v[0].k : 'rep'); } } catch (e) {} }, 0);
       if (HQ_ME && HQ_ME.mustChange) setTimeout(() => hqPwChange(true), 300);
     }
     if (badge) badge.style.background = '#f0fdf4';
@@ -12985,10 +12995,10 @@ const HQ_PERM_OPTS = [['','없음'],['R','읽기'],['RW','읽기+수정'],['RWD'
 // 조직도 기준 권한 묶음 (계정 만들 때 고르면 칸이 채워진다)
 const HQ_PERM_PRESETS = {
   '대표이사·부사장': {sales:'R', buy:'R', qa:'R', cost:'R', vn:'R', approve:true},
-  '경영지원': {sales:'RW', buy:'RW', qa:'R', cost:'R', vn:'R'},
+  '경영지원': {sales:'RW', buy:'RW', qa:'R', cost:'', vn:'R'},
   '구매': {sales:'R', buy:'RWD', qa:'R', cost:'', vn:'R'},
-  '기술연구소 수석': {sales:'R', buy:'R', qa:'R', cost:'R', vn:'R'},
-  '제조기술·개발구매·원가': {sales:'R', buy:'RW', qa:'R', cost:'RW', vn:'R'},
+  '기술연구소 수석': {sales:'R', buy:'R', qa:'R', cost:'', vn:'R'},
+  '제조기술·개발구매·원가': {sales:'R', buy:'RW', qa:'R', cost:'', vn:'R'},
   '개발팀': {sales:'', buy:'R', qa:'R', cost:'', vn:'R'},
   '개발품질': {sales:'', buy:'R', qa:'RWD', cost:'', vn:'R'},
   '과제기획': {sales:'R', buy:'R', qa:'R', cost:'', vn:'R'},
@@ -13009,7 +13019,7 @@ function hqUsersView(){
         <td>${!u.active ? '정지' : u.mustChange ? '<span style="color:#b45309">첫 로그인 전</span>' : '사용 중'}</td><td style="font-size:12px">${hqE(String(u.lastLogin||'').slice(0,10))}</td>
         <td style="white-space:nowrap"><button class="edit-btn" title="수정" onclick="hqUserEdit('${hqE(u.email)}')">✏️</button></td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty">아직 계정이 없습니다. ➕ 계정 만들기로 시작하세요.</div>'}
-    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">읽기 = 화면 조회 · 수정 = 입력·수정 · 삭제까지 = 삭제도 가능 · 구매 승인 = 구매요청 승인·반려. 원가 "없음"이면 원가 탭이 보이지 않고, 법인 현황 "없음"이면 재고·생산·출고 화면이 보이지 않습니다.</div>`;
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">읽기 = 화면 조회 · 수정 = 입력·수정 · 삭제까지 = 삭제도 가능 · 구매 승인 = 구매요청 승인·반려. 원가(제조원가)는 대표이사·부사장만 읽기로 둡니다. 법인 현황 "읽기"면 베트남 재고 현황·발주관리·출고·출고 실적만 보이고, 본사 품질 권한이 있으면 베트남 품질검사도 읽기로 보입니다.</div>`;
 }
 function hqUserEdit(email){
   const u = email ? HQU.list.find(x => x.email === email) : null;
