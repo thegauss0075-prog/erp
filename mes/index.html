@@ -80,6 +80,7 @@ body.tv .bar i{background:#38BDF8}
   <span class="sp"></span>
   <span class="chip" id="net"><span class="dot"></span><span id="net-t">연결됨</span></span>
   <span class="chip" id="clock"></span>
+  <span class="chip" id="pwc" style="cursor:pointer;display:none" onclick="pwChange(false)" title="비밀번호 변경 / Đổi mật khẩu">🔑</span>
   <span class="chip" id="who" style="cursor:pointer" onclick="logout()"></span>
 </div>
 <main id="app"><div class="card">⏳ 불러오는 중… / Đang tải…</div></main>
@@ -226,12 +227,65 @@ function loginView(){
     <label class="field"><span>비밀번호 / Mật khẩu</span><input id="l-pw" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></label>
     <button class="btn pri big" style="width:100%" onclick="doLogin()">로그인</button>
     <div id="l-err" style="color:var(--bad);margin-top:8px"></div>
+    <p class="muted" style="margin-top:12px">비밀번호를 잊었으면 관리자(법인장)에게 초기화를 요청하세요.<br><span class="vi">Quên mật khẩu? Hãy nhờ quản trị viên đặt lại.</span></p>
     <p class="muted" style="margin-top:14px"><a href="#" onclick="event.preventDefault();LS.del('mes_sb_url');LS.del('mes_sb_key');location.reload()">서버 연결 다시 설정</a></p></div>`;
 }
 async function doLogin(){
   const r = await sb.auth.signInWithPassword({email: $('l-em').value.trim(), password: $('l-pw').value});
   if (r.error) { $('l-err').textContent = '로그인 실패: ' + r.error.message; return; }
   $('l-pw').value = ''; boot();
+}
+// ── 🔑 비밀번호 변경 (본인) · 관리자 초기화 후에는 첫 로그인 때 반드시 변경
+function pwChange(forced){
+  if (ME.role === 'system') { alert('백업 전용 계정은 여기서 바꾸지 마세요. 바꾸면 Apps Script 속성 MES_BK_PW도 같이 바꿔야 자동 백업이 계속됩니다.'); return; }
+  const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'pw'; document.body.appendChild(ov);
+  ov.innerHTML = `<div class="box" style="max-width:420px"><h2>🔑 비밀번호 변경 <span class="vi">Đổi mật khẩu</span></h2>
+    ${forced ? '<p style="color:var(--bad)">관리자가 비밀번호를 초기화했습니다. 계속하려면 새 비밀번호로 바꾸세요.<br><span class="vi">Mật khẩu đã được đặt lại. Hãy đổi mật khẩu mới.</span></p>' : ''}
+    <p class="muted">${E(ME.email)}</p>
+    <label class="field"><span>${forced ? '임시 비밀번호' : '현재 비밀번호'} / Mật khẩu hiện tại</span><input id="pw-cur" type="password" autocomplete="current-password"></label>
+    <label class="field"><span>새 비밀번호 (8자 이상) / Mật khẩu mới</span><input id="pw-new" type="password" autocomplete="new-password"></label>
+    <label class="field"><span>새 비밀번호 확인 / Nhập lại</span><input id="pw-new2" type="password" autocomplete="new-password" onkeydown="if(event.key==='Enter')pwSave(${forced})"></label>
+    <div id="pw-err" style="color:var(--bad);min-height:1.2em"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">${forced ? '<button class="btn" onclick="sb.auth.signOut().then(()=>location.reload())">로그아웃</button>' : '<button class="btn" onclick="document.getElementById(\'pw\').remove()">닫기</button>'}<button class="btn pri" id="pw-go" onclick="pwSave(${forced})">변경</button></div>
+    <p class="muted" style="margin-top:10px">바꾸면 다른 기기에 로그인된 이 계정은 자동으로 로그아웃됩니다.</p></div>`;
+  $('pw-cur').focus();
+}
+async function pwSave(forced){
+  const cur = $('pw-cur').value, nw = $('pw-new').value, nw2 = $('pw-new2').value, err = t => { $('pw-err').textContent = t; };
+  if (!cur) return err('현재 비밀번호를 넣으세요.');
+  if (nw.length < 8) return err('새 비밀번호는 8자 이상이어야 합니다.');
+  if (nw !== nw2) return err('새 비밀번호 두 칸이 다릅니다.');
+  if (nw === cur) return err('지금과 다른 비밀번호를 쓰세요.');
+  $('pw-go').disabled = true; err('');
+  try {
+    const a = await sb.auth.signInWithPassword({email: ME.email, password: cur});
+    if (a.error) return err(forced ? '임시 비밀번호가 틀립니다.' : '현재 비밀번호가 틀립니다.');
+    const u = await sb.auth.updateUser({password: nw});
+    if (u.error) return err('변경 실패: ' + u.error.message);
+    await sb.rpc('pw_changed');
+    try { await sb.auth.signOut({scope: 'others'}); } catch (e) {}
+    $('pw').remove(); alert('비밀번호를 바꿨습니다. / Đã đổi mật khẩu.');
+    if (forced) boot();
+  } finally { const b = $('pw-go'); if (b) b.disabled = false; }
+}
+// 관리자: 다른 계정 비밀번호를 임시 비밀번호로 초기화 (서버가 만들고 한 번만 보여줌)
+async function pwUsersCard(){
+  const r = await sb.from('app_users').select('email,name,role,must_change_pw').order('email');
+  const el = $('pw-users'); if (!el) return;
+  const list = (r.data || []).filter(u => u.role !== 'system');
+  el.innerHTML = `<table><thead><tr><th>계정</th><th>이름</th><th>권한</th><th>상태</th><th></th></tr></thead><tbody>${list.map(u => `<tr><td>${E(u.email)}</td><td>${E(u.name || '')}</td><td>${E(u.role)}</td><td>${u.must_change_pw ? '<span style="color:var(--warn,#b7791f)">초기화됨 · 변경 대기</span>' : ''}</td>
+    <td>${u.email.toLowerCase() === ME.email.toLowerCase() ? '<button class="btn" style="padding:4px 10px" onclick="pwChange(false)">🔑 내 비밀번호 변경</button>' : `<button class="btn" style="padding:4px 10px" onclick="pwReset('${E(u.email)}')">비밀번호 초기화</button>`}</td></tr>`).join('')}</tbody></table>
+    <p class="muted" style="margin-top:8px">초기화하면 임시 비밀번호가 한 번만 표시됩니다. 작업자에게 직접 전달하세요. 작업자는 다음 로그인 때 새 비밀번호로 바꿔야 합니다. 기록은 수정 이력(audit_log)에 남습니다.<br>백업 전용 계정은 여기 나오지 않습니다. 법인장 계정 비밀번호를 잊으면 Supabase 관리 화면 Users에서 iskim 계정에 재설정 메일을 보내세요.</p>`;
+}
+async function pwReset(email){
+  const why = prompt(`${email} 비밀번호를 초기화합니다.\n사유 (예: 비밀번호 분실)`, '비밀번호 분실'); if (why === null) return;
+  const r = await sb.rpc('admin_reset_password', {target_email: email, reason: why});
+  if (r.error) { alert('초기화 실패: ' + r.error.message); return; }
+  const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+  ov.innerHTML = `<div class="box" style="max-width:420px;text-align:center"><h2>임시 비밀번호</h2><p class="muted">${E(email)}</p>
+    <div style="font:700 30px/1.4 monospace;letter-spacing:3px;margin:12px 0;user-select:all">${E(r.data)}</div>
+    <p class="muted">이 창을 닫으면 다시 볼 수 없습니다. 작업자에게 직접 전달하세요.</p>
+    <button class="btn pri" onclick="this.closest('.ov').remove();pwUsersCard()">닫기</button></div>`;
 }
 async function logout(){ if (!ME.email || !confirm(`${ME.email}에서 로그아웃할까요?`)) return; await sb.auth.signOut(); location.reload(); }
 
@@ -240,12 +294,13 @@ const VIEWS = [['floor','📝 실적 입력'],['machine','⚙️ 설비'],['tv',
 function go(v){ location.hash = v; }
 window.addEventListener('hashchange', () => render());
 function render(){
+  if (ME.mustPw) return;
   const v = (location.hash || '').slice(1) || (ME.role === 'viewer' ? 'tv' : 'floor');
   S.view = v; document.body.classList.toggle('tv', v === 'tv');
   $('nav').innerHTML = VIEWS.filter(([k]) => ME.role === 'viewer' ? ['tv','report','ncr'].includes(k) : k !== 'admin' || ME.role === 'admin').map(([k,l]) => `<a href="#${k}" class="${k === v ? 'on' : ''}">${l}</a>`).join('');
   const app = $('app');
   if (v === 'floor') app.innerHTML = floorView(); else if (v === 'machine') app.innerHTML = machineView(); else if (v === 'tv') app.innerHTML = tvView();
-  else if (v === 'report') { app.innerHTML = reportView(); loadReport().catch(e => { const el = $('rp-body'); if (el) el.innerHTML = '<p style="color:var(--bad)">불러오기 실패: ' + E(e.message || e) + '</p>'; }); } else if (v === 'admin') app.innerHTML = adminView();
+  else if (v === 'report') { app.innerHTML = reportView(); loadReport().catch(e => { const el = $('rp-body'); if (el) el.innerHTML = '<p style="color:var(--bad)">불러오기 실패: ' + E(e.message || e) + '</p>'; }); } else if (v === 'admin') { app.innerHTML = adminView(); if (ME.role === 'admin') pwUsersCard(); }
   else if (v === 'ncr') { app.innerHTML = ncrView(); ncrLoad().catch(e => { const el = $('nc-body'); if (el) el.innerHTML = '<p style="color:var(--bad)">불러오기 실패: ' + E(e.message || e) + '</p>'; }); }
   if (v === 'floor') setTimeout(() => { const i = $('scan'); if (i && !document.querySelector('.ov')) i.focus(); }, 50);
 }
@@ -893,6 +948,7 @@ function adminView(){
         <label class="field" style="margin:0"><span>대수</span><input id="mb-n" type="number" value="4" min="1" max="50" style="padding:6px;width:70px"></label>
         <button class="btn pri" onclick="machBulk()">＋ 한 번에 추가</button></div>
       <p class="muted" style="margin-top:8px">코드는 WIND-01, WIND-02 …, 이름은 권선기 1호기, 2호기 … 로 만들어집니다. 이미 있는 코드는 건너뜁니다.</p></div>` : ''}
+    <div class="card" style="margin-top:12px"><h2>계정 · 비밀번호</h2><div id="pw-users" class="muted">불러오는 중…</div></div>
     <div class="card" style="margin-top:12px"><h2>이 기기</h2><div class="muted">기기 이름: <b>${E(S.device)}</b> <button class="btn" style="padding:4px 10px" onclick="const n=prompt('기기 이름',S.device);if(n){S.device=n;LS.set('mes_device',n);render()}">바꾸기</button> · 로그인: ${E(ME.email)} (${E(ME.role)})</div></div>`;
 }
 function adminTabs(){ return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn ${AD.t === 'wo' ? 'pri' : ''}" onclick="AD.t='wo';render()">작업지시</button><button class="btn ${AD.t === 'route' ? 'pri' : ''}" onclick="AD.t='route';render()">공정 순서(품목별)</button><button class="btn ${AD.t === 'chkitem' ? 'pri' : ''}" onclick="AD.t='chkitem';render()">점검 항목</button><button class="btn ${AD.t === 'skill' ? 'pri' : ''}" onclick="AD.t='skill';render()">작업자 자격</button><button class="btn ${AD.t === 'c4' ? 'pri' : ''}" onclick="AD.t='c4';render()">4M 변경</button>${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
@@ -1336,10 +1392,13 @@ async function boot(){
   const s = await sb.auth.getSession(), u = s.data && s.data.session && s.data.session.user;
   if (!u) { $('who').textContent = ''; $('app').innerHTML = loginView(); return; }
   ME.email = u.email;
-  const r = await sb.from('app_users').select('role,name').eq('email', u.email).maybeSingle();
+  const r = await sb.from('app_users').select('role,name,must_change_pw').eq('email', u.email).maybeSingle();
   ME.role = r.data && r.data.role || ''; ME.name = r.data && r.data.name || u.email;
   if (!ME.role) { $('app').innerHTML = `<div class="card" style="max-width:520px;margin:30px auto"><h2>권한 없음</h2><p>${E(u.email)} 계정이 MES 사용자(app_users)에 등록되지 않았습니다. 관리자에게 요청하세요.</p><button class="btn" onclick="logout()">로그아웃</button></div>`; return; }
   $('who').textContent = `👤 ${r.data.name || u.email} · ${ME.role}`;
+  $('pwc').style.display = '';
+  ME.mustPw = !!r.data.must_change_pw;
+  if (r.data.must_change_pw) { $('app').innerHTML = '<div class="card" style="max-width:420px;margin:40px auto">새 비밀번호로 바꾼 뒤 사용할 수 있습니다.</div>'; if (!$('pw')) pwChange(true); return; }
   await loadMaster(); await loadLive(); setNet(true); realtime(); flushQ();
   if (ME.role !== 'viewer') { syncWO(true).then(render); woAutoSync(); }
   render();
