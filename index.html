@@ -13132,6 +13132,15 @@ function hqMRP(){
   const rows = hqCPORows().filter(r => ['확정','출하중'].includes(r.st) || (HQ.mrpFc && ['접수','회신'].includes(r.st)));
   const demand = {}, noBom = new Set(), refs = {};
   rows.forEach(r => r.ls.forEach(l => { if (l.rem <= 0) return; const k = l.code + '|' + (l.cat || (hqItem(l.code) || {}).cat || 'TP'); demand[k] = (demand[k]||0) + l.rem; (refs[k] = refs[k] || new Set()).add(r.cpoNo); }));
+  // ✅ [2026-11-09] 솔루엠 PO(ERP 발주관리, 메일로 받은 PO)의 미출고 잔량도 생산 필요로 넣는다.
+  //    같은 PO 번호를 고객 PO로도 등록했으면 두 번 세지 않는다.
+  if (HQ.mrpSolum !== false) {
+    const cpoNos = new Set(hqCPORows().map(r => String(r.custPoNo || '').trim()).filter(Boolean));
+    (PO || []).forEach(p => {
+      const rem = Math.max(0, (+p.poQty || 0) - poDeducted(p)); if (!rem || cpoNos.has(String(p.poNumber || '').trim())) return;
+      const k = p.itemCode + '|TP'; demand[k] = (demand[k]||0) + rem; (refs[k] = refs[k] || new Set()).add('솔루엠 ' + p.poNumber);
+    });
+  }
   const need = {}, src = {};
   const add = (code, cat, q, from) => { const k = code + '|' + String(cat||'').toUpperCase(); need[k] = (need[k]||0) + q; (src[k] = src[k] || new Set()).add(from); };
   const btpGross = {};
@@ -13162,13 +13171,14 @@ function hqMRPView(){
   short.forEach(x => { if (HQ.mrpSel[x.k] === undefined) HQ.mrpSel[x.k] = true; });
   const dem = Object.entries(m.demand).map(([k, q]) => { const [code, cat] = k.split('|'), it = hqItem(code, cat) || {}; return {code, cat, name: it.name || code, q, st: capStock(code, cat), refs: [...(m.refs[k]||[])].join(', ')}; });
   return `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:13px">
+      <label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${HQ.mrpSolum!==false?'checked':''} onchange="HQ.mrpSolum=this.checked;renderHQ()" style="width:auto;margin:0"> 솔루엠 PO 잔량 포함 (발주관리)</label>
       <label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${HQ.mrpFc?'checked':''} onchange="HQ.mrpFc=this.checked;renderHQ()" style="width:auto;margin:0"> 접수·회신 단계 PO도 포함 (예측)</label>
       <label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${HQ.mrpTpStock?'checked':''} onchange="HQ.mrpTpStock=this.checked;renderHQ()" style="width:auto;margin:0"> 완제품·반제품 재고 먼저 차감</label>
     </div>
     <div style="font-size:13px;font-weight:700;margin-bottom:6px">① 생산 필요 (PO 잔량) / Nhu cầu SX</div>
     ${dem.length ? `<div class="tw" style="margin-bottom:12px"><table><thead><tr><th>품목</th><th>코드</th><th style="text-align:right">PO 잔량</th><th style="text-align:right">현재고</th><th>근거 PO</th></tr></thead><tbody>${
       dem.map(d => `<tr><td>${hqE(d.name)}</td><td style="font-family:monospace;font-size:12px">${hqE(d.code)} <span style="color:#8A95A3">${hqE(d.cat)}</span></td><td style="text-align:right;font-weight:700">${hqN(d.q)}</td><td style="text-align:right">${hqN(d.st)}</td><td style="font-size:12px;color:#5D6977">${hqE(d.refs)}</td></tr>`).join('')}</tbody></table></div>`
-      : '<div class="empty" style="margin-bottom:12px">확정된 PO 잔량이 없습니다. 고객 PO를 "확정"으로 바꾸면 여기서 계산됩니다.</div>'}
+      : '<div class="empty" style="margin-bottom:12px">PO 잔량이 없습니다. 솔루엠 PO는 발주관리 탭에, 다른 고객 PO는 영업 → 고객 PO에 "확정"으로 등록하면 여기서 계산됩니다.</div>'}
     ${m.noBom.length ? `<div style="background:#FEF3C7;color:#92400e;padding:7px 10px;border-radius:8px;font-size:12.5px;margin-bottom:10px">⚠️ BOM이 없어 자재를 계산하지 못한 품목: ${m.noBom.map(hqE).join(', ')} — 작업지시 화면에서 BOM을 먼저 등록하세요.</div>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
       <div style="font-size:13px;font-weight:700">② 자재 소요·부족 / Nhu cầu NVL <span style="font-weight:400;color:#5D6977">부족 ${short.length}건</span></div>
