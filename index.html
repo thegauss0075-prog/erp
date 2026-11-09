@@ -13177,6 +13177,9 @@ function hqMRP(){
   }).sort((a,b) => (b.short > 0) - (a.short > 0) || String(a.cat).localeCompare(String(b.cat)) || String(a.name).localeCompare(String(b.name)));
   return {rows, demand, mats, noBom: [...noBom], refs};
 }
+// 자재의 모델명: 품목 마스터의 model, 없으면 어느 제품 생산용인지(근거)에서 제품명
+function hqMatModel(code, cat, from){ const it = hqItem(code, cat) || {}; const m = it.model && it.model !== '기타' ? it.model : ''; return m || String(from || '').split(', ').map(x => x.replace(/ 생산용$/, '').replace(/ \(BTP\)$/, '')).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', '); }
+const hqModelTag = m => m ? `<span style="display:inline-block;font-size:11px;font-weight:600;color:#5b21b6;background:#EDE9FE;border-radius:5px;padding:0 6px;margin-right:5px;white-space:nowrap">${hqE(m)}</span>` : '';
 function hqMRPView(){
   const m = hqMRP(), short = m.mats.filter(x => x.short > 0);
   short.forEach(x => { if (HQ.mrpSel[x.k] === undefined) HQ.mrpSel[x.k] = true; });
@@ -13198,7 +13201,7 @@ function hqMRPView(){
     ${m.mats.length ? `<div class="tw"><table><thead><tr><th></th><th>자재<span class="vi">NVL</span></th><th>구분</th><th style="text-align:right">총 소요<span class="vi">Nhu cầu</span></th><th style="text-align:right">재고</th><th style="text-align:right" title="미완료 작업지시에 이미 출고된 자재(출하검사 합격분 제외)">생산 출고</th><th style="text-align:right">입고 예정<span class="vi">Sắp nhập</span></th><th style="text-align:right">요청 중<span class="vi">Đang YC</span></th><th style="text-align:right">부족</th><th>구매 수량</th><th>공급사</th></tr></thead><tbody>${
       m.mats.map((x, i) => `<tr style="${x.short > 0 ? '' : 'color:#8A95A3'}">
         <td><input type="checkbox" id="mrp-c-${i}" ${HQ.mrpSel[x.k] ? 'checked' : ''} onchange="HQ.mrpSel['${hqE(x.k)}']=this.checked;hqMRPBtn()" style="width:auto;margin:0"></td>
-        <td>${hqE(x.name)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(x.code)}</div></td><td>${hqE(x.cat)}</td>
+        <td>${hqModelTag(hqMatModel(x.code, x.cat, x.from))}${hqE(x.name)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(x.code)}</div></td><td>${hqE(x.cat)}</td>
         <td style="text-align:right">${hqN(x.need)} ${hqE(x.unit)}</td><td style="text-align:right">${hqN(x.st)}</td><td style="text-align:right">${x.wip ? hqN(x.wip) : '-'}</td><td style="text-align:right">${x.inc ? hqN(x.inc) : '-'}</td><td style="text-align:right">${x.req ? hqN(x.req) : '-'}</td>
         <td style="text-align:right;font-weight:700;color:${x.short > 0 ? '#b91c1c' : '#166534'}">${x.short > 0 ? hqN(x.short) : '충분'}</td>
         <td style="white-space:nowrap"><input type="number" min="0" value="${hqE(HQ.mrpQty[x.k] ?? (x.short > 0 ? hqMRPDefQty(x) : ''))}" placeholder="${x.short > 0 ? '' : '0'}" oninput="HQ.mrpQty['${hqE(x.k)}']=this.value;HQ.mrpSel['${hqE(x.k)}']=+this.value>0;const c=document.getElementById('mrp-c-${i}');if(c)c.checked=+this.value>0;hqMRPBtn()" style="${HQ_IN};width:100px;color:#1f2937">${x.roll ? `<div style="font-size:11px;color:#7c3aed;margin-top:2px">🧵 롤 단위 출고</div>` : ''}</td>
@@ -13212,7 +13215,7 @@ async function hqMRPToPR(){
   if (!hqCanWrite()) return;
   const m = hqMRP(), sel = m.mats.filter(x => HQ.mrpSel[x.k]);
   if (!sel.length) { alert('구매할 자재를 체크하거나 구매 수량을 넣어주세요.'); return; }
-  const lines = sel.map(x => ({code: x.code, name: x.name, cat: x.cat, unit: x.unit, qty: +(HQ.mrpQty[x.k] ?? hqMRPDefQty(x)) || 0, supplier: (HQ.mrpSup[x.k] ?? x.sup) || '', note: x.from})).filter(l => l.qty > 0);
+  const lines = sel.map(x => ({code: x.code, name: x.name, cat: x.cat, unit: x.unit, qty: +(HQ.mrpQty[x.k] ?? hqMRPDefQty(x)) || 0, supplier: (HQ.mrpSup[x.k] ?? x.sup) || '', note: x.from, model: hqMatModel(x.code, x.cat, x.from)})).filter(l => l.qty > 0);
   const dues = m.rows.flatMap(r => r.ls.filter(l => l.rem > 0).map(l => l.replyDue || l.due)).filter(Boolean).sort();
   if (!lines.length) { alert('구매 수량이 0입니다. 수량을 넣어주세요.'); return; }
   const pr = {id: String(Date.now()), date: hqToday(), status: '요청', lines, needBy: dues[0] ? hqAddDays(dues[0], -21) : '', basis: [...new Set(Object.values(m.refs).flatMap(s => [...s]))].join(', '), reason: '고객 PO 자재 소요 계산(MRP)', history: []};
@@ -13293,7 +13296,7 @@ function hqPRRender(){
     <div class="tw" style="margin-top:12px"><table style="font-size:13px"><thead><tr><th style="width:34px;text-align:center">No</th><th>자재</th><th style="text-align:right;width:110px">수량</th><th style="width:150px">공급사</th><th style="width:190px">단가 · 통화</th><th style="text-align:right;width:130px">금액</th><th style="width:30px"></th></tr></thead><tbody>${
       (r.lines||[]).map((l, i) => `<tr style="vertical-align:middle">
         <td style="text-align:center;color:#8A95A3">${i + 1}</td>
-        <td>${l.code && l.name ? `<div style="font-weight:600;line-height:1.35;white-space:normal;word-break:break-word">${hqE(l.name)}</div><div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(l.code)}${l.cat ? ' · ' + hqE(l.cat) : ''}</div>`
+        <td>${l.code && l.name ? `<div style="font-weight:600;line-height:1.35;white-space:normal;word-break:break-word">${hqModelTag(l.model || hqMatModel(l.code, l.cat, l.note))}${hqE(l.name)}</div><div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(l.code)}${l.cat ? ' · ' + hqE(l.cat) : ''}</div>`
           : `<input list="hq-mats" ${ro} value="${hqE(l.code||'')}" onchange="hqPRLine(${i},'item',this.value)" placeholder="자재 코드·이름 검색" style="${HQ_IN}">`}</td>
         <td style="text-align:right;white-space:nowrap"><input type="number" ${ro} value="${hqE(l.qty)}" oninput="HQ_PR.lines[${i}].qty=this.value;hqPRTot()" style="${HQ_IN};width:80px;text-align:right"> <span style="color:#5D6977;font-size:12px">${hqE(l.unit||'')}</span></td>
         <td><input list="hq-sups" ${ro} value="${hqE(l.supplier||'')}" oninput="HQ_PR.lines[${i}].supplier=this.value" onchange="hqPRSupPrice(${i})" placeholder="공급사" style="${HQ_IN}"></td>
