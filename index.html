@@ -13572,7 +13572,11 @@ function hqPRRender(){
 function hqPRLine(i, k, v){ const l = HQ_PR.lines[i]; const code = String(v).split(' — ')[0].trim(), it = allRows().find(x => x.code === code);
   if (it) { l.code = it.code; l.name = it.name; l.cat = it.cat; l.unit = it.unit; } else { l.code = code; l.name = ''; } if (l.priceAuto || l.price === '' || l.price == null) { l.price = undefined; l.priceAuto = false; } setTimeout(hqPRRender, 0); }
 async function hqPRSave(status, extra){
-  const r = HQ_PR, err = document.getElementById('hq-err'); if (!r || !hqCanWrite()) return false;
+  const r = HQ_PR, err = document.getElementById('hq-err'); if (!r) return false;
+  // 승인·반려는 '구매 승인' 권한으로, 그 밖의 저장은 구매 입력 권한으로
+  const prev = HQ.pr.find(x => String(x.id) === String(r.id));
+  const deciding = (status === '승인' || status === '반려') && prev && prev.status === '요청';
+  if (deciding ? !hqCan('buy', 'A') : !hqCanWrite()) { if (deciding) alert('구매요청 승인 권한이 없습니다.'); return false; }
   r.lines = (r.lines||[]).filter(l => l.code || l.qty);
   if (!r.lines.length || r.lines.some(l => !l.code || !(+l.qty > 0))) { err.textContent = '자재와 수량을 확인해주세요.'; return false; }
   if (!hqItemOK(r.lines)) { err.textContent = '목록에 없는 자재 코드가 있습니다. 자재를 목록에서 골라주세요.'; return false; }
