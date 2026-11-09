@@ -12978,6 +12978,8 @@ function hqItem(code, cat){ return allRows().find(x => x.code === code && (!cat 
 let HQ_ME = null;
 function hqAreaOf(dept){ return dept === 'sales' ? 'sales' : dept === 'qa' ? 'qa' : dept === 'buy' ? 'buy' : dept; }
 function hqCan(area, op){
+  // 구매요청 승인·반려는 본사 계정 중 '구매 승인' 권한자만 (마스터 = 베트남 법인장은 본사 승인에 관여하지 않음, 2026-11-09)
+  if (op === 'A') return USER_ROLE === 'hq' && !!((HQ_ME && HQ_ME.perms) || {}).approve;
   if (isMaster) return true;
   if (USER_ROLE === 'hq') { const p = (HQ_ME && HQ_ME.perms) || {}; if (op === 'A') return !!p.approve; return String(p[area] || '').includes(op); }
   if (op === 'R') return true;
