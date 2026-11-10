@@ -2675,6 +2675,8 @@ function computeShipHistRows(item) {
     return { dt: t.dt, lot: t.lot || '-', qty: +t.qty || 0, dest: destText(t.dest) || '-', cumulative: running, note: t.note || '', inv: shipInvNo(t) };
   });
 }
+// 화면 표시용: 출고 확정 메모의 "[출고예정 SP…]"는 이미 출고된 기록이므로 "[출고 SP…]"로 보여준다 (저장값은 그대로 — 서버가 확정 취소 때 이 표시로 찾는다)
+function noteView(n){ return String(n == null ? '' : n).replace(/\[출고예정 (SP\d{8}-\d+)\]/g, '[출고 $1]'); }
 // 출고 이력의 인보이스 번호: 출고 확정 메모 "[출고예정 SPxxxx] INV TGxxxx Rev.n" → 없으면 출고 예정에 연결된 번호 → 메모 속 TG번호
 function shipInvNo(t){
   const note = String(t.note || '');
@@ -7346,7 +7348,7 @@ function renderIOTable(){
       <td style="text-align:right;font-weight:700" class="${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty}</td>
       <td style="font-family:monospace;font-size:12px;color:#1d4ed8">${(!t.lot || t.lot === '__nolot__') ? 'LOT 미지정' : t.lot}</td>
       <td>${t.dest?destBadge(t.dest):t.reason||'<span class="dim">—</span>'}</td>
-      <td style="font-size:12px;color:#888">${t.note||'—'}</td>
+      <td style="font-size:12px;color:#888">${noteView(t.note)||'—'}</td>
       <td style="white-space:nowrap">
         ${isAdmin ? `<button class="edit-btn" onclick="openEditUnified(${t.id},'${t.type}')">✏️</button>
         <button class="del-btn" onclick="openDelUnified(${t.id},'${t.type}')">🗑️</button>` : ''}
@@ -8215,7 +8217,7 @@ function renderNGLog(){
       <td style="color:#666;text-align:center">${t.unit}</td>
       <td style="text-align:right;font-weight:700" class="${t.type==='ng-in'?'ngc':''}">${t.type==='ng-in'?'+':'−'}${qty}</td>
       <td style="font-size:12px;color:#888">${t.reason||'—'}</td>
-      <td style="font-size:12px;color:#888">${t.note||'—'}${linkedNote}</td>
+      <td style="font-size:12px;color:#888">${noteView(t.note)||'—'}${linkedNote}</td>
       <td style="white-space:nowrap">
         ${isAdmin ? `<button class="edit-btn" onclick="openNGEdit(${t.id})">✏️</button>
         <button class="del-btn" onclick="openNGDel(${t.id})">🗑️</button>` : ''}
@@ -11200,7 +11202,7 @@ function openTrace(code, catHint) {
               <td style="padding:6px 8px;text-align:right;font-weight:700;color:${isAdjust?(t.qty>0?'#166534':'#b91c1c'):(isIn?'#166534':'#b91c1c')}">${sign}${absQty?n(absQty):'-'} ${t.unit||''}</td>
               <td style="padding:6px 8px;font-family:monospace;color:#1d4ed8;font-size:11px">${(!t.lot || t.lot === '__nolot__') ? 'LOT 미지정' : t.lot}</td>
               <td style="padding:6px 8px;color:#555">${t.user||'-'}</td>
-              <td style="padding:6px 8px;color:#888">${t.note||'-'}</td>
+              <td style="padding:6px 8px;color:#888">${noteView(t.note)||'-'}</td>
             </tr>`;
           }).join('') : `<tr><td colspan="6" style="padding:16px;text-align:center;color:#aaa">선택한 기간에는 이력이 없습니다. '전체'를 눌러 확인해보세요.</td></tr>`}
         </tbody>
@@ -11222,7 +11224,7 @@ function openTrace(code, catHint) {
               <td style="padding:4px 6px;color:#888;white-space:nowrap">${fmtDt(t.dt)}</td>
               <td style="padding:4px 6px;color:#991b1b">${typeLabel[t.type]||t.type}</td>
               <td style="padding:4px 6px;text-align:right;font-weight:700;color:${isIn?'#166534':'#b91c1c'}">${isIn?'+':'-'}${n(t.qty)} ${t.unit||''}</td>
-              <td style="padding:4px 6px;color:#888">${t.note||'-'}</td>
+              <td style="padding:4px 6px;color:#888">${noteView(t.note)||'-'}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -14462,7 +14464,7 @@ function hqRepData(id){
   if (id === 'dayReport') {
     const s = bdVNStart(F), lbl = {'in':'자재 입고','omt':'자재 출고','tp-in':'완제품·반제품 입고','otp':'완제품·반제품 출고','adjust':'재고조정','sync-fix':'동기화 보정'};
     const rows = tx.filter(t => { const m = bdTime(t); return m >= s && m < s + 864e5; }).sort((a,b) => bdTime(a) - bdTime(b))
-      .map(t => [new Date(bdTime(t) + 7*3600e3).toISOString().slice(11,16), lbl[t.type] || t.type, t.code, t.name || '', N(t.qty), t.unit||'', t.lot||'', t.dest||'', t.note||'', t.user||'']);
+      .map(t => [new Date(bdTime(t) + 7*3600e3).toISOString().slice(11,16), lbl[t.type] || t.type, t.code, t.name || '', N(t.qty), t.unit||'', t.lot||'', t.dest||'', noteView(t.note), t.user||'']);
     const ng = (ngLog||[]).filter(l => hqYM(l.dt) && ncrYMDsafe(l.dt) === F).map(l => ['', l.type === 'ng-in' ? '불량 입고' : '불량 출고', l.code, l.name||'', N(l.qty), l.unit||'', '', '', [l.reason, l.note].filter(Boolean).join(' · '), l.user||'']);
     return {cols:['시각','구분','코드','품명','수량','단위','LOT','출고처','비고','등록자'], rows: rows.concat(ng), num:[4]};
   }
