@@ -14882,7 +14882,7 @@ function hqVNLast(code){ for (const h of [...HQS.hqship].sort((a,b) => String(b.
 function hqLastHS(code){ const l = hqVNLast(code); return l ? l.hs || '' : ''; }
 function hqVNDefLine(p){
   const l = hqVNLast(p.code) || {};
-  return {qty: '', hs: l.hs || '', item: l.item || String(p.name || '').trim().split(/[\s(]/)[0].toUpperCase(), spec: l.spec || p.name || '', origin: l.origin || HQ_CIPL.origin, nw: '', box: 1};
+  return {qty: '', hs: l.hs || '', item: l.item || String(p.name || '').trim().split(/[\s(]/)[0].toUpperCase(), spec: l.spec || p.name || '', origin: l.origin || (c => ({'한국':'KOREA','중국':'CHINA','베트남':'VIETNAM','일본':'JAPAN','대만':'TAIWAN','미국':'USA','독일':'GERMANY'})[c] || (c ? String(c).toUpperCase() : HQ_CIPL.origin))((hqsSup(p.supplier || '') || {}).country), nw: '', box: 1};
 }
 function hqVNShipEdit(id, poNo){
   const h = id ? HQS.hqship.find(x => String(x.id) === String(id)) : null;
