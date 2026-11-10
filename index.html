@@ -15005,22 +15005,29 @@ function hqVNShipEdit(id, poNo, route){
   else HQS.ed = {id: String(Date.now()), invNo: hqVNInvNo(), shipDate: hqToday(), mode: 'SEA', status: '준비', loadPort: HQ_SHIP_PORTS.SEA.load, destPort: HQ_SHIP_PORTS.SEA.dest,
     incoterm: HQ_CIPL.incoterm, contact: HQ_CIPL.contact, sel: {}, packs: [{no: 1, type: 'BOX', gw: '', size: ''}],
     route: route || (poNo && SPO.some(p => p.poNo === poNo && p.route !== 'hq' && p.route !== 'wire' && hqVNAvail(p) > 0) ? 'direct' : 'hq')};
-  if (!h && HQS.ed.route === 'direct') { const f = poNo && SPO.find(p => p.poNo === poNo && p.route !== 'hq' && p.route !== 'wire'); Object.assign(HQS.ed, {loadPort: f ? hqSupCountryEn(f.supplier) : '', destPort: HQ_CIPL.destDirect, contact: HQ_CIPL.contactDirect}); }
+  if (h && HQS.ed.route === 'direct' && HQS.ed.sup == null) HQS.ed.sup = ((h.lines || [])[0] || {}).supplier || '';
+  if (!h && HQS.ed.route === 'direct') { const f = poNo ? SPO.find(p => p.poNo === poNo && p.route !== 'hq' && p.route !== 'wire') : hqVNDirectSups()[0] && SPO.find(p => p.route !== 'hq' && p.route !== 'wire' && (p.supplier || '') === hqVNDirectSups()[0]); HQS.ed.sup = f ? f.supplier || '' : ''; Object.assign(HQS.ed, {loadPort: f ? hqSupCountryEn(f.supplier) : '', destPort: HQ_CIPL.destDirect, contact: HQ_CIPL.contactDirect}); }
   if (!h && poNo) SPO.filter(p => p.poNo === poNo && p.route !== 'wire' && (p.route === 'hq' ? 'hq' : 'direct') === HQS.ed.route).forEach(p => { const a = hqVNAvail(p); if (a > 0) HQS.ed.sel[p.id] = {...hqVNDefLine(p), qty: a}; });   // 발주서 화면의 🧾 버튼: 그 발주 자재를 미리 채움
   hqVNRender();
 }
+// 직송 인보이스는 공급사(출발지)마다 따로 — 보낼 수량이 남은 직송 발주의 공급사 목록
+function hqVNDirectSups(exceptId){ const al = spoAlloc(); return [...new Set(SPO.filter(p => !p.closed && p.route !== 'hq' && p.route !== 'wire' && spoRow(p, al).remain > 0 && hqVNAvail(p, exceptId) > 0).map(p => p.supplier || ''))]; }
+function hqVNSup(v){ hqVNGrab(); const e = HQS.ed; e.sup = v; Object.keys(e.sel).forEach(id => { const p = SPO.find(q => String(q.id) === String(id)); if (p && (p.supplier || '') !== v) e.sel[id].qty = ''; }); e.loadPort = hqSupCountryEn(v) || e.loadPort; hqVNRender(); }
 function hqVNRender(){
   const e = HQS.ed, isNew = !HQS.hqship.some(x => String(x.id) === String(e.id));
   const al = spoAlloc();
   const isHQ = e.route !== 'direct';
-  const cand = SPO.filter(p => !p.closed && p.route !== 'wire' && (p.route === 'hq') === isHQ && (isHQ || spoRow(p, al).remain > 0 || e.sel[p.id])).map(p => ({p, avail: hqVNAvail(p, e.id), l: e.sel[p.id] || (e.sel[p.id] = hqVNDefLine(p))})).filter(x => x.avail > 0 || +x.l.qty > 0)
+  const cand = SPO.filter(p => !p.closed && p.route !== 'wire' && (p.route === 'hq') === isHQ && (isHQ || ((p.supplier || '') === (e.sup || '') && (spoRow(p, al).remain > 0 || +(e.sel[p.id] || {}).qty > 0)))).map(p => ({p, avail: hqVNAvail(p, e.id), l: e.sel[p.id] || (e.sel[p.id] = hqVNDefLine(p))})).filter(x => x.avail > 0 || +x.l.qty > 0)
     .sort((a, b) => (a.p.route === 'hq' ? 0 : 1) - (b.p.route === 'hq' ? 0 : 1) || String(a.p.poNo).localeCompare(String(b.p.poNo)));
   const f = (k, lbl, type, ph) => hqFld(lbl, '', `<input id="hqv-${k}" ${type ? `type="${type}"` : ''} value="${hqE(e[k] ?? '')}" placeholder="${ph||''}" style="${HQ_IN}">`);
   const P = HQ_SHIP_PORTS[e.mode] || HQ_SHIP_PORTS.SEA, SI = HQ_IN + ';padding:4px 6px;font-size:12px';
   const li = (x, k, w, type) => `<input class="hqv-l" data-id="${hqE(x.p.id)}" data-k="${k}" ${type ? `type="${type}" step="any"` : ''} value="${hqE(x.l[k] ?? '')}" style="${SI};width:${w}px${type ? ';text-align:right' : ''}">`;
   const boxes = e.packs.map(p => p.no);
   hqModal('hq-vs', `<h3 style="margin:0 0 10px;font-size:16px">${isNew ? (isHQ ? '🏢 본사 발송 인보이스 만들기' : '➡️ 직송 인보이스 만들기') : '✏️ ' + (isHQ ? '본사 발송 ' : '직송 ') + hqE(e.invNo)}</h3>
-    <div style="font-size:12.5px;color:#5D6977;margin:-4px 0 10px">${isHQ ? '본사에 입고된(보관 중인) 자재만 나옵니다.' : '직송(공급사 → 베트남) 자재만 나옵니다. Port of loading에 공급사 출발지를 넣어주세요.'}</div>
+    <div style="font-size:12.5px;color:#5D6977;margin:-4px 0 10px">${isHQ ? '본사에 입고된(보관 중인) 자재만 나옵니다.' : '직송 인보이스는 공급사마다 따로 만듭니다. Port of loading에 공급사 출발지를 넣어주세요.'}</div>
+    ${isHQ ? '' : `<div style="display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:8px 10px;background:#F0FDFA;border:1px solid #99F6E4;border-radius:9px"><b style="font-size:13px;color:#0f766e">출고 공급사</b>
+      <select onchange="hqVNSup(this.value)" style="${HQ_IN};width:auto;min-width:200px">${[...new Set([e.sup || '', ...hqVNDirectSups(e.id)])].map(v => `<option value="${hqE(v)}" ${(e.sup || '') === v ? 'selected' : ''}>${hqE(v || '(공급사 미정)')}</option>`).join('')}</select>
+      <span style="font-size:12px;color:#5D6977">이 공급사의 직송 발주만 아래에 나옵니다</span></div>`}
     <div style="display:flex;gap:6px;margin-bottom:10px">${Object.entries(HQ_SHIP_MODES).map(([k, l]) => `<button onclick="hqVNMode('${k}')" style="flex:1;padding:9px;border-radius:9px;border:2px solid ${e.mode===k?'#7c3aed':'#DCE1E7'};background:${e.mode===k?'#F5F3FF':'#fff'};font-weight:700;cursor:pointer">${l}</button>`).join('')}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
       ${f('invNo','Invoice No')}${f('shipDate','Invoice 날짜','date')}
