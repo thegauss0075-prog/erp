@@ -13652,7 +13652,7 @@ function hqPRToPO(){
     <div class="tw"><table><thead><tr><th>공급사</th><th>발주번호 · 배송 경로</th><th>자재</th><th style="text-align:right">수량</th><th>단가 · 통화</th></tr></thead><tbody>${
       r.lines.map((l, i) => { const s = l.supplier || '(공급사 미정)', si = sups.indexOf(s);
         return `<tr><td>${hqE(s)}</td><td>${r.lines.findIndex(x => (x.supplier || '(공급사 미정)') === s) === i ? `<input class="hqpo-no" data-s="${si}" value="${hqE(hqPONos(sups.length)[si])}" style="${HQ_IN};width:150px">` : '<span style="color:#8A95A3">↑ 같은 발주</span>'}<div style="margin-top:4px">${HQ_ROUTE_SEL('hqpo-route', (hqsSup(s)||{}).route || 'direct', `data-i="${i}"`)}</div></td>
-          <td>${hqE(l.name)} <span style="font-size:11px;color:#8A95A3">${hqE(l.code)}</span></td><td style="text-align:right">${hqN(l.qty)} ${hqE(l.unit||'')}</td>
+          <td>${hqE(l.name)} <span style="font-size:11px;color:#8A95A3">${hqE(l.code)}</span>${hqName(l.code) ? `<div style="font-size:11.5px;color:#185FA5">🏷️ ${hqE(hqDesc(l.code))}</div>` : ''}</td><td style="text-align:right">${hqN(l.qty)} ${hqE(l.unit||'')}</td>
           <td style="white-space:nowrap"><input class="hqpo-price" data-i="${i}" type="number" step="0.0001" value="${hqE(l.price ?? '')}" style="${HQ_IN};width:100px"> <select class="hqpo-lcur" data-i="${i}" style="${HQ_IN};width:72px">${HQ_PR_CURS.map(c => `<option ${hqPRCur(l)===c?'selected':''}>${c}</option>`).join('')}</select></td></tr>`; }).join('')}</tbody></table></div>
     <div id="hqpo-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
     <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px"><button onclick="hqClose('hq-po')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button>
@@ -14620,6 +14620,7 @@ function hqShipView(){
   return `<div class="toolbar" style="gap:6px;flex-wrap:wrap">
       <div class="sw"><span class="si">🔍</span><input placeholder="발주번호·공급사·B/L·자재 검색" value="${hqE(HQ.q)}" oninput="HQ.q=this.value;clearTimeout(window._hqT);window._hqT=setTimeout(()=>{renderHQ();const i=document.querySelector('#hq-body .sw input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>
       <select onchange="HQ.st=this.value;renderHQ()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px"><option value="">진행 중(미입고)</option><option value="전체" ${HQ.st==='전체'?'selected':''}>전체</option>${[...new Set([...HQ_STAGES_HQ.slice(0,4), ...HQ_STAGES])].map(s => `<option ${HQ.st===s?'selected':''}>${s}</option>`).join('')}</select>
+      <button onclick="hqNameEdit()" style="padding:7px 14px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">🏷️ 본사 품명</button>
       <button onclick="openSupplyPO()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer">➕ 자재 발주 직접 등록</button>
     </div>
     ${gs.length ? `<div class="tw"><table><thead><tr><th>발주번호</th><th>공급사<span class="vi">NCC</span></th><th>발주일</th><th>자재</th><th style="text-align:right">입고/발주</th><th style="text-align:right">금액</th><th>ETD</th><th>ETA</th><th>B/L · Invoice</th><th>단계<span class="vi">Giai đoạn</span></th><th></th></tr></thead><tbody>${
@@ -14707,7 +14708,7 @@ function hqPOPrint(poNo){
         <tr><th>Ship to</th><td>${rt === 'hq' ? 'THE GAUSS INC. — ' + E(INV_CO.hq.slice(1).join(' ')) : 'THE GAUSS VINA CO., LTD — ' + E(INV_CO.addr1 + ' ' + INV_CO.addr2)}</td><th>Incoterm</th><td>${E(x.incoterm || '')}</td></tr>
         ${x.prNo ? `<tr><th>Ref.</th><td colspan="3">${E(x.prNo)}</td></tr>` : ''}</table>
       <table class="it"><thead><tr><th>No</th><th>Code</th><th>Description</th><th>Q'ty</th><th>Unit</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${
-        rows.map((r, i) => `<tr><td class="c">${i + 1}</td><td class="m">${E(r.code)}</td><td>${E(r.name)}</td><td class="n">${(+r.q).toLocaleString()}</td><td class="c">${E(r.unit || '')}</td><td class="n">${r.price === '' || r.price == null ? '' : E(r.cur || 'USD') + ' ' + fmt(r.price, r.cur)}</td><td class="n">${r.price === '' || r.price == null ? '' : fmt(+r.price * r.q, r.cur)}</td></tr>`).join('')}</tbody>
+        rows.map((r, i) => `<tr><td class="c">${i + 1}</td><td class="m">${E(r.code)}</td><td>${E(hqDesc(r.code, r.name))}</td><td class="n">${(+r.q).toLocaleString()}</td><td class="c">${E(r.unit || '')}</td><td class="n">${r.price === '' || r.price == null ? '' : E(r.cur || 'USD') + ' ' + fmt(r.price, r.cur)}</td><td class="n">${r.price === '' || r.price == null ? '' : fmt(+r.price * r.q, r.cur)}</td></tr>`).join('')}</tbody>
         <tfoot><tr><td colspan="6" class="n"><b>TOTAL</b></td><td class="n"><b>${Object.entries(tot).map(([c, v]) => E(c) + ' ' + fmt(v, c)).join('<br>') || '-'}</b></td></tr></tfoot></table>
       <div class="note">Please confirm this order and the delivery date by return email. Invoice / Packing list must show the PO No.</div>
       <table class="sg"><tr><th>작성 Prepared</th><th>검토 Reviewed</th><th>승인 Approved</th><th>Supplier confirmation</th></tr><tr><td></td><td></td><td></td><td></td></tr></table></section>`;
@@ -14727,7 +14728,7 @@ function hqPOExcel(poNo){
   const x = hqShipGroups().find(g => g.poNo === poNo); if (!x) return;
   const aoa = [['PURCHASE ORDER / 발주서'], [], ['PO No', x.poNo, '', 'Date', x.orderDate || ''], ['Supplier', x.supplier || '', '', 'Delivery', x.dueDate || ''], ['Buyer', 'THE GAUSS INC. / THE GAUSS VINA CO., LTD', '', 'Incoterm', x.incoterm || ''], ['Ship to', x.route === 'hq' ? 'THE GAUSS INC. — ' + INV_CO.hq.slice(1).join(' ') : x.route === 'mix' ? '품목별 (아래 Ship to 열)' : 'THE GAUSS VINA CO., LTD — ' + INV_CO.addr1 + ' ' + INV_CO.addr2, '', 'Currency', x.cur || ''], [],
     ['No', 'Code', 'Description', 'Q\'ty', 'Unit', 'Unit Price', 'Amount', 'Supplier', 'Ship to']];
-  x.rows.forEach((r, i) => aoa.push([i + 1, r.code, r.name, r.q, r.unit || '', r.price === '' || r.price == null ? '' : +r.price, r.price === '' || r.price == null ? '' : +r.price * r.q, r.supplier || '', r.route === 'hq' ? 'THE GAUSS INC. (본사)' : 'THE GAUSS VINA (베트남)']));
+  x.rows.forEach((r, i) => aoa.push([i + 1, r.code, hqDesc(r.code, r.name), r.q, r.unit || '', r.price === '' || r.price == null ? '' : +r.price, r.price === '' || r.price == null ? '' : +r.price * r.q, r.supplier || '', r.route === 'hq' ? 'THE GAUSS INC. (본사)' : 'THE GAUSS VINA (베트남)']));
   aoa.push(['', '', 'TOTAL', x.qty, '', '', x.amt || '']); aoa.push([]); aoa.push(['', '', '', '', 'Approved by', '', '']);
   const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{wch:5},{wch:18},{wch:42},{wch:10},{wch:7},{wch:12},{wch:14},{wch:16},{wch:24}]; ws['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:6}}];
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'PO'); XLSX.writeFile(wb, `발주서_${x.poNo.replace(/[^\w-]/g,'_')}.xlsx`);
@@ -14758,7 +14759,7 @@ function hqWhView(){
   const stockN = rows.filter(x => x.stock > 0).length, moving = ships.filter(h => ['준비','발송','도착','통관'].includes(h.status)).length;
   const card = (t, v, c) => `<div style="flex:1;min-width:150px;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${t}</div><div style="font-size:20px;font-weight:700;color:${c}">${v}</div></div>`;
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${card('본사 보관 중인 자재', stockN + '건', '#7c3aed')}${card('본사 미입고 (공급사 → 본사)', rows.filter(x => x.wait > 0).length + '건', '#b45309')}${card('베트남으로 가는 중', moving + '건', '#185FA5')}</div>
-    ${hqsToolbar(hqsBtn('🏢 본사 발송 인보이스', "hqVNShipEdit(null,null,'hq')", '#7c3aed', true) + hqsBtn('➡️ 직송 인보이스', "hqVNShipEdit(null,null,'direct')", '#0f766e', true) + hqsBtn(hqSeal() ? '🖋️ 도장 ✓' : '🖋️ 도장 등록', 'hqSealEdit()', '#b91c1c'), '발주번호·공급사·자재 검색',
+    ${hqsToolbar(hqsBtn('🏢 본사 발송 인보이스', "hqVNShipEdit(null,null,'hq')", '#7c3aed', true) + hqsBtn('➡️ 직송 인보이스', "hqVNShipEdit(null,null,'direct')", '#0f766e', true) + hqsBtn('🏷️ 본사 품명', 'hqNameEdit()', '#185FA5') + hqsBtn(hqSeal() ? '🖋️ 도장 ✓' : '🖋️ 도장 등록', 'hqSealEdit()', '#b91c1c'), '발주번호·공급사·자재 검색',
       `<label style="font-size:12.5px;display:flex;align-items:center;gap:4px"><input type="checkbox" ${HQ.st==='전체'?'checked':''} onchange="HQ.st=this.checked?'전체':'';renderHQ()"> 끝난 것도 보기</label>`)}
     <h4 style="margin:12px 0 6px;font-size:14px">🏢 본사 입고·보관 현황</h4>
     ${show.length ? `<div class="tw"><table><thead><tr><th>발주번호</th><th>공급사</th><th>자재</th><th style="text-align:right">발주</th><th style="text-align:right">본사 입고</th><th style="text-align:right">베트남 발송</th><th style="text-align:right">본사 보관</th><th style="text-align:right">미입고</th><th></th></tr></thead><tbody>${
@@ -14887,9 +14888,49 @@ function hqPackTxt(h){
 function hqPkgTxt(h){ return hqPackTxt(h); }
 function hqVNLast(code){ for (const h of [...HQS.hqship].sort((a,b) => String(b.shipDate||'').localeCompare(String(a.shipDate||'')))) { const l = (h.lines||[]).find(x => x.code === code); if (l) return l; } return null; }
 function hqLastHS(code){ const l = hqVNLast(code); return l ? l.hs || '' : ''; }
+// 🏷️ 본사 품명: 베트남 품명(예: COIL 0.8mm × 6.0mm AIW 2Ts-5P)과 본사 구매·인보이스 품명(Item: FLAT COPPER WIRE / Spec: 0.8mm*6mm AIW)이 다르다
+//    자재 코드마다 HQ_CFG에 'name|코드'로 저장 → 발주서·인보이스에 쓰인다
+function hqName(code){ return (HQS.hqcfg || []).find(x => x.id === 'name|' + code) || null; }
+function hqDesc(code, vnName){ const n = hqName(code); return n && (n.item || n.spec) ? [n.item, n.spec].filter(Boolean).join(' ') : (vnName || ''); }
+async function hqNamePut(code, vnName, item, spec){
+  const cur = hqName(code) || {}; item = String(item || '').trim(); spec = String(spec || '').trim();
+  if ((cur.item || '') === item && (cur.spec || '') === spec) return true;
+  const rec = {id: 'name|' + code, code, vnName: vnName || cur.vnName || '', item, spec}; hqsStamp(rec, !cur.id);
+  const res = await retrySafe(() => api('saveHQStore', {store: 'hqcfg', rec}));
+  if (!res || !res.ok) return false;
+  HQS.hqcfg = (HQS.hqcfg || []).filter(x => x.id !== rec.id).concat([rec]); return true;
+}
+function hqNameCodes(){
+  const m = new Map();
+  SPO.forEach(p => { if (p.code && !m.has(p.code)) m.set(p.code, {code: p.code, name: p.name, unit: p.unit}); });
+  (HQ.pr || []).forEach(r => (r.lines || []).forEach(l => { if (l.code && !m.has(l.code)) m.set(l.code, {code: l.code, name: l.name, unit: l.unit}); }));
+  (HQS.hqcfg || []).filter(x => String(x.id).startsWith('name|')).forEach(x => { if (!m.has(x.code)) m.set(x.code, {code: x.code, name: x.vnName, unit: ''}); });
+  return [...m.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+function hqNameEdit(){
+  const rows = hqNameCodes(), SI = HQ_IN + ';padding:4px 6px;font-size:12.5px';
+  hqModal('hq-nm', `<h3 style="margin:0 0 6px;font-size:16px">🏷️ 본사 품명 (발주서·인보이스용)</h3>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">베트남 품명과 본사가 공급사에 발주하고 인보이스에 쓰는 품명이 다를 때 넣어주세요. 비워 두면 베트남 품명을 그대로 씁니다.<br>예) COIL 0.8mm × 6.0mm AIW 2Ts-5P → Item <b>FLAT COPPER WIRE</b> · Spec <b>0.8mm*6mm AIW</b></div>
+    <div class="tw" style="max-height:60vh;overflow:auto"><table style="font-size:12.5px"><thead><tr><th>코드</th><th>베트남 품명</th><th>Item (본사)</th><th>Spec (본사)</th></tr></thead><tbody>${
+      rows.map(r => { const n = hqName(r.code) || {}; return `<tr><td style="font-family:monospace;font-size:11.5px">${hqE(r.code)}</td><td style="min-width:200px">${hqE(r.name || '')}</td>
+        <td><input class="hqnm" data-c="${hqE(r.code)}" data-n="${hqE(r.name || '')}" data-k="item" value="${hqE(n.item || '')}" placeholder="예: FLAT COPPER WIRE" style="${SI};width:170px"></td>
+        <td><input class="hqnm" data-c="${hqE(r.code)}" data-k="spec" value="${hqE(n.spec || '')}" placeholder="예: 0.8mm*6mm AIW" style="${SI};width:190px"></td></tr>`; }).join('') || '<tr><td colspan="4" class="empty">발주한 자재가 없습니다.</td></tr>'}</tbody></table></div>
+    <div id="hqnm-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px">${hqsBtn('닫기', "hqClose('hq-nm')", '#64748b')}${hqsBtn('💾 저장', 'hqNameSave()', '#185FA5', true)}</div>`, 860);
+}
+async function hqNameSave(){
+  if (!hqCan('buy','W')) { alert('구매 입력·수정 권한이 없습니다.'); return; }
+  const v = {}; document.querySelectorAll('#hq-nm .hqnm').forEach(i => { const o = v[i.dataset.c] = v[i.dataset.c] || {}; o[i.dataset.k] = i.value; if (i.dataset.n) o.n = i.dataset.n; });
+  const err = document.getElementById('hqnm-err'); let n = 0;
+  for (const [code, o] of Object.entries(v)) {
+    const cur = hqName(code) || {}; if ((cur.item || '') === o.item.trim() && (cur.spec || '') === o.spec.trim()) continue;
+    err.textContent = '⏳ 저장 중…'; if (!(await hqNamePut(code, o.n, o.item, o.spec))) { err.textContent = code + ' 저장 실패 — 새 Code.gs가 배포되었는지 확인해주세요.'; return; } n++;
+  }
+  hqClose('hq-nm'); renderHQ(); hqToast(n ? `🏷️ 본사 품명 ${n}건 저장` : '바뀐 내용이 없습니다');
+}
 function hqVNDefLine(p){
-  const l = hqVNLast(p.code) || {};
-  return {qty: '', hs: l.hs || '', item: l.item || String(p.name || '').trim().split(/[\s(]/)[0].toUpperCase(), spec: l.spec || p.name || '', origin: l.origin || (c => ({'한국':'KOREA','중국':'CHINA','베트남':'VIETNAM','일본':'JAPAN','대만':'TAIWAN','미국':'USA','독일':'GERMANY'})[c] || (c ? String(c).toUpperCase() : HQ_CIPL.origin))((hqsSup(p.supplier || '') || {}).country), nw: '', box: 1};
+  const l = hqVNLast(p.code) || {}, nm = hqName(p.code) || {};
+  return {qty: '', hs: l.hs || '', item: nm.item || l.item || String(p.name || '').trim().split(/[\s(]/)[0].toUpperCase(), spec: nm.spec || l.spec || p.name || '', origin: l.origin || (c => ({'한국':'KOREA','중국':'CHINA','베트남':'VIETNAM','일본':'JAPAN','대만':'TAIWAN','미국':'USA','독일':'GERMANY'})[c] || (c ? String(c).toUpperCase() : HQ_CIPL.origin))((hqsSup(p.supplier || '') || {}).country), nw: '', box: 1};
 }
 function hqVNRoute(h){ if (h.route) return h.route; const l = (h.lines||[])[0]; const p = l && SPO.find(s => String(s.id) === String(l.spoId)); return p && p.route !== 'hq' ? 'direct' : 'hq'; }
 function hqVNShipEdit(id, poNo, route){
@@ -14983,6 +15024,7 @@ async function hqVNShipSave(print){
   delete rec.sel; delete rec.plt; delete rec.ct; delete rec.pkgs;
   rec.nw = lines.reduce((s, l) => s + (+l.nw || 0), 0) || ''; rec.gw = rec.packs.reduce((s, p) => s + (+p.gw || 0), 0) || '';
   hqsStamp(rec, !HQS.hqship.some(x => String(x.id) === String(rec.id)));
+  for (const l of lines) await hqNamePut(l.code, l.name, l.item, l.spec);   // 인보이스에 쓴 Item·Spec을 본사 품명으로 기억
   if (await hqsSave('hqship', rec)) { hqClose('hq-vs'); renderHQ(); hqToast(`✈️ ${rec.invNo} 저장 — 자재 ${lines.length}건`); if (print) hqVNInvPrint(rec.id); }
 }
 async function hqVNShipDelete(id){
