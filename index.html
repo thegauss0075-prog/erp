@@ -15004,8 +15004,8 @@ function hqVNShipEdit(id, poNo, route){
   if (h) { HQS.ed = JSON.parse(JSON.stringify(h)); HQS.ed.route = hqVNRoute(h); HQS.ed.sel = {}; (h.lines||[]).forEach(l => HQS.ed.sel[l.spoId] = {...l}); if (!Array.isArray(HQS.ed.packs)) HQS.ed.packs = [{no: 1, type: +h.plt ? 'PALLET' : 'BOX', gw: h.gw || '', size: ''}]; }
   else HQS.ed = {id: String(Date.now()), invNo: hqVNInvNo(), shipDate: hqToday(), mode: 'SEA', status: '준비', loadPort: HQ_SHIP_PORTS.SEA.load, destPort: HQ_SHIP_PORTS.SEA.dest,
     incoterm: HQ_CIPL.incoterm, contact: HQ_CIPL.contact, sel: {}, packs: [{no: 1, type: 'BOX', gw: '', size: ''}],
-    route: route || (poNo && SPO.some(p => p.poNo === poNo && p.route === 'direct' && hqVNAvail(p) > 0) ? 'direct' : 'hq')};
-  if (!h && HQS.ed.route === 'direct') { const f = poNo && SPO.find(p => p.poNo === poNo && p.route === 'direct'); Object.assign(HQS.ed, {loadPort: f ? hqSupCountryEn(f.supplier) : '', destPort: HQ_CIPL.destDirect, contact: HQ_CIPL.contactDirect}); }
+    route: route || (poNo && SPO.some(p => p.poNo === poNo && p.route !== 'hq' && p.route !== 'wire' && hqVNAvail(p) > 0) ? 'direct' : 'hq')};
+  if (!h && HQS.ed.route === 'direct') { const f = poNo && SPO.find(p => p.poNo === poNo && p.route !== 'hq' && p.route !== 'wire'); Object.assign(HQS.ed, {loadPort: f ? hqSupCountryEn(f.supplier) : '', destPort: HQ_CIPL.destDirect, contact: HQ_CIPL.contactDirect}); }
   if (!h && poNo) SPO.filter(p => p.poNo === poNo && p.route !== 'wire' && (p.route === 'hq' ? 'hq' : 'direct') === HQS.ed.route).forEach(p => { const a = hqVNAvail(p); if (a > 0) HQS.ed.sel[p.id] = {...hqVNDefLine(p), qty: a}; });   // 발주서 화면의 🧾 버튼: 그 발주 자재를 미리 채움
   hqVNRender();
 }
