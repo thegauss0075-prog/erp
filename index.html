@@ -14827,6 +14827,8 @@ const HQ_CIPL = {
   contact: 'Hang /+84 0936733956', incoterm: 'DDP', origin: 'KOREA',
   contactDirect: 'HANG / HANG@thegauss.com / +84 936733956', destDirect: 'Hai Phong, Viet Nam'   // 직송 양식(LS10019 COM/PACK) 기준
 };
+const HQ_INCOTERMS = ['DDP','DAP','DPU','CIF','CFR','CIP','CPT','FOB','FCA','EXW'];
+const HQ_ORIGINS = ['KOREA','CHINA','VIETNAM'];
 const HQ_PACK_T = {BOX: 'box', PALLET: 'pallet', WPALLET: 'Woodenpallet'};
 const HQ_CTRY_EN = {'한국':'Korea','중국':'China','베트남':'Vietnam','일본':'Japan','대만':'Taiwan','미국':'USA','독일':'Germany'};
 function hqSupCountryEn(sup){ const c = (hqsSup(sup || '') || {}).country; return HQ_CTRY_EN[c] || c || ''; }
@@ -14917,16 +14919,16 @@ function hqVNRender(){
       ${f('invNo','Invoice No')}${f('shipDate','Invoice 날짜','date')}
       ${hqFld('상태','', `<select id="hqv-status" style="${HQ_IN}">${HQ_SHIP_ST.concat(['취소']).map(s => `<option ${e.status===s?'selected':''}>${s}</option>`).join('')}</select>`)}
       ${f('etd','ETD (Sailing on or about)','date')}${f('eta','ETA (도착)','date')}
-      ${hqFld('Port of loading','', `<input id="hqv-loadPort" list="hqv-loads" value="${hqE(e.loadPort ?? '')}" style="${HQ_IN}"><datalist id="hqv-loads">${[...new Set(Object.values(HQ_SHIP_PORTS).flatMap(x => x.loads || [x.load]))].map(v => `<option value="${hqE(v)}">`).join('')}</datalist>${e.mode === 'SEA' ? `<div style="display:flex;gap:4px;margin-top:4px">${HQ_SHIP_PORTS.SEA.loads.map(v => `<button type="button" onclick="document.getElementById('hqv-loadPort').value='${v}'" style="font-size:11px;padding:2px 8px;border:1px solid #DCE1E7;border-radius:6px;background:#fff;cursor:pointer">${v.startsWith('BUSAN') ? '부산항' : '인천항'}</button>`).join('')}</div>` : ''}`)}
-      ${f('destPort','Final destination')}${f('carrier', P.carLbl)}${f('blNo', P.blLbl)}${f('incoterm','Incoterm')}
+      ${hqFld('Port of loading','', `<input id="hqv-loadPort" list="hqv-loads" value="${hqE(e.loadPort ?? '')}" style="${HQ_IN}"><datalist id="hqv-loads">${[...new Set(Object.values(HQ_SHIP_PORTS).flatMap(x => x.loads || [x.load]))].map(v => `<option value="${hqE(v)}">`).join('')}</datalist>${e.mode === 'SEA' && e.route !== 'direct' ? `<div style="display:flex;gap:4px;margin-top:4px">${HQ_SHIP_PORTS.SEA.loads.map(v => `<button type="button" onclick="document.getElementById('hqv-loadPort').value='${v}'" style="font-size:11px;padding:2px 8px;border:1px solid #DCE1E7;border-radius:6px;background:#fff;cursor:pointer">${v.startsWith('BUSAN') ? '부산항' : '인천항'}</button>`).join('')}</div>` : ''}`)}
+      ${f('destPort','Final destination')}${f('carrier', P.carLbl)}${f('blNo', P.blLbl)}${hqFld('Incoterm','', `<select id="hqv-incoterm" style="${HQ_IN}">${[...new Set([...HQ_INCOTERMS, e.incoterm || 'DDP'])].map(v => `<option ${(e.incoterm || 'DDP')===v?'selected':''}>${hqE(v)}</option>`).join('')}</select>`)}
       ${f('contact','수하인 담당자·연락처')}${f('cbm','CBM','number')}${f('note','비고 (내부용)')}
     </div>
     <h4 style="margin:14px 0 6px;font-size:13.5px">자재 <span style="font-weight:400;color:#8A95A3;font-size:12px">— Item·Spec·HS·원산지는 같은 자재를 지난번에 보낼 때 쓴 값이 미리 들어갑니다</span></h4>
     <div class="tw"><table style="font-size:12px"><thead><tr><th>발주번호 · 자재</th><th style="text-align:right">보낼 수 있는</th><th>이번 발송</th><th>Item</th><th>Spec</th><th>HS Code</th><th>Origin</th><th>N.W (kg)</th><th>포장 No</th></tr></thead><tbody>${
-      cand.length ? cand.map(x => `<tr><td><span style="font-family:monospace;font-size:11px;color:#8A95A3">${hqE(x.p.poNo||'')}</span> <span style="font-size:10.5px;font-weight:700;color:${x.p.route === 'hq' ? '#7c3aed' : '#0f766e'}">${x.p.route === 'hq' ? '🏢 본사 보관' : '➡️ 직송 · ' + hqE(x.p.supplier || '')}</span><br>${hqE(x.p.name)}</td>
+      cand.length ? cand.map(x => `<tr><td style="min-width:170px;max-width:230px;white-space:normal;line-height:1.35"><span style="font-family:monospace;font-size:11px;color:#8A95A3">${hqE(x.p.poNo||'')}</span> <span style="font-size:10.5px;font-weight:700;color:${x.p.route === 'hq' ? '#7c3aed' : '#0f766e'}">${x.p.route === 'hq' ? '🏢 본사 보관' : '➡️ 직송 · ' + hqE(x.p.supplier || '')}</span><br>${hqE(x.p.name)}</td>
         <td style="text-align:right;white-space:nowrap">${hqN(x.avail)} ${hqE(x.p.unit||'')}</td>
         <td style="white-space:nowrap">${li(x, 'qty', 80, 'number')} <button onclick="this.previousElementSibling.value='${x.avail}'" style="font-size:11px;padding:2px 5px;border:1px solid #DCE1E7;border-radius:6px;background:#fff;cursor:pointer">전량</button></td>
-        <td>${li(x, 'item', 90)}</td><td>${li(x, 'spec', 190)}</td><td>${li(x, 'hs', 85)}</td><td>${li(x, 'origin', 70)}</td><td>${li(x, 'nw', 65, 'number')}</td>
+        <td>${li(x, 'item', 90)}</td><td>${li(x, 'spec', 150)}</td><td>${li(x, 'hs', 85)}</td><td><select class="hqv-l" data-id="${hqE(x.p.id)}" data-k="origin" style="${SI};width:92px">${[...new Set([...HQ_ORIGINS, x.l.origin || 'KOREA'])].map(v => `<option ${(x.l.origin || 'KOREA')===v?'selected':''}>${hqE(v)}</option>`).join('')}</select></td><td>${li(x, 'nw', 65, 'number')}</td>
         <td><select class="hqv-l" data-id="${hqE(x.p.id)}" data-k="box" style="${SI};width:56px">${boxes.map(b => `<option ${+x.l.box===+b?'selected':''}>${b}</option>`).join('')}</select></td></tr>`).join('')
       : '<tr><td colspan="9" class="empty">보낼 자재가 없습니다. 본사 경유 자재는 먼저 "📥 본사 입고"를 등록하세요.</td></tr>'}</tbody></table></div>
     <h4 style="margin:14px 0 6px;font-size:13.5px">포장 (Packing)</h4>
@@ -14938,7 +14940,7 @@ function hqVNRender(){
         <td>${e.packs.length > 1 ? `<button onclick="hqVNPack(-1,${i})" class="edit-btn" title="포장 빼기">✕</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
     <button onclick="hqVNPack(1)" style="margin-top:6px;font-size:12px;padding:4px 10px;border:1px dashed #7c3aed;border-radius:7px;background:#fff;color:#7c3aed;cursor:pointer">➕ 포장 추가</button>
     <div id="hqv-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
-    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px">${hqsBtn('닫기', "hqClose('hq-vs')", '#64748b')}${hqsBtn('💾 저장', 'hqVNShipSave(false)', '#7c3aed')}${hqsBtn('💾 저장 + 🖨️ 인보이스', 'hqVNShipSave(true)', '#7c3aed', true)}</div>`, 1150);
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px">${hqsBtn('닫기', "hqClose('hq-vs')", '#64748b')}${hqsBtn('💾 저장', 'hqVNShipSave(false)', '#7c3aed')}${hqsBtn('💾 저장 + 🖨️ 인보이스', 'hqVNShipSave(true)', '#7c3aed', true)}</div>`, 1260);
 }
 function hqVNGrab(){
   const e = HQS.ed; if (!e || !document.getElementById('hq-vs')) return;
