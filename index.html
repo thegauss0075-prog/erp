@@ -7533,9 +7533,9 @@ async function printQCLotQR(id) {
   document.body.appendChild(holder);
   const exS = qcExpiryStr(r.expiry);
   // 유효기간이 있으면 QR 끝에 ":E20270131"을 붙인다 → MES가 찍는 순간 기한 지난 LOT을 막는다
-  // ✅ [2026-11-10] QR에 품명도 넣는다: "MAT:코드:LOT[:E유효기간]|품명" — MES는 | 앞만 읽으므로 예전 라벨도 그대로 쓸 수 있다
+  // ✅ [2026-11-10] QR에 품명도 넣는다: "MAT: 코드 : LOT [: E유효기간] | 품명" (읽기 좋게 띄어 씀) — MES는 | 앞만 읽으므로 예전 라벨도 그대로 쓸 수 있다
   const qrName = String(r.name || '').replace(/[|\r\n]/g, ' ').trim().slice(0, 60);
-  new QRCode(holder, { text: `MAT:${r.code||''}:${r.lot||''}${exS ? ':E' + exS.replace(/-/g, '') : ''}${qrName ? '|' + qrName : ''}`, width: 300, height: 300, correctLevel: QRCode.CorrectLevel.M });
+  new QRCode(holder, { text: `MAT: ${r.code||''} : ${r.lot||''}${exS ? ' : E' + exS.replace(/-/g, '') : ''}${qrName ? ' | ' + qrName : ''}`, width: 300, height: 300, correctLevel: QRCode.CorrectLevel.M });
   await new Promise(res => setTimeout(res, 60));
   const img = holder.querySelector('img') || holder.querySelector('canvas');
   const src = img && (img.tagName === 'CANVAS' ? img.toDataURL('image/png') : img.src);
