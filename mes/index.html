@@ -445,7 +445,8 @@ let FD = null;
 // 공정·품목별로 마지막에 찍은 자재 LOT을 태블릿이 기억 → 다음 실적에 자동으로 넣는다 (LOT이 바뀔 때만 다시 찍음)
 // ERP 수입검사 LOT 라벨 QR은 "MAT:자재코드:LOT" 형식 → 자재코드와 LOT으로 나눠 저장
 //   유효기간이 있는 자재는 "MAT:자재코드:LOT:E20270131" (E + 유효기간)
-function parseLot(v){ v = String(v||'').trim(); const p = v.split(':'); if (p[0] !== 'MAT' || p.length < 3) return {lot: v};
+function parseLot(v){ v = String(v||'').trim().split('|')[0].trim(); const p = v.split(':');   // | 뒤는 품명(라벨 QR, 2026-11-10)
+  if (p[0] !== 'MAT' || p.length < 3) return {lot: v};
   const e = /^E(\d{4})(\d{2})(\d{2})$/.exec(p[p.length - 1]);
   if (e && p.length >= 4) return {code: p.slice(1, -2).join(':'), lot: p[p.length - 2], exp: `${e[1]}-${e[2]}-${e[3]}`};
   return {code: p.slice(1, -1).join(':'), lot: p[p.length - 1]}; }

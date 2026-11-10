@@ -7533,7 +7533,9 @@ async function printQCLotQR(id) {
   document.body.appendChild(holder);
   const exS = qcExpiryStr(r.expiry);
   // 유효기간이 있으면 QR 끝에 ":E20270131"을 붙인다 → MES가 찍는 순간 기한 지난 LOT을 막는다
-  new QRCode(holder, { text: `MAT:${r.code||''}:${r.lot||''}${exS ? ':E' + exS.replace(/-/g, '') : ''}`, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
+  // ✅ [2026-11-10] QR에 품명도 넣는다: "MAT:코드:LOT[:E유효기간]|품명" — MES는 | 앞만 읽으므로 예전 라벨도 그대로 쓸 수 있다
+  const qrName = String(r.name || '').replace(/[|\r\n]/g, ' ').trim().slice(0, 60);
+  new QRCode(holder, { text: `MAT:${r.code||''}:${r.lot||''}${exS ? ':E' + exS.replace(/-/g, '') : ''}${qrName ? '|' + qrName : ''}`, width: 300, height: 300, correctLevel: QRCode.CorrectLevel.M });
   await new Promise(res => setTimeout(res, 60));
   const img = holder.querySelector('img') || holder.querySelector('canvas');
   const src = img && (img.tagName === 'CANVAS' ? img.toDataURL('image/png') : img.src);
@@ -7574,7 +7576,7 @@ async function printQCLotQR(id) {
         const n = Math.max(1, Math.min(500, +document.getElementById('n').value || 1)), [W, H] = document.getElementById('sz').value.split('x').map(Number), bx = document.getElementById('bx').checked;
         try { localStorage.setItem('lotlbl_sz', document.getElementById('sz').value); } catch (e) {}
         document.getElementById('pg').textContent = '@page{size:' + W + 'mm ' + H + 'mm;margin:0}';
-        const q = Math.min(H - 4, W * 0.45), f = Math.max(7, Math.min(13, H / 4.2));
+        const q = Math.min(H * 0.62, W * 0.3), f = Math.max(7, Math.min(14, H / 3.6));
         let h = '';
         for (let i = 1; i <= n; i++) h += '<div class="lb" style="width:' + W + 'mm;height:' + H + 'mm;font-size:' + (f * 0.8).toFixed(1) + 'pt"><img src="' + I.src + '" style="width:' + q + 'mm;height:' + q + 'mm"><div class="tx">'
           + '<div class="nm" style="font-size:' + f.toFixed(1) + 'pt">' + I.name + '</div><div class="cd">' + I.code + '</div>'
