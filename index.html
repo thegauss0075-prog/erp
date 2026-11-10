@@ -14845,7 +14845,12 @@ async function hqSealUpload(input){
   let d = ''; for (const [m, q] of [[300, .85], [240, .8], [200, .7], [160, .6]]) { d = hqSealShrink(img, m, q); if (d.length < 40000) break; }
   if (d.length >= 40000) { err.textContent = '이미지가 너무 큽니다. 도장 부분만 잘라서 다시 올려주세요.'; return; }
   const rec = {id: 'seal_corp', d}; hqsStamp(rec, !hqSeal());
-  if (await hqsSave('hqcfg', rec)) { hqSealEdit(); renderHQ(); hqToast('🖋️ 도장 이미지를 저장했습니다'); }
+  // 이미지가 커서 주소(GET)로는 못 보낸다 → POST로 저장
+  err.textContent = '⏳ 저장 중…';
+  const res = await apiPost('saveHQStore', {store: 'hqcfg', rec});
+  if (!res || !res.ok) { err.textContent = '저장 실패: ' + ((res && res.error) || '서버 응답 없음') + (/unknown action|bad store/i.test(res && res.error || '') ? ' — 새 Code.gs를 배포해야 합니다.' : ''); return; }
+  HQS.hqcfg = (HQS.hqcfg || []).filter(x => x.id !== 'seal_corp').concat([rec]);
+  hqSealEdit(); renderHQ(); hqToast('🖋️ 도장 이미지를 저장했습니다');
 }
 async function hqSealClear(){
   if (!hqCan('buy','W') || !confirm('도장 이미지를 지울까요?')) return;
