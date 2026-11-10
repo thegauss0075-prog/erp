@@ -387,6 +387,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   .empty{color:var(--faint)}
 
   /* 행 단위 작은 버튼(수정·삭제 아이콘) — 테두리 없이 조용하게 */
+  .hq-need:invalid{background:#FEF3C7!important;border-color:#F59E0B!important}.hq-need:invalid:focus{background:#FFFBEB!important}
   .hq-acts{display:flex;gap:4px;flex-wrap:nowrap}.hq-acts button{padding:4px 8px;border:1px solid #94A3B8;border-radius:7px;background:#fff;color:#1E293B;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}.hq-acts button:hover{background:#EFF6FF;border-color:#185FA5;color:#185FA5}.hq-acts .inv{border-color:#7c3aed;color:#7c3aed}.hq-acts .del{border-color:#fca5a5;color:#b91c1c}
   .edit-btn{padding:3px 4px!important;font-size:13px;border:1px solid transparent!important;background:transparent!important;border-radius:var(--r-sm)!important;opacity:.7;transition:opacity .12s,background .12s}
   .edit-btn:hover{opacity:1;background:var(--primary-soft)!important;border-color:var(--line)!important}
@@ -15055,6 +15056,12 @@ function hqVNRender(){
     <button onclick="hqVNPack(1)" style="margin-top:6px;font-size:12px;padding:4px 10px;border:1px dashed #7c3aed;border-radius:7px;background:#fff;color:#7c3aed;cursor:pointer">➕ 포장 추가</button>
     <div id="hqv-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
     <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px">${hqsBtn('닫기', "hqClose('hq-vs')", '#64748b')}${hqsBtn('💾 저장', 'hqVNShipSave(false)', '#7c3aed')}${hqsBtn('💾 저장 + 🖨️ 인보이스', 'hqVNShipSave(true)', '#7c3aed', true)}</div>`, 1260);
+  // ✍️ 직접 입력해야 하는 칸: 비어 있으면 노란색 (채우면 흰색으로 돌아감)
+  const box = document.getElementById('hq-vs');
+  if (box) {
+    box.querySelectorAll('#hqv-etd,#hqv-eta,#hqv-carrier,#hqv-blNo,#hqv-cbm,#hqv-loadPort,.hqv-l[data-k=qty],.hqv-l[data-k=hs],.hqv-l[data-k=nw],.hqv-p[data-k=gw],.hqv-p[data-k=size]').forEach(i => { i.classList.add('hq-need'); i.required = true; });
+    const h3 = box.querySelector('h3'); if (h3 && !box.querySelector('.hq-need-lg')) h3.insertAdjacentHTML('beforeend', ' <span class="hq-need-lg" style="font-size:12px;font-weight:600;color:#92400e;background:#FEF3C7;border:1px solid #F59E0B;border-radius:6px;padding:2px 8px;margin-left:8px">노란 칸 = 직접 입력</span>');
+  }
 }
 function hqVNGrab(){
   const e = HQS.ed; if (!e || !document.getElementById('hq-vs')) return;
