@@ -689,6 +689,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
             <option value="ACHROMAT">ACHROMAT</option>
           </select>
         </div>
+        <div class="fr"><label>본사 Invoice No / Số Invoice</label><input id="in-inv" placeholder="본사 발주 자재면 자동입력 / Tự động"><div id="in-inv-hint" style="font-size:11.5px;color:#0f766e;margin-top:3px"></div></div>
         <div class="fr"><label>비고 / Ghi chú</label><input id="in-note" placeholder="(선택사항)"></div>
       </div>
       <div class="form-actions"><button class="btn-confirm-in" onclick="showCP('in')">✅ 등록 확인 / Xác nhận</button></div>
@@ -3561,7 +3562,28 @@ function acPick(dir,i){
   document.getElementById(dir+'-drop').style.display='none';
   fillForm(dir,item);
 }
+// 📥 자재 입고: 본사 발주(SUPPLY_PO)로 들어오는 자재면 본사가 만든 베트남 발송 인보이스(HQ_SHIP)의 번호를 찾아 넣는다 (2026-11-10)
+let _vnShipCache = null;
+function vnInvNote(dir, note){ if (dir !== 'in') return note; const v = ((document.getElementById('in-inv') || {}).value || '').trim(); return v && !String(note || '').includes(v) ? `[INV ${v}]` + (note ? ' ' + note : '') : note; }
+async function vnInvFill(code){
+  const el = document.getElementById('in-inv'), hint = document.getElementById('in-inv-hint'); if (!el) return;
+  el.value = ''; if (hint) hint.textContent = '';
+  try {
+    if (typeof _spoTried !== 'undefined' && !_spoTried) await loadSupplyPO();
+    const al = spoAlloc(), open = SPO.filter(p => p.code === code && p.route !== 'wire').map(p => spoRow(p, al)).filter(r => r.remain > 0);
+    if (!open.length) return;
+    const ships = (typeof HQS !== 'undefined' && HQS.hqship && HQS.hqship.length) ? HQS.hqship : (_vnShipCache || (_vnShipCache = ((await api('getHQStore', {store: 'hqship'})) || {}).data || []));
+    const ids = new Set(open.map(r => String(r.id))), rank = {'통관': 4, '도착': 3, '발송': 2, '준비': 1};
+    const cand = ships.filter(h => h.status !== '취소' && h.status !== '입고 완료' && (h.lines || []).some(l => ids.has(String(l.spoId))))
+      .sort((a, b) => (rank[b.status] || 0) - (rank[a.status] || 0) || String(b.shipDate || '').localeCompare(String(a.shipDate || '')));
+    if (document.getElementById('in-code').value !== code) return;
+    if (cand.length) { const h = cand[0], l = h.lines.find(x => ids.has(String(x.spoId))); el.value = h.invNo;
+      if (hint) hint.textContent = `📦 ${h.invNo} · 발주 ${l.poNo || ''} · ${(+l.qty).toLocaleString()} ${l.unit || ''}${cand.length > 1 ? ` (다른 인보이스 ${cand.length - 1}건: ${cand.slice(1).map(x => x.invNo).join(', ')})` : ''}`; }
+    else if (hint) hint.textContent = `발주 ${[...new Set(open.map(r => r.poNo))].join(', ')} — 아직 인보이스가 없습니다 / Chưa có Invoice`;
+  } catch (e) {}
+}
 function fillForm(dir,item){
+  if (dir === 'in') setTimeout(() => vnInvFill(item.code), 0);
   document.getElementById(dir+'-code').value=item.code;
   document.getElementById(dir+'-name').value=item.name;
   const ngTypeName={TP:'완제품 NG',copper:'동선 / 스크랩 NG',mat:'원자재 NG'};
@@ -6985,7 +7007,7 @@ function showCP(dir){
   const noteBase=document.getElementById(dir+'-note').value.trim();
   const makerElD=document.getElementById(dir+'-maker');
   const makerVal=makerElD?makerElD.value:'';
-  const note = makerVal ? (noteBase ? `[${makerVal}] ${noteBase}` : `[제조사: ${makerVal}]`) : noteBase;
+  const note = vnInvNote(dir, makerVal ? (noteBase ? `[${makerVal}] ${noteBase}` : `[제조사: ${makerVal}]`) : noteBase);
   const lotEl=document.getElementById(dir+'-lot');
   const lot=lotEl?(lotEl.tagName==='SELECT'?lotEl.value:lotEl.value.trim()):'';
   const dest=dir==='otp'?curDest:null;
@@ -7099,7 +7121,7 @@ async function doSubmit(dir){
   const noteBase=document.getElementById(dir+'-note').value.trim();
   const makerElD=document.getElementById(dir+'-maker');
   const makerVal=makerElD?makerElD.value:'';
-  let note = makerVal ? (noteBase ? `[${makerVal}] ${noteBase}` : `[제조사: ${makerVal}]`) : noteBase;
+  let note = vnInvNote(dir, makerVal ? (noteBase ? `[${makerVal}] ${noteBase}` : `[제조사: ${makerVal}]`) : noteBase);
   const lotEl=document.getElementById(dir+'-lot');
   const lot=lotEl?(lotEl.tagName==='SELECT'?lotEl.value:lotEl.value.trim()):'';
   const dest=dir==='otp'?curDest:null;
@@ -7223,7 +7245,7 @@ async function doSubmit(dir){
     ngLog.push(ngLogEntry);
   }
 
-  ['q','code','name','cat','unit','qty','note','lot'].forEach(f=>{const el=document.getElementById(dir+'-'+f);if(el)el.value='';});
+  ['q','code','name','cat','unit','qty','note','lot','inv'].forEach(f=>{const el=document.getElementById(dir+'-'+f);if(el)el.value='';}); { const h=document.getElementById(dir+'-inv-hint'); if(h) h.textContent=''; }
   // 제조사 필드 초기화
   const mkEl=document.getElementById(dir+'-maker');if(mkEl)mkEl.value='';
   const mkRow=document.getElementById(dir+'-maker-row');if(mkRow)mkRow.style.display='none';
