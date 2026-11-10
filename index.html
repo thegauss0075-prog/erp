@@ -13642,7 +13642,7 @@ function hqPRToPO(){
   const sups = [...new Set(r.lines.map(l => l.supplier || '(공급사 미정)'))];
   const due = r.needBy || hqAddDays(hqToday(), 30);
   hqModal('hq-po', `<h3 style="margin:0 0 10px;font-size:16px">🚢 공급사 발주로 전환 <span style="font-weight:400;color:#5D6977;font-size:12.5px">${hqE(r.prNo)}</span></h3>
-    <div style="font-size:12.5px;color:#5D6977;margin-bottom:8px">공급사별로 발주번호가 하나씩 만들어집니다. 단가는 비워 두고 나중에 넣어도 됩니다.<br>배송 경로: <b>➡️ 직송</b> = 공급사가 베트남으로 바로 보냄 · <b>🏢 본사 경유</b> = 본사로 입고한 뒤 본사에서 베트남으로 발송</div>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:8px">공급사별로 발주번호가 하나씩 만들어집니다. 단가는 비워 두고 나중에 넣어도 됩니다.<br>배송 경로는 자재마다 고릅니다: <b>➡️ 직송</b> = 공급사가 베트남으로 바로 보냄 · <b>🏢 본사 경유</b> = 본사로 입고한 뒤 본사에서 베트남으로 발송</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px">
       ${hqFld('발주일','Ngày đặt', `<input id="hqpo-date" type="date" value="${hqToday()}" style="${HQ_IN}">`)}
       ${hqFld('입고 예정일','Dự kiến nhập', `<input id="hqpo-due" type="date" value="${due}" style="${HQ_IN}">`)}
@@ -13650,7 +13650,7 @@ function hqPRToPO(){
     </div>
     <div class="tw"><table><thead><tr><th>공급사</th><th>발주번호 · 배송 경로</th><th>자재</th><th style="text-align:right">수량</th><th>단가 · 통화</th></tr></thead><tbody>${
       r.lines.map((l, i) => { const s = l.supplier || '(공급사 미정)', si = sups.indexOf(s);
-        return `<tr><td>${hqE(s)}</td><td>${r.lines.findIndex(x => (x.supplier || '(공급사 미정)') === s) === i ? `<input class="hqpo-no" data-s="${si}" value="${hqE(hqPONos(sups.length)[si])}" style="${HQ_IN};width:150px"><div style="margin-top:4px">${HQ_ROUTE_SEL('hqpo-route', (hqsSup(s)||{}).route || 'direct', `data-s="${si}"`)}</div>` : '<span style="color:#8A95A3">↑ 같은 발주</span>'}</td>
+        return `<tr><td>${hqE(s)}</td><td>${r.lines.findIndex(x => (x.supplier || '(공급사 미정)') === s) === i ? `<input class="hqpo-no" data-s="${si}" value="${hqE(hqPONos(sups.length)[si])}" style="${HQ_IN};width:150px">` : '<span style="color:#8A95A3">↑ 같은 발주</span>'}<div style="margin-top:4px">${HQ_ROUTE_SEL('hqpo-route', (hqsSup(s)||{}).route || 'direct', `data-i="${i}"`)}</div></td>
           <td>${hqE(l.name)} <span style="font-size:11px;color:#8A95A3">${hqE(l.code)}</span></td><td style="text-align:right">${hqN(l.qty)} ${hqE(l.unit||'')}</td>
           <td style="white-space:nowrap"><input class="hqpo-price" data-i="${i}" type="number" step="0.0001" value="${hqE(l.price ?? '')}" style="${HQ_IN};width:100px"> <select class="hqpo-lcur" data-i="${i}" style="${HQ_IN};width:72px">${HQ_PR_CURS.map(c => `<option ${hqPRCur(l)===c?'selected':''}>${c}</option>`).join('')}</select></td></tr>`; }).join('')}</tbody></table></div>
     <div id="hqpo-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
@@ -13661,7 +13661,7 @@ async function hqPRToPOGo(){
   const r = HQ_PR, err = document.getElementById('hqpo-err'), btn = document.getElementById('hqpo-go');
   const sups = [...new Set(r.lines.map(l => l.supplier || '(공급사 미정)'))];
   const nos = {}, routes = {}; document.querySelectorAll('#hq-po .hqpo-no').forEach(i => nos[sups[+i.dataset.s]] = i.value.trim());
-  document.querySelectorAll('#hq-po .hqpo-route').forEach(i => routes[sups[+i.dataset.s]] = i.value);
+  document.querySelectorAll('#hq-po .hqpo-route').forEach(i => routes[+i.dataset.i] = i.value);
   if (Object.values(nos).some(v => !v)) { err.textContent = '발주번호를 넣어주세요.'; return; }
   const date = document.getElementById('hqpo-date').value, due = document.getElementById('hqpo-due').value, inc = document.getElementById('hqpo-inc').value.trim();
   const prices = {}, curs = {}; document.querySelectorAll('#hq-po .hqpo-price').forEach(i => prices[+i.dataset.i] = i.value); document.querySelectorAll('#hq-po .hqpo-lcur').forEach(i => curs[+i.dataset.i] = i.value);
@@ -13670,7 +13670,7 @@ async function hqPRToPOGo(){
   for (let i = 0; i < r.lines.length; i++) {
     const l = r.lines[i], s = l.supplier || '(공급사 미정)';
     const rec = {id: String(Date.now()) + '_' + i, poNo: nos[s], supplier: l.supplier || '', code: l.code, name: l.name, cat: l.cat, unit: l.unit, qty: +l.qty, orderDate: date, dueDate: due,
-      note: `구매요청 ${r.prNo}${l.note ? ' · ' + l.note : ''}`, price: prices[i] === '' ? '' : +prices[i], cur: curs[i] || hqPRCur(l), incoterm: inc, prId: r.id, prNo: r.prNo, stage: '발주', route: routes[s] || 'direct',
+      note: `구매요청 ${r.prNo}${l.note ? ' · ' + l.note : ''}`, price: prices[i] === '' ? '' : +prices[i], cur: curs[i] || hqPRCur(l), incoterm: inc, prId: r.id, prNo: r.prNo, stage: '발주', route: routes[i] || 'direct',
       stageLog: [{stage: '발주', at: new Date().toISOString(), by: CURRENT_USER||''}], createdBy: CURRENT_USER||'', createdAt: new Date().toISOString()};
     const res = await retrySafe(() => api('saveSupplyPO', {rec}));
     if (!res || !res.ok) { btn.disabled = false; btn.textContent = '발주 등록'; err.textContent = `${l.name} 발주 저장 실패: ` + ((res && res.error) || '') + (made.length ? ` (앞의 ${made.length}건은 저장됨)` : ''); return; }
@@ -14597,9 +14597,9 @@ function hqShipGroups(){
   return Object.values(g).map(x => {
     const f = x.rows[0], qty = x.rows.reduce((s,r) => s + r.q, 0), got = x.rows.reduce((s,r) => s + Math.min(r.q, r.got), 0);
     const amtBy = {}; x.rows.forEach(r => { if (+r.price) amtBy[r.cur || 'USD'] = (amtBy[r.cur || 'USD'] || 0) + (+r.price) * r.q; }); const amt = Object.keys(amtBy).length === 1 ? Object.values(amtBy)[0] : 0, done = x.rows.every(r => r.status === 'done');
-    const route = f.route === 'hq' ? 'hq' : 'direct', stages = route === 'hq' ? HQ_STAGES_HQ : HQ_STAGES;
+    const nHQ = x.rows.filter(r => r.route === 'hq').length, route = !nHQ ? 'direct' : nHQ === x.rows.length ? 'hq' : 'mix', stages = route === 'direct' ? HQ_STAGES : HQ_STAGES_HQ;
     let stage = done ? '입고 완료' : (x.rows.map(r => r.stage).filter(s => stages.includes(s)).sort((p,q) => stages.indexOf(q) - stages.indexOf(p))[0] || '발주');
-    if (route === 'hq' && !done) {   // 본사 경유: 본사 입고·베트남 발송 기록으로 단계를 정한다
+    if (route !== 'direct' && !done) {   // 본사 경유: 본사 입고·베트남 발송 기록으로 단계를 정한다
       const recv = x.rows.reduce((s,r) => s + hqRecvQty(r), 0), shp = HQS.hqship.filter(h => h.status !== '취소' && (h.lines||[]).some(l => x.rows.some(r => String(r.id) === String(l.spoId))));
       const sst = shp.map(h => ({'발송':'베트남 발송','도착':'도착','통관':'통관','입고 완료':'통관'})[h.status]).filter(Boolean).sort((p,q) => stages.indexOf(q) - stages.indexOf(p))[0];
       if (sst) stage = sst; else if (recv > 0) stage = '본사 입고';
@@ -14618,7 +14618,7 @@ function hqShipView(){
       <button onclick="openSupplyPO()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer">➕ 자재 발주 직접 등록</button>
     </div>
     ${gs.length ? `<div class="tw"><table><thead><tr><th>발주번호</th><th>공급사<span class="vi">NCC</span></th><th>발주일</th><th>자재</th><th style="text-align:right">입고/발주</th><th style="text-align:right">금액</th><th>ETD</th><th>ETA</th><th>B/L · Invoice</th><th>단계<span class="vi">Giai đoạn</span></th><th></th></tr></thead><tbody>${
-      gs.map(x => `<tr><td style="font-family:monospace;font-size:12px">${hqE(x.poNo)}${x.prNo ? `<div style="color:#8A95A3;font-size:11px">${hqE(x.prNo)}</div>` : ''}</td><td>${(() => { const ss = [...new Set(x.rows.map(r => r.supplier || ''))]; return ss.length > 1 ? ss.map(v => hqE(v || '미정')).join('<br>') : hqE(ss[0] || '-'); })()}<div style="font-size:11px;color:${x.route === 'hq' ? '#7c3aed' : '#0f766e'}">${x.route === 'hq' ? '🏢 본사 경유' : '➡️ 직송'}</div></td><td style="white-space:nowrap">${hqE(x.orderDate||'')}</td>
+      gs.map(x => `<tr><td style="font-family:monospace;font-size:12px">${hqE(x.poNo)}${x.prNo ? `<div style="color:#8A95A3;font-size:11px">${hqE(x.prNo)}</div>` : ''}</td><td>${(() => { const ss = [...new Set(x.rows.map(r => r.supplier || ''))]; return ss.length > 1 ? ss.map(v => hqE(v || '미정')).join('<br>') : hqE(ss[0] || '-'); })()}<div style="font-size:11px;color:${x.route === 'direct' ? '#0f766e' : '#7c3aed'}">${x.route === 'hq' ? '🏢 본사 경유' : x.route === 'mix' ? `🔀 직송 ${x.rows.filter(r => r.route !== 'hq').length} · 본사 경유 ${x.rows.filter(r => r.route === 'hq').length}` : '➡️ 직송'}</div></td><td style="white-space:nowrap">${hqE(x.orderDate||'')}</td>
         <td>${hqE(x.rows[0].name)}${x.rows.length > 1 ? ` <span style="color:#8A95A3">외 ${x.rows.length-1}</span>` : ''}</td>
         <td style="text-align:right;white-space:nowrap">${hqN(x.got)} / ${hqN(x.qty)}</td><td style="text-align:right;white-space:nowrap">${Object.keys(x.amtBy).length ? Object.entries(x.amtBy).map(([c, v]) => hqM(v, c)).join('<br>') : '-'}</td>
         <td style="white-space:nowrap">${hqE(x.etd||'-')}</td><td style="white-space:nowrap;${x.late ? 'color:#b91c1c;font-weight:700' : ''}">${hqE(x.eta || (x.dueDate ? '(예정 ' + x.dueDate + ')' : '-'))}</td>
@@ -14631,16 +14631,16 @@ function hqShipEdit(poNo){
   const x = hqShipGroups().find(g => g.poNo === poNo); if (!x) return;
   hqModal('hq-sh', `<h3 style="margin:0 0 10px;font-size:16px">✏️ ${hqE(poNo)} <span style="font-weight:400;color:#5D6977;font-size:12.5px">${hqE(x.supplier||'')}</span></h3>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
-      ${hqFld('배송 경로','', `<select id="hqs-route" style="${HQ_IN}">${Object.entries(HQ_ROUTES).map(([k, l]) => `<option value="${k}" ${x.route===k?'selected':''}>${l}</option>`).join('')}</select>`)}
       ${hqFld('단계','Giai đoạn', `<select id="hqs-stage" style="${HQ_IN}">${x.stages.slice(0, -1).map(s => `<option value="${s}" ${x.stage===s?'selected':''}>${s}</option>`).join('')}</select>`)}
       ${hqFld('ETD (출항)','', `<input id="hqs-etd" type="date" value="${hqE(x.etd)}" style="${HQ_IN}">`)}
       ${hqFld('ETA (도착)','', `<input id="hqs-eta" type="date" value="${hqE(x.eta)}" style="${HQ_IN}">`)}
       ${hqFld('B/L · AWB No','', `<input id="hqs-bl" value="${hqE(x.blNo)}" style="${HQ_IN}">`)}
       ${hqFld('Invoice No','', `<input id="hqs-inv" value="${hqE(x.invNo)}" style="${HQ_IN}">`)}
     </div>
-    <div class="tw" style="margin-top:10px"><datalist id="hqs-sups">${hqsSupNames().map(v => `<option value="${hqE(v)}">`).join('')}</datalist><table><thead><tr><th>자재</th><th style="text-align:right">발주</th><th style="text-align:right">입고</th><th>공급사</th><th>단가 · 통화</th></tr></thead><tbody>${
+    <div class="tw" style="margin-top:10px"><datalist id="hqs-sups">${hqsSupNames().map(v => `<option value="${hqE(v)}">`).join('')}</datalist><table><thead><tr><th>자재</th><th style="text-align:right">발주</th><th style="text-align:right">입고</th><th>공급사</th><th>배송 경로</th><th>단가 · 통화</th></tr></thead><tbody>${
       x.rows.map(r => `<tr><td>${hqE(r.name)} <span style="font-size:11px;color:#8A95A3">${hqE(r.code)}</span></td><td style="text-align:right;white-space:nowrap">${hqN(r.q)} ${hqE(r.unit||'')}</td><td style="text-align:right">${hqN(r.got)}</td>
         <td><input class="hqs-sup" data-id="${hqE(r.id)}" list="hqs-sups" value="${hqE(r.supplier || '')}" placeholder="공급사" style="${HQ_IN};width:140px"></td>
+        <td>${HQ_ROUTE_SEL('hqs-route', r.route === 'hq' ? 'hq' : 'direct', `data-id="${hqE(r.id)}"`)}</td>
         <td style="white-space:nowrap"><input class="hqs-price" data-id="${hqE(r.id)}" type="number" step="0.0001" value="${hqE(r.price ?? '')}" style="${HQ_IN};width:96px"> <select class="hqs-lcur" data-id="${hqE(r.id)}" style="${HQ_IN};width:70px">${HQ_PR_CURS.map(c => `<option ${(r.cur || 'USD')===c?'selected':''}>${c}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>
     <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">"입고 완료"는 베트남 법인 자재 입고가 다 들어오면 자동으로 표시됩니다. 본사 경유는 "🏢 본사 입고·베트남 발송" 탭에서 본사 입고·발송을 등록하면 단계가 자동으로 바뀝니다.</div>
     <div id="hqs-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
@@ -14651,14 +14651,15 @@ async function hqShipSave(poNo){
   if (!hqCanWrite()) return;
   const x = hqShipGroups().find(g => g.poNo === poNo); if (!x) return;
   const v = id => document.getElementById(id).value, btn = document.getElementById('hqs-go'), err = document.getElementById('hqs-err');
-  const stage = v('hqs-stage'), prices = {}, sups = {}, curs = {};
+  const stage = v('hqs-stage'), prices = {}, sups = {}, curs = {}, routes = {};
+  document.querySelectorAll('#hq-sh .hqs-route').forEach(i => routes[i.dataset.id] = i.value);
   document.querySelectorAll('#hq-sh .hqs-price').forEach(i => prices[i.dataset.id] = i.value);
   document.querySelectorAll('#hq-sh .hqs-sup').forEach(i => sups[i.dataset.id] = i.value.trim());
   document.querySelectorAll('#hq-sh .hqs-lcur').forEach(i => curs[i.dataset.id] = i.value);
   btn.disabled = true; btn.textContent = '⏳ 저장 중…';
   for (const r of x.rows) {
     const p = SPO.find(s => s.id === r.id); if (!p) continue;
-    const rec = {...p, stage, route: v('hqs-route'), etd: v('hqs-etd'), eta: v('hqs-eta'), blNo: v('hqs-bl').trim(), invNo: v('hqs-inv').trim(), cur: curs[p.id] || p.cur || 'USD', supplier: sups[p.id] ?? p.supplier ?? '', price: prices[p.id] === '' ? '' : +prices[p.id]};
+    const rec = {...p, stage, route: routes[p.id] || p.route || 'direct', etd: v('hqs-etd'), eta: v('hqs-eta'), blNo: v('hqs-bl').trim(), invNo: v('hqs-inv').trim(), cur: curs[p.id] || p.cur || 'USD', supplier: sups[p.id] ?? p.supplier ?? '', price: prices[p.id] === '' ? '' : +prices[p.id]};
     if (p.stage !== stage) rec.stageLog = (p.stageLog || []).concat([{stage, at: new Date().toISOString(), by: CURRENT_USER||''}]);
     const res = await retrySafe(() => api('saveSupplyPO', {rec}));
     if (!res || !res.ok) { btn.disabled = false; btn.textContent = '💾 저장'; err.textContent = '저장 실패: ' + ((res && res.error) || ''); return; }
@@ -14688,17 +14689,17 @@ async function hqShipDelete(poNo){
 // 🖨️ 발주서 인쇄: 같은 발주번호라도 공급사가 다르면 공급사마다 한 장씩
 function hqPOPrint(poNo){
   const x = hqShipGroups().find(g => g.poNo === poNo); if (!x) return;
-  const by = {}; x.rows.forEach(r => (by[r.supplier || '(공급사 미정)'] = by[r.supplier || '(공급사 미정)'] || []).push(r));
+  const by = {}; x.rows.forEach(r => { const k = (r.supplier || '(공급사 미정)') + '\u0001' + (r.route === 'hq' ? 'hq' : 'direct'); (by[k] = by[k] || []).push(r); });
   const E = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const fmt = (v, c) => c === 'KRW' || c === 'VND' ? Math.round(+v||0).toLocaleString() : (+v||0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4});
-  const pages = Object.entries(by).map(([sup, rows], pi, all) => {
-    const sp = hqsSup(sup) || {}, tot = {};
+  const pages = Object.entries(by).map(([key, rows], pi, all) => {
+    const [sup, rt] = key.split('\u0001'), sp = hqsSup(sup) || {}, tot = {};
     rows.forEach(r => { if (r.price !== '' && r.price != null) { const c = r.cur || 'USD'; tot[c] = (tot[c]||0) + (+r.price) * r.q; } });
     const no = all.length > 1 ? `${x.poNo}-${pi + 1}` : x.poNo;
     return `<section class="pg"><div class="hd"><div><div class="ttl">PURCHASE ORDER</div><div class="sub">발 주 서</div></div><div class="co"><b>THE GAUSS INC.</b><br>THE GAUSS VINA CO., LTD</div></div>
       <table class="info"><tr><th>PO No</th><td><b>${E(no)}</b></td><th>Date</th><td>${E(x.orderDate || '')}</td></tr>
         <tr><th>Supplier</th><td>${E(sup)}${sp.contact ? '<br>Attn: ' + E(sp.contact) : ''}${sp.phone ? ' · ' + E(sp.phone) : ''}${sp.email ? '<br>' + E(sp.email) : ''}</td><th>Delivery</th><td>${E(x.dueDate || '')}</td></tr>
-        <tr><th>Ship to</th><td>${x.route === 'hq' ? 'THE GAUSS INC. — ' + E(INV_CO.hq.slice(1).join(' ')) : 'THE GAUSS VINA CO., LTD — ' + E(INV_CO.addr1 + ' ' + INV_CO.addr2)}</td><th>Incoterm</th><td>${E(x.incoterm || '')}</td></tr>
+        <tr><th>Ship to</th><td>${rt === 'hq' ? 'THE GAUSS INC. — ' + E(INV_CO.hq.slice(1).join(' ')) : 'THE GAUSS VINA CO., LTD — ' + E(INV_CO.addr1 + ' ' + INV_CO.addr2)}</td><th>Incoterm</th><td>${E(x.incoterm || '')}</td></tr>
         ${x.prNo ? `<tr><th>Ref.</th><td colspan="3">${E(x.prNo)}</td></tr>` : ''}</table>
       <table class="it"><thead><tr><th>No</th><th>Code</th><th>Description</th><th>Q'ty</th><th>Unit</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${
         rows.map((r, i) => `<tr><td class="c">${i + 1}</td><td class="m">${E(r.code)}</td><td>${E(r.name)}</td><td class="n">${(+r.q).toLocaleString()}</td><td class="c">${E(r.unit || '')}</td><td class="n">${r.price === '' || r.price == null ? '' : E(r.cur || 'USD') + ' ' + fmt(r.price, r.cur)}</td><td class="n">${r.price === '' || r.price == null ? '' : fmt(+r.price * r.q, r.cur)}</td></tr>`).join('')}</tbody>
@@ -14719,11 +14720,11 @@ function hqPOPrint(poNo){
 function hqPOExcel(poNo){
   if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
   const x = hqShipGroups().find(g => g.poNo === poNo); if (!x) return;
-  const aoa = [['PURCHASE ORDER / 발주서'], [], ['PO No', x.poNo, '', 'Date', x.orderDate || ''], ['Supplier', x.supplier || '', '', 'Delivery', x.dueDate || ''], ['Buyer', 'THE GAUSS INC. / THE GAUSS VINA CO., LTD', '', 'Incoterm', x.incoterm || ''], ['Ship to', x.route === 'hq' ? 'THE GAUSS INC. — ' + INV_CO.hq.slice(1).join(' ') : 'THE GAUSS VINA CO., LTD — ' + INV_CO.addr1 + ' ' + INV_CO.addr2, '', 'Currency', x.cur || ''], [],
-    ['No', 'Code', 'Description', 'Q\'ty', 'Unit', 'Unit Price', 'Amount']];
-  x.rows.forEach((r, i) => aoa.push([i + 1, r.code, r.name, r.q, r.unit || '', r.price === '' || r.price == null ? '' : +r.price, r.price === '' || r.price == null ? '' : +r.price * r.q]));
+  const aoa = [['PURCHASE ORDER / 발주서'], [], ['PO No', x.poNo, '', 'Date', x.orderDate || ''], ['Supplier', x.supplier || '', '', 'Delivery', x.dueDate || ''], ['Buyer', 'THE GAUSS INC. / THE GAUSS VINA CO., LTD', '', 'Incoterm', x.incoterm || ''], ['Ship to', x.route === 'hq' ? 'THE GAUSS INC. — ' + INV_CO.hq.slice(1).join(' ') : x.route === 'mix' ? '품목별 (아래 Ship to 열)' : 'THE GAUSS VINA CO., LTD — ' + INV_CO.addr1 + ' ' + INV_CO.addr2, '', 'Currency', x.cur || ''], [],
+    ['No', 'Code', 'Description', 'Q\'ty', 'Unit', 'Unit Price', 'Amount', 'Supplier', 'Ship to']];
+  x.rows.forEach((r, i) => aoa.push([i + 1, r.code, r.name, r.q, r.unit || '', r.price === '' || r.price == null ? '' : +r.price, r.price === '' || r.price == null ? '' : +r.price * r.q, r.supplier || '', r.route === 'hq' ? 'THE GAUSS INC. (본사)' : 'THE GAUSS VINA (베트남)']));
   aoa.push(['', '', 'TOTAL', x.qty, '', '', x.amt || '']); aoa.push([]); aoa.push(['', '', '', '', 'Approved by', '', '']);
-  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{wch:5},{wch:18},{wch:42},{wch:10},{wch:7},{wch:12},{wch:14}]; ws['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:6}}];
+  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{wch:5},{wch:18},{wch:42},{wch:10},{wch:7},{wch:12},{wch:14},{wch:16},{wch:24}]; ws['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:6}}];
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'PO'); XLSX.writeFile(wb, `발주서_${x.poNo.replace(/[^\w-]/g,'_')}.xlsx`);
 }
 // ════════════════════════════════════════════════════════════
