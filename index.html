@@ -387,6 +387,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   .empty{color:var(--faint)}
 
   /* 행 단위 작은 버튼(수정·삭제 아이콘) — 테두리 없이 조용하게 */
+  .hq-acts{display:flex;gap:4px;flex-wrap:nowrap}.hq-acts button{padding:4px 8px;border:1px solid #94A3B8;border-radius:7px;background:#fff;color:#1E293B;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}.hq-acts button:hover{background:#EFF6FF;border-color:#185FA5;color:#185FA5}.hq-acts .inv{border-color:#7c3aed;color:#7c3aed}.hq-acts .del{border-color:#fca5a5;color:#b91c1c}
   .edit-btn{padding:3px 4px!important;font-size:13px;border:1px solid transparent!important;background:transparent!important;border-radius:var(--r-sm)!important;opacity:.7;transition:opacity .12s,background .12s}
   .edit-btn:hover{opacity:1;background:var(--primary-soft)!important;border-color:var(--line)!important}
   .del-btn{border-radius:var(--r-sm)}
@@ -14627,7 +14628,7 @@ function hqShipView(){
         <td style="text-align:right;white-space:nowrap">${hqN(x.got)} / ${hqN(x.qty)}</td><td style="text-align:right;white-space:nowrap">${Object.keys(x.amtBy).length ? Object.entries(x.amtBy).map(([c, v]) => hqM(v, c)).join('<br>') : '-'}</td>
         <td style="white-space:nowrap">${hqE(x.etd||'-')}</td><td style="white-space:nowrap;${x.late ? 'color:#b91c1c;font-weight:700' : ''}">${hqE(x.eta || (x.dueDate ? '(예정 ' + x.dueDate + ')' : '-'))}</td>
         <td style="font-size:12px">${hqE(x.blNo||'')}${x.invNo ? `<div>${hqE(x.invNo)}</div>` : ''}</td><td>${step(x.stage, x.stages)}</td>
-        <td style="white-space:nowrap"><button onclick="hqShipEdit('${hqE(x.poNo)}')" class="edit-btn" title="단계·서류 수정">✏️</button><button onclick="hqPOPrint('${hqE(x.poNo)}')" class="edit-btn" title="공급사별 발주서 인쇄">🖨️</button><button onclick="hqVNShipEdit(null,'${hqE(x.poNo)}')" class="edit-btn" title="이 발주로 베트남 발송 인보이스 작성">🧾</button><button onclick="hqPOExcel('${hqE(x.poNo)}')" class="edit-btn" title="발주서 엑셀">📄</button>${hqCan('buy','D') ? `<button onclick="hqShipDelete('${hqE(x.poNo)}')" class="edit-btn" title="발주 삭제">🗑️</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+        <td style="white-space:nowrap"><div class="hq-acts"><button onclick="hqShipEdit('${hqE(x.poNo)}')" title="단계·서류 수정">✏️ 수정</button><button onclick="hqPOPrint('${hqE(x.poNo)}')" title="공급사별 발주서 인쇄">🖨️ 발주서</button><button onclick="hqPOExcel('${hqE(x.poNo)}')" title="발주서 엑셀">📄 엑셀</button>${x.rows.some(r => hqVNAvail(r) > 0) ? `<button class="inv" onclick="hqVNShipEdit(null,'${hqE(x.poNo)}')" title="이 발주로 베트남 발송 인보이스 작성">🧾 인보이스</button>` : ''}${hqCan('buy','D') ? `<button class="del" onclick="hqShipDelete('${hqE(x.poNo)}')" title="발주 삭제">🗑️</button>` : ''}</div></td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty">진행 중인 자재 발주가 없습니다.</div>'}
     <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">입고 수량은 법인 입출고 탭의 자재 입고를 등록하면 같은 자재의 오래된 발주부터 자동으로 채워집니다. 다 들어오면 "입고 완료"가 됩니다.</div>`;
 }
@@ -14771,7 +14772,7 @@ function hqWhView(){
       ships.map(h => `<tr><td style="font-family:monospace;font-size:12px">${hqE(h.invNo)}<div style="font-family:inherit;font-size:11px;font-weight:700;color:${hqVNRoute(h) === 'direct' ? '#0f766e' : '#7c3aed'}">${hqVNRoute(h) === 'direct' ? '➡️ 직송' : '🏢 본사 발송'}</div></td><td style="white-space:nowrap">${hqE(h.shipDate||'')}</td><td style="white-space:nowrap">${HQ_SHIP_MODES[h.mode] || hqE(h.mode)}</td>
         <td>${hqE((h.lines||[])[0] ? h.lines[0].name : '')}${(h.lines||[]).length > 1 ? ` <span style="color:#8A95A3">외 ${h.lines.length - 1}</span>` : ''}</td><td style="font-size:12px">${hqE(h.blNo||'')}${h.carrier ? `<div style="color:#8A95A3">${hqE(h.carrier)}</div>` : ''}</td>
         <td style="white-space:nowrap">${hqE(h.eta||'-')}</td><td>${hqPill(h.status, HQ_SHIP_COL[h.status])}</td>
-        <td style="white-space:nowrap"><button onclick="hqVNShipEdit('${hqE(h.id)}')" class="edit-btn" title="수정">✏️</button><button onclick="hqVNInvPrint('${hqE(h.id)}')" class="edit-btn" title="Invoice · Packing List 인쇄">🖨️</button><button onclick="hqVNInvExcel('${hqE(h.id)}')" class="edit-btn" title="엑셀">📄</button>${hqCan('buy','D') ? `<button onclick="hqVNShipDelete('${hqE(h.id)}')" class="edit-btn" title="삭제">🗑️</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+        <td style="white-space:nowrap"><div class="hq-acts"><button onclick="hqVNShipEdit('${hqE(h.id)}')" title="수정">✏️ 수정</button><button class="inv" onclick="hqVNInvPrint('${hqE(h.id)}')" title="Invoice · Packing List 인쇄">🖨️ 인쇄</button><button onclick="hqVNInvExcel('${hqE(h.id)}')" title="엑셀">📄 엑셀</button>${hqCan('buy','D') ? `<button class="del" onclick="hqVNShipDelete('${hqE(h.id)}')" title="삭제">🗑️</button>` : ''}</div></td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty">아직 베트남 발송 기록이 없습니다.</div>'}
     <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">본사 보관 = 본사 입고 − 베트남 발송. 한 발주를 여러 번 나눠 보낼 수 있습니다. 베트남에 도착하면 법인에서 자재 입고를 등록하고, 그 수량이 발주 입고 수량에 자동 반영됩니다.</div>`;
 }
