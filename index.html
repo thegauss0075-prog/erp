@@ -14805,86 +14805,117 @@ async function hqRecvDel(id, i){
 }
 // ✈️ 베트남 발송 (항공/해상/특송) — 본사 보관분에서 나눠 보낼 수 있다
 const HQ_SHIP_PORTS = {
-  AIR: {load: 'INCHEON INT\'L AIRPORT, KOREA', dest: 'NOI BAI INT\'L AIRPORT, HANOI, VIETNAM', blLbl: 'AWB No', carLbl: 'Flight No'},
-  SEA: {load: 'INCHEON PORT, KOREA', dest: 'HAI PHONG PORT, VIETNAM', blLbl: 'B/L No', carLbl: 'Vessel / Voyage', loads: ['INCHEON PORT, KOREA', 'BUSAN PORT, KOREA']},
-  EXPRESS: {load: 'INCHEON, KOREA', dest: 'HAI PHONG, VIETNAM', blLbl: 'Tracking (AWB) No', carLbl: 'Courier (DHL / FedEx…)'}
+  AIR: {load: 'INCHEON AIRPORT, KOREA', dest: 'NOI BAI AIRPORT, HANOI, VIETNAM', blLbl: 'AWB No', carLbl: 'CARRIER (항공사·편명)'},
+  SEA: {load: 'INCHEON PORT, KOREA', dest: 'HAI PHONG PORT, VIETNAM', blLbl: 'B/L No', carLbl: 'CARRIER (선사·선명)', loads: ['INCHEON PORT, KOREA', 'BUSAN PORT, KOREA']},
+  EXPRESS: {load: 'INCHEON, KOREA', dest: 'HAI PHONG, VIETNAM', blLbl: 'Tracking (AWB) No', carLbl: 'CARRIER (DHL / FedEx…)'}
 };
+// 본사 CIPL 양식(TG261029_CIPL) 기준 고정값
+const HQ_CIPL = {
+  shipper: ['THE GAUSS INC.', '706,184 Jungbu-daero, Giheung-gu, Yongin-si, Gyeonggi-do, Korea'],
+  consignee: ['Thegauss Vina co., Ltd', 'Factory A1-4, Lot 2, Cam Dien - Luong Dien Industrial Park,', 'Cam Giang Commune, Hai Phong City, Vietnam.'],
+  contact: 'Hang /+84 0936733956', incoterm: 'DDP', origin: 'KOREA'
+};
+// Invoice No: 본사 양식처럼 TG + yymmdd (같은 날 두 번째부터 -2, -3…)
 function hqVNInvNo(date){
-  const d = String(date || hqToday()).replace(/-/g, '').slice(2), pre = 'TG-VN' + d + '-';
-  const n = HQS.hqship.filter(h => String(h.invNo||'').startsWith(pre)).map(h => +String(h.invNo).slice(pre.length) || 0);
-  return pre + String((n.length ? Math.max(...n) : 0) + 1).padStart(2, '0');
+  const base = 'TG' + String(date || hqToday()).replace(/-/g, '').slice(2);
+  if (!HQS.hqship.some(h => h.invNo === base)) return base;
+  let n = 2; while (HQS.hqship.some(h => h.invNo === base + '-' + n)) n++; return base + '-' + n;
 }
-function hqPkgTxt(h){ const a = []; if (+h.plt) a.push(+h.plt + ' PLT'); if (+h.ct) a.push(+h.ct + ' CT'); return a.length ? (a.length > 1 ? `${a[0]} (${a[1]})` : a[0]) : (h.pkgs || ''); }
-function hqLastHS(code){ for (const h of [...HQS.hqship].sort((a,b) => String(b.shipDate||'').localeCompare(String(a.shipDate||'')))) { const l = (h.lines||[]).find(x => x.code === code && x.hs); if (l) return l.hs; } return ''; }
-function hqVNShipEdit(id, preset){
+function hqPackTxt(h){
+  if (Array.isArray(h.packs) && h.packs.length) { const c = {}; h.packs.forEach(p => { const t = p.type === 'PALLET' ? 'pallet' : 'box'; c[t] = (c[t]||0) + 1; }); return Object.entries(c).map(([t, n]) => n + ' ' + t).join(', '); }
+  const a = []; if (+h.plt) a.push(+h.plt + ' pallet'); if (+h.ct) a.push(+h.ct + ' box'); return a.join(', ') || (typeof h.pkgs === 'string' ? h.pkgs : '');
+}
+function hqPkgTxt(h){ return hqPackTxt(h); }
+function hqVNLast(code){ for (const h of [...HQS.hqship].sort((a,b) => String(b.shipDate||'').localeCompare(String(a.shipDate||'')))) { const l = (h.lines||[]).find(x => x.code === code); if (l) return l; } return null; }
+function hqLastHS(code){ const l = hqVNLast(code); return l ? l.hs || '' : ''; }
+function hqVNDefLine(p){
+  const l = hqVNLast(p.code) || {};
+  return {qty: '', hs: l.hs || '', item: l.item || String(p.name || '').trim().split(/[\s(]/)[0].toUpperCase(), spec: l.spec || p.name || '', origin: l.origin || HQ_CIPL.origin, nw: '', box: 1};
+}
+function hqVNShipEdit(id){
   const h = id ? HQS.hqship.find(x => String(x.id) === String(id)) : null;
-  const mode = h ? h.mode : 'SEA';
-  HQS.ed = preset ? preset : h ? JSON.parse(JSON.stringify(h)) : {id: String(Date.now()), invNo: hqVNInvNo(), shipDate: hqToday(), mode, status: '준비', loadPort: HQ_SHIP_PORTS[mode].load, destPort: HQ_SHIP_PORTS[mode].dest, lines: []};
-  const e = HQS.ed, mine = {}; (e.lines||[]).forEach(l => mine[l.spoId] = l);
-  // 고를 수 있는 줄: 본사 보관이 있는 줄 + 이 발송에 이미 들어 있는 줄
-  const cand = SPO.filter(p => p.route === 'hq').map(p => ({p, avail: Math.max(0, +(hqRecvQty(p) - hqSentQty(p.id, e.id)).toFixed(4)), l: mine[p.id]})).filter(x => x.avail > 0 || x.l);
+  if (h) { HQS.ed = JSON.parse(JSON.stringify(h)); HQS.ed.sel = {}; (h.lines||[]).forEach(l => HQS.ed.sel[l.spoId] = {...l}); if (!Array.isArray(HQS.ed.packs)) HQS.ed.packs = [{no: 1, type: +h.plt ? 'PALLET' : 'BOX', gw: h.gw || '', size: ''}]; }
+  else HQS.ed = {id: String(Date.now()), invNo: hqVNInvNo(), shipDate: hqToday(), mode: 'SEA', status: '준비', loadPort: HQ_SHIP_PORTS.SEA.load, destPort: HQ_SHIP_PORTS.SEA.dest,
+    incoterm: HQ_CIPL.incoterm, contact: HQ_CIPL.contact, sel: {}, packs: [{no: 1, type: 'BOX', gw: '', size: ''}]};
+  hqVNRender();
+}
+function hqVNRender(){
+  const e = HQS.ed, isNew = !HQS.hqship.some(x => String(x.id) === String(e.id));
+  const cand = SPO.filter(p => p.route === 'hq').map(p => ({p, avail: Math.max(0, +(hqRecvQty(p) - hqSentQty(p.id, e.id)).toFixed(4)), l: e.sel[p.id] || (e.sel[p.id] = hqVNDefLine(p))})).filter(x => x.avail > 0 || +x.l.qty > 0);
   const f = (k, lbl, type, ph) => hqFld(lbl, '', `<input id="hqv-${k}" ${type ? `type="${type}"` : ''} value="${hqE(e[k] ?? '')}" placeholder="${ph||''}" style="${HQ_IN}">`);
-  const P = HQ_SHIP_PORTS[e.mode] || HQ_SHIP_PORTS.SEA;
-  hqModal('hq-vs', `<h3 style="margin:0 0 10px;font-size:16px">${h ? '✏️ 베트남 발송 ' + hqE(e.invNo) : '✈️ 베트남 발송 만들기'}</h3>
+  const P = HQ_SHIP_PORTS[e.mode] || HQ_SHIP_PORTS.SEA, SI = HQ_IN + ';padding:4px 6px;font-size:12px';
+  const li = (x, k, w, type) => `<input class="hqv-l" data-id="${hqE(x.p.id)}" data-k="${k}" ${type ? `type="${type}" step="any"` : ''} value="${hqE(x.l[k] ?? '')}" style="${SI};width:${w}px${type ? ';text-align:right' : ''}">`;
+  const boxes = e.packs.map(p => p.no);
+  hqModal('hq-vs', `<h3 style="margin:0 0 10px;font-size:16px">${isNew ? '✈️ 베트남 발송 만들기' : '✏️ 베트남 발송 ' + hqE(e.invNo)}</h3>
     <div style="display:flex;gap:6px;margin-bottom:10px">${Object.entries(HQ_SHIP_MODES).map(([k, l]) => `<button onclick="hqVNMode('${k}')" style="flex:1;padding:9px;border-radius:9px;border:2px solid ${e.mode===k?'#7c3aed':'#DCE1E7'};background:${e.mode===k?'#F5F3FF':'#fff'};font-weight:700;cursor:pointer">${l}</button>`).join('')}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
-      ${f('invNo','Invoice No')}${f('shipDate','발송일','date')}
+      ${f('invNo','Invoice No')}${f('shipDate','Invoice 날짜','date')}
       ${hqFld('상태','', `<select id="hqv-status" style="${HQ_IN}">${HQ_SHIP_ST.concat(['취소']).map(s => `<option ${e.status===s?'selected':''}>${s}</option>`).join('')}</select>`)}
-      ${f('etd','ETD (출발)','date')}${f('eta','ETA (도착)','date')}
-      ${f('carrier', P.carLbl)}${f('blNo', P.blLbl)}
-      ${hqFld('From (출발지)','', `<input id="hqv-loadPort" list="hqv-loads" value="${hqE(e.loadPort ?? '')}" style="${HQ_IN}"><datalist id="hqv-loads">${[...new Set(Object.values(HQ_SHIP_PORTS).flatMap(x => x.loads || [x.load]))].map(v => `<option value="${hqE(v)}">`).join('')}</datalist>${e.mode === 'SEA' ? `<div style="display:flex;gap:4px;margin-top:4px">${HQ_SHIP_PORTS.SEA.loads.map(v => `<button type="button" onclick="document.getElementById('hqv-loadPort').value='${v}'" style="font-size:11px;padding:2px 8px;border:1px solid #DCE1E7;border-radius:6px;background:#fff;cursor:pointer">${v.startsWith('BUSAN') ? '부산항' : '인천항'}</button>`).join('')}</div>` : ''}`)}${f('destPort','To (도착지)')}
-      ${f('plt','팔레트 수 (PLT)','number','0')}${f('ct','박스 수 (CT)','number','0')}${f('gw','G.W. (kg)','number')}${f('nw','N.W. (kg)','number')}${f('cbm','CBM','number')}
-      ${f('note','비고','', '')}
+      ${f('etd','ETD (Sailing on or about)','date')}${f('eta','ETA (도착)','date')}
+      ${hqFld('Port of loading','', `<input id="hqv-loadPort" list="hqv-loads" value="${hqE(e.loadPort ?? '')}" style="${HQ_IN}"><datalist id="hqv-loads">${[...new Set(Object.values(HQ_SHIP_PORTS).flatMap(x => x.loads || [x.load]))].map(v => `<option value="${hqE(v)}">`).join('')}</datalist>${e.mode === 'SEA' ? `<div style="display:flex;gap:4px;margin-top:4px">${HQ_SHIP_PORTS.SEA.loads.map(v => `<button type="button" onclick="document.getElementById('hqv-loadPort').value='${v}'" style="font-size:11px;padding:2px 8px;border:1px solid #DCE1E7;border-radius:6px;background:#fff;cursor:pointer">${v.startsWith('BUSAN') ? '부산항' : '인천항'}</button>`).join('')}</div>` : ''}`)}
+      ${f('destPort','Final destination')}${f('carrier', P.carLbl)}${f('blNo', P.blLbl)}${f('incoterm','Incoterm')}
+      ${f('contact','수하인 담당자·연락처')}${f('cbm','CBM','number')}${f('note','비고 (내부용)')}
     </div>
-    <div class="tw" style="margin-top:12px"><table><thead><tr><th>발주번호</th><th>자재</th><th style="text-align:right">보낼 수 있는 수량</th><th style="text-align:right">이번 발송</th><th>HS Code</th></tr></thead><tbody>${
-      cand.length ? cand.map(x => `<tr><td style="font-family:monospace;font-size:12px">${hqE(x.p.poNo||'')}</td><td>${hqE(x.p.name)} <span style="font-size:11px;color:#8A95A3">${hqE(x.p.code)}</span></td>
+    <h4 style="margin:14px 0 6px;font-size:13.5px">자재 <span style="font-weight:400;color:#8A95A3;font-size:12px">— Item·Spec·HS·원산지는 같은 자재를 지난번에 보낼 때 쓴 값이 미리 들어갑니다</span></h4>
+    <div class="tw"><table style="font-size:12px"><thead><tr><th>발주번호 · 자재</th><th style="text-align:right">보낼 수 있는</th><th>이번 발송</th><th>Item</th><th>Spec</th><th>HS Code</th><th>Origin</th><th>N.W (kg)</th><th>포장 No</th></tr></thead><tbody>${
+      cand.length ? cand.map(x => `<tr><td><span style="font-family:monospace;font-size:11px;color:#8A95A3">${hqE(x.p.poNo||'')}</span><br>${hqE(x.p.name)}</td>
         <td style="text-align:right;white-space:nowrap">${hqN(x.avail)} ${hqE(x.p.unit||'')}</td>
-        <td><input class="hqv-q" data-id="${hqE(x.p.id)}" data-max="${x.avail}" type="number" step="any" min="0" value="${x.l ? x.l.qty : ''}" placeholder="0" style="${HQ_IN};width:100px;text-align:right"> <button onclick="this.previousElementSibling.value='${x.avail}'" style="font-size:11px;padding:2px 6px;border:1px solid #DCE1E7;border-radius:6px;background:#fff;cursor:pointer">전량</button></td>
-        <td><input class="hqv-hs" data-id="${hqE(x.p.id)}" value="${hqE(x.l ? x.l.hs || '' : hqLastHS(x.p.code))}" placeholder="HS" style="${HQ_IN};width:110px"></td></tr>`).join('')
-      : '<tr><td colspan="5" class="empty">본사에 보관 중인 자재가 없습니다. 먼저 "📥 본사 입고"를 등록하세요.</td></tr>'}</tbody></table></div>
+        <td style="white-space:nowrap">${li(x, 'qty', 80, 'number')} <button onclick="this.previousElementSibling.value='${x.avail}'" style="font-size:11px;padding:2px 5px;border:1px solid #DCE1E7;border-radius:6px;background:#fff;cursor:pointer">전량</button></td>
+        <td>${li(x, 'item', 90)}</td><td>${li(x, 'spec', 190)}</td><td>${li(x, 'hs', 85)}</td><td>${li(x, 'origin', 70)}</td><td>${li(x, 'nw', 65, 'number')}</td>
+        <td><select class="hqv-l" data-id="${hqE(x.p.id)}" data-k="box" style="${SI};width:56px">${boxes.map(b => `<option ${+x.l.box===+b?'selected':''}>${b}</option>`).join('')}</select></td></tr>`).join('')
+      : '<tr><td colspan="9" class="empty">본사에 보관 중인 자재가 없습니다. 먼저 "📥 본사 입고"를 등록하세요.</td></tr>'}</tbody></table></div>
+    <h4 style="margin:14px 0 6px;font-size:13.5px">포장 (Packing)</h4>
+    <div class="tw"><table style="font-size:12px"><thead><tr><th>포장 No</th><th>종류</th><th>G.W (kg)</th><th>크기 SIZE (mm)</th><th></th></tr></thead><tbody>${
+      e.packs.map((p, i) => `<tr><td style="font-weight:700">${p.no}</td>
+        <td><select class="hqv-p" data-i="${i}" data-k="type" style="${SI};width:140px">${[['BOX','📦 박스 (box)'],['PALLET','🟫 팔레트 (pallet)']].map(([v, t]) => `<option value="${v}" ${p.type===v?'selected':''}>${t}</option>`).join('')}</select></td>
+        <td><input class="hqv-p" data-i="${i}" data-k="gw" type="number" step="any" value="${hqE(p.gw ?? '')}" style="${SI};width:90px;text-align:right"></td>
+        <td><input class="hqv-p" data-i="${i}" data-k="size" value="${hqE(p.size ?? '')}" placeholder="540X370X240" style="${SI};width:150px"></td>
+        <td>${e.packs.length > 1 ? `<button onclick="hqVNPack(-1,${i})" class="edit-btn" title="포장 빼기">✕</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
+    <button onclick="hqVNPack(1)" style="margin-top:6px;font-size:12px;padding:4px 10px;border:1px dashed #7c3aed;border-radius:7px;background:#fff;color:#7c3aed;cursor:pointer">➕ 포장 추가</button>
     <div id="hqv-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
-    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px">${hqsBtn('닫기', "hqClose('hq-vs')", '#64748b')}${hqsBtn('💾 저장', 'hqVNShipSave(false)', '#7c3aed')}${hqsBtn('💾 저장 + 🖨️ 인보이스', 'hqVNShipSave(true)', '#7c3aed', true)}</div>`, 900);
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px">${hqsBtn('닫기', "hqClose('hq-vs')", '#64748b')}${hqsBtn('💾 저장', 'hqVNShipSave(false)', '#7c3aed')}${hqsBtn('💾 저장 + 🖨️ 인보이스', 'hqVNShipSave(true)', '#7c3aed', true)}</div>`, 1150);
 }
 function hqVNGrab(){
-  const e = HQS.ed; if (!e) return;
-  ['invNo','shipDate','etd','eta','carrier','blNo','loadPort','destPort','plt','ct','gw','nw','cbm','note'].forEach(k => { const i = document.getElementById('hqv-' + k); if (i) e[k] = i.value.trim(); });
+  const e = HQS.ed; if (!e || !document.getElementById('hq-vs')) return;
+  ['invNo','shipDate','etd','eta','carrier','blNo','loadPort','destPort','incoterm','contact','cbm','note'].forEach(k => { const i = document.getElementById('hqv-' + k); if (i) e[k] = i.value.trim(); });
   const st = document.getElementById('hqv-status'); if (st) e.status = st.value;
-  const qs = {}, hs = {}; document.querySelectorAll('#hq-vs .hqv-q').forEach(i => qs[i.dataset.id] = i.value); document.querySelectorAll('#hq-vs .hqv-hs').forEach(i => hs[i.dataset.id] = i.value.trim());
-  return {qs, hs};
+  document.querySelectorAll('#hq-vs .hqv-l').forEach(i => { (e.sel[i.dataset.id] = e.sel[i.dataset.id] || {})[i.dataset.k] = i.value.trim(); });
+  document.querySelectorAll('#hq-vs .hqv-p').forEach(i => { e.packs[+i.dataset.i][i.dataset.k] = i.value.trim(); });
+}
+function hqVNPack(d, i){
+  hqVNGrab(); const e = HQS.ed;
+  if (d > 0) e.packs.push({no: Math.max(0, ...e.packs.map(p => +p.no)) + 1, type: (e.packs[e.packs.length - 1] || {}).type || 'BOX', gw: '', size: (e.packs[e.packs.length - 1] || {}).size || ''});
+  else { const no = e.packs[i].no; e.packs.splice(i, 1); Object.values(e.sel).forEach(l => { if (+l.box === +no) l.box = e.packs[0].no; }); }
+  hqVNRender();
 }
 function hqVNMode(m){
-  const g = hqVNGrab(), e = HQS.ed, old = HQ_SHIP_PORTS[e.mode] || {};
+  hqVNGrab(); const e = HQS.ed, old = HQ_SHIP_PORTS[e.mode] || {};
   if (!e.loadPort || e.loadPort === old.load || (old.loads || []).includes(e.loadPort)) e.loadPort = HQ_SHIP_PORTS[m].load;
   if (!e.destPort || e.destPort === old.dest) e.destPort = HQ_SHIP_PORTS[m].dest;
-  e.mode = m; const keep = JSON.parse(JSON.stringify(e)); const id = HQS.hqship.some(x => String(x.id) === String(e.id)) ? e.id : null;
-  hqVNShipEdit(id, keep); hqVNShipEditRestore(g);
-}
-function hqVNShipEditRestore(g){
-  const e = HQS.ed; ['invNo','shipDate','etd','eta','carrier','blNo','loadPort','destPort','plt','ct','gw','nw','cbm','note'].forEach(k => { const i = document.getElementById('hqv-' + k); if (i) i.value = e[k] ?? ''; });
-  const st = document.getElementById('hqv-status'); if (st) st.value = e.status;
-  document.querySelectorAll('#hq-vs button').forEach(b => { const k = (b.getAttribute('onclick') || '').match(/hqVNMode\('(\w+)'\)/); if (k) { b.style.borderColor = k[1] === e.mode ? '#7c3aed' : '#DCE1E7'; b.style.background = k[1] === e.mode ? '#F5F3FF' : '#fff'; } });
-  document.querySelectorAll('#hq-vs .hqv-q').forEach(i => { if (g.qs[i.dataset.id] != null) i.value = g.qs[i.dataset.id]; });
-  document.querySelectorAll('#hq-vs .hqv-hs').forEach(i => { if (g.hs[i.dataset.id] != null) i.value = g.hs[i.dataset.id]; });
-  const P = HQ_SHIP_PORTS[e.mode]; const lb = (id, t) => { const i = document.getElementById(id); if (i) i.closest('label').querySelector('div').textContent = t; };
-  lb('hqv-carrier', P.carLbl); lb('hqv-blNo', P.blLbl);
+  e.mode = m; hqVNRender();
 }
 async function hqVNShipSave(print){
   if (!hqCan('buy','W')) { alert('구매 입력·수정 권한이 없습니다.'); return; }
-  const g = hqVNGrab(), e = HQS.ed, err = document.getElementById('hqv-err');
+  hqVNGrab(); const e = HQS.ed, err = document.getElementById('hqv-err');
   if (!e.invNo) { err.textContent = 'Invoice No를 넣어주세요.'; return; }
   if (HQS.hqship.some(x => x.id !== e.id && x.invNo === e.invNo)) { err.textContent = '같은 Invoice No가 이미 있습니다.'; return; }
   const lines = [];
-  for (const [sid, v] of Object.entries(g.qs)) {
-    const qty = +v; if (!(qty > 0)) continue;
+  for (const [sid, v] of Object.entries(e.sel)) {
+    const qty = +v.qty; if (!(qty > 0)) continue;
     const p = SPO.find(s => String(s.id) === String(sid)); if (!p) continue;
     const max = Math.max(0, hqRecvQty(p) - hqSentQty(p.id, e.id));
     if (qty > max + 1e-9) { err.textContent = `${p.name}: 본사 보관(${hqN(max)})보다 많이 보낼 수 없습니다.`; return; }
-    lines.push({spoId: p.id, poNo: p.poNo || '', code: p.code, name: p.name, unit: p.unit || '', qty, hs: g.hs[sid] || '', price: p.price === '' || p.price == null ? '' : +p.price, cur: p.cur || 'USD', supplier: p.supplier || ''});
+    lines.push({spoId: p.id, poNo: p.poNo || '', code: p.code, name: p.name, unit: p.unit || '', qty, hs: v.hs || '', item: v.item || '', spec: v.spec || p.name, origin: v.origin || HQ_CIPL.origin,
+      nw: v.nw === '' || v.nw == null ? '' : +v.nw, box: +v.box || 1, price: p.price === '' || p.price == null ? '' : +p.price, cur: p.cur || 'USD', supplier: p.supplier || ''});
   }
   if (!lines.length) { err.textContent = '보낼 자재 수량을 넣어주세요.'; return; }
-  e.lines = lines; e.pkgs = hqPkgTxt(e); ['plt','ct','gw','nw','cbm'].forEach(k => { e[k] = e[k] === '' || e[k] == null ? '' : +e[k]; });
-  const isNew = !HQS.hqship.some(x => String(x.id) === String(e.id)); hqsStamp(e, isNew);
-  if (await hqsSave('hqship', e)) { const id = e.id; hqClose('hq-vs'); renderHQ(); hqToast(`✈️ ${e.invNo} 저장 — 자재 ${lines.length}건`); if (print) hqVNInvPrint(id); }
+  const used = new Set(lines.map(l => l.box)), empty = e.packs.filter(p => !used.has(+p.no));
+  if (empty.length) { err.textContent = `포장 ${empty.map(p => p.no).join(', ')}번에 들어간 자재가 없습니다. 자재의 "포장 No"를 고르거나 포장을 빼주세요.`; return; }
+  const rec = {...e, lines, packs: e.packs.map(p => ({no: +p.no, type: p.type, gw: p.gw === '' ? '' : +p.gw, size: p.size || ''})), cbm: e.cbm === '' || e.cbm == null ? '' : +e.cbm};
+  delete rec.sel; delete rec.plt; delete rec.ct; delete rec.pkgs;
+  rec.nw = lines.reduce((s, l) => s + (+l.nw || 0), 0) || ''; rec.gw = rec.packs.reduce((s, p) => s + (+p.gw || 0), 0) || '';
+  hqsStamp(rec, !HQS.hqship.some(x => String(x.id) === String(rec.id)));
+  if (await hqsSave('hqship', rec)) { hqClose('hq-vs'); renderHQ(); hqToast(`✈️ ${rec.invNo} 저장 — 자재 ${lines.length}건`); if (print) hqVNInvPrint(rec.id); }
 }
 async function hqVNShipDelete(id){
   const h = HQS.hqship.find(x => String(x.id) === String(id)); if (!h) return;
@@ -14893,54 +14924,97 @@ async function hqVNShipDelete(id){
   if (!res || !res.ok) { alert('삭제 실패: ' + ((res && res.error) || '')); return; }
   HQS.hqship = HQS.hqship.filter(x => String(x.id) !== String(id)); renderHQ();
 }
-// 🖨️ Commercial Invoice + Packing List (본사 → 베트남 법인, 무상 공급 자재)
+// 🖨️ 본사 CIPL 양식: 1. COMMERCIAL INVOICE · 2. PACKING LIST · 3. SHIPPING MARK
+function hqCIPLData(h){
+  const L = (h.lines || []).map(l => ({...l, item: l.item || String(l.name||'').split(/[\s(]/)[0].toUpperCase(), spec: l.spec || l.name, origin: l.origin || HQ_CIPL.origin, box: +l.box || 1}));
+  const packs = Array.isArray(h.packs) && h.packs.length ? h.packs : [{no: 1, type: +h.plt ? 'PALLET' : 'BOX', gw: h.gw || '', size: ''}];
+  const P = HQ_SHIP_PORTS[h.mode] || HQ_SHIP_PORTS.SEA, d = String(h.shipDate || ''), mdY = d ? `${d.slice(5,7)}/${d.slice(8,10)}/${d.slice(0,4)}` : '';
+  const sym = c => ({USD: '$', KRW: '₩', VND: '₫', CNY: '¥', JPY: '¥'})[c] || (c + ' ');
+  const tot = {}; L.forEach(l => { if (l.price !== '' && l.price != null) tot[l.cur] = (tot[l.cur]||0) + (+l.price) * (+l.qty); });
+  const byItem = {}; L.forEach(l => { const k = l.item + '|' + l.unit; byItem[k] = (byItem[k] || 0) + (+l.qty); });
+  return {L, packs, P, mdY, sym, tot, byItem, qtySum: L.reduce((s, l) => s + (+l.qty), 0), nwSum: L.reduce((s, l) => s + (+l.nw || 0), 0), gwSum: packs.reduce((s, p) => s + (+p.gw || 0), 0),
+    loadPort: h.loadPort || P.load, dest: h.destPort || P.dest, incoterm: h.incoterm || HQ_CIPL.incoterm, contact: h.contact ?? HQ_CIPL.contact, total: hqPackTxt({packs})};
+}
 function hqVNInvPrint(id){
   const h = HQS.hqship.find(x => String(x.id) === String(id)); if (!h) return;
   const E = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  const fmt = (v, c) => c === 'KRW' || c === 'VND' ? Math.round(+v||0).toLocaleString() : (+v||0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4});
-  const L = h.lines || [], tot = {}; L.forEach(l => { if (l.price !== '' && l.price != null) tot[l.cur] = (tot[l.cur]||0) + (+l.price) * (+l.qty); });
-  const qtyBy = {}; L.forEach(l => qtyBy[l.unit || ''] = (qtyBy[l.unit || ''] || 0) + (+l.qty));
-  const qtyTxt = Object.entries(qtyBy).map(([u, q]) => q.toLocaleString() + ' ' + E(u)).join('<br>');
-  const P = HQ_SHIP_PORTS[h.mode] || HQ_SHIP_PORTS.SEA, modeEn = {AIR: 'BY AIR', SEA: 'BY SEA', EXPRESS: 'BY COURIER (EXPRESS)'}[h.mode] || '';
-  const party = `<table class="info">
-      <tr><th>Shipper / Exporter</th><td><b>${E(INV_CO.hq[0])}</b><br>${E(INV_CO.hq[1])}<br>${E(INV_CO.hq[2])}</td><th>Invoice No · Date</th><td><b>${E(h.invNo)}</b><br>${E(h.shipDate||'')}</td></tr>
-      <tr><th>Consignee</th><td><b>${E(INV_CO.name)}</b><br>${E(INV_CO.addr1)}<br>${E(INV_CO.addr2)}</td><th>Contract No</th><td>${E(INV_CO.contract)}<br><span class="s">PO: ${E([...new Set(L.map(l => l.poNo).filter(Boolean))].join(', '))}</span></td></tr>
-      <tr><th>Shipment</th><td>${E(modeEn)}${h.carrier ? ' — ' + E(h.carrier) : ''}<br>From: ${E(h.loadPort || P.load)}<br>To: ${E(h.destPort || P.dest)}</td><th>${E(P.blLbl)} · ETD / ETA</th><td>${E(h.blNo||'')}<br>${E(h.etd||'')} / ${E(h.eta||'')}</td></tr>
-      <tr><th>Terms</th><td colspan="3">FREE OF CHARGE (F.O.C) — Raw materials supplied for processing under contract No. ${E(INV_CO.contract)}. No commercial value; value stated for customs purposes only.</td></tr></table>`;
-  const hd = (t, s) => `<div class="hd"><div><div class="ttl">${t}</div><div class="sub">${s}</div></div><div class="co"><b>${E(INV_CO.hq[0])}</b><br>Republic of Korea</div></div>`;
-  const inv = `<section class="pg">${hd('COMMERCIAL INVOICE', '상업 송장 (무상 공급)')}${party}
-    <table class="it"><thead><tr><th>No</th><th>Code</th><th>Description of goods</th><th>HS Code</th><th>Q'ty</th><th>Unit</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${
-      L.map((l, i) => `<tr><td class="c">${i + 1}</td><td class="m">${E(l.code)}</td><td>${E(l.name)}</td><td class="c">${E(l.hs||'')}</td><td class="n">${(+l.qty).toLocaleString()}</td><td class="c">${E(l.unit)}</td><td class="n">${l.price === '' || l.price == null ? '' : E(l.cur) + ' ' + fmt(l.price, l.cur)}</td><td class="n">${l.price === '' || l.price == null ? '' : fmt(+l.price * +l.qty, l.cur)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="4" class="n"><b>TOTAL</b></td><td class="n"><b>${qtyTxt}</b></td><td></td><td></td><td class="n"><b>${Object.entries(tot).map(([c, v]) => E(c) + ' ' + fmt(v, c)).join('<br>') || '-'}</b></td></tr></tfoot></table>
-    <div class="note">Country of origin: as per supplier. &nbsp; Packages: ${E(hqPkgTxt(h)||'-')} &nbsp; G.W.: ${h.gw ? E(h.gw) + ' kg' : '-'} &nbsp; N.W.: ${h.nw ? E(h.nw) + ' kg' : '-'}</div>
-    <div class="sig"><div>Signed by<br><br><br>______________________<br>${E(INV_CO.hq[0])}</div></div></section>`;
-  const pl = `<section class="pg">${hd('PACKING LIST', '포장 명세서')}${party}
-    <table class="it"><thead><tr><th>No</th><th>Code</th><th>Description of goods</th><th>Q'ty</th><th>Unit</th></tr></thead><tbody>${
-      L.map((l, i) => `<tr><td class="c">${i + 1}</td><td class="m">${E(l.code)}</td><td>${E(l.name)}</td><td class="n">${(+l.qty).toLocaleString()}</td><td class="c">${E(l.unit)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="3" class="n"><b>TOTAL</b></td><td class="n"><b>${qtyTxt}</b></td><td></td></tr></tfoot></table>
-    <table class="info" style="margin-top:12px"><tr><th>Packages</th><td>${E(hqPkgTxt(h)||'-')}</td><th>Gross weight</th><td>${h.gw ? E(h.gw) + ' kg' : '-'}</td></tr><tr><th>Net weight</th><td>${h.nw ? E(h.nw) + ' kg' : '-'}</td><th>Measurement</th><td>${h.cbm ? E(h.cbm) + ' CBM' : '-'}</td></tr></table>
-    <div class="sig"><div>Signed by<br><br><br>______________________<br>${E(INV_CO.hq[0])}</div></div></section>`;
+  const D = hqCIPLData(h), num = (v, dp) => (+v||0).toLocaleString('en-US', {minimumFractionDigits: dp ?? 0, maximumFractionDigits: dp ?? 4});
+  const money = (v, c) => `<span class="cs">${E(D.sym(c))}</span>${c === 'KRW' || c === 'VND' ? num(Math.round(v)) : num(v, 2)}`;
+  const party = `<b>${E(HQ_CIPL.consignee[0])}</b><br>${E(HQ_CIPL.consignee[1])}<br>${E(HQ_CIPL.consignee[2])}${D.contact ? '<br>' + E(D.contact) : ''}`;
+  const logo = `<svg viewBox="0 0 260 150" width="230"><polygon points="130,4 256,75 130,146 4,75" fill="none" stroke="#111" stroke-width="3"/><text x="130" y="86" text-anchor="middle" font-family="Arial Black,Arial" font-weight="900" font-size="30" fill="#111">THEGAUSS</text></svg>`;
+  const head = (title, right, rightLbl) => `<table class="g">
+    <tr><td colspan="9" class="ttl">${title}</td></tr>
+    <tr><td class="l" colspan="4"><div class="lb">SHIPPER</div><b>${E(HQ_CIPL.shipper[0])}</b><br>${E(HQ_CIPL.shipper[1])}</td>
+        <td class="l" colspan="5"><div class="lb">NO&amp; DATE OF INVOICE</div><div class="inv"><b>${E(h.invNo)}</b><b>${E(D.mdY)}</b></div><div class="lb" style="margin-top:6px">REMARK</div>${rightLbl}</td></tr>
+    <tr><td class="l" colspan="4"><div class="lb">CONSIGNEE</div>${party}</td><td colspan="5" rowspan="2" class="big">${right}</td></tr>
+    <tr><td class="l" colspan="4"><div class="lb">NOTIFY ADDRESS</div>${party}</td></tr>
+    <tr><td class="l" colspan="4"><div class="lb">PORT OF LOADING</div>${E(D.loadPort)}</td><td class="l" colspan="5"><div class="lb">FINAL DESTINATION</div>${E(D.dest)}</td></tr>`;
+  const sign = `<div class="sg">SIGNED BY<span></span></div>`;
+  const inv = `<section class="pg">${head('COMMERCIAL INVOICE', 'Free of Charge', `<b>ORIGIN : ${E([...new Set(D.L.map(l => l.origin))].join(', '))}</b>`)}
+    <tr><td class="l" colspan="4"><div class="lb">CARRIER</div>${E(h.carrier || '')}${h.blNo ? `<br>${E((D.P.blLbl || 'B/L'))}: ${E(h.blNo)}` : ''}</td><td class="l" colspan="5"><div class="lb">INCOTERM</div>${E(D.incoterm)}</td></tr>
+    <tr class="th"><td>No.</td><td>Item</td><td>Spec(mm)</td><td>Qtys</td><td>Unit</td><td>HS CODE</td><td>Origin</td><td>UNIT Price</td><td>Amount</td></tr>
+    ${D.L.map((l, i) => `<tr class="it"><td>${i + 1}</td><td>${E(l.item)}</td><td>${E(l.spec)}</td><td class="n">${num(l.qty)}</td><td>${E(String(l.unit).toUpperCase())}</td><td>${E(l.hs)}</td><td>${E(l.origin)}</td>
+      <td class="n">${l.price === '' || l.price == null ? '' : money(l.price, l.cur).replace(/\.00$/, '')}</td><td class="n">${l.price === '' || l.price == null ? '' : money(+l.price * +l.qty, l.cur)}</td></tr>`).join('')}
+    <tr class="tot"><td></td><td>Total</td><td></td><td class="n">${num(D.qtySum)}</td><td colspan="4"></td><td class="n">${Object.entries(D.tot).map(([c, v]) => money(v, c)).join('<br>') || '-'}</td></tr>
+    <tr><td colspan="9" class="foot">${sign}</td></tr></table></section>`;
+  const pk = D.packs.map(p => ({p, ls: D.L.map((l, i) => ({...l, no: i + 1})).filter(l => l.box === +p.no)})).filter(x => x.ls.length);
+  const pl = `<section class="pg">${head('PACKING LIST', logo, '')}
+    <tr><td class="l" colspan="4"><div class="lb">CARRIER</div>${E(h.carrier || '')}${h.blNo ? `<br>${E(D.P.blLbl)}: ${E(h.blNo)}` : ''}</td><td class="l" colspan="5"><div class="lb">SALLING ON OR ABOUT</div>${E(h.etd || '')}</td></tr>
+    <tr class="th"><td>PACKING</td><td>No.</td><td>Item</td><td>Spec(mm)</td><td>Qtys</td><td>Unit</td><td>HS CODE</td><td>N.W (Kg)</td><td>G.W (Kg) / SIZE (MM)</td></tr>
+    ${pk.map(x => x.ls.map((l, k) => `<tr class="it">${k === 0 ? `<td rowspan="${x.ls.length}">${x.p.no}<div class="s">${x.p.type === 'PALLET' ? 'pallet' : 'box'}</div></td>` : ''}<td>${l.no}</td><td>${E(l.item)}</td><td>${E(l.spec)}</td><td class="n">${num(l.qty)}</td><td>${E(String(l.unit).toUpperCase())}</td><td>${E(l.hs)}</td><td class="n">${l.nw === '' || l.nw == null ? '' : num(l.nw)}</td>
+      ${k === 0 ? `<td rowspan="${x.ls.length}">${x.p.gw === '' || x.p.gw == null ? '' : num(x.p.gw) + ' kg'}<div class="s">${E(x.p.size || '')}</div></td>` : ''}</tr>`).join('')).join('')}
+    <tr class="tot"><td colspan="4">Total ${E(D.total)}</td><td class="n">${num(D.qtySum)}</td><td colspan="2"></td><td class="n">${D.nwSum ? num(D.nwSum) : ''}</td><td>${D.gwSum ? num(D.gwSum) + ' kg' : ''}${h.cbm ? `<div class="s">${E(h.cbm)} CBM</div>` : ''}</td></tr>
+    <tr><td colspan="9" class="foot">${sign}</td></tr></table></section>`;
+  const qtyTxt = Object.entries(D.byItem).map(([k, q]) => { const [it, u] = k.split('|'); return `${E(it)} : ${num(q)}${E(String(u).toUpperCase())}`; }).join('<br>');
+  const sm = `<section class="pg sm"><div style="text-align:center;margin:30px 0 16px">${logo}</div><table class="m">
+    <tr><td colspan="2" class="mt">SHIPPING MARK</td></tr>
+    <tr><td class="k">수출업체명:<br>Tên nhà xuất khẩu</td><td class="v">THE GAUSS INC</td></tr>
+    <tr><td class="k">수하인:<br>Người nhận</td><td class="v">THE GAUSS VINA</td></tr>
+    <tr><td class="k">원산지:<br>Xuất xứ</td><td class="v">${E([...new Set(D.L.map(l => l.origin))].join(', '))}</td></tr>
+    <tr><td class="k">하역항 / 도착지:<br>Cảng đến</td><td class="v">${E(D.dest)}</td></tr>
+    <tr><td class="k">수량<br>Số lượng</td><td class="v">${qtyTxt}</td></tr>
+    <tr><td class="k">PACKING :<br>Số pallet</td><td class="v">${E(D.total)}</td></tr></table></section>`;
   const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단되었습니다. 팝업을 허용해주세요.'); return; }
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Invoice ${E(h.invNo)}</title><style>
-    body{font-family:'Malgun Gothic',Arial,sans-serif;color:#111;margin:0}.pg{padding:15mm 13mm;page-break-after:always}.pg:last-child{page-break-after:auto}
-    .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #4c1d95;padding-bottom:8px;margin-bottom:12px}.ttl{font-size:22px;font-weight:800;color:#4c1d95;letter-spacing:1px}.sub{font-size:12px;color:#555}.co{text-align:right;font-size:12px;line-height:1.5}
-    table{width:100%;border-collapse:collapse;font-size:11.5px}.info th{width:105px;text-align:left;background:#F5F3FF;padding:5px;border:1px solid #CBD5E1;vertical-align:top}.info td{padding:5px;border:1px solid #CBD5E1;line-height:1.45;vertical-align:top}.s{color:#555;font-size:10.5px}
-    .it{margin-top:12px}.it th{background:#4c1d95;color:#fff;padding:5px;border:1px solid #4c1d95}.it td{padding:5px;border:1px solid #CBD5E1}.it tfoot td{background:#F8FAFC}.n{text-align:right;white-space:nowrap}.c{text-align:center}.m{font-family:monospace;font-size:10.5px}
-    .note{font-size:11px;color:#333;margin:10px 0}.sig{display:flex;justify-content:flex-end;margin-top:26px;font-size:12px;text-align:center}
-    @media print{.pg{padding:9mm}}</style></head><body>${inv}${pl}<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${E(h.invNo)}_CIPL</title><style>
+    body{font-family:Arial,'Malgun Gothic',sans-serif;color:#000;margin:0}.pg{padding:12mm 10mm;page-break-after:always}.pg:last-child{page-break-after:auto}
+    table.g{width:100%;border-collapse:collapse;border:2px solid #000;font-size:11px;font-weight:700}
+    .g td{border:1px solid #000;padding:4px 6px;vertical-align:top}.g .l{line-height:1.45;height:20px}.lb{font-size:10px;margin-bottom:2px}
+    .ttl{text-align:center;font-size:22px;padding:10px!important;letter-spacing:.5px}.inv{display:flex;justify-content:space-between;font-size:12px}
+    .big{text-align:center;vertical-align:middle!important;font-size:26px}
+    .th td{text-align:center;background:#fff;font-size:11.5px}.it td{text-align:center;vertical-align:middle;font-size:11.5px}.n{text-align:right!important;white-space:nowrap}
+    .cs{float:left;padding-right:6px}.s{font-size:10px;font-weight:400}.tot td{font-size:14px;text-align:center;vertical-align:middle;padding:8px 6px}
+    .foot{height:120px;border:none!important;border-top:1px solid #000!important}.sg{display:flex;justify-content:center;align-items:center;gap:10px;margin-top:40px;font-size:11px}.sg span{display:inline-block;width:90px;height:70px}
+    table.m{margin:0 auto;border-collapse:collapse;width:80%;font-weight:700}.m td{border:1px solid #000;text-align:center;padding:10px;font-size:13px}.m .mt{font-size:16px;padding:16px}.m .v{font-size:16px}.m .k{width:42%}
+    @media print{.pg{padding:7mm}}</style></head><body>${inv}${pl}${sm}<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
   w.document.close();
 }
 function hqVNInvExcel(id){
   if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
   const h = HQS.hqship.find(x => String(x.id) === String(id)); if (!h) return;
-  const P = HQ_SHIP_PORTS[h.mode] || HQ_SHIP_PORTS.SEA, L = h.lines || [];
-  const aoa = [['COMMERCIAL INVOICE / PACKING LIST'], [], ['Invoice No', h.invNo, '', 'Date', h.shipDate || ''], ['Shipper', INV_CO.hq.join(' ')], ['Consignee', [INV_CO.name, INV_CO.addr1, INV_CO.addr2].join(' ')],
-    ['Shipment', (HQ_SHIP_MODES[h.mode] || h.mode) + (h.carrier ? ' ' + h.carrier : ''), '', P.blLbl, h.blNo || ''], ['From', h.loadPort || P.load, '', 'To', h.destPort || P.dest], ['ETD', h.etd || '', '', 'ETA', h.eta || ''],
-    ['Terms', 'F.O.C — materials for processing under contract ' + INV_CO.contract + ' (value for customs only)'], [], ['No', 'Code', 'Description', 'HS Code', 'Q\'ty', 'Unit', 'Currency', 'Unit Price', 'Amount', 'PO No']];
-  L.forEach((l, i) => aoa.push([i + 1, l.code, l.name, l.hs || '', +l.qty, l.unit, l.cur, l.price === '' ? '' : +l.price, l.price === '' ? '' : +l.price * +l.qty, l.poNo]));
-  aoa.push([]); aoa.push(['Packages', hqPkgTxt(h), '', 'G.W. (kg)', h.gw || '', 'N.W. (kg)', h.nw || '', 'CBM', h.cbm || '']);
-  const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{wch:10},{wch:18},{wch:40},{wch:11},{wch:10},{wch:7},{wch:8},{wch:11},{wch:13},{wch:16}];
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Invoice'); XLSX.writeFile(wb, `Invoice_${String(h.invNo).replace(/[^\w-]/g,'_')}.xlsx`);
+  const D = hqCIPLData(h), C = HQ_CIPL.consignee, ct = D.contact ? [D.contact] : [];
+  const pr = l => l.price === '' || l.price == null ? '' : +l.price;
+  // 1. INVOICE — 본사 양식과 같은 칸 배치
+  const a = [['COMMERCIAL INVOICE'], ['SHIPPER', '', '', '', 'NO& DATE OF INVOICE'], [HQ_CIPL.shipper[0], '', '', '', h.invNo, '', '', '', D.mdY], [HQ_CIPL.shipper[1], '', '', '', 'REMARK'],
+    ['', '', '', '', 'ORIGIN : ' + [...new Set(D.L.map(l => l.origin))].join(', ')], [], [], ['CONSIGNEE', '', '', '', 'Free of Charge'], ...[...C, ...ct].map(v => [v]), [], ['NOTIFY ADDRESS'], ...[...C, ...ct].map(v => [v]), [],
+    ['PORT OF LOADING', '', '', '', 'FINAL DESTINATION'], [D.loadPort, '', '', '', D.dest], ['CARRIER', '', '', '', 'INCOTERM'], [(h.carrier || '') + (h.blNo ? '  ' + D.P.blLbl + ': ' + h.blNo : ''), '', '', '', D.incoterm],
+    ['No.', 'Item', 'Spec(mm)', 'Qtys', 'Unit', 'HS CODE', 'Origin', 'UNIT Price', 'Amount', 'Currency']];
+  D.L.forEach((l, i) => a.push([i + 1, l.item, l.spec, +l.qty, String(l.unit).toUpperCase(), l.hs, l.origin, pr(l), pr(l) === '' ? '' : pr(l) * +l.qty, l.cur]));
+  a.push([]); a.push(['', 'Total', '', D.qtySum, '', '', '', '', Object.entries(D.tot).map(([c, v]) => c + ' ' + v.toFixed(2)).join(' / ')]); a.push([]); a.push(['', '', '', '', '', 'SIGNED BY']);
+  // 2. PACKING LIST
+  const b = [['PACKING LIST'], ['SHIPPER', '', '', '', '', 'NO& DATE OF INVOICE'], [HQ_CIPL.shipper[0], '', '', '', '', h.invNo, '', '', '', D.mdY], [HQ_CIPL.shipper[1], '', '', '', '', 'REMARK'], [],
+    ['CONSIGNEE'], ...[...C, ...ct].map(v => [v]), [], ['NOTIFY ADDRESS'], ...[...C, ...ct].map(v => [v]), [], ['PORT OF LOADING', '', '', '', '', 'FINAL DESTINATION'], [D.loadPort, '', '', '', '', D.dest],
+    ['CARRIER', '', '', '', '', 'SALLING ON OR ABOUT'], [(h.carrier || '') + (h.blNo ? '  ' + D.P.blLbl + ': ' + h.blNo : ''), '', '', '', '', h.etd || ''], [],
+    ['PACKING', 'No.', 'Item', 'Spec(mm)', 'Qtys', 'Unit', 'HS CODE', 'N.W (Kg)', 'G.W (Kg)', 'SIZE ( MM )']];
+  D.packs.forEach(p => D.L.forEach((l, i) => { if (l.box !== +p.no) return; const first = !b.some(r => r._p === p.no); const r = [first ? p.no + ' ' + (p.type === 'PALLET' ? 'pallet' : 'box') : '', i + 1, l.item, l.spec, +l.qty, String(l.unit).toUpperCase(), l.hs, l.nw === '' ? '' : +l.nw, first ? (p.gw === '' ? '' : +p.gw) : '', first ? p.size || '' : '']; r._p = p.no; b.push(r); }));
+  b.push([]); b.push(['Total ' + D.total, '', '', '', D.qtySum, '', '', D.nwSum || '', D.gwSum || '', h.cbm ? h.cbm + ' CBM' : '']); b.push([]); b.push(['', '', '', '', '', '', 'SIGNED BY']);
+  // 3. shipping mark
+  const c = [['SHIPPING MARK'], ['수출업체명: / Tên nhà xuất khẩu', 'THE GAUSS INC'], ['수하인: / Người nhận', 'THE GAUSS VINA'], ['원산지: / Xuất xứ', [...new Set(D.L.map(l => l.origin))].join(', ')], ['하역항 / 도착지: / Cảng đến', D.dest],
+    ['수량 / Số lượng', Object.entries(D.byItem).map(([k, q]) => { const [it, u] = k.split('|'); return `${it} : ${q}${String(u).toUpperCase()}`; }).join('\n')], ['PACKING : / Số pallet', D.total]];
+  const wb = XLSX.utils.book_new(), add = (aoa, name, cols, merge) => { const ws = XLSX.utils.aoa_to_sheet(aoa.map(r => [...r])); ws['!cols'] = cols.map(w => ({wch: w})); if (merge) ws['!merges'] = merge; XLSX.utils.book_append_sheet(wb, ws, name); };
+  add(a, '1. INVOICE', [7, 22, 47, 13, 7, 17, 13, 17, 23, 9], [{s:{r:0,c:0}, e:{r:0,c:8}}]);
+  add(b, '2. PACKING LIST', [17, 5, 30, 41, 12, 7, 14, 12, 13, 18], [{s:{r:0,c:0}, e:{r:0,c:9}}]);
+  add(c, '3. shipping mark', [40, 45], [{s:{r:0,c:0}, e:{r:0,c:1}}]);
+  XLSX.writeFile(wb, `${String(h.invNo).replace(/[^\w-]/g,'_')}_CIPL.xlsx`);
 }
 // ════════════════════════════════════════════════════════════
 //  🚚 공급사 자재 발주 · 입고 예정 (2026-10-31 신규)
