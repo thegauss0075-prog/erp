@@ -9766,6 +9766,12 @@ function applyRoleUI() {
   const adminBtn= document.getElementById('admin-btn');
   const ioTab   = document.getElementById('tab-io');
   // ngTab 참조 제거 (사용 안 함)
+  // ✅ [2026-11-10] 본사 계정으로 숨겼던 법인 탭을 먼저 되돌린다 (같은 화면에서 베트남 계정으로 다시 로그인해도 탭이 사라지지 않게)
+  if (USER_ROLE !== 'hq' && USER_ROLE !== 'viewer') {   // 열람·본사 모드에서 잠갔던 입출고 화면도 되돌린다
+    document.querySelectorAll('.tb').forEach(b => { if (b.title === '열람 전용 - 입출고 등록 불가') { b.style.opacity = ''; b.style.pointerEvents = ''; b.title = ''; } });
+    const blk = document.getElementById('io-viewer-block'), cnt = document.getElementById('io-content'); if (blk) blk.style.display = 'none'; if (cnt) cnt.style.display = '';
+  }
+  if (USER_ROLE !== 'hq') document.querySelectorAll('.tb').forEach(b => { if (!b.classList.contains('tb-hq') && b.id !== 'tb-cost' && b.style.display === 'none' && b.dataset.hqHidden) { b.style.display = ''; delete b.dataset.hqHidden; } });
 
   if (USER_ROLE === 'viewer' || USER_ROLE === 'hq') {
     // 한국: 입출고 탭 잠금
@@ -9793,7 +9799,7 @@ function applyRoleUI() {
       if (hqCan('qa', 'R')) allow.add('qc');
       document.querySelectorAll('.tb').forEach(b => {
         if (b.classList.contains('tb-hq') || b.id === 'tb-cost') return;
-        const m = /go\('([^']+)'\)/.exec(b.getAttribute('onclick') || ''); b.style.display = (m && allow.has(m[1])) ? '' : 'none';
+        const m = /go\('([^']+)'\)/.exec(b.getAttribute('onclick') || ''); const show = m && allow.has(m[1]); b.style.display = show ? '' : 'none'; if (!show) b.dataset.hqHidden = '1';
       });
       try { applyCostTabUI(); } catch (e) {}
       // 처음 화면(대시보드)은 숨겼으니 볼 수 있는 첫 화면으로 옮긴다
