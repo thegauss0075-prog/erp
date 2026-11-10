@@ -13642,11 +13642,12 @@ async function hqPRDelete(id){
 // 승인된 구매요청 → 공급사별로 발주(SUPPLY_PO 행) 생성
 function hqPONos(n){ const base = hqNextNo('PO', SPO, 'poNo'), pre = base.slice(0, -2), k0 = +base.slice(-2); return Array.from({length: n}, (_, k) => pre + String(k0 + k).padStart(2,'0')); }
 function hqWireSpec(name){ const m = String(name || '').match(/(\d+(?:\.\d+)?)\s*mm\s*[×x*]\s*(\d+(?:\.\d+)?)\s*mm(\s*AIW)?/i); return m ? `${+m[1]}mm*${+m[2]}mm${m[3] ? ' AIW' : ''}` : ''; }
-function hqSubRow(l, i){
+function hqSubRow(l, i, cols, pfx){
+  cols = cols || 5; pfx = pfx || 'hqpo';
   const SI = HQ_IN + ';padding:4px 6px;font-size:12px', last = SPO.filter(p => p.kind === 'proc' && p.code === l.code).slice(-1)[0], lw = last && SPO.find(p => p.linkId === last.linkId && p.kind === 'wire');
-  const f = (k, v, w, ph, t) => `<input id="hqpo-s${k}-${i}" ${t ? `type="${t}" step="any"` : ''} value="${hqE(v ?? '')}" placeholder="${ph||''}" list="${k === 'proc' || k === 'wsup' ? 'hqpo-sups' : ''}" style="${SI};width:${w}px">`;
-  return `<tr id="hqpo-sub-${i}" style="display:none;background:#F5F3FF"><td colspan="5" style="font-size:12px">
-    <datalist id="hqpo-sups">${hqsSupNames().map(v => `<option value="${hqE(v)}">`).join('')}</datalist>
+  const f = (k, v, w, ph, t) => `<input id="${pfx}-s${k}-${i}" ${t ? `type="${t}" step="any"` : ''} value="${hqE(v ?? '')}" placeholder="${ph||''}" list="${k === 'proc' || k === 'wsup' ? pfx + '-sups' : ''}" style="${SI};width:${w}px">`;
+  return `<tr id="${pfx}-sub-${i}" style="display:none;background:#F5F3FF"><td colspan="${cols}" style="font-size:12px">
+    <datalist id="${pfx}-sups">${hqsSupNames().map(v => `<option value="${hqE(v)}">`).join('')}</datalist>
     <div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center">
       <b style="color:#7c3aed">🔁 외주 가공</b>
       <label>외주업체 ${f('proc', last ? last.supplier : '', 150, '권선 외주업체')}</label>
@@ -13659,7 +13660,7 @@ function hqSubRow(l, i){
       <label>Spec ${f('wspec', lw ? lw.spec : hqWireSpec(l.name), 130)}</label>
       <label>수량 ${f('wqty', '', 80, 'kg', 'number')} kg</label>
       <label>단가 ${f('wprice', lw ? lw.price : '', 80, '', 'number')}</label>
-      <select id="hqpo-swcur-${i}" style="${SI};width:70px">${HQ_PR_CURS.map(c => `<option ${(lw ? lw.cur : 'USD')===c?'selected':''}>${c}</option>`).join('')}</select>
+      <select id="${pfx}-swcur-${i}" style="${SI};width:70px">${HQ_PR_CURS.map(c => `<option ${(lw ? lw.cur : 'USD')===c?'selected':''}>${c}</option>`).join('')}</select>
     </div></td></tr>`;
 }
 function hqPRToPO(){
@@ -14698,14 +14699,14 @@ function hqShipEdit(poNo){
       ${hqFld('Invoice No','', `<input id="hqs-inv" value="${hqE(x.invNo)}" style="${HQ_IN}">`)}
     </div>
     <div class="tw" style="margin-top:10px"><datalist id="hqs-sups">${hqsSupNames().map(v => `<option value="${hqE(v)}">`).join('')}</datalist><table><thead><tr><th>자재</th><th style="text-align:right">발주</th><th style="text-align:right">입고</th><th>공급사</th><th>배송 경로</th><th>단가 · 통화</th></tr></thead><tbody>${
-      x.rows.map(r => `<tr><td>${hqE(r.name)} <span style="font-size:11px;color:#8A95A3">${hqE(r.code)}</span></td><td style="text-align:right;white-space:nowrap">${hqN(r.q)} ${hqE(r.unit||'')}</td><td style="text-align:right">${hqN(r.got)}</td>
+      x.rows.map((r, ri) => `<tr><td style="min-width:220px;white-space:normal;line-height:1.35">${hqE(r.name)} <span style="font-size:11px;color:#8A95A3">${hqE(r.code)}</span></td><td style="text-align:right;white-space:nowrap">${hqN(r.q)} ${hqE(r.unit||'')}</td><td style="text-align:right">${hqN(r.got)}</td>
         <td><input class="hqs-sup" data-id="${hqE(r.id)}" list="hqs-sups" value="${hqE(r.supplier || '')}" placeholder="공급사" style="${HQ_IN};width:140px"></td>
-        <td>${r.route === 'wire' ? `<span style="font-size:12px;color:#7c3aed">🧵 → ${hqE(r.shipTo || '외주업체')}</span>` : HQ_ROUTE_SEL('hqs-route', r.route === 'hq' ? 'hq' : 'direct', `data-id="${hqE(r.id)}"`)}</td>
-        <td style="white-space:nowrap"><input class="hqs-price" data-id="${hqE(r.id)}" type="number" step="0.0001" value="${hqE(r.price ?? '')}" style="${HQ_IN};width:96px"> <select class="hqs-lcur" data-id="${hqE(r.id)}" style="${HQ_IN};width:70px">${HQ_PR_CURS.map(c => `<option ${(r.cur || 'USD')===c?'selected':''}>${c}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>
-    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">"입고 완료"는 베트남 법인 자재 입고가 다 들어오면 자동으로 표시됩니다. 본사 경유는 "🏢 본사 입고·베트남 발송" 탭에서 본사 입고·발송을 등록하면 단계가 자동으로 바뀝니다.</div>
+        <td>${r.route === 'wire' ? `<span style="font-size:12px;color:#7c3aed">🧵 → ${hqE(r.shipTo || '외주업체')}</span>` : HQ_ROUTE_SEL('hqs-route', r.kind === 'proc' ? 'sub' : r.route === 'hq' ? 'hq' : 'direct', `data-id="${hqE(r.id)}" data-i="${ri}" onchange="const t=document.getElementById('hqse-sub-${ri}');if(t)t.style.display=this.value==='sub'?'':'none'"`, true)}${r.kind === 'proc' ? (w => w ? `<div style="font-size:11px;color:#7c3aed;margin-top:3px">🧵 ${hqE(w.poNo)} ${hqE(w.supplier)} ${hqN(w.qty)}kg</div>` : '')(SPO.find(q => q.linkId === r.linkId && q.kind === 'wire')) : ''}</td>
+        <td style="white-space:nowrap"><input class="hqs-price" data-id="${hqE(r.id)}" type="number" step="0.0001" value="${hqE(r.price ?? '')}" style="${HQ_IN};width:96px"> <select class="hqs-lcur" data-id="${hqE(r.id)}" style="${HQ_IN};width:70px">${HQ_PR_CURS.map(c => `<option ${(r.cur || 'USD')===c?'selected':''}>${c}</option>`).join('')}</select></td></tr>${r.route !== 'wire' && r.kind !== 'proc' ? hqSubRow({...r, supplier: ''}, ri, 6, 'hqse') : ''}`).join('')}</tbody></table></div>
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">🔁 외주 가공으로 바꾸면 와이어 발주서가 새로 만들어지고, 이 줄의 공급사는 외주업체로 바뀝니다 (단가 = 가공비). "입고 완료"는 베트남 법인 자재 입고가 다 들어오면 자동으로 표시됩니다. 본사 경유는 "🏢 본사 입고·베트남 발송" 탭에서 본사 입고·발송을 등록하면 단계가 자동으로 바뀝니다.</div>
     <div id="hqs-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
     <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px"><button onclick="hqClose('hq-sh')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
-      <button id="hqs-go" onclick="hqShipSave('${hqE(poNo)}')" style="padding:7px 16px;border-radius:8px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-weight:600;cursor:pointer">💾 저장</button></div>`, 760);
+      <button id="hqs-go" onclick="hqShipSave('${hqE(poNo)}')" style="padding:7px 16px;border-radius:8px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-weight:600;cursor:pointer">💾 저장</button></div>`, 1150);
 }
 async function hqShipSave(poNo){
   if (!hqCanWrite()) return;
@@ -14716,10 +14717,34 @@ async function hqShipSave(poNo){
   document.querySelectorAll('#hq-sh .hqs-price').forEach(i => prices[i.dataset.id] = i.value);
   document.querySelectorAll('#hq-sh .hqs-sup').forEach(i => sups[i.dataset.id] = i.value.trim());
   document.querySelectorAll('#hq-sh .hqs-lcur').forEach(i => curs[i.dataset.id] = i.value);
+  // 🔁 외주 가공으로 바꾸는 줄: 입력 확인
+  const subs = {};
+  x.rows.forEach((r, ri) => { if (routes[r.id] !== 'sub' || r.kind === 'proc') return;
+    const g = k => ((document.getElementById(`hqse-s${k}-${ri}`) || {}).value || '').trim();
+    subs[r.id] = {proc: g('proc'), wsup: g('wsup'), witem: g('witem'), wspec: g('wspec'), wqty: g('wqty'), wprice: g('wprice'), wcur: g('wcur') || 'USD'}; });
+  for (const [id, o] of Object.entries(subs)) { const nm = (x.rows.find(r => r.id === id) || {}).name;
+    if (!o.proc) { err.textContent = `${nm}: 외주업체를 넣어주세요.`; return; }
+    if (!o.wsup) { err.textContent = `${nm}: 와이어 공급사를 넣어주세요.`; return; }
+    if (!(+o.wqty > 0)) { err.textContent = `${nm}: 와이어 발주 수량(kg)을 넣어주세요.`; return; } }
   btn.disabled = true; btn.textContent = '⏳ 저장 중…';
+  const wireNos = {};
   for (const r of x.rows) {
     const p = SPO.find(s => s.id === r.id); if (!p) continue;
-    const rec = {...p, stage, route: routes[p.id] || p.route || 'direct', etd: v('hqs-etd'), eta: v('hqs-eta'), blNo: v('hqs-bl').trim(), invNo: v('hqs-inv').trim(), cur: curs[p.id] || p.cur || 'USD', supplier: sups[p.id] ?? p.supplier ?? '', price: prices[p.id] === '' ? '' : +prices[p.id]};
+    let extra = {};
+    if (subs[p.id]) {   // 와이어 발주 새로 만들고 이 줄은 가공 발주로
+      const o = subs[p.id], link = 'L' + Date.now() + '_' + p.id, now = new Date().toISOString();
+      const wno = wireNos[o.wsup] || (wireNos[o.wsup] = hqPONos(1)[0]);
+      const wire = {id: String(Date.now()) + '_w' + p.id, poNo: wno, supplier: o.wsup, code: 'WIRE-' + p.code, name: [o.witem, o.wspec].filter(Boolean).join(' '), item: o.witem, spec: o.wspec, cat: 'WIRE', unit: 'Kg', qty: +o.wqty,
+        price: o.wprice === '' ? '' : +o.wprice, cur: o.wcur, route: 'wire', kind: 'wire', shipTo: o.proc, linkId: link, orderDate: p.orderDate || hqToday(), dueDate: p.dueDate || '', prId: p.prId || '', prNo: p.prNo || '',
+        stage: '발주', stageLog: [{stage: '발주', at: now, by: CURRENT_USER||''}], createdBy: CURRENT_USER||'', createdAt: now, note: `외주 가공용 와이어 → ${o.proc} (${p.name}, 발주 ${p.poNo})`};
+      const wr = await retrySafe(() => api('saveSupplyPO', {rec: wire}));
+      if (!wr || !wr.ok) { btn.disabled = false; btn.textContent = '💾 저장'; err.textContent = '와이어 발주 저장 실패: ' + ((wr && wr.error) || ''); return; }
+      SPO.push(wire);
+      extra = {kind: 'proc', linkId: link, wireSup: o.wsup, supplier: o.proc};
+    }
+    const rsel = routes[p.id] || (p.kind === 'proc' ? 'sub' : p.route) || 'direct';
+    if (p.kind === 'proc' && rsel !== 'sub') extra = {kind: '', linkId: ''};   // 외주 가공 해제 (와이어 발주는 그대로 남음)
+    const rec = {...p, stage, route: rsel === 'sub' ? 'direct' : rsel, etd: v('hqs-etd'), eta: v('hqs-eta'), blNo: v('hqs-bl').trim(), invNo: v('hqs-inv').trim(), cur: curs[p.id] || p.cur || 'USD', supplier: sups[p.id] ?? p.supplier ?? '', price: prices[p.id] === '' ? '' : +prices[p.id], ...extra};
     if (p.stage !== stage) rec.stageLog = (p.stageLog || []).concat([{stage, at: new Date().toISOString(), by: CURRENT_USER||''}]);
     const res = await retrySafe(() => api('saveSupplyPO', {rec}));
     if (!res || !res.ok) { btn.disabled = false; btn.textContent = '💾 저장'; err.textContent = '저장 실패: ' + ((res && res.error) || ''); return; }
