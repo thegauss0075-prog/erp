@@ -15080,9 +15080,9 @@ function hqVNRender(){
     <h4 style="margin:14px 0 6px;font-size:13.5px">포장 (Packing)</h4>
     <div class="tw"><table style="font-size:12px"><thead><tr><th>포장 No</th><th>종류</th><th>G.W (kg)</th><th>크기 SIZE (mm)</th><th></th></tr></thead><tbody>${
       e.packs.map((p, i) => `<tr><td style="font-weight:700">${p.no}</td>
-        <td><select class="hqv-p" data-i="${i}" data-k="type" style="${SI};width:140px">${[['BOX','📦 박스 (box)'],['PALLET','🟫 팔레트 (pallet)'],['WPALLET','🪵 목재 팔레트 (Woodenpallet)']].map(([v, t]) => `<option value="${v}" ${p.type===v?'selected':''}>${t}</option>`).join('')}</select></td>
+        <td><select class="hqv-p" data-i="${i}" data-k="type" onchange="hqVNPackType(${i}, this.value)" style="${SI};width:140px">${[['BOX','📦 박스 (box)'],['PALLET','🟫 팔레트 (pallet)'],['WPALLET','🪵 목재 팔레트 (Woodenpallet)']].map(([v, t]) => `<option value="${v}" ${p.type===v?'selected':''}>${t}</option>`).join('')}</select></td>
         <td><input class="hqv-p" data-i="${i}" data-k="gw" type="number" step="any" value="${hqE(p.gw ?? '')}" style="${SI};width:90px;text-align:right"></td>
-        <td><input class="hqv-p" data-i="${i}" data-k="size" value="${hqE(p.size ?? '')}" placeholder="540X370X240" style="${SI};width:150px"></td>
+        <td style="white-space:nowrap"><input class="hqv-p" data-i="${i}" data-k="size" list="hqv-sizes" value="${hqE(p.size ?? '')}" placeholder="가로X세로X높이 mm" style="${SI};width:150px">${i === 0 ? `<datalist id="hqv-sizes">${hqPackSizes().map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</datalist>` : ''} <span style="font-size:11px;color:#5D6977">${hqM3(p.size) ? hqM3(p.size) + ' m³' : ''}</span></td>
         <td>${e.packs.length > 1 ? `<button onclick="hqVNPack(-1,${i})" class="edit-btn" title="포장 빼기">✕</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
     <button onclick="hqVNPack(1)" style="margin-top:6px;font-size:12px;padding:4px 10px;border:1px dashed #7c3aed;border-radius:7px;background:#fff;color:#7c3aed;cursor:pointer">➕ 포장 추가</button>
     <div id="hqv-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
@@ -15101,6 +15101,13 @@ function hqVNGrab(){
   document.querySelectorAll('#hq-vs .hqv-l').forEach(i => { (e.sel[i.dataset.id] = e.sel[i.dataset.id] || {})[i.dataset.k] = i.value.trim(); });
   document.querySelectorAll('#hq-vs .hqv-p').forEach(i => { e.packs[+i.dataset.i][i.dataset.k] = i.value.trim(); });
 }
+// 📐 포장 크기: 자주 쓰는 팔레트·박스 규격 (받은 패킹리스트 기준) + 지난 발송에 쓴 크기
+const HQ_PACK_SIZES = [['1100X1100X880', '팔레트 1.1×1.1×0.88 (솔루엠용 박스)'], ['1100X1100X1000', '팔레트 1.1×1.1×1.0'], ['1200X1000X1000', '팔레트 1.2×1.0×1.0'], ['950X620X500', '팔레트 0.95×0.62×0.50 (CH330125)'], ['540X370X240', '박스 540×370×240']];
+function hqPackSizes(){ const used = [...new Set(HQS.hqship.flatMap(h => (h.packs || []).map(p => p.size)).filter(Boolean))].filter(v => !HQ_PACK_SIZES.some(x => x[0] === v)).map(v => [v, '지난 발송']); return [...HQ_PACK_SIZES, ...used]; }
+function hqM3(size){ const v = String(size || '').split(/[x×*]/i).map(Number); return v.length === 3 && v.every(n => n > 0) ? +(v[0] * v[1] * v[2] / 1e9).toFixed(3) : 0; }
+function hqVNPackType(i, t){ hqVNGrab(); const p = HQS.ed.packs[i]; if (!p) return; p.type = t;
+  if (!p.size) { const last = HQS.hqship.flatMap(h => h.packs || []).filter(x => x.type === t && x.size).slice(-1)[0]; p.size = last ? last.size : (t === 'BOX' ? '' : '1100X1100X880'); }
+  hqVNRender(); }
 function hqVNPack(d, i){
   hqVNGrab(); const e = HQS.ed;
   if (d > 0) e.packs.push({no: Math.max(0, ...e.packs.map(p => +p.no)) + 1, type: (e.packs[e.packs.length - 1] || {}).type || 'BOX', gw: '', size: (e.packs[e.packs.length - 1] || {}).size || ''});
@@ -15133,6 +15140,7 @@ async function hqVNShipSave(print){
   if (e.route === 'direct' && !e.loadPort) e.loadPort = hqSupCountryEn(lines[0].supplier);
   const rec = {...e, lines, packs: e.packs.map(p => ({no: +p.no, type: p.type, gw: p.gw === '' ? '' : +p.gw, size: p.size || ''})), cbm: e.cbm === '' || e.cbm == null ? '' : +e.cbm};
   delete rec.sel; delete rec.plt; delete rec.ct; delete rec.pkgs;
+  if (rec.cbm === '' || rec.cbm == null) { const c = rec.packs.reduce((t, p) => t + hqM3(p.size), 0); rec.cbm = c ? +c.toFixed(3) : ''; }   // CBM을 비워 두면 포장 크기로 계산
   rec.nw = lines.reduce((s, l) => s + (+l.nw || 0), 0) || ''; rec.gw = rec.packs.reduce((s, p) => s + (+p.gw || 0), 0) || '';
   hqsStamp(rec, !HQS.hqship.some(x => String(x.id) === String(rec.id)));
   for (const l of lines) await hqNamePut(l.code, l.name, l.item, l.spec);   // 인보이스에 쓴 Item·Spec을 본사 품명으로 기억
