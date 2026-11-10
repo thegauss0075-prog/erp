@@ -70,6 +70,7 @@ select{padding:8px 10px;font-size:13px;border-radius:8px;border:1px solid #dde;b
 .io-tab.on-tp-in{background:#3730a3;color:#fff;font-weight:700}
 .io-tab.on-otp{background:#1e3a8a;color:#fff;font-weight:700}
 .io-tab.on-ng{background:#991b1b;color:#fff;font-weight:700}
+.io-tab.on-lbl{background:#0f766e;color:#fff;font-weight:700}
 .io-tab:hover:not([class*="on-"]){background:#f0f4ff}
 .io-form.type-ng-in{border-color:#fca5a5;border-width:2px}
 .io-form.type-ng-out{border-color:#fdba74;border-width:2px}
@@ -658,6 +659,20 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <button class="io-tab"        id="iot-otp" onclick="setIOTab('otp')">🚚 완제품 출고 / Xuất TP</button>
     <button class="io-tab"        id="iot-ng-in"  onclick="setIOTab('ng-in')">⚠️ 불량 입고 / Nhập NG</button>
     <button class="io-tab"        id="iot-ng-out" onclick="setIOTab('ng-out')">🗑️ 불량 출고 / Xuất NG</button>
+    <button class="io-tab"        id="iot-lbl" onclick="setIOTab('lbl')">🔖 라벨 인쇄 / In nhãn</button>
+  </div>
+
+  <!-- 🔖 자재 LOT 라벨 인쇄 (수입검사 합격품만) -->
+  <div id="wrap-lbl" style="display:none">
+    <div class="io-form" style="border-top:4px solid #0f766e">
+      <div class="fh" style="color:#0f766e">🔖 자재 LOT 라벨 인쇄 / In nhãn LOT NVL <span style="font-size:12.5px;font-weight:500;color:#5D6977">— 수입검사 <b>합격</b>한 LOT만 나옵니다 / Chỉ LOT đã đạt kiểm tra đầu vào</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <div class="sw" style="flex:1;min-width:240px"><span class="si">🔍</span><input id="lbl-q" placeholder="코드 · 품명 · LOT / Mã · Tên · LOT" oninput="renderLblList()"></div>
+        <select id="lbl-days" onchange="renderLblList()" style="padding:8px;border:1px solid #DCE1E7;border-radius:8px"><option value="30">최근 30일</option><option value="90">최근 90일</option><option value="365">최근 1년</option><option value="0">전체 / Tất cả</option></select>
+      </div>
+      <div id="lbl-list"></div>
+      <div style="font-size:12px;color:#8A95A3;margin-top:8px">검사에 불합격했거나 아직 검사하지 않은 LOT는 나오지 않습니다. 검사 등록은 🔬 품질검사 탭에서 합니다. / LOT chưa kiểm tra hoặc không đạt sẽ không hiển thị.</div>
+    </div>
   </div>
 
   <!-- 자재 입고 -->
@@ -2496,8 +2511,8 @@ function go(id){
 }
 function setIC(c){document.getElementById('inv-cat').value=c;initMS();renderInv();}
 
-const IO_TABS=['in','omt','tp-in','otp','ng-in','ng-out'];
-const IO_TAB_ON={in:'on-in',omt:'on-omt','tp-in':'on-tp-in',otp:'on-otp','ng-in':'on-ng','ng-out':'on-ng'};
+const IO_TABS=['in','omt','tp-in','otp','ng-in','ng-out','lbl'];
+const IO_TAB_ON={in:'on-in',omt:'on-omt','tp-in':'on-tp-in',otp:'on-otp','ng-in':'on-ng','ng-out':'on-ng',lbl:'on-lbl'};
 
 function setIOTab(t){
   IO_TABS.forEach(x=>{
@@ -2507,6 +2522,21 @@ function setIOTab(t){
     if(wrap) wrap.style.display=x===t?'block':'none';
     hideCP(x);
   });
+  if (t === 'lbl') { if (!(QC || []).length) loadQC().then(renderLblList); renderLblList(); setTimeout(() => { const i = document.getElementById('lbl-q'); if (i) i.focus(); }, 50); }
+}
+// 🔖 라벨 인쇄 목록: 수입검사 합격 기록 (품질검사 탭의 🔖와 같은 라벨)
+function renderLblList(){
+  const el = document.getElementById('lbl-list'); if (!el) return;
+  const q = ((document.getElementById('lbl-q') || {}).value || '').toLowerCase().trim(), days = +((document.getElementById('lbl-days') || {}).value || 30);
+  const cut = days ? Date.now() - days * 864e5 : 0, esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const rows = (QC || []).filter(r => r.inspType === '수입검사' && r.result === '합격' && (!cut || new Date(r.inspDate || 0).getTime() >= cut)
+    && (!q || [r.code, r.name, r.lot].some(v => String(v || '').toLowerCase().includes(q))))
+    .sort((a, b) => String(b.inspDate || '').localeCompare(String(a.inspDate || ''))).slice(0, 200);
+  el.innerHTML = rows.length ? `<div class="tw"><table><thead><tr><th>검사일 / Ngày KT</th><th>품명 / Tên</th><th>코드 / Mã</th><th>LOT</th><th style="text-align:right">수량 / SL</th><th></th></tr></thead><tbody>${
+    rows.map(r => `<tr><td style="white-space:nowrap">${esc(String(r.inspDate || '').slice(0, 10))}</td><td>${esc(r.name)}</td><td style="font-family:monospace;font-size:12px">${esc(r.code)}</td>
+      <td style="font-family:monospace;font-size:12px;color:#1d4ed8;font-weight:700">${esc(r.lot || '-')}</td><td style="text-align:right">${r.totalQty ? Number(r.totalQty).toLocaleString() : '-'}</td>
+      <td><button onclick="printQCLotQR(${r.id})" style="padding:6px 14px;border-radius:8px;border:none;background:#0f766e;color:#fff;font-weight:700;cursor:pointer;white-space:nowrap">🔖 라벨 인쇄</button></td></tr>`).join('')}</tbody></table></div>`
+    : `<div class="empty">${(QC || []).length ? '조건에 맞는 합격 LOT가 없습니다 / Không có LOT phù hợp' : '⏳ 불러오는 중… / Đang tải…'}</div>`;
 }
 
 // ✅ [2026-10-31] 완제품(TP)은 이 화면에서 NG 창고 이동만 — 솔루엠·본사 출고는 출고 탭(출고 예정)에서만
