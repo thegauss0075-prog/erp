@@ -14603,6 +14603,10 @@ function hqShipGroups(){
       const recv = x.rows.reduce((s,r) => s + hqRecvQty(r), 0), shp = HQS.hqship.filter(h => h.status !== '취소' && (h.lines||[]).some(l => x.rows.some(r => String(r.id) === String(l.spoId))));
       const sst = shp.map(h => ({'발송':'베트남 발송','도착':'도착','통관':'통관','입고 완료':'통관'})[h.status]).filter(Boolean).sort((p,q) => stages.indexOf(q) - stages.indexOf(p))[0];
       if (sst) stage = sst; else if (recv > 0) stage = '본사 입고';
+    } else if (!done) {   // 직송: 인보이스(발송) 상태로 단계를 정한다
+      const sst = HQS.hqship.filter(h => h.status !== '취소' && (h.lines||[]).some(l => x.rows.some(r => String(r.id) === String(l.spoId))))
+        .map(h => ({'발송':'선적(출항)','도착':'도착','통관':'통관','입고 완료':'통관'})[h.status]).filter(Boolean).sort((p,q) => stages.indexOf(q) - stages.indexOf(p))[0];
+      if (sst && stages.indexOf(sst) > stages.indexOf(stage)) stage = sst;
     }
     return {...x, amtBy, route, stages, supplier: f.supplier, orderDate: f.orderDate, dueDate: f.dueDate, cur: f.cur || '', etd: f.etd || '', eta: f.eta || '', blNo: f.blNo || '', invNo: f.invNo || '', incoterm: f.incoterm || '', prNo: f.prNo || '', qty, got, amt, done, stage, late: !done && f.dueDate && f.dueDate < hqToday()};
   });
@@ -14623,7 +14627,7 @@ function hqShipView(){
         <td style="text-align:right;white-space:nowrap">${hqN(x.got)} / ${hqN(x.qty)}</td><td style="text-align:right;white-space:nowrap">${Object.keys(x.amtBy).length ? Object.entries(x.amtBy).map(([c, v]) => hqM(v, c)).join('<br>') : '-'}</td>
         <td style="white-space:nowrap">${hqE(x.etd||'-')}</td><td style="white-space:nowrap;${x.late ? 'color:#b91c1c;font-weight:700' : ''}">${hqE(x.eta || (x.dueDate ? '(예정 ' + x.dueDate + ')' : '-'))}</td>
         <td style="font-size:12px">${hqE(x.blNo||'')}${x.invNo ? `<div>${hqE(x.invNo)}</div>` : ''}</td><td>${step(x.stage, x.stages)}</td>
-        <td style="white-space:nowrap"><button onclick="hqShipEdit('${hqE(x.poNo)}')" class="edit-btn" title="단계·서류 수정">✏️</button><button onclick="hqPOPrint('${hqE(x.poNo)}')" class="edit-btn" title="공급사별 발주서 인쇄">🖨️</button><button onclick="hqPOExcel('${hqE(x.poNo)}')" class="edit-btn" title="발주서 엑셀">📄</button>${hqCan('buy','D') ? `<button onclick="hqShipDelete('${hqE(x.poNo)}')" class="edit-btn" title="발주 삭제">🗑️</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+        <td style="white-space:nowrap"><button onclick="hqShipEdit('${hqE(x.poNo)}')" class="edit-btn" title="단계·서류 수정">✏️</button><button onclick="hqPOPrint('${hqE(x.poNo)}')" class="edit-btn" title="공급사별 발주서 인쇄">🖨️</button><button onclick="hqVNShipEdit(null,'${hqE(x.poNo)}')" class="edit-btn" title="이 발주로 베트남 발송 인보이스 작성">🧾</button><button onclick="hqPOExcel('${hqE(x.poNo)}')" class="edit-btn" title="발주서 엑셀">📄</button>${hqCan('buy','D') ? `<button onclick="hqShipDelete('${hqE(x.poNo)}')" class="edit-btn" title="발주 삭제">🗑️</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty">진행 중인 자재 발주가 없습니다.</div>'}
     <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">입고 수량은 법인 입출고 탭의 자재 입고를 등록하면 같은 자재의 오래된 발주부터 자동으로 채워집니다. 다 들어오면 "입고 완료"가 됩니다.</div>`;
 }
@@ -14735,6 +14739,11 @@ function hqPOExcel(poNo){
 function hqRecvQty(p){ return (p.hqRecv || []).reduce((s, r) => s + (+r.qty || 0), 0); }
 function hqShipLive(){ return HQS.hqship.filter(h => h.status !== '취소'); }
 function hqSentQty(spoId, exceptShipId){ return hqShipLive().filter(h => String(h.id) !== String(exceptShipId || '')).reduce((s, h) => s + (h.lines || []).filter(l => String(l.spoId) === String(spoId)).reduce((a, l) => a + (+l.qty || 0), 0), 0); }
+// 이번 발송에 넣을 수 있는 수량: 본사 경유 = 본사 입고 − 발송, 직송 = 발주 − 이미 인보이스에 넣은 수량 − 이미 베트남 입고(인보이스 없이 들어온 것)
+function hqVNAvail(p, exceptId){
+  if (p.route === 'hq') return Math.max(0, +(hqRecvQty(p) - hqSentQty(p.id, exceptId)).toFixed(4));
+  return Math.max(0, +((+p.qty || 0) - hqSentQty(p.id, exceptId)).toFixed(4));
+}
 function hqWhRows(){
   return SPO.filter(p => p.route === 'hq').map(p => { const q = +p.qty || 0, recv = hqRecvQty(p), sent = hqSentQty(p.id);
     return {p, q, recv, sent, stock: Math.max(0, +(recv - sent).toFixed(4)), wait: Math.max(0, +(q - recv).toFixed(4))}; });
@@ -14757,7 +14766,7 @@ function hqWhView(){
         <td style="text-align:right;font-weight:700;color:${x.stock > 0 ? '#7c3aed' : '#8A95A3'}">${hqN(x.stock)}</td><td style="text-align:right;color:${x.wait > 0 ? '#b45309' : '#8A95A3'}">${hqN(x.wait)}</td>
         <td><button onclick="hqRecvEdit('${hqE(x.p.id)}')" style="padding:4px 10px;border-radius:7px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-weight:600;cursor:pointer;white-space:nowrap">📥 본사 입고</button></td></tr>`).join('')}</tbody></table></div>`
       : `<div class="empty">본사 경유 발주가 없습니다. 발주로 전환할 때(또는 발주서 ✏️ 수정에서) 배송 경로를 "🏢 본사 경유"로 고르세요.</div>`}
-    <h4 style="margin:16px 0 6px;font-size:14px">✈️ 베트남 발송 (인보이스)</h4>
+    <h4 style="margin:16px 0 6px;font-size:14px">✈️ 베트남 발송 인보이스 <span style="font-weight:400;font-size:12px;color:#8A95A3">— 본사 보관분과 직송 자재 모두 여기서 작성합니다</span></h4>
     ${ships.length ? `<div class="tw"><table><thead><tr><th>Invoice No</th><th>발송일</th><th>방식</th><th>자재</th><th>B/L · AWB</th><th>ETA</th><th>상태</th><th></th></tr></thead><tbody>${
       ships.map(h => `<tr><td style="font-family:monospace;font-size:12px">${hqE(h.invNo)}</td><td style="white-space:nowrap">${hqE(h.shipDate||'')}</td><td style="white-space:nowrap">${HQ_SHIP_MODES[h.mode] || hqE(h.mode)}</td>
         <td>${hqE((h.lines||[])[0] ? h.lines[0].name : '')}${(h.lines||[]).length > 1 ? ` <span style="color:#8A95A3">외 ${h.lines.length - 1}</span>` : ''}</td><td style="font-size:12px">${hqE(h.blNo||'')}${h.carrier ? `<div style="color:#8A95A3">${hqE(h.carrier)}</div>` : ''}</td>
@@ -14875,16 +14884,19 @@ function hqVNDefLine(p){
   const l = hqVNLast(p.code) || {};
   return {qty: '', hs: l.hs || '', item: l.item || String(p.name || '').trim().split(/[\s(]/)[0].toUpperCase(), spec: l.spec || p.name || '', origin: l.origin || HQ_CIPL.origin, nw: '', box: 1};
 }
-function hqVNShipEdit(id){
+function hqVNShipEdit(id, poNo){
   const h = id ? HQS.hqship.find(x => String(x.id) === String(id)) : null;
   if (h) { HQS.ed = JSON.parse(JSON.stringify(h)); HQS.ed.sel = {}; (h.lines||[]).forEach(l => HQS.ed.sel[l.spoId] = {...l}); if (!Array.isArray(HQS.ed.packs)) HQS.ed.packs = [{no: 1, type: +h.plt ? 'PALLET' : 'BOX', gw: h.gw || '', size: ''}]; }
   else HQS.ed = {id: String(Date.now()), invNo: hqVNInvNo(), shipDate: hqToday(), mode: 'SEA', status: '준비', loadPort: HQ_SHIP_PORTS.SEA.load, destPort: HQ_SHIP_PORTS.SEA.dest,
     incoterm: HQ_CIPL.incoterm, contact: HQ_CIPL.contact, sel: {}, packs: [{no: 1, type: 'BOX', gw: '', size: ''}]};
+  if (!h && poNo) SPO.filter(p => p.poNo === poNo).forEach(p => { const a = hqVNAvail(p); if (a > 0) HQS.ed.sel[p.id] = {...hqVNDefLine(p), qty: a}; });   // 발주서 화면의 🧾 버튼: 그 발주 자재를 미리 채움
   hqVNRender();
 }
 function hqVNRender(){
   const e = HQS.ed, isNew = !HQS.hqship.some(x => String(x.id) === String(e.id));
-  const cand = SPO.filter(p => p.route === 'hq').map(p => ({p, avail: Math.max(0, +(hqRecvQty(p) - hqSentQty(p.id, e.id)).toFixed(4)), l: e.sel[p.id] || (e.sel[p.id] = hqVNDefLine(p))})).filter(x => x.avail > 0 || +x.l.qty > 0);
+  const al = spoAlloc();
+  const cand = SPO.filter(p => !p.closed && (p.route === 'hq' || spoRow(p, al).remain > 0 || e.sel[p.id])).map(p => ({p, avail: hqVNAvail(p, e.id), l: e.sel[p.id] || (e.sel[p.id] = hqVNDefLine(p))})).filter(x => x.avail > 0 || +x.l.qty > 0)
+    .sort((a, b) => (a.p.route === 'hq' ? 0 : 1) - (b.p.route === 'hq' ? 0 : 1) || String(a.p.poNo).localeCompare(String(b.p.poNo)));
   const f = (k, lbl, type, ph) => hqFld(lbl, '', `<input id="hqv-${k}" ${type ? `type="${type}"` : ''} value="${hqE(e[k] ?? '')}" placeholder="${ph||''}" style="${HQ_IN}">`);
   const P = HQ_SHIP_PORTS[e.mode] || HQ_SHIP_PORTS.SEA, SI = HQ_IN + ';padding:4px 6px;font-size:12px';
   const li = (x, k, w, type) => `<input class="hqv-l" data-id="${hqE(x.p.id)}" data-k="${k}" ${type ? `type="${type}" step="any"` : ''} value="${hqE(x.l[k] ?? '')}" style="${SI};width:${w}px${type ? ';text-align:right' : ''}">`;
@@ -14901,12 +14913,12 @@ function hqVNRender(){
     </div>
     <h4 style="margin:14px 0 6px;font-size:13.5px">자재 <span style="font-weight:400;color:#8A95A3;font-size:12px">— Item·Spec·HS·원산지는 같은 자재를 지난번에 보낼 때 쓴 값이 미리 들어갑니다</span></h4>
     <div class="tw"><table style="font-size:12px"><thead><tr><th>발주번호 · 자재</th><th style="text-align:right">보낼 수 있는</th><th>이번 발송</th><th>Item</th><th>Spec</th><th>HS Code</th><th>Origin</th><th>N.W (kg)</th><th>포장 No</th></tr></thead><tbody>${
-      cand.length ? cand.map(x => `<tr><td><span style="font-family:monospace;font-size:11px;color:#8A95A3">${hqE(x.p.poNo||'')}</span><br>${hqE(x.p.name)}</td>
+      cand.length ? cand.map(x => `<tr><td><span style="font-family:monospace;font-size:11px;color:#8A95A3">${hqE(x.p.poNo||'')}</span> <span style="font-size:10.5px;font-weight:700;color:${x.p.route === 'hq' ? '#7c3aed' : '#0f766e'}">${x.p.route === 'hq' ? '🏢 본사 보관' : '➡️ 직송 · ' + hqE(x.p.supplier || '')}</span><br>${hqE(x.p.name)}</td>
         <td style="text-align:right;white-space:nowrap">${hqN(x.avail)} ${hqE(x.p.unit||'')}</td>
         <td style="white-space:nowrap">${li(x, 'qty', 80, 'number')} <button onclick="this.previousElementSibling.value='${x.avail}'" style="font-size:11px;padding:2px 5px;border:1px solid #DCE1E7;border-radius:6px;background:#fff;cursor:pointer">전량</button></td>
         <td>${li(x, 'item', 90)}</td><td>${li(x, 'spec', 190)}</td><td>${li(x, 'hs', 85)}</td><td>${li(x, 'origin', 70)}</td><td>${li(x, 'nw', 65, 'number')}</td>
         <td><select class="hqv-l" data-id="${hqE(x.p.id)}" data-k="box" style="${SI};width:56px">${boxes.map(b => `<option ${+x.l.box===+b?'selected':''}>${b}</option>`).join('')}</select></td></tr>`).join('')
-      : '<tr><td colspan="9" class="empty">본사에 보관 중인 자재가 없습니다. 먼저 "📥 본사 입고"를 등록하세요.</td></tr>'}</tbody></table></div>
+      : '<tr><td colspan="9" class="empty">보낼 자재가 없습니다. 본사 경유 자재는 먼저 "📥 본사 입고"를 등록하세요.</td></tr>'}</tbody></table></div>
     <h4 style="margin:14px 0 6px;font-size:13.5px">포장 (Packing)</h4>
     <div class="tw"><table style="font-size:12px"><thead><tr><th>포장 No</th><th>종류</th><th>G.W (kg)</th><th>크기 SIZE (mm)</th><th></th></tr></thead><tbody>${
       e.packs.map((p, i) => `<tr><td style="font-weight:700">${p.no}</td>
@@ -14946,8 +14958,8 @@ async function hqVNShipSave(print){
   for (const [sid, v] of Object.entries(e.sel)) {
     const qty = +v.qty; if (!(qty > 0)) continue;
     const p = SPO.find(s => String(s.id) === String(sid)); if (!p) continue;
-    const max = Math.max(0, hqRecvQty(p) - hqSentQty(p.id, e.id));
-    if (qty > max + 1e-9) { err.textContent = `${p.name}: 본사 보관(${hqN(max)})보다 많이 보낼 수 없습니다.`; return; }
+    const max = hqVNAvail(p, e.id);
+    if (qty > max + 1e-9) { err.textContent = `${p.name}: ${p.route === 'hq' ? '본사 보관' : '발주 잔량'}(${hqN(max)})보다 많이 보낼 수 없습니다.`; return; }
     lines.push({spoId: p.id, poNo: p.poNo || '', code: p.code, name: p.name, unit: p.unit || '', qty, hs: v.hs || '', item: v.item || '', spec: v.spec || p.name, origin: v.origin || HQ_CIPL.origin,
       nw: v.nw === '' || v.nw == null ? '' : +v.nw, box: +v.box || 1, price: p.price === '' || p.price == null ? '' : +p.price, cur: p.cur || 'USD', supplier: p.supplier || ''});
   }
