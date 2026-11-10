@@ -15014,16 +15014,16 @@ function hqVNInvPrint(id){
     <tr><td class="k">PACKING :<br>Số pallet</td><td class="v">${E(D.total)}</td></tr></table></section>`;
   const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단되었습니다. 팝업을 허용해주세요.'); return; }
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${E(h.invNo)}_CIPL</title><style>
-    body{font-family:Arial,'Malgun Gothic',sans-serif;color:#000;margin:0}.pg{padding:12mm 10mm;page-break-after:always}.pg:last-child{page-break-after:auto}
+    @page{size:A4 portrait;margin:8mm}body{font-family:Arial,'Malgun Gothic',sans-serif;color:#000;margin:0}.pg{width:194mm;height:280mm;overflow:hidden;page-break-after:always;break-inside:avoid;margin:0 auto}.pg:last-child{page-break-after:auto}.fit{transform-origin:top left;width:194mm}@media screen{body{background:#e5e7eb}.pg{background:#fff;margin:10px auto;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.2)}}
     table.g{width:100%;border-collapse:collapse;border:2px solid #000;font-size:11px;font-weight:700}
     .g td{border:1px solid #000;padding:4px 6px;vertical-align:top}.g .l{line-height:1.45;height:20px}.lb{font-size:10px;margin-bottom:2px}
     .ttl{text-align:center;font-size:22px;padding:10px!important;letter-spacing:.5px}.inv{display:flex;justify-content:space-between;font-size:12px}
     .big{text-align:center;vertical-align:middle!important;font-size:26px}
     .th td{text-align:center;background:#fff;font-size:11.5px}.it td{text-align:center;vertical-align:middle;font-size:11.5px}.n{text-align:right!important;white-space:nowrap}
     .cs{float:left;padding-right:6px}.s{font-size:10px;font-weight:400}.tot td{font-size:14px;text-align:center;vertical-align:middle;padding:8px 6px}
-    .foot{height:120px;border:none!important;border-top:1px solid #000!important}.sg{display:flex;justify-content:center;align-items:center;gap:10px;margin-top:40px;font-size:11px}.sg span{display:inline-block;width:110px;height:100px}.sg img{width:110px;height:100px;object-fit:contain}
+    .foot{height:100px;border:none!important;border-top:1px solid #000!important}.sg{display:flex;justify-content:center;align-items:center;gap:10px;margin-top:40px;font-size:11px}.sg span{display:inline-block;width:110px;height:100px}.sg img{width:110px;height:100px;object-fit:contain}
     table.m{margin:0 auto;border-collapse:collapse;width:80%;font-weight:700}.m td{border:1px solid #000;text-align:center;padding:10px;font-size:13px}.m .mt{font-size:16px;padding:16px}.m .v{font-size:16px}.m .k{width:42%}
-    @media print{.pg{padding:7mm}}</style></head><body>${inv}${pl}${sm}<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);
+    </style></head><body>${inv}${pl}${sm}<script>window.onload=()=>{document.querySelectorAll('.pg').forEach(pg=>{const f=document.createElement('div');f.className='fit';while(pg.firstChild)f.appendChild(pg.firstChild);pg.appendChild(f);const k=Math.min(1,pg.clientHeight/f.scrollHeight);if(k<1){f.style.transform='scale('+k+')';}});setTimeout(()=>window.print(),300)}<\/script></body></html>`);
   w.document.close();
 }
 function hqVNInvExcel(id){
