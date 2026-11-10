@@ -14757,7 +14757,7 @@ function hqWhView(){
   const stockN = rows.filter(x => x.stock > 0).length, moving = ships.filter(h => ['준비','발송','도착','통관'].includes(h.status)).length;
   const card = (t, v, c) => `<div style="flex:1;min-width:150px;background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${t}</div><div style="font-size:20px;font-weight:700;color:${c}">${v}</div></div>`;
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${card('본사 보관 중인 자재', stockN + '건', '#7c3aed')}${card('본사 미입고 (공급사 → 본사)', rows.filter(x => x.wait > 0).length + '건', '#b45309')}${card('베트남으로 가는 중', moving + '건', '#185FA5')}</div>
-    ${hqsToolbar(hqsBtn('✈️ 베트남 발송 만들기', 'hqVNShipEdit()', '#7c3aed', true) + hqsBtn(hqSeal() ? '🖋️ 도장 ✓' : '🖋️ 도장 등록', 'hqSealEdit()', '#b91c1c'), '발주번호·공급사·자재 검색',
+    ${hqsToolbar(hqsBtn('🏢 본사 발송 인보이스', "hqVNShipEdit(null,null,'hq')", '#7c3aed', true) + hqsBtn('➡️ 직송 인보이스', "hqVNShipEdit(null,null,'direct')", '#0f766e', true) + hqsBtn(hqSeal() ? '🖋️ 도장 ✓' : '🖋️ 도장 등록', 'hqSealEdit()', '#b91c1c'), '발주번호·공급사·자재 검색',
       `<label style="font-size:12.5px;display:flex;align-items:center;gap:4px"><input type="checkbox" ${HQ.st==='전체'?'checked':''} onchange="HQ.st=this.checked?'전체':'';renderHQ()"> 끝난 것도 보기</label>`)}
     <h4 style="margin:12px 0 6px;font-size:14px">🏢 본사 입고·보관 현황</h4>
     ${show.length ? `<div class="tw"><table><thead><tr><th>발주번호</th><th>공급사</th><th>자재</th><th style="text-align:right">발주</th><th style="text-align:right">본사 입고</th><th style="text-align:right">베트남 발송</th><th style="text-align:right">본사 보관</th><th style="text-align:right">미입고</th><th></th></tr></thead><tbody>${
@@ -14766,9 +14766,9 @@ function hqWhView(){
         <td style="text-align:right;font-weight:700;color:${x.stock > 0 ? '#7c3aed' : '#8A95A3'}">${hqN(x.stock)}</td><td style="text-align:right;color:${x.wait > 0 ? '#b45309' : '#8A95A3'}">${hqN(x.wait)}</td>
         <td><button onclick="hqRecvEdit('${hqE(x.p.id)}')" style="padding:4px 10px;border-radius:7px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-weight:600;cursor:pointer;white-space:nowrap">📥 본사 입고</button></td></tr>`).join('')}</tbody></table></div>`
       : `<div class="empty">본사 경유 발주가 없습니다. 발주로 전환할 때(또는 발주서 ✏️ 수정에서) 배송 경로를 "🏢 본사 경유"로 고르세요.</div>`}
-    <h4 style="margin:16px 0 6px;font-size:14px">✈️ 베트남 발송 인보이스 <span style="font-weight:400;font-size:12px;color:#8A95A3">— 본사 보관분과 직송 자재 모두 여기서 작성합니다</span></h4>
+    <h4 style="margin:16px 0 6px;font-size:14px">✈️ 베트남 발송 인보이스 <span style="font-weight:400;font-size:12px;color:#8A95A3">— 본사 발송분과 직송분은 인보이스를 따로 만듭니다</span></h4>
     ${ships.length ? `<div class="tw"><table><thead><tr><th>Invoice No</th><th>발송일</th><th>방식</th><th>자재</th><th>B/L · AWB</th><th>ETA</th><th>상태</th><th></th></tr></thead><tbody>${
-      ships.map(h => `<tr><td style="font-family:monospace;font-size:12px">${hqE(h.invNo)}</td><td style="white-space:nowrap">${hqE(h.shipDate||'')}</td><td style="white-space:nowrap">${HQ_SHIP_MODES[h.mode] || hqE(h.mode)}</td>
+      ships.map(h => `<tr><td style="font-family:monospace;font-size:12px">${hqE(h.invNo)}<div style="font-family:inherit;font-size:11px;font-weight:700;color:${hqVNRoute(h) === 'direct' ? '#0f766e' : '#7c3aed'}">${hqVNRoute(h) === 'direct' ? '➡️ 직송' : '🏢 본사 발송'}</div></td><td style="white-space:nowrap">${hqE(h.shipDate||'')}</td><td style="white-space:nowrap">${HQ_SHIP_MODES[h.mode] || hqE(h.mode)}</td>
         <td>${hqE((h.lines||[])[0] ? h.lines[0].name : '')}${(h.lines||[]).length > 1 ? ` <span style="color:#8A95A3">외 ${h.lines.length - 1}</span>` : ''}</td><td style="font-size:12px">${hqE(h.blNo||'')}${h.carrier ? `<div style="color:#8A95A3">${hqE(h.carrier)}</div>` : ''}</td>
         <td style="white-space:nowrap">${hqE(h.eta||'-')}</td><td>${hqPill(h.status, HQ_SHIP_COL[h.status])}</td>
         <td style="white-space:nowrap"><button onclick="hqVNShipEdit('${hqE(h.id)}')" class="edit-btn" title="수정">✏️</button><button onclick="hqVNInvPrint('${hqE(h.id)}')" class="edit-btn" title="Invoice · Packing List 인쇄">🖨️</button><button onclick="hqVNInvExcel('${hqE(h.id)}')" class="edit-btn" title="엑셀">📄</button>${hqCan('buy','D') ? `<button onclick="hqVNShipDelete('${hqE(h.id)}')" class="edit-btn" title="삭제">🗑️</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`
@@ -14884,24 +14884,29 @@ function hqVNDefLine(p){
   const l = hqVNLast(p.code) || {};
   return {qty: '', hs: l.hs || '', item: l.item || String(p.name || '').trim().split(/[\s(]/)[0].toUpperCase(), spec: l.spec || p.name || '', origin: l.origin || (c => ({'한국':'KOREA','중국':'CHINA','베트남':'VIETNAM','일본':'JAPAN','대만':'TAIWAN','미국':'USA','독일':'GERMANY'})[c] || (c ? String(c).toUpperCase() : HQ_CIPL.origin))((hqsSup(p.supplier || '') || {}).country), nw: '', box: 1};
 }
-function hqVNShipEdit(id, poNo){
+function hqVNRoute(h){ if (h.route) return h.route; const l = (h.lines||[])[0]; const p = l && SPO.find(s => String(s.id) === String(l.spoId)); return p && p.route !== 'hq' ? 'direct' : 'hq'; }
+function hqVNShipEdit(id, poNo, route){
   const h = id ? HQS.hqship.find(x => String(x.id) === String(id)) : null;
-  if (h) { HQS.ed = JSON.parse(JSON.stringify(h)); HQS.ed.sel = {}; (h.lines||[]).forEach(l => HQS.ed.sel[l.spoId] = {...l}); if (!Array.isArray(HQS.ed.packs)) HQS.ed.packs = [{no: 1, type: +h.plt ? 'PALLET' : 'BOX', gw: h.gw || '', size: ''}]; }
+  if (h) { HQS.ed = JSON.parse(JSON.stringify(h)); HQS.ed.route = hqVNRoute(h); HQS.ed.sel = {}; (h.lines||[]).forEach(l => HQS.ed.sel[l.spoId] = {...l}); if (!Array.isArray(HQS.ed.packs)) HQS.ed.packs = [{no: 1, type: +h.plt ? 'PALLET' : 'BOX', gw: h.gw || '', size: ''}]; }
   else HQS.ed = {id: String(Date.now()), invNo: hqVNInvNo(), shipDate: hqToday(), mode: 'SEA', status: '준비', loadPort: HQ_SHIP_PORTS.SEA.load, destPort: HQ_SHIP_PORTS.SEA.dest,
-    incoterm: HQ_CIPL.incoterm, contact: HQ_CIPL.contact, sel: {}, packs: [{no: 1, type: 'BOX', gw: '', size: ''}]};
-  if (!h && poNo) SPO.filter(p => p.poNo === poNo).forEach(p => { const a = hqVNAvail(p); if (a > 0) HQS.ed.sel[p.id] = {...hqVNDefLine(p), qty: a}; });   // 발주서 화면의 🧾 버튼: 그 발주 자재를 미리 채움
+    incoterm: HQ_CIPL.incoterm, contact: HQ_CIPL.contact, sel: {}, packs: [{no: 1, type: 'BOX', gw: '', size: ''}],
+    route: route || (poNo && SPO.some(p => p.poNo === poNo && p.route !== 'hq' && hqVNAvail(p) > 0) ? 'direct' : 'hq')};
+  if (!h && HQS.ed.route === 'direct') HQS.ed.loadPort = '';
+  if (!h && poNo) SPO.filter(p => p.poNo === poNo && (p.route === 'hq' ? 'hq' : 'direct') === HQS.ed.route).forEach(p => { const a = hqVNAvail(p); if (a > 0) HQS.ed.sel[p.id] = {...hqVNDefLine(p), qty: a}; });   // 발주서 화면의 🧾 버튼: 그 발주 자재를 미리 채움
   hqVNRender();
 }
 function hqVNRender(){
   const e = HQS.ed, isNew = !HQS.hqship.some(x => String(x.id) === String(e.id));
   const al = spoAlloc();
-  const cand = SPO.filter(p => !p.closed && (p.route === 'hq' || spoRow(p, al).remain > 0 || e.sel[p.id])).map(p => ({p, avail: hqVNAvail(p, e.id), l: e.sel[p.id] || (e.sel[p.id] = hqVNDefLine(p))})).filter(x => x.avail > 0 || +x.l.qty > 0)
+  const isHQ = e.route !== 'direct';
+  const cand = SPO.filter(p => !p.closed && (p.route === 'hq') === isHQ && (isHQ || spoRow(p, al).remain > 0 || e.sel[p.id])).map(p => ({p, avail: hqVNAvail(p, e.id), l: e.sel[p.id] || (e.sel[p.id] = hqVNDefLine(p))})).filter(x => x.avail > 0 || +x.l.qty > 0)
     .sort((a, b) => (a.p.route === 'hq' ? 0 : 1) - (b.p.route === 'hq' ? 0 : 1) || String(a.p.poNo).localeCompare(String(b.p.poNo)));
   const f = (k, lbl, type, ph) => hqFld(lbl, '', `<input id="hqv-${k}" ${type ? `type="${type}"` : ''} value="${hqE(e[k] ?? '')}" placeholder="${ph||''}" style="${HQ_IN}">`);
   const P = HQ_SHIP_PORTS[e.mode] || HQ_SHIP_PORTS.SEA, SI = HQ_IN + ';padding:4px 6px;font-size:12px';
   const li = (x, k, w, type) => `<input class="hqv-l" data-id="${hqE(x.p.id)}" data-k="${k}" ${type ? `type="${type}" step="any"` : ''} value="${hqE(x.l[k] ?? '')}" style="${SI};width:${w}px${type ? ';text-align:right' : ''}">`;
   const boxes = e.packs.map(p => p.no);
-  hqModal('hq-vs', `<h3 style="margin:0 0 10px;font-size:16px">${isNew ? '✈️ 베트남 발송 만들기' : '✏️ 베트남 발송 ' + hqE(e.invNo)}</h3>
+  hqModal('hq-vs', `<h3 style="margin:0 0 10px;font-size:16px">${isNew ? (isHQ ? '🏢 본사 발송 인보이스 만들기' : '➡️ 직송 인보이스 만들기') : '✏️ ' + (isHQ ? '본사 발송 ' : '직송 ') + hqE(e.invNo)}</h3>
+    <div style="font-size:12.5px;color:#5D6977;margin:-4px 0 10px">${isHQ ? '본사에 입고된(보관 중인) 자재만 나옵니다.' : '직송(공급사 → 베트남) 자재만 나옵니다. Port of loading에 공급사 출발지를 넣어주세요.'}</div>
     <div style="display:flex;gap:6px;margin-bottom:10px">${Object.entries(HQ_SHIP_MODES).map(([k, l]) => `<button onclick="hqVNMode('${k}')" style="flex:1;padding:9px;border-radius:9px;border:2px solid ${e.mode===k?'#7c3aed':'#DCE1E7'};background:${e.mode===k?'#F5F3FF':'#fff'};font-weight:700;cursor:pointer">${l}</button>`).join('')}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
       ${f('invNo','Invoice No')}${f('shipDate','Invoice 날짜','date')}
