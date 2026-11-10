@@ -14238,21 +14238,27 @@ async function hqPurchSave(){
 }
 // 발주에서 불러오기 (미구매현황): 발주했지만 구매(매입)로 안 잡은 수량
 function hqPurchFromPO(){
-  const list = hqUnpurchased();
-  hqModal('hq-unp', `<h3 style="margin:0 0 6px;font-size:16px">📋 미구매 발주 <span style="font-weight:400;color:#5D6977;font-size:12.5px">발주했지만 아직 구매(매입)로 잡지 않은 자재 — 같은 공급사끼리 골라 주세요</span></h3>
-    ${list.length ? `<div class="tw" style="max-height:55vh;overflow:auto"><table><thead><tr><th></th><th>발주일</th><th>발주번호</th><th>공급사</th><th>자재</th><th style="text-align:right">발주</th><th style="text-align:right">입고</th><th style="text-align:right">구매 완료</th><th style="text-align:right">미구매</th><th>단가</th></tr></thead><tbody>${
-      list.map(r => `<tr><td><input type="checkbox" class="hqu-cb" value="${hqE(r.id)}" style="width:auto;margin:0"></td><td style="white-space:nowrap">${hqE(r.orderDate||'')}</td><td style="font-family:monospace;font-size:12px">${hqE(r.poNo||'')}</td><td>${hqE(r.supplier||'-')}</td>
-        <td>${hqE(r.name)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(r.code)}</div></td><td style="text-align:right">${hqN(r.q)} ${hqE(r.unit||'')}</td><td style="text-align:right">${hqN(Math.min(r.q, r.got))}</td><td style="text-align:right">${r.purched ? hqN(r.purched) : '-'}</td>
-        <td style="text-align:right;font-weight:700;color:#b45309">${hqN(r.left)}</td><td style="white-space:nowrap">${r.price === '' || r.price == null ? '-' : hqE(r.price) + ' ' + hqE(r.cur||'')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">✅ 미구매 발주가 없습니다.</div>'}
-    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px">${hqsBtn('닫기', "hqClose('hq-unp')", '#64748b')}${list.length ? hqsBtn('선택한 발주로 구매 입력', 'hqPurchFromPOGo()', '#0f766e', true) : ''}</div>`, 1000);
+  const list = hqUnpurchased(), by = {};
+  list.forEach(r => (by[r.supplier || ''] = by[r.supplier || ''] || []).push(r));
+  const sups = Object.keys(by).sort((a, b) => a.localeCompare(b));
+  hqModal('hq-unp', `<h3 style="margin:0 0 6px;font-size:16px">📋 미구매 발주 <span style="font-weight:400;color:#5D6977;font-size:12.5px">발주했지만 아직 구매(매입)로 잡지 않은 자재 — 공급사에서 세금계산서·인보이스를 받으면 그 공급사의 "구매 입력"을 누르세요</span></h3>
+    ${list.length ? `<div class="tw" style="max-height:62vh;overflow:auto"><table><thead><tr><th></th><th>발주일</th><th>발주번호</th><th>자재</th><th style="text-align:right">발주</th><th style="text-align:right">입고</th><th style="text-align:right">구매 완료</th><th style="text-align:right">미구매</th><th>단가</th></tr></thead><tbody>${
+      sups.map((sp, si) => { const rs = by[sp], tot = {}; rs.forEach(r => { if (r.price !== '' && r.price != null) tot[r.cur || ''] = (tot[r.cur || ''] || 0) + (+r.price) * r.left; });
+        return `<tr style="background:#F0FDFA"><td colspan="9" style="padding:8px 10px"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <b style="font-size:14px">🏭 ${hqE(sp || '(공급사 미정)')}</b><span style="font-size:12px;color:#5D6977">자재 ${rs.length}건${Object.keys(tot).length ? ' · ' + Object.entries(tot).map(([c, v]) => hqM(v, c)).join(' / ') : ''}</span>
+            <span style="flex:1"></span>${hqsBtn('🧾 ' + hqE(sp || '공급사 미정') + ' 구매 입력', `hqPurchFromPOGo(${si})`, '#0f766e', true)}</div></td></tr>` +
+          rs.map(r => `<tr><td><input type="checkbox" class="hqu-cb" data-s="${si}" value="${hqE(r.id)}" checked style="width:auto;margin:0"></td><td style="white-space:nowrap">${hqE(r.orderDate||'')}</td><td style="font-family:monospace;font-size:12px">${hqE(r.poNo||'')}</td>
+            <td>${hqE(r.name)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(r.code)}</div></td><td style="text-align:right">${hqN(r.q)} ${hqE(r.unit||'')}</td><td style="text-align:right">${hqN(Math.min(r.q, r.got))}</td><td style="text-align:right">${r.purched ? hqN(r.purched) : '-'}</td>
+            <td style="text-align:right;font-weight:700;color:#b45309">${hqN(r.left)}</td><td style="white-space:nowrap">${r.price === '' || r.price == null ? '-' : hqE(r.price) + ' ' + hqE(r.cur||'')}</td></tr>`).join(''); }).join('')}</tbody></table></div>
+      <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">이번 증빙에 없는 자재는 체크를 풀고 누르세요.</div>` : '<div class="empty">✅ 미구매 발주가 없습니다.</div>'}
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px">${hqsBtn('닫기', "hqClose('hq-unp')", '#64748b')}</div>`, 1000);
+  HQS._unpSups = sups;
 }
-function hqPurchFromPOGo(){
-  const ids = [...document.querySelectorAll('#hq-unp .hqu-cb:checked')].map(i => i.value); if (!ids.length) { alert('발주를 선택해주세요.'); return; }
+function hqPurchFromPOGo(si){
+  const ids = [...document.querySelectorAll(`#hq-unp .hqu-cb[data-s="${si}"]:checked`)].map(i => i.value); if (!ids.length) { alert('구매로 넣을 자재를 체크해주세요.'); return; }
   const rows = hqUnpurchased().filter(r => ids.includes(String(r.id)));
-  const sups = [...new Set(rows.map(r => r.supplier || ''))];
-  if (sups.length > 1 && !confirm(`공급사가 ${sups.length}곳 섞여 있습니다 (${sups.join(', ')}). 구매는 공급사별로 따로 입력하는 게 좋습니다.\n첫 공급사(${sups[0] || '미정'})로 그대로 만들까요?`)) return;
-  const sup = sups[0] || '', c = hqsSup(sup);
-  const lines = rows.filter(r => (r.supplier || '') === sup).map(r => ({code: r.code, name: r.name, cat: r.cat, unit: r.unit, qty: r.left, price: r.price === undefined ? '' : r.price, spoId: r.id, poNo: r.poNo || ''}));
+  const sup = (HQS._unpSups || [])[si] ?? (rows[0].supplier || ''), c = hqsSup(sup);
+  const lines = rows.map(r => ({code: r.code, name: r.name, cat: r.cat, unit: r.unit, qty: r.left, price: r.price === undefined ? '' : r.price, spoId: r.id, poNo: r.poNo || ''}));
   hqClose('hq-unp');
   hqPurchEdit(null, {supplier: sup, cur: rows[0].cur || (c && c.cur) || 'KRW', vatRate: c && c.vatRate !== '' && c.vatRate != null ? c.vatRate : '', lines, invNo: rows[0].invNo || ''});
 }
