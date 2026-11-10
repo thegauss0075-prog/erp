@@ -14707,8 +14707,8 @@ function hqPOPrint(poNo){
         <tr><th>Supplier</th><td>${E(sup)}${sp.contact ? '<br>Attn: ' + E(sp.contact) : ''}${sp.phone ? ' · ' + E(sp.phone) : ''}${sp.email ? '<br>' + E(sp.email) : ''}</td><th>Delivery</th><td>${E(x.dueDate || '')}</td></tr>
         <tr><th>Ship to</th><td>${rt === 'hq' ? 'THE GAUSS INC. — ' + E(INV_CO.hq.slice(1).join(' ')) : 'THE GAUSS VINA CO., LTD — ' + E(INV_CO.addr1 + ' ' + INV_CO.addr2)}</td><th>Incoterm</th><td>${E(x.incoterm || '')}</td></tr>
         ${x.prNo ? `<tr><th>Ref.</th><td colspan="3">${E(x.prNo)}</td></tr>` : ''}</table>
-      <table class="it"><thead><tr><th>No</th><th>Code</th><th>Description</th><th>Q'ty</th><th>Unit</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${
-        rows.map((r, i) => `<tr><td class="c">${i + 1}</td><td class="m">${E(r.code)}</td><td>${E(hqDesc(r.code, r.name))}</td><td class="n">${(+r.q).toLocaleString()}</td><td class="c">${E(r.unit || '')}</td><td class="n">${r.price === '' || r.price == null ? '' : E(r.cur || 'USD') + ' ' + fmt(r.price, r.cur)}</td><td class="n">${r.price === '' || r.price == null ? '' : fmt(+r.price * r.q, r.cur)}</td></tr>`).join('')}</tbody>
+      <table class="it"><thead><tr><th>No</th><th>Item</th><th>Spec</th><th>Q'ty</th><th>Unit</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${
+        rows.map((r, i) => `<tr><td class="c">${i + 1}</td><td>${E(hqIS(r.code, r.name).item)}</td><td>${E(hqIS(r.code, r.name).spec)}</td><td class="n">${(+r.q).toLocaleString()}</td><td class="c">${E(r.unit || '')}</td><td class="n">${r.price === '' || r.price == null ? '' : E(r.cur || 'USD') + ' ' + fmt(r.price, r.cur)}</td><td class="n">${r.price === '' || r.price == null ? '' : fmt(+r.price * r.q, r.cur)}</td></tr>`).join('')}</tbody>
         <tfoot><tr><td colspan="6" class="n"><b>TOTAL</b></td><td class="n"><b>${Object.entries(tot).map(([c, v]) => E(c) + ' ' + fmt(v, c)).join('<br>') || '-'}</b></td></tr></tfoot></table>
       <div class="note">Please confirm this order and the delivery date by return email. Invoice / Packing list must show the PO No.</div>
       <table class="sg"><tr><th>작성 Prepared</th><th>검토 Reviewed</th><th>승인 Approved</th><th>Supplier confirmation</th></tr><tr><td></td><td></td><td></td><td></td></tr></table></section>`;
@@ -14727,8 +14727,8 @@ function hqPOExcel(poNo){
   if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
   const x = hqShipGroups().find(g => g.poNo === poNo); if (!x) return;
   const aoa = [['PURCHASE ORDER / 발주서'], [], ['PO No', x.poNo, '', 'Date', x.orderDate || ''], ['Supplier', x.supplier || '', '', 'Delivery', x.dueDate || ''], ['Buyer', 'THE GAUSS INC. / THE GAUSS VINA CO., LTD', '', 'Incoterm', x.incoterm || ''], ['Ship to', x.route === 'hq' ? 'THE GAUSS INC. — ' + INV_CO.hq.slice(1).join(' ') : x.route === 'mix' ? '품목별 (아래 Ship to 열)' : 'THE GAUSS VINA CO., LTD — ' + INV_CO.addr1 + ' ' + INV_CO.addr2, '', 'Currency', x.cur || ''], [],
-    ['No', 'Code', 'Description', 'Q\'ty', 'Unit', 'Unit Price', 'Amount', 'Supplier', 'Ship to']];
-  x.rows.forEach((r, i) => aoa.push([i + 1, r.code, hqDesc(r.code, r.name), r.q, r.unit || '', r.price === '' || r.price == null ? '' : +r.price, r.price === '' || r.price == null ? '' : +r.price * r.q, r.supplier || '', r.route === 'hq' ? 'THE GAUSS INC. (본사)' : 'THE GAUSS VINA (베트남)']));
+    ['No', 'Item', 'Spec', 'Q\'ty', 'Unit', 'Unit Price', 'Amount', 'Supplier', 'Ship to']];
+  x.rows.forEach((r, i) => aoa.push([i + 1, hqIS(r.code, r.name).item, hqIS(r.code, r.name).spec, r.q, r.unit || '', r.price === '' || r.price == null ? '' : +r.price, r.price === '' || r.price == null ? '' : +r.price * r.q, r.supplier || '', r.route === 'hq' ? 'THE GAUSS INC. (본사)' : 'THE GAUSS VINA (베트남)']));
   aoa.push(['', '', 'TOTAL', x.qty, '', '', x.amt || '']); aoa.push([]); aoa.push(['', '', '', '', 'Approved by', '', '']);
   const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = [{wch:5},{wch:18},{wch:42},{wch:10},{wch:7},{wch:12},{wch:14},{wch:16},{wch:24}]; ws['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:6}}];
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'PO'); XLSX.writeFile(wb, `발주서_${x.poNo.replace(/[^\w-]/g,'_')}.xlsx`);
@@ -14903,6 +14903,12 @@ function hqNameOf(code, vnName){
   const k = hqNmKey(vnName || (SPO.find(p => p.code === code) || {}).name), d = Object.entries(HQ_NAME_DEFAULT).find(([v]) => hqNmKey(v) === k);
   return d ? {...d[1], code, dflt: true} : null;
 }
+// Item·Spec 나누기: 본사 품명이 있으면 그것, 없으면 지난 인보이스 값, 그것도 없으면 베트남 품명을 첫 단어(Item) + 나머지(Spec)로
+function hqIS(code, vnName){
+  const n = hqNameOf(code, vnName); if (n && (n.item || n.spec)) return {item: n.item || '', spec: n.spec || ''};
+  const l = typeof hqVNLast === 'function' ? hqVNLast(code) : null; if (l && l.item) return {item: l.item, spec: l.spec || ''};
+  const m = String(vnName || '').trim().match(/^(\S+)\s*(.*)$/); return m ? {item: m[1].toUpperCase(), spec: m[2]} : {item: vnName || '', spec: ''};
+}
 function hqDesc(code, vnName){ const n = hqNameOf(code, vnName); return n && (n.item || n.spec) ? [n.item, n.spec].filter(Boolean).join(' ') : (vnName || ''); }
 async function hqNamePut(code, vnName, item, spec){
   const cur = hqName(code) || {}; item = String(item || '').trim(); spec = String(spec || '').trim();
@@ -14942,7 +14948,7 @@ async function hqNameSave(){
 }
 function hqVNDefLine(p){
   const l = hqVNLast(p.code) || {}, nm = hqNameOf(p.code, p.name) || {};
-  return {qty: '', hs: l.hs || '', item: nm.item || l.item || String(p.name || '').trim().split(/[\s(]/)[0].toUpperCase(), spec: nm.spec || l.spec || p.name || '', origin: l.origin || (c => ({'한국':'KOREA','중국':'CHINA','베트남':'VIETNAM','일본':'JAPAN','대만':'TAIWAN','미국':'USA','독일':'GERMANY'})[c] || (c ? String(c).toUpperCase() : HQ_CIPL.origin))((hqsSup(p.supplier || '') || {}).country), nw: '', box: 1};
+  return {qty: '', hs: l.hs || '', item: hqIS(p.code, p.name).item, spec: hqIS(p.code, p.name).spec, origin: l.origin || (c => ({'한국':'KOREA','중국':'CHINA','베트남':'VIETNAM','일본':'JAPAN','대만':'TAIWAN','미국':'USA','독일':'GERMANY'})[c] || (c ? String(c).toUpperCase() : HQ_CIPL.origin))((hqsSup(p.supplier || '') || {}).country), nw: '', box: 1};
 }
 function hqVNRoute(h){ if (h.route) return h.route; const l = (h.lines||[])[0]; const p = l && SPO.find(s => String(s.id) === String(l.spoId)); return p && p.route !== 'hq' ? 'direct' : 'hq'; }
 function hqVNShipEdit(id, poNo, route){
