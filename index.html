@@ -13465,7 +13465,7 @@ async function hqApprovalCheck(popup){
     _hqApvShown = true;
     hqModal('hq-apv', `<div style="text-align:center"><div style="font-size:34px">🔔</div><h3 style="margin:6px 0">${what} ${wait.length}건</h3>${isApv ? '' : '<div style="font-size:12.5px;color:#5D6977">요청을 열어 🚢 공급사 발주로 전환하세요.</div>'}
       <div class="tw" style="margin:10px 0;text-align:left"><table><thead><tr><th>요청번호</th><th>요청자</th><th>자재</th><th style="text-align:right">금액</th></tr></thead><tbody>${
-        wait.slice(0, 8).map(p => `<tr><td style="font-family:monospace;font-size:12px">${hqE(p.prNo || '')}</td><td>${hqE(p.createdBy || '')}</td><td>${hqE(((p.lines||[])[0]||{}).name || '')}${(p.lines||[]).length > 1 ? ` <span style="color:#8A95A3">외 ${(p.lines||[]).length - 1}</span>` : ''}</td><td style="text-align:right">${hqPRSumTxt(p) || '-'}</td></tr>`).join('')}</tbody></table></div>
+        wait.slice(0, 8).map(p => `<tr><td style="font-family:monospace;font-size:12px">${hqE(p.prNo || '')}</td><td>${hqE(p.createdBy || '')}</td><td>${hqE(((p.lines||[])[0]||{}).name || '')}${(p.lines||[]).length > 1 ? ` <span style="color:#8A95A3">외 ${(p.lines||[]).length - 1}</span>` : ''}</td><td style="text-align:right">${hqPRAmtCell(p)}</td></tr>`).join('')}</tbody></table></div>
       <div style="display:flex;justify-content:center;gap:8px"><button onclick="hqClose('hq-apv')" style="padding:8px 16px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">나중에</button>
       <button onclick="hqClose('hq-apv');HQ.dept='buy';HQ.tab='pr';HQ.q='';HQ.st='${want}';hqTop('buy')" style="padding:8px 18px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:600;cursor:pointer">지금 보기</button></div></div>`, 560);
   }
@@ -13890,10 +13890,10 @@ function hqPRView(){
       <select onchange="HQ.st=this.value;renderHQ()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px"><option value="">상태 전체</option>${['요청','승인','반려','발주완료'].map(s => `<option ${HQ.st===s?'selected':''}>${s}</option>`).join('')}</select>
       <span style="font-size:12px;color:#5D6977">승인 대기 ${HQ.pr.filter(p => p.status === '요청').length}건 · 발주 대기 ${HQ.pr.filter(p => p.status === '승인').length}건</span>
     </div>
-    ${rows.length ? `<div class="tw"><table><thead><tr><th>요청일</th><th>요청번호</th><th>자재</th><th style="text-align:right">품목 수</th><th style="text-align:right">금액</th><th>필요일</th><th>요청자</th><th>승인</th><th>발주번호</th><th>상태</th></tr></thead><tbody>${
+    ${rows.length ? `<div class="tw"><table><thead><tr><th>요청일</th><th>요청번호</th><th>자재</th><th style="text-align:right">품목 수</th><th style="text-align:right">금액 <span style="font-weight:400;font-size:11px;color:#8A95A3">(원화 환산)</span></th><th>필요일</th><th>요청자</th><th>승인</th><th>발주번호</th><th>상태</th></tr></thead><tbody>${
       rows.map(p => `<tr style="cursor:pointer" onclick="hqPREdit('${p.id}')"><td style="white-space:nowrap">${hqE(p.date)}</td><td style="font-family:monospace;font-size:12px">${hqE(p.prNo)}</td>
         <td>${hqE(((p.lines||[])[0]||{}).name || '-')}${(p.lines||[]).length > 1 ? ` <span style="color:#8A95A3">외 ${(p.lines||[]).length-1}</span>` : ''}</td><td style="text-align:right">${(p.lines||[]).length}</td>
-        <td style="text-align:right;white-space:nowrap">${(() => { const txt = hqPRSumTxt(p); return txt ? txt + (hqPRSum(p).miss ? ' <span style="color:#b45309">*</span>' : '') : '<span style="color:#8A95A3">-</span>'; })()}</td>
+        <td style="text-align:right;white-space:nowrap">${hqPRAmtCell(p)}</td>
         <td style="white-space:nowrap">${hqE(p.needBy||'-')}</td><td>${hqE(p.createdBy||'')}</td><td>${hqE(p.approver||'')}${p.approvedAt ? `<div style="font-size:11px;color:#8A95A3">${hqE(String(p.approvedAt).slice(0,10))}</div>` : ''}</td>
         <td style="font-family:monospace;font-size:12px">${hqE(p.poNo||'')}</td><td>${hqPill(p.status, HQ_PR_COL[p.status])}</td></tr>`).join('')}</tbody></table></div>`
       : `<div class="empty">${HQ.pr.length ? '조건에 맞는 구매요청이 없습니다.' : '아직 구매요청이 없습니다. "🧮 자재 소요" 화면에서 부족 자재로 만들거나 직접 작성하세요.'}</div>`}`;
@@ -13990,6 +13990,15 @@ function hqPRSupPrice(i){ const l = HQ_PR.lines[i]; const sc = (hqsSup(l.supplie
 function hqPRAmt(l){ return (l.price === '' || l.price == null) ? null : (+l.qty || 0) * (+l.price || 0); }
 // 통화별 합계 (달러·원화를 섞어 더하지 않는다)
 function hqPRSum(p){ const t = {}; let miss = 0; (p.lines||[]).forEach(l => { const a = hqPRAmt(l); if (a == null) { if (l.code) miss++; return; } const c = l.cur || p.cur || 'USD'; t[c] = (t[c]||0) + a; }); return {t, miss}; }
+// 목록 금액 칸: 원화 환산 총액(굵게) + 통화별 금액(작게, 줄바꿈) — 'USD + KRW'를 한 줄로 이어 쓰던 것 정리 (2026-11-11)
+function hqPRAmtCell(p){
+  const {t, miss} = hqPRSum(p), cs = Object.keys(t).filter(c => t[c]);
+  if (!cs.length) return '<span style="color:#8A95A3">-</span>';
+  let krw = 0, ok = true; cs.forEach(c => { const r = c === 'KRW' ? 1 : c === 'USD' && +p.fxKrw ? +p.fxKrw : (typeof hqToKRW === 'function' ? hqToKRW(c) : 0); if (r) krw += t[c] * r; else ok = false; });
+  const parts = cs.map(c => `<div style="font-size:11.5px;color:#64748B;line-height:1.35">${hqM(t[c], c)}</div>`).join('');
+  const head = (cs.length > 1 || cs[0] !== 'KRW') && ok ? `<div style="font-weight:700;font-size:13.5px">${Math.round(krw).toLocaleString()}원</div>` : (cs.length === 1 ? `<div style="font-weight:700;font-size:13.5px">${hqM(t[cs[0]], cs[0])}</div>` : '');
+  return head + (cs.length === 1 && cs[0] === 'KRW' ? '' : parts) + (miss ? `<div style="font-size:11px;color:#b45309">단가 없는 자재 ${miss}건 제외</div>` : '');
+}
 function hqPRSumTxt(p){ const {t} = hqPRSum(p); return HQ_PR_CURS.concat(Object.keys(t).filter(c => !HQ_PR_CURS.includes(c))).filter(c => t[c]).map(c => hqM(t[c], c)).join(' + '); }
 // 원화 환산 환율: 이 요청서에 저장된 값 → 원가 탭 월 환율(VND 기준으로 USD÷KRW) → 마지막으로 쓴 값
 function hqPRFx(r){
