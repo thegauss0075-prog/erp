@@ -13430,6 +13430,23 @@ function hqCPORows(){
     return {...c, ls, qty, sh, rem, amt, st, due, late, soon};
   });
 }
+// 📦 [2026-11-11] 품목별 보기 — 법인 발주관리와 같은 모양: 품목별 합계 → 품목별로 묶은 PO번호-항번 줄
+function hqCpoView(){ if (!HQ.cpoView) { try { HQ.cpoView = localStorage.getItem('hq_cpo_view') || 'item'; } catch (e) { HQ.cpoView = 'item'; } } return HQ.cpoView; }
+function hqCPOItemView(rows){
+  const L = []; rows.filter(r => r.st !== '취소').forEach(r => r.ls.forEach((l, i) => L.push({r, l, i, due: l.replyDue || l.due || ''})));
+  if (!L.length) return `<div class="empty">${HQ.cpo.length ? '조건에 맞는 PO가 없습니다.' : '아직 접수된 고객 PO가 없습니다. "➕ 고객 PO 접수"로 시작하세요.'}</div>`;
+  const g = {}; L.forEach(x => { const k = x.l.code; (g[k] = g[k] || {code: k, name: x.l.name || k, ls: [], qty: 0, rem: 0, sh: 0}); g[k].ls.push(x); g[k].qty += +x.l.qty || 0; g[k].rem += x.l.rem; g[k].sh += x.l.sh; });
+  const G = Object.values(g).sort((a, b) => b.rem - a.rem || String(a.name).localeCompare(String(b.name)));
+  const today = hqToday(), th = 'style="text-align:right"';
+  const sum = `<div style="border:1.5px solid #86efac;background:#f0fdf4;border-radius:12px;padding:10px 14px;margin-bottom:14px"><div style="font-weight:700;color:#166534;margin-bottom:6px">📊 품목별 주문 현황 (전체 합계) <span style="font-weight:400;font-size:12px;color:#5D6977">Tổng hợp theo mã hàng</span></div>
+    <table style="width:100%;font-size:13px"><thead><tr><th style="text-align:left">품목코드</th><th style="text-align:left">품명</th><th ${th}>총 주문수량</th><th ${th}>출하</th><th ${th}>총 잔량</th></tr></thead><tbody>${G.map(x => `<tr><td style="font-family:monospace;font-size:12px">${hqE(x.code)}</td><td>${hqE(x.name)}</td><td ${th}>${hqN(x.qty)}</td><td style="text-align:right;color:#0f766e">${x.sh ? hqN(x.sh) : '-'}</td><td style="text-align:right;font-weight:700;color:${x.rem ? '#c2410c' : '#166534'}">${hqN(x.rem)}</td></tr>`).join('')}</tbody></table></div>`;
+  const body = G.map(x => `<tr><td colspan="10" style="background:#F1F5F9;font-weight:700;padding:7px 10px">● ${hqE(x.name)} <span style="font-weight:400;font-size:12px;color:#5D6977;font-family:monospace">${hqE(x.code)}</span> <span style="font-weight:400;font-size:12px;color:#5D6977">· ${x.ls.length}건</span><span style="float:right;font-size:12.5px">주문 ${hqN(x.qty)} / 잔량 <b style="color:${x.rem ? '#c2410c' : '#166534'}">${hqN(x.rem)}</b></span></td></tr>` +
+    x.ls.sort((a, b) => (b.l.rem > 0) - (a.l.rem > 0) || String(a.due || '9999').localeCompare(String(b.due || '9999'))).map(({r, l, i, due}) => { const late = l.rem > 0 && due && due < today, st = l.rem <= 0 ? '완료' : l.sh > 0 ? '출하중' : r.st;
+      return `<tr style="cursor:pointer" onclick="hqCPOEdit('${r.id}')"><td style="font-family:monospace;font-size:12.5px;white-space:nowrap">${hqE(r.custPoNo || '-')}-${hqE(l.itemNo || (i + 1) * 10)}<div style="font-size:11px;color:#8A95A3">${hqE(r.cpoNo)}</div></td><td style="font-size:12.5px">${hqE(r.customer)}</td>
+        <td style="font-family:monospace;font-size:12px">${hqE(l.code)}</td><td>${hqE(l.name || l.code)}</td><td ${th}>${hqN(l.qty)}</td><td style="text-align:right;color:#0f766e">${l.sh ? hqN(l.sh) : '-'}</td><td style="text-align:right;font-weight:700;color:${l.rem ? '#c2410c' : '#166534'}">${hqN(l.rem)}</td>
+        <td style="white-space:nowrap;${late ? 'color:#b91c1c;font-weight:700' : ''}">${hqE(due || '-')}${late ? ' ⚠️' : ''}</td><td style="text-align:right;white-space:nowrap">${l.amt ? hqM(l.amt, r.cur) : '-'}</td><td>${hqPill(st, HQ_CPO_COL[st])}</td></tr>`; }).join('')).join('');
+  return sum + `<div class="tw"><table><thead><tr><th>PO번호-항번</th><th>고객사</th><th>품목코드</th><th>품명</th><th ${th}>수량</th><th ${th}>출하</th><th ${th}>잔량</th><th>납기</th><th ${th}>금액</th><th>상태</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
 function hqCPOView(){
   const all = hqCPORows(), q = HQ.q.trim().toLowerCase();
   const rows = all.filter(r => (!HQ.st || (HQ.st === '진행' ? !['완료','취소'].includes(r.st) : r.st === HQ.st))
@@ -13451,8 +13468,9 @@ function hqCPOView(){
       <div class="sw"><span class="si">🔍</span><input placeholder="고객사·PO No·품목 검색" value="${hqE(HQ.q)}" oninput="HQ.q=this.value;clearTimeout(window._hqT);window._hqT=setTimeout(()=>{renderHQ();const i=document.querySelector('#hq-body .sw input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>
       <select onchange="HQ.st=this.value;renderHQ()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px"><option value="">상태 전체</option><option value="진행" ${HQ.st==='진행'?'selected':''}>진행 중(완료·취소 제외)</option>${HQ_CPO_ST.map(s => `<option ${HQ.st===s?'selected':''}>${s}</option>`).join('')}</select>
       <button onclick="hqCPOExcel()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer">📊 엑셀</button>
+      <span style="display:inline-flex;border:1px solid #5b21b6;border-radius:8px;overflow:hidden">${[['item','품목별'],['po','PO별']].map(([k, t]) => `<button onclick="HQ.cpoView='${k}';try{localStorage.setItem('hq_cpo_view','${k}')}catch(e){};renderHQ()" style="padding:7px 12px;border:none;background:${hqCpoView() === k ? '#5b21b6' : '#fff'};color:${hqCpoView() === k ? '#fff' : '#5b21b6'};font-weight:600;cursor:pointer">${t}</button>`).join('')}</span>
     </div>
-    ${rows.length ? `<div class="tw"><table><thead><tr><th>접수일<span class="vi">Ngày nhận</span></th><th>고객사<span class="vi">Khách hàng</span></th><th>고객 PO No</th><th>품목<span class="vi">Mã hàng</span></th><th style="text-align:right">수량</th><th style="text-align:right">출하<span class="vi">Đã giao</span></th><th style="text-align:right">잔량<span class="vi">Còn lại</span></th><th>납기<span class="vi">Hạn</span></th><th style="text-align:right">금액</th><th>상태</th></tr></thead><tbody>${
+    ${hqCpoView() === 'item' ? hqCPOItemView(rows) : rows.length ? `<div class="tw"><table><thead><tr><th>접수일<span class="vi">Ngày nhận</span></th><th>고객사<span class="vi">Khách hàng</span></th><th>고객 PO No</th><th>품목<span class="vi">Mã hàng</span></th><th style="text-align:right">수량</th><th style="text-align:right">출하<span class="vi">Đã giao</span></th><th style="text-align:right">잔량<span class="vi">Còn lại</span></th><th>납기<span class="vi">Hạn</span></th><th style="text-align:right">금액</th><th>상태</th></tr></thead><tbody>${
       rows.map(r => `<tr style="cursor:pointer" onclick="hqCPOEdit('${r.id}')">
         <td style="white-space:nowrap">${hqE(r.recvDate)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(r.cpoNo)}</div></td>
         <td>${hqE(r.customer)}</td><td style="font-family:monospace;font-size:12px">${hqE(r.custPoNo)}</td>
