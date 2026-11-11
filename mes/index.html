@@ -392,6 +392,7 @@ async function checkPrev(w, addQty){
 }
 async function startJob2(w){
   if (!(await checkPrev(w, null))) return;
+  await qcxLoad();
   const sd = await startDlg(w); if (!sd) return;
   const mach = sd.mach, lots = sd.lots, wk = sd.worker;
   const dup = M.rec.find(r => r.status === 'running' && r.wo_id === w.wo_id && r.process_code === S.proc && r.worker_code === wk && (r.machine_code || '') === (mach || ''));
@@ -403,26 +404,39 @@ async function startJob2(w){
   render(); toast('▶ 작업 시작');
 }
 // 작업 시작 창: 설비 고르기 + 투입 자재 LOT 스캔 (자재를 올릴 때 찍는다)
+// ✅ [2026-11-11] 공정별로 따로 찍어야 하는 자재(몰딩: 실리콘 A제·B제) — 칸마다 해당 자재만 받는다
+const LOT_SLOTS = {MOLD: [{code: 'NPL32/PCDU', label: 'A제', vi: 'Chất A'}, {code: 'NPL33/PCDU', label: 'B제', vi: 'Chất B'}]};
+const slotsFor = () => LOT_SLOTS[S.proc] || [];
 function startDlg(w){
   const ms = M.mach.filter(m => m.active !== false && (!m.process_code || m.process_code === S.proc)), req = lotReq(w);
   // 작업자도 이 창에서 고른다 (태블릿 1대를 여러 명이 쓸 때 이름이 섞이지 않게). 호기마다 마지막 작업자를 기억.
   const wkList = M.work.filter(x => x.active !== false && (!skillOn(S.proc) || (k => k && !k.expired && k.level >= 2)(skillOf(x.code, S.proc))));
   const mw = c => LS.get('mes_mw|' + c, '');
   const st = {mach: ms.length ? undefined : '', lots: lotMem(w), worker: wkList.some(x => x.code === S.worker) ? S.worker : (wkList[0] || {}).code || S.worker};
+  const SL = slotsFor(), slot = SL.map(x => { const i = st.lots.findIndex(v => String(parseLot(v).code || '').toUpperCase() === x.code.toUpperCase()); return i >= 0 ? st.lots.splice(i, 1)[0] : ''; });
+  const setSlot = (k, v) => { v = String(v||'').trim(); if (!v) return; const l = parseLot(v), want = SL[k];
+    if (!l.code) { alert(`${want.label} 칸에는 자재 라벨 QR을 찍으세요.\nQuét mã QR nhãn NVL.`); return; }
+    if (l.code.toUpperCase() !== want.code.toUpperCase()) { const o = SL.findIndex(x => x.code.toUpperCase() === l.code.toUpperCase());
+      alert(o >= 0 ? `⛔ ${want.label} 칸에 ${SL[o].label}(${l.code})를 찍었습니다. ${want.label}(${want.code}) 라벨을 찍으세요.\nSai chất: cần ${want.vi}.` : `⛔ ${want.label}(${want.code})가 아닙니다: ${l.code}\nSai NVL.`); return; }
+    if (!lotOk(v)) return; slot[k] = v; };
   const busy = c => M.rec.find(r => r.status === 'running' && r.machine_code === c);
   return new Promise(res => {
     const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'sd'; document.body.appendChild(ov);
-    const add = v => { v = String(v||'').trim(); const wl = lotFromWO(v); if (wl) { toast(`📋 작업지시 ${v} → 반제품 LOT ${parseLot(wl).lot}`); v = wl; } if (v && !st.lots.includes(v) && lotOk(v)) st.lots.push(v); draw(); setTimeout(() => $('sd-lot') && $('sd-lot').focus(), 30); };
+    const add = v => { v = String(v||'').trim(); { const c = String(parseLot(v).code || '').toUpperCase(), k = SL.findIndex(x => x.code.toUpperCase() === c); if (k >= 0) { setSlot(k, v); draw(); return; } } const wl = lotFromWO(v); if (wl) { toast(`📋 작업지시 ${v} → 반제품 LOT ${parseLot(wl).lot}`); v = wl; } if (v && !st.lots.includes(v) && lotOk(v)) st.lots.push(v); draw(); setTimeout(() => $('sd-lot') && $('sd-lot').focus(), 30); };
     const draw = () => { ov.innerHTML = `<div class="box"><h2>▶ 작업 시작 <span class="vi">Bắt đầu</span></h2><div class="muted" style="margin-bottom:10px">${E(w.order_no)} · ${E(w.name)} · ${E(procName(S.proc))}</div>
       ${ms.length ? `<div style="font-weight:700;margin-bottom:4px">설비 / Máy</div><div class="pick">${ms.map(m => { const b = busy(m.code); return `<button data-c="${E(m.code)}" class="${st.mach === m.code ? 'on' : ''}" ${b ? 'style="opacity:.55"' : ''}>${E(m.name)}${b ? `<span class="vi">사용 중 · ${E(workName(b.worker_code))}</span>` : ''}</button>`; }).join('')}<button data-c="" class="${st.mach === '' ? 'on' : ''}">설비 없음</button></div>` : ''}
       <div style="margin-top:12px;font-weight:700">작업자 / Công nhân ${skillOn(S.proc) ? '<span class="muted">(이 공정 자격 있는 사람만)</span>' : ''}</div><div class="pick">${wkList.map(x => `<button data-wk="${E(x.code)}" class="${st.worker === x.code ? 'on' : ''}">${E(x.name)}${(k => k ? `<span class="vi">${SKL[k.level][0]}</span>` : '')(skillOf(x.code, S.proc))}</button>`).join('') || '<span style="color:var(--bad)">이 공정 자격이 있는 작업자가 없습니다.</span>'}</div>
-      <div style="margin-top:12px;font-weight:700">투입 자재 LOT ${req ? '<span style="color:var(--bad)">(필수)</span>' : '<span class="muted">(선택)</span>'} <span class="muted">· 지금 올리는 자재 라벨을 찍으세요. 지난번 LOT이 들어 있으면 같은 자재인지 확인하세요.</span></div>
+      ${SL.map((x, k) => `<div style="margin-top:12px;font-weight:700">${E(x.label)} LOT <span class="vi">${E(x.vi)}</span> <span style="color:var(--bad)">(필수)</span> <span class="muted">${E(x.code)}</span></div>
+        <div style="display:flex;gap:6px;margin-top:4px;align-items:center"><input id="sd-slot-${k}" placeholder="${E(x.label)} 라벨 스캔 / Quét ${E(x.vi)}" style="flex:1;padding:10px 12px;border:2px solid ${slot[k] ? 'var(--ok)' : '#F59E0B'};border-radius:9px;font-size:15px">${slot[k] ? `<span class="tag m-idle">${lotChip(slot[k])} <a href="#" data-sdel="${k}">✕</a></span>` : ''}</div>`).join('')}
+      <div style="margin-top:12px;font-weight:700">${SL.length ? '기타 ' : ''}투입 자재 LOT ${req && !SL.length ? '<span style="color:var(--bad)">(필수)</span>' : '<span class="muted">(선택)</span>'} <span class="muted">· 지금 올리는 자재 라벨을 찍으세요. 지난번 LOT이 들어 있으면 같은 자재인지 확인하세요.</span></div>
       <div style="display:flex;gap:6px;margin-top:4px"><input id="sd-lot" placeholder="자재 LOT 스캔 / Quét LOT NVL" style="flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px">${'BarcodeDetector' in window ? `<button class="btn" data-cam="1">📷</button>` : ''}</div>
       <div style="margin-top:6px">${st.lots.map((l, i) => `<span class="tag m-idle" style="margin:2px">${lotChip(l)} <a href="#" data-del="${i}">✕</a></span>`).join('') || '<span class="muted">찍은 LOT 없음</span>'}</div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn big" data-x="1">취소</button><button class="btn pri big" data-go="1">▶ 시작 / Bắt đầu</button></div></div>`;
-      const inp = $('sd-lot'); inp.onkeydown = e => { if (e.key === 'Enter') { add(inp.value); inp.value = ''; } }; };
+      const inp = $('sd-lot'); inp.onkeydown = e => { if (e.key === 'Enter') { add(inp.value); inp.value = ''; } };
+      SL.forEach((x, k) => { const si = $('sd-slot-' + k); si.onkeydown = e => { if (e.key === 'Enter') { const v = si.value; si.value = ''; setSlot(k, v); draw(); const nx = slot.findIndex(z => !z); setTimeout(() => { const f = $(nx >= 0 ? 'sd-slot-' + nx : 'sd-lot'); f && f.focus(); }, 30); } }; }); };
     ov.onclick = e => {
       const a = e.target.closest('[data-del]'); if (a) { e.preventDefault(); st.lots.splice(+a.dataset.del, 1); draw(); return; }
+      const as = e.target.closest('[data-sdel]'); if (as) { e.preventDefault(); slot[+as.dataset.sdel] = ''; draw(); return; }
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.cam) { window._camTarget = v => { add(v); window._camTarget = null; }; camScan(); return; }
       if (b.dataset.x) { ov.remove(); res(null); return; }
@@ -430,17 +444,21 @@ function startDlg(w){
       if (b.dataset.c !== undefined) { st.mach = b.dataset.c; if (st.mach && mw(st.mach) && wkList.some(x => x.code === mw(st.mach))) st.worker = mw(st.mach); draw(); if (ms.length && !st.lots.length && !req) {} return; }
       if (b.dataset.go) {
         const pend = $('sd-lot').value.trim(); if (pend) add(pend);
+        SL.forEach((x, k) => { const pv = $('sd-slot-' + k) && $('sd-slot-' + k).value.trim(); if (pv) setSlot(k, pv); });
+        { const mk = SL.findIndex((x, k) => !slot[k]); if (mk >= 0) { draw(); alert(`${SL[mk].label}(${SL[mk].code}) LOT을 찍으세요.\nQuét LOT ${SL[mk].vi}.`); setTimeout(() => $('sd-slot-' + mk) && $('sd-slot-' + mk).focus(), 30); return; } }
         if (st.mach === undefined) { alert('설비를 고르세요. (없으면 "설비 없음")\nChọn máy.'); return; }
-        if (st.mach) { const mm = M.mach.find(x => x.code === st.mach); if (mm && chkItemsFor(mm).length && !chkToday(mm.code)) { if (confirm(`${mm.name} 오늘 일상점검을 아직 안 했습니다. 점검한 뒤 시작하세요.\nChưa kiểm tra máy hôm nay.\n\n[확인]을 누르면 점검 창을 엽니다.`)) { ov.remove(); res(null); const sib = M.mach.filter(x => x.active !== false && mm.process_code && x.process_code === mm.process_code && x.code !== mm.code && chkItemsFor(x).length && !chkToday(x.code)).map(x => x.code); checkDlg([mm.code, ...sib]); } return; }  if (mm && chkToday(mm.code) && !chkToday(mm.code).all_ok && !confirm(`${mm.name} 오늘 점검에서 NG가 있었습니다 (${chkToday(mm.code).note || ''}).\n조치가 끝났으면 [확인]을 눌러 시작하세요.`)) return; }
+        if (st.mach) { const mm = M.mach.find(x => x.code === st.mach); if (mm && chkItemsFor(mm).length && !chkToday(mm.code)) { if (confirm(`${mm.name} 오늘 일상점검을 아직 안 했습니다. 점검한 뒤 시작하세요.\nChưa kiểm tra máy hôm nay.\n\n[확인]을 누르면 점검 창을 엽니다.`)) { const sib = M.mach.filter(x => x.active !== false && mm.process_code && x.process_code === mm.process_code && x.code !== mm.code && chkItemsFor(x).length && !chkToday(x.code)).map(x => x.code);
+            // ✅ [2026-11-11] 점검을 마치면 이 시작 창으로 돌아와 그대로 시작한다 (설비를 다시 고를 필요 없음)
+            ov.style.display = 'none'; checkDlg([mm.code, ...sib], {onCancel: () => { ov.style.display = ''; }, onDone: ok => { ov.style.display = ''; if (ok || chkToday(mm.code)) { const g = ov.querySelector('[data-go]'); if (g) g.click(); } }}); } return; }  if (mm && chkToday(mm.code) && !chkToday(mm.code).all_ok && !confirm(`${mm.name} 오늘 점검에서 NG가 있었습니다 (${chkToday(mm.code).note || ''}).\n조치가 끝났으면 [확인]을 눌러 시작하세요.`)) return; }
         const bad = gaugeBad(S.proc); if (bad.length) { alert('교정 기한이 지난 계측기가 있습니다. 사용하지 마세요.\nThiết bị đo quá hạn hiệu chuẩn.\n\n' + bad.map(g => `· ${g.name} (${g.code}) 기한 ${g.next_due}`).join('\n') + '\n\n관리자가 교정을 등록하거나, 이 공정에서 빼야 시작할 수 있습니다.'); return; }
-        if (req && !st.lots.length) { alert('이 공정은 투입 자재 LOT이 필수입니다.\nCông đoạn này bắt buộc quét LOT NVL.'); $('sd-lot').focus(); return; }
+        if (req && !st.lots.length && !SL.length) { alert('이 공정은 투입 자재 LOT이 필수입니다.\nCông đoạn này bắt buộc quét LOT NVL.'); $('sd-lot').focus(); return; }
         if (!st.worker) { alert('작업자를 고르세요.\nChọn công nhân.'); return; }
         if (st.mach && busy(st.mach) && !confirm(`${machName(st.mach)}은(는) ${workName(busy(st.mach).worker_code)}이(가) 사용 중입니다. 그래도 시작할까요?`)) return;
         if (!skillGate(st.worker)) return;
         if (st.mach) LS.set('mes_mw|' + st.mach, st.worker);
-        ov.remove(); res({mach: st.mach, lots: st.lots, worker: st.worker});
+        ov.remove(); res({mach: st.mach, lots: [...slot.filter(Boolean), ...st.lots], worker: st.worker});
       } };
-    draw(); setTimeout(() => $('sd-lot') && $('sd-lot').focus(), 50);
+    draw(); setTimeout(() => { const nx = slot.findIndex(z => !z), f = $(nx >= 0 ? 'sd-slot-' + nx : 'sd-lot'); f && f.focus(); }, 50);
   });
 }
 let FD = null;
@@ -453,17 +471,30 @@ function parseLot(v){ v = String(v||'').trim().split('|')[0].trim(); const p = v
   if (e && p.length >= 4) return {code: p.slice(1, -2).join(':'), lot: p[p.length - 2], exp: `${e[1]}-${e[2]}-${e[3]}`};
   return {code: p.slice(1, -1).join(':'), lot: p[p.length - 1]}; }
 const lotRaw = l => l.code ? `MAT:${l.code}:${l.lot}${l.exp ? ':E' + l.exp.replace(/-/g, '') : ''}` : l.lot;
-const lotChip = v => { const l = parseLot(v), t = ymd(new Date()); return E(l.lot) + (l.code ? ` <span class="muted">${E(l.code)}</span>` : '') + (l.exp ? ` <span style="color:${l.exp < t ? 'var(--bad)' : lotDays(l.exp) <= 7 ? '#B45309' : 'var(--sub)'};font-size:12px">~${E(l.exp)}</span>` : ''); };
+const lotChip = v => { const l = (typeof lotInfo === 'function' ? lotInfo : parseLot)(v), t = ymd(new Date()); return E(l.lot) + (l.code ? ` <span class="muted">${E(l.code)}</span>` : '') + (l.exp ? ` <span style="color:${l.exp < t ? 'var(--bad)' : lotDays(l.exp) <= 7 ? '#B45309' : 'var(--sub)'};font-size:12px">~${E(l.exp)}</span>` : ''); };
 const lotDays = exp => Math.floor((new Date(exp + 'T23:59:59') - Date.now()) / 864e5);
 // 자재 LOT을 넣기 전에 유효기간 확인: 지났으면 막고, 7일 이내면 알림
 // 반제품 작업지시서 QR(작업지시 번호)을 찍으면 그 작업지시의 LOT(반제품 LOT)으로 바꿔 넣는다
 function lotFromWO(v){ v = String(v||'').trim().replace(/^WO:/i, ''); const w = M.wo.find(x => x.order_no === v || x.wo_id === v); return w && w.lot ? `MAT:${w.code}${w.cat ? ' ' + w.cat : ''}:${w.lot}` : null; }
-function lotOk(v){ const l = parseLot(v); if (!l.exp) return true; const d = lotDays(l.exp);
+// ✅ [2026-11-11] 라벨 QR에 유효기간이 없어도(옛 라벨·나중에 입력한 유효기간) ERP 수입검사 기록에서 코드+LOT으로 찾아 막는다
+let QCX = {}, _qcxAt = 0;
+const qcxKey = (c, l) => String(c||'').trim().toUpperCase() + '|' + String(l||'').trim().toUpperCase();
+function qcxDate(v){ if (!v) return ''; const s = String(v); if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; const d = new Date(v); return isNaN(d) ? '' : ymd(d); }
+async function qcxLoad(force){
+  if (!force && Date.now() - _qcxAt < 5 * 60e3) return; _qcxAt = Date.now();
+  const r = await erpCall('getQCLog', {}); if (!r || !r.ok) { _qcxAt = 0; return; }
+  const m = {}; (r.data || []).filter(x => x.inspType === '수입검사' && x.site !== 'HQ').forEach(x => { m[qcxKey(x.code, x.lot)] = {exp: qcxDate(x.expiry), result: x.result || ''}; }); QCX = m; }
+function lotInfo(v){ const l = parseLot(v); const q = l.code ? QCX[qcxKey(l.code, l.lot)] : null;
+  if (q && q.exp && (!l.exp || q.exp < l.exp)) l.exp = q.exp;   // ERP에 기록된 유효기간이 우선(더 이른 날짜)
+  if (q) l.qc = q.result; return l; }
+function lotOk(v){ const l = lotInfo(v);
+  if (l.qc === '불합격') { alert(`⛔ 수입검사 불합격 LOT입니다. 사용할 수 없습니다.\nLOT không đạt kiểm tra đầu vào.\n\n${l.code || ''} · LOT ${l.lot}`); return false; }
+  if (!l.exp) return true; const d = lotDays(l.exp);
   if (d < 0) { alert(`⛔ 유효기간이 지난 자재입니다. 사용할 수 없습니다.\nNVL đã hết hạn sử dụng.\n\n${l.code || ''} · LOT ${l.lot} · 유효기간 ${l.exp}\n\n자재를 격리하고 관리자에게 알리세요.`); return false; }
   if (d <= 7) toast(`⏳ 유효기간 ${d}일 남음 · ${l.lot} (~${l.exp})`, 4000); return true; }
 const lotKey = w => 'mes_lot|' + S.proc + '|' + (w && w.code || '');
 function lotMem(w){ let a = []; try { a = JSON.parse(localStorage.getItem(lotKey(w)) || '[]'); } catch (e) {}
-  const gone = a.filter(v => { const l = parseLot(v); return l.exp && lotDays(l.exp) < 0; });   // 기억해 둔 LOT도 유효기간이 지나면 빼고 알린다
+  const gone = a.filter(v => { const l = lotInfo(v); return (l.exp && lotDays(l.exp) < 0) || l.qc === '불합격'; });   // 기억해 둔 LOT도 유효기간이 지나면 빼고 알린다
   if (gone.length) setTimeout(() => toast(`⛔ 유효기간 지난 LOT ${gone.map(v => parseLot(v).lot).join(', ')}은(는) 뺐습니다. 새 자재를 찍으세요.`, 5000), 300);
   return a.filter(v => !gone.includes(v)); }
 function lotMemSet(w, lots){ try { localStorage.setItem(lotKey(w), JSON.stringify(lots)); } catch (e) {} }
@@ -558,7 +589,8 @@ const addMonths = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setMonth(x.
 const gaugeState = g => { if (!g.next_due) return 'none'; const t = ymd(new Date()); if (g.next_due < t) return 'over'; return g.next_due <= addMonths(t, 1) ? 'soon' : 'ok'; };
 const gaugeBad = proc => M.gauge.filter(g => g.active !== false && g.process_code === proc && gaugeState(g) === 'over');
 // ✅ [2026-11-11] 같은 공정 설비(예: 몰딩기·경화로)를 한 화면에서 한 번에 점검 — 기록은 설비마다 따로 남는다(월별 점검표 그대로)
-function checkDlg(codes){
+function checkDlg(codes, opt){
+  opt = opt || {};
   const ms = (Array.isArray(codes) ? codes : [codes]).map(c => M.mach.find(x => x.code === c)).filter(Boolean); if (!ms.length) return;
   if (!S.worker) { alert('먼저 📝 실적 입력에서 작업자를 고르세요.\nChọn công nhân trước.'); return; }
   const items = []; ms.forEach(m => chkItemsFor(m).forEach(it => items.push({...it, _m: m.code})));
@@ -579,7 +611,7 @@ function checkDlg(codes){
   const redraw = () => { const n = $('ck-note').value, sc = ov.querySelector('.box > div[style*="overflow"]'), y = sc ? sc.scrollTop : 0; draw(); $('ck-note').value = n; const s2 = ov.querySelector('.box > div[style*="overflow"]'); if (s2) s2.scrollTop = y; };
   ov.oninput = e => { const v = e.target.dataset && e.target.dataset.val; if (v !== undefined) st[+v].value = e.target.value; };
   ov.onclick = async e => { const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.x) { ov.remove(); return; }
+    if (b.dataset.x) { ov.remove(); if (opt.onCancel) opt.onCancel(); return; }
     if (b.dataset.all) { st.forEach(x => x.ok = true); redraw(); return; }
     if (b.dataset.mall) { items.forEach((it, i) => { if (it._m === b.dataset.mall) st[i].ok = true; }); redraw(); return; }
     if (b.dataset.i !== undefined) { st[+b.dataset.i].ok = b.dataset.v === '1'; redraw(); return; }
@@ -594,6 +626,7 @@ function checkDlg(codes){
       const ng = rows.filter(x => !x.all_ok);
       toast(ng.length ? `📋 점검 저장 — NG 있음 (${ng.map(x => machName(x.machine_code)).join(', ')})` : `📋 점검 완료 — 이상 없음${multi ? ' (' + rows.length + '대)' : ''}`);
       for (const x of ng) if (confirm(`${machName(x.machine_code)}에 NG 항목이 있습니다. 설비를 "정지(설비 고장)"로 바꿀까요?`)) await setMachine(x.machine_code, 'stop', M.reasons.some(y => y.code === 'BRK') ? 'BRK' : null, null);
+      if (opt.onDone) opt.onDone(!ng.length);
     } };
   draw();
 }
