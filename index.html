@@ -2871,7 +2871,7 @@ function cpoPOItemsOf(c){
   if (!String(c.custPoNo || '').trim()) return [];
   const cancel = c.status === '취소';
   if (!cancel && !['확정','출하중','완료'].includes(c.status)) return [];
-  return (c.lines || []).map((l, i) => (!l.code || !(+l.qty > 0)) ? null : {poNumber: String(c.custPoNo).trim(), poItemNumber: String((i + 1) * 10), itemCode: l.code, itemName: l.name || l.code,
+  return (c.lines || []).map((l, i) => (!l.code || !(+l.qty > 0)) ? null : {poNumber: String(c.custPoNo).trim(), poItemNumber: String(l.itemNo || (i + 1) * 10), itemCode: l.code, itemName: l.name || l.code,
     unit: (allRows().find(x => x.code === l.code) || {}).unit || 'EA', poQty: +l.qty || 0, receivedQtySolum: 0,
     deliveryDate: String(l.replyDue || l.due || '').slice(0, 10), poDate: String(c.recvDate || '').slice(0, 10), closedYN: 'N', emailDate: '', messageId: 'CPO:' + (c.cpoNo || c.id), cancel}).filter(Boolean);
 }
@@ -13401,9 +13401,12 @@ function hqCPOAlloc(){
   const byCode = {}; lines.forEach(x => (byCode[x.l.code] = byCode[x.l.code] || []).push(x));
   Object.entries(byCode).forEach(([code, ls]) => {
     ls.sort((a,b) => String(a.c.recvDate||'').localeCompare(String(b.c.recvDate||'')) || String(a.l.due||'').localeCompare(String(b.l.due||'')));
-    const manual = ls.filter(x => x.l.shipped !== undefined && x.l.shipped !== '' && x.l.shipped !== null);
+    // ✅ [2026-11-11] 법인 발주관리에서 가져온 라인(poRef)은 그 발주의 차감 누계(출고 반영분)를 그대로 쓴다
+    const linked = ls.filter(x => x.l.poRef && (PO || []).some(p => String(p.poNumber).trim() + '|' + String(p.poItemNumber).trim() === x.l.poRef));
+    linked.forEach(x => { const p = PO.find(q => String(q.poNumber).trim() + '|' + String(q.poItemNumber).trim() === x.l.poRef); out[x.c.id][x.i] = Math.min(+x.l.qty || 0, poDeducted(p)); });
+    const manual = ls.filter(x => !linked.includes(x) && x.l.shipped !== undefined && x.l.shipped !== '' && x.l.shipped !== null);
     manual.forEach(x => out[x.c.id][x.i] = +x.l.shipped || 0);
-    const auto = ls.filter(x => !manual.includes(x)); if (!auto.length) return;
+    const auto = ls.filter(x => !manual.includes(x) && !linked.includes(x)); if (!auto.length) return;
     const t0 = spoTime(auto[0].c.recvDate);
     (txLog||[]).filter(t => t.type === 'otp' && t.code === code && String(t.cat||'').toUpperCase() !== 'BTP' && t.dest !== 'NG' && bdTime(t) >= t0)
       .sort((a,b) => bdTime(a) - bdTime(b)).forEach(t => {
@@ -13443,6 +13446,7 @@ function hqCPOView(){
     </div>
     <div class="toolbar" style="gap:6px;flex-wrap:wrap">
       <button onclick="hqCPOEdit(null)" style="padding:7px 14px;border-radius:8px;border:1px solid #5b21b6;background:#5b21b6;color:#fff;font-weight:600;cursor:pointer">➕ 고객 PO 접수</button>
+      <button onclick="hqCPOImportPO()" title="법인 발주관리에 엑셀로 등록해 둔 기존 솔루엠 PO 중 잔량이 남은 것을 주문서로 가져옵니다" style="padding:7px 14px;border-radius:8px;border:1px solid #5b21b6;background:#fff;color:#5b21b6;font-weight:600;cursor:pointer">📥 발주관리 기존 PO 가져오기</button>
       <div class="sw"><span class="si">🔍</span><input placeholder="고객사·PO No·품목 검색" value="${hqE(HQ.q)}" oninput="HQ.q=this.value;clearTimeout(window._hqT);window._hqT=setTimeout(()=>{renderHQ();const i=document.querySelector('#hq-body .sw input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>
       <select onchange="HQ.st=this.value;renderHQ()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px"><option value="">상태 전체</option><option value="진행" ${HQ.st==='진행'?'selected':''}>진행 중(완료·취소 제외)</option>${HQ_CPO_ST.map(s => `<option ${HQ.st===s?'selected':''}>${s}</option>`).join('')}</select>
       <button onclick="hqCPOExcel()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer">📊 엑셀</button>
@@ -13576,6 +13580,35 @@ async function hqCPODelete(id){
   const r = HQ.cpo.find(x => String(x.id) === String(id)); if (!r || !confirm(`${r.cpoNo} (${r.customer} ${r.custPoNo})를 삭제할까요?\n기록을 남기려면 삭제 대신 '취소' 상태로 바꾸세요.`)) return;
   const res = await retrySafe(() => api('deleteHQCPO', {id})); if (!res || !res.ok) { alert('삭제 실패: ' + ((res && res.error) || '')); return; }
   HQ.cpo = HQ.cpo.filter(x => String(x.id) !== String(id)); hqClose('hq-ed'); renderHQ();
+}
+// 📥 [2026-11-11] 법인 발주관리(엑셀로 등록한 기존 솔루엠 PO) → 본사 주문서(고객 PO). 잔량이 남은 PO만, PO번호별로 1건.
+//    라인은 항번(itemNo)·발주관리 연결(poRef)을 갖고, 출하 수량은 발주관리의 차감 누계를 그대로 따른다.
+async function hqCPOImportPO(){
+  if (!hqCanWrite()) return;
+  await loadPO();
+  const vnD = v => { const t = String(v || ''); if (/^\d{4}-\d{2}-\d{2}T/.test(t)) { const x = new Date(t); if (!isNaN(x)) return new Date(x.getTime() + 7 * 3600e3).toISOString().slice(0, 10); } return t.slice(0, 10); };
+  const have = new Set(HQ.cpo.map(c => String(c.custPoNo || '').trim()).filter(Boolean));
+  const src = (PO || []).filter(p => !String(p.messageId || '').startsWith('CPO:') && String(p.poNumber || '').trim() && !have.has(String(p.poNumber).trim()));
+  const by = {}; src.forEach(p => (by[String(p.poNumber).trim()] = by[String(p.poNumber).trim()] || []).push(p));
+  const open = Object.entries(by).filter(([, ps]) => ps.some(p => p.closedYN !== 'Y' && (+p.poQty || 0) - poDeducted(p) > 0));
+  const done = Object.keys(by).length - open.length;
+  if (!open.length) { alert('가져올 PO가 없습니다.' + (done ? `\n(잔량이 없는 완료 PO ${done}건은 가져오지 않습니다)` : '') + '\n이미 주문서에 있는 PO번호도 건너뜁니다.'); return; }
+  const cust = hqsCustNames().find(n => /솔루엠|solum/i.test(n) && !/vina|비나/i.test(n)) || '솔루엠 (SOLUM KR)';
+  if (!confirm(`법인 발주관리의 기존 PO ${open.length}건(라인 ${open.reduce((a, [, ps]) => a + ps.length, 0)}개)을 주문서에 '확정'으로 등록합니다.\n\n· 고객: ${cust}\n· 출하·잔량: 발주관리 수치를 그대로 따릅니다\n· 단가: 이 고객의 최근 단가 (없으면 빈칸 — 나중에 입력)\n· 잔량이 없는 완료 PO ${done}건은 가져오지 않습니다\n\n진행할까요?`)) return;
+  let ok = 0, fail = [];
+  for (const [no, ps] of open.sort((a, b) => String(vnD(a[1][0].poDate)).localeCompare(String(vnD(b[1][0].poDate))))) {
+    ps.sort((a, b) => (+a.poItemNumber || 0) - (+b.poItemNumber || 0));
+    const recv = vnD(ps[0].poDate) || vnD(ps[0].createdAt) || hqToday();
+    const now = new Date().toISOString();
+    const rec = {id: String(Date.now()) + '-' + ok, customer: cust, custPoNo: no, recvDate: recv, status: '확정', cur: 'USD', incoterm: '', note: '법인 발주관리(기존 엑셀 등록)에서 가져옴',
+      lines: ps.map(p => { let pr = ''; try { pr = hqsLastPrice(cust, p.itemCode); } catch (e) {} return {code: p.itemCode, name: p.itemName || p.itemCode, qty: +p.poQty || 0, price: pr === undefined || pr === null ? '' : pr, due: vnD(p.deliveryDate), itemNo: String(p.poItemNumber), poRef: no + '|' + String(p.poItemNumber).trim()}; }),
+      history: [{at: now, by: CURRENT_USER || '', status: '확정', note: '발주관리에서 가져옴'}], createdAt: now, createdBy: CURRENT_USER || '', updatedAt: now, updatedBy: CURRENT_USER || ''};
+    rec.cpoNo = hqNextNo('CPO', HQ.cpo, 'cpoNo', recv);
+    const r = await retrySafe(() => api('saveHQCPO', {rec}));
+    if (r && r.ok) { HQ.cpo.push(rec); ok++; } else fail.push(no + ': ' + ((r && r.error) || '응답 없음'));
+  }
+  renderHQ();
+  alert(`✅ 주문서 ${ok}건을 가져왔습니다.` + (fail.length ? `\n\n실패 ${fail.length}건:\n` + fail.slice(0, 8).join('\n') : ''));
 }
 function hqCPOExcel(){
   if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
