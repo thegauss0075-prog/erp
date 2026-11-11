@@ -13873,8 +13873,11 @@ function hqPRAutoPrice(l){
   if (!l.code) return;
   if (!l.cur) { const sc = (hqsSup(l.supplier || '') || {}).cur; if (HQ_PR_CURS.includes(sc)) l.cur = sc; }
   if (l.price !== undefined && l.price !== '' && !l.priceAuto) return;
+  // ✅ [2026-11-11] 구매 기준단가(구매 → 자재 단가)가 있으면 그것을 먼저 쓴다 — 예전 테스트·임시 구매가(1 USD 등)가 들어가던 문제
+  const m = hqBP(l.code);
+  if (m) { l.price = m.price; l.priceAuto = true; l.priceSrc = '기준단가'; l.cur = m.cur; return; }
   const p = hqPRLast(l.supplier || '', l.code) || hqPRLast('', l.code);
-  if (p) { l.price = p.price; l.priceAuto = true; if (HQ_PR_CURS.includes(p.cur)) l.cur = p.cur; }
+  if (p) { l.price = p.price; l.priceAuto = true; l.priceSrc = '최근 구매가'; if (HQ_PR_CURS.includes(p.cur)) l.cur = p.cur; }
 }
 function hqPRSupPrice(i){ const l = HQ_PR.lines[i]; const sc = (hqsSup(l.supplier || '') || {}).cur; if (HQ_PR_CURS.includes(sc)) l.cur = sc; if (l.priceAuto || l.price === undefined || l.price === '') { l.price = undefined; l.priceAuto = false; hqPRAutoPrice(l); } hqPRRender(); }
 function hqPRAmt(l){ return (l.price === '' || l.price == null) ? null : (+l.qty || 0) * (+l.price || 0); }
@@ -13911,7 +13914,7 @@ function hqPRRender(){
           : `<input list="hq-mats" ${ro} value="${hqE(l.code||'')}" onchange="hqPRLine(${i},'item',this.value)" placeholder="자재 코드·이름 검색" style="${HQ_IN}">`}</td>
         <td style="text-align:right;white-space:nowrap"><input type="number" ${ro} value="${hqE(l.qty)}" oninput="HQ_PR.lines[${i}].qty=this.value;hqPRTot()" style="${HQ_IN};width:80px;text-align:right"> <span style="color:#5D6977;font-size:12px">${hqE(l.unit||'')}</span></td>
         <td><input list="hq-sups" ${ro} value="${hqE(l.supplier||'')}" oninput="HQ_PR.lines[${i}].supplier=this.value" onchange="hqPRSupPrice(${i})" placeholder="공급사" style="${HQ_IN}"></td>
-        <td style="white-space:nowrap"><input type="number" step="0.0001" ${ro} value="${hqE(l.price ?? '')}" oninput="HQ_PR.lines[${i}].price=this.value;HQ_PR.lines[${i}].priceAuto=false;hqPRTot()" style="${HQ_IN};width:96px;text-align:right" placeholder="단가"> <select ${ro} onchange="HQ_PR.lines[${i}].cur=this.value;hqPRTot()" style="${HQ_IN};width:70px">${HQ_PR_CURS.map(c => `<option ${hqPRCur(l)===c?'selected':''}>${c}</option>`).join('')}</select>${l.priceAuto ? '<div style="font-size:10.5px;color:#8A95A3">최근 구매가</div>' : ''}</td>
+        <td style="white-space:nowrap"><input type="number" step="0.0001" ${ro} value="${hqE(l.price ?? '')}" oninput="HQ_PR.lines[${i}].price=this.value;HQ_PR.lines[${i}].priceAuto=false;hqPRTot()" style="${HQ_IN};width:96px;text-align:right" placeholder="단가"> <select ${ro} onchange="HQ_PR.lines[${i}].cur=this.value;hqPRTot()" style="${HQ_IN};width:70px">${HQ_PR_CURS.map(c => `<option ${hqPRCur(l)===c?'selected':''}>${c}</option>`).join('')}</select>${l.priceAuto ? `<div style="font-size:10.5px;color:${l.priceSrc === '기준단가' ? '#0f766e' : '#b45309'}">${l.priceSrc || '최근 구매가'}</div>` : (l.code && (l.price === '' || l.price == null) ? '<div style="font-size:10.5px;color:#b91c1c">단가 없음</div>' : '')}</td>
         <td id="hqpr-amt-${i}" style="text-align:right;white-space:nowrap;font-weight:700"></td>
         <td>${editable ? `<button onclick="HQ_PR.lines.splice(${i},1);hqPRRender()" title="삭제" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>` : ''}</td></tr>`).join('')}</tbody></table></div>
     <div id="hqpr-tot" style="text-align:right;font-size:14px;margin-top:8px"></div>
@@ -14159,6 +14162,7 @@ function hqsLastPrice0(cust, code){
   const v = pick(HQS.sale); if (v !== '') return v; const w = pick(HQ.cpo); if (w !== '') return w; return pick(HQS.quote);
 }
 function hqsLastBuyPrice(sup, code){
+  { const m = hqBP(code), ed = HQS.ed; if (m && (!ed || !ed.cur || ed.cur === m.cur)) return m.price; }   // 💲 기준단가 우선
   const l = HQS.purch.filter(x => !sup || x.supplier === sup).sort((a,b) => String(b.date||'').localeCompare(String(a.date||''))).flatMap(x => (x.lines||[]).filter(y => y.code === code && y.price !== '' && y.price != null));
   if (l.length) return +l[0].price;
   const s2 = [...SPO].filter(p => p.code === code && (!sup || p.supplier === sup) && p.price !== '' && p.price != null).sort((a,b) => String(b.orderDate||'').localeCompare(String(a.orderDate||'')));
