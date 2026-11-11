@@ -13456,11 +13456,16 @@ function hqCPOView(){
       rows.map(r => `<tr style="cursor:pointer" onclick="hqCPOEdit('${r.id}')">
         <td style="white-space:nowrap">${hqE(r.recvDate)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(r.cpoNo)}</div></td>
         <td>${hqE(r.customer)}</td><td style="font-family:monospace;font-size:12px">${hqE(r.custPoNo)}</td>
-        <td>${hqE((r.ls[0]||{}).name || (r.ls[0]||{}).code || '-')}${r.ls.length > 1 ? ` <span style="color:#8A95A3">외 ${r.ls.length-1}</span>` : ''}</td>
+        <td>${r.ls.length > 1 ? `<span style="color:#5D6977">품목 ${r.ls.length}개 · 합계</span>` : hqE((r.ls[0]||{}).name || (r.ls[0]||{}).code || '-')}</td>
         <td style="text-align:right">${hqN(r.qty)}</td><td style="text-align:right;color:#0f766e">${r.sh ? hqN(r.sh) : '-'}</td><td style="text-align:right;font-weight:700">${hqN(r.rem)}</td>
         <td style="white-space:nowrap;${r.late ? 'color:#b91c1c;font-weight:700' : r.soon ? 'color:#b45309;font-weight:600' : ''}">${hqE(r.due || '-')}${r.late ? ' ⚠️' : ''}</td>
         <td style="text-align:right;white-space:nowrap">${r.amt ? hqM(r.amt, r.cur) : '-'}</td>
-        <td>${hqPill(r.st, HQ_CPO_COL[r.st])}</td></tr>`).join('')}</tbody></table></div>`
+        <td>${hqPill(r.st, HQ_CPO_COL[r.st])}</td></tr>${r.ls.length > 1 ? r.ls.map((l, i) => { const ld = l.replyDue || l.due || '', late = l.rem > 0 && ld && ld < hqToday();
+          // ✅ [2026-11-11] 여러 품목 PO는 품목(항번)별 수량·출하·잔량을 줄마다 펼친다 — 법인 발주관리(품목별)와 바로 비교
+          return `<tr style="cursor:pointer;background:#FAFBFC;font-size:12.5px" onclick="hqCPOEdit('${r.id}')"><td></td><td></td><td style="font-family:monospace;font-size:11.5px;color:#8A95A3;padding-left:14px">└ ${hqE(l.itemNo || (i + 1) * 10)}</td>
+            <td>${hqE(l.name || l.code)}<span style="font-size:11px;color:#8A95A3;font-family:monospace;margin-left:6px">${hqE(l.code)}</span></td>
+            <td style="text-align:right">${hqN(l.qty)}</td><td style="text-align:right;color:#0f766e">${l.sh ? hqN(l.sh) : '-'}</td><td style="text-align:right;font-weight:600">${hqN(l.rem)}</td>
+            <td style="white-space:nowrap;${late ? 'color:#b91c1c' : ''}">${hqE(ld || '-')}</td><td style="text-align:right;white-space:nowrap;color:#5D6977">${l.amt ? hqM(l.amt, r.cur) : '-'}</td><td></td></tr>`; }).join('') : ''}`).join('')}</tbody></table></div>`
       : `<div class="empty">${HQ.cpo.length ? '조건에 맞는 PO가 없습니다.' : '아직 접수된 고객 PO가 없습니다. "➕ 고객 PO 접수"로 시작하세요.'}</div>`}
     <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">출하 수량은 법인 완제품 출고 기록에서 같은 품목의 확정 PO에 접수일 순으로 자동 배분됩니다. 라인에 직접 입력하면 그 값이 우선합니다.</div>`;
 }
