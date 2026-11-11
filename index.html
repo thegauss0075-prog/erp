@@ -3141,12 +3141,20 @@ function computePOMaterialShortage() {
     return map;
   };
 
+  // ✅ [2026-11-11] 작업지시를 '완료'했지만 출하검사(→ 재고 입고)를 아직 안 한 생산분은 "곧 들어올 재고"로 본다.
+  //    (완료하면 투입 자재는 빠지는데 완제품 재고는 검사 합격 후에야 늘어서, 그 사이 부족 자재가 부풀던 빈틈)
+  const qcFind = woQCMap();
+  const pendingOut = (code, cat) => {
+    if (!_loadedAt.qc) { if (!window._shortQCLoading) { window._shortQCLoading = true; loadQC().catch(() => {}).finally(() => { window._shortQCLoading = false; if (_loadedAt.qc) try { renderPOShortageCard(); } catch (e) {} }); } return 0; }
+    return WO.filter(w => w.code === code && w.cat === cat && w.status === '완료').reduce((a, w) => { const st = woQCState(w, qcFind); return a + (st && st.k === 'wait' ? (+w.producedQty || 0) : 0); }, 0);
+  };
+
   poItems.forEach(g => {
     const boms = BOM.filter(b => b.productCode === g.itemCode && effectiveBOMCat(b) === 'TP');
     if (!boms.length) { noBom.push(g); return; }
     // ✅ 완제품 재고 반영: 발주 잔량에서 이미 만들어져 있는 완제품 수량만큼을 뺀
     //    "실제 생산 필요 수량" 기준으로 자재를 계산한다.
-    const tpCur = findCur(g.itemCode, 'TP');
+    const tpCur = findCur(g.itemCode, 'TP') + pendingOut(g.itemCode, 'TP');   // 재고 + 출하검사 대기 생산분
     const netRemain = Math.max(0, g.totalRemain - tpCur);
     if (netRemain <= 0) return; // 완제품 재고만으로 충분히 커버되면 추가 생산/자재 불필요
 
@@ -3167,7 +3175,8 @@ function computePOMaterialShortage() {
     // ✅ "지금 확보된 자재" = 창고 재고 + 이미 이 생산(미완료 작업지시)에 투입되어
     //    진행 중인 물량. 투입 전/후 총량이 그대로여야 하므로(창고→작업지시로
     //    옮겨간 것일 뿐 없어진 게 아님) 이렇게 더해서 비교해야 정확하다.
-    return { ...m, cur, shortQty: m.needQty - (cur + m.investedQty) };
+    const pend = m.materialCat === 'BTP' ? pendingOut(m.materialCode, 'BTP') : 0;   // 반제품도 검사 대기분은 곧 재고
+    return { ...m, cur: cur + pend, shortQty: m.needQty - (cur + pend + m.investedQty) };
   }).filter(m => m.shortQty > 0.0001);
 
   // ✅ 자재 하나가 여러 완제품에 걸쳐 쓰일 수 있어서, 부족한 자재를 자재 기준이 아니라
