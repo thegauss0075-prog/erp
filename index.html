@@ -13946,7 +13946,7 @@ async function hqsDelete(store, id, label){
   if (!res || !res.ok) { alert('삭제 실패: ' + ((res && res.error) || '')); return false; }
   HQS[store] = HQS[store].filter(x => String(x.id) !== String(id)); return true;
 }
-function hqsCustNames(){ return [...new Set([...HQS.cust.map(c => c.name), '솔루엠비나 (Solum Vina)', '현대자동차', 'THE GAUSS INC.', ...HQ.cpo.map(c => c.customer), ...HQS.sale.map(s => s.customer)].filter(Boolean))]; }
+function hqsCustNames(){ return [...new Set([...HQS.cust.map(c => c.name), '솔루엠비나 (Solum Vina)', ...HQ.cpo.map(c => c.customer), ...HQS.sale.map(s => s.customer)].filter(Boolean))]; }
 function hqsCust(name){ return HQS.cust.find(c => c.name === name) || null; }
 function hqsLineTot(lines){ return (lines||[]).reduce((a,l) => a + (+l.qty||0) * (+l.price||0), 0); }
 function hqsToolbar(btns, ph, extra){
