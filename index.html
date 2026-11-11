@@ -13302,6 +13302,7 @@ async function loadHQ(force){
   if (HQ.loaded && !force) return;
   // ✅ [2026-11-09 속도] 본사 데이터는 서버 1회 호출(getHQBundle)로 받는다. BOM·투입자재·품질검사는 비어 있을 때만 같이 받는다.
   const extra = [(BOM && BOM.length) ? null : loadBOM().catch(()=>{}), (WO_MAT && WO_MAT.length) ? null : loadWOMaterials().catch(()=>{}), (QC && QC.length) ? null : loadQC().catch(()=>{})];
+  hqsCostKick();   // 판매 단가 기본값용 (제조원가 ② 판매가)
   const bd = await api('getHQBundle', {});
   if (bd && bd.ok) {
     HQ.cpo = bd.cpo || []; HQ.pr = bd.pr || [];
@@ -14057,20 +14058,38 @@ function hqsLinesHtml(obj, path, cur, opts){
       ${o.due ? `<td><input type="date" value="${hqE(l.due||'')}" oninput="hqsLine('${path}',${i},'due',this.value)" style="${HQ_IN}"></td>` : ''}
       <td style="text-align:right;white-space:nowrap" id="${path}-amt-${i}">${(+l.qty||0) && (+l.price||0) ? hqM((+l.qty)*(+l.price), cur) : '-'}</td>
       <td><button onclick="HQS.ed.lines.splice(${i},1);hqsReRender()" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></td></tr>`).join('')}</tbody></table></div>
-    <button onclick="HQS.ed.lines.push({code:'',name:'',qty:'',price:''});hqsReRender()" style="margin-top:6px;padding:5px 12px;border-radius:7px;border:1px dashed #5b21b6;background:#fff;color:#5b21b6;cursor:pointer">＋ 품목 추가</button>`;
+    <button onclick="HQS.ed.lines.push({code:'',name:'',qty:'',price:''});hqsReRender()" style="margin-top:6px;padding:5px 12px;border-radius:7px;border:1px dashed #5b21b6;background:#fff;color:#5b21b6;cursor:pointer">＋ 품목 추가</button><button onclick="hqsFillPrices()" title="단가가 빈 품목에 이 고객의 최근 단가 → 없으면 제조원가 탭의 판매가를 넣습니다" style="margin-top:6px;margin-left:6px;padding:5px 12px;border-radius:7px;border:1px dashed #0f766e;background:#fff;color:#0f766e;cursor:pointer">💲 빈 단가 채우기 (판매가)</button>`;
 }
 function hqsLine(path, i, k, v){
   const l = HQS.ed.lines[i]; if (!l) return;
   if (k === 'item') { const code = String(v).split(' — ')[0].trim(), it = allRows().find(x => x.code === code && (x.cat === 'TP' || x.cat === 'BTP')) || allRows().find(x => x.code === code);
     if (HQS.ed._kind === 'purch') { const m = allRows().find(x => x.code === code && ['KR','VN','VTTH','BTP'].includes(x.cat)); if (m) { l.code = m.code; l.name = m.name; l.cat = m.cat; l.unit = m.unit; if (l.price === '' || l.price == null) { const pp = hqsLastBuyPrice(HQS.ed.supplier, m.code); if (pp !== '') l.price = pp; } } else { l.code = code; l.name = ''; } setTimeout(hqsReRender, 0); return; }
-    if (it) { l.code = it.code; l.name = it.name; l.cat = it.cat; l.unit = it.unit; if (l.price === '' || l.price == null) { const p = hqsLastPrice(HQS.ed.customer, it.code); if (p !== '') l.price = p; } } else { l.code = code; l.name = ''; }
+    if (it) { l.code = it.code; l.name = it.name; l.cat = it.cat; l.unit = it.unit; if (l.price === '' || l.price == null) { const p = hqsLastPrice(HQS.ed.customer, it.code, HQS.ed.cur); if (p !== '') l.price = p; } } else { l.code = code; l.name = ''; }
     setTimeout(hqsReRender, 0); return; }
   l[k] = v;
   const a = document.getElementById(`${path}-amt-${i}`); if (a) a.textContent = (+l.qty||0) && (+l.price||0) ? hqM((+l.qty)*(+l.price), HQS.ed.cur) : '-';
   const t = document.getElementById(`${path}-tot`); if (t) t.innerHTML = hqsTotHtml(HQS.ed);
 }
 // 같은 거래처에 마지막으로 쓴 단가 (판매 → 주문서 → 견적서 순)
-function hqsLastPrice(cust, code){
+// 💲 [2026-11-11] 이 고객의 최근 단가가 없으면 제조원가 탭 ② 모델 정보의 판매가를 쓴다 (통화가 다르면 그 달 환율로 환산)
+function hqsCostSale(code, cur){
+  const d = (typeof COST !== 'undefined' && COST.model) ? COST.model[code] : null;
+  if (!d || !(+d.sale > 0)) { hqsCostKick(); return ''; }
+  const sc = d.saleCur || 'USD', tc = cur || 'USD'; if (sc === tc) return +d.sale;
+  if (tc === 'USD') { const v = dsToUSD(+d.sale, sc, new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7)); return v ? Math.round(v * 10000) / 10000 : ''; }
+  return '';
+}
+async function hqsFillPrices(){
+  if (!HQS.ed) return; if (!Object.keys(COST.model || {}).length && (isMaster || hqCan('cost', 'R'))) { try { await loadCost(); } catch (e) {} }
+  let n = 0, miss = []; (HQS.ed.lines || []).forEach(l => { if (!l.code || (l.price !== '' && l.price != null)) return; const p = hqsLastPrice(HQS.ed.customer, l.code, HQS.ed.cur); if (p !== '') { l.price = p; n++; } else miss.push(l.name || l.code); });
+  hqsReRender(); if (miss.length) alert(`단가 ${n}건을 채웠습니다.\n판매가가 없는 품목 ${miss.length}건: ${miss.join(', ')}\n(제조원가 탭 ② 모델 정보에 판매가를 넣거나 직접 입력하세요)`);
+}
+function hqsCostKick(){ try { if (Object.keys(COST.model || {}).length || window._hqCostLoading || COST_SERVER_OK === 'auth' || COST_SERVER_OK === false) return; if (!(isMaster || (typeof hqCan === 'function' && hqCan('cost', 'R')))) return;
+  window._hqCostLoading = true; loadCost().catch(() => {}).finally(() => { window._hqCostLoading = false; }); } catch (e) {} }
+function hqsLastPrice(cust, code, cur){
+  const v0 = hqsLastPrice0(cust, code); if (v0 !== '') return v0; return hqsCostSale(code, cur);
+}
+function hqsLastPrice0(cust, code){
   const pick = arr => { const l = arr.filter(x => !cust || x.customer === cust).sort((a,b) => String(b.date || b.recvDate || '').localeCompare(String(a.date || a.recvDate || '')))
     .flatMap(x => (x.lines||[]).filter(y => y.code === code && y.price !== '' && y.price != null)); return l.length ? +l[0].price : ''; };
   const v = pick(HQS.sale); if (v !== '') return v; const w = pick(HQ.cpo); if (w !== '') return w; return pick(HQS.quote);
