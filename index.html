@@ -2859,8 +2859,32 @@ async function renderPO(opts) {
   opts = opts || {};
   if (opts.local) { _renderPOBody(); return; }
   if (opts.soft) { _renderPOBody(); if (_isFresh(['po'])) return; }
-  await loadPO();
+  await Promise.all([loadPO(), loadVNCPO().catch(() => {})]);
   _renderPOBody();
+  if (await syncCPOToPO()) { await loadPO(); _renderPOBody(); }
+}
+// 🔗 [2026-11-11] 본사 영업이 '확정'한 고객 PO를 법인 발주관리(PO_LOG)에 자동 등록한다.
+//    PO번호 = 고객 PO No, 항번 = 라인 순서 ×10 (SAP 방식 10, 20 …). 같은 PO번호·항번이 이미 있으면(엑셀로 먼저 등록 등) 건너뛴다.
+function cpoToPOItems(){
+  const have = new Set((PO || []).map(r => String(r.poNumber).trim() + '|' + String(r.poItemNumber).trim()));
+  const out = [];
+  (HQ.cpo || []).filter(c => ['확정','출하중'].includes(c.status) && String(c.custPoNo || '').trim()).forEach(c => (c.lines || []).forEach((l, i) => {
+    if (!l.code || !(+l.qty > 0)) return;
+    const it = {poNumber: String(c.custPoNo).trim(), poItemNumber: String((i + 1) * 10), itemCode: l.code, itemName: l.name || l.code,
+      unit: (allRows().find(x => x.code === l.code) || {}).unit || 'EA', poQty: +l.qty || 0, receivedQtySolum: 0,
+      deliveryDate: String(l.replyDue || l.due || '').slice(0, 10), poDate: String(c.recvDate || '').slice(0, 10), closedYN: 'N', emailDate: '', messageId: 'CPO:' + (c.cpoNo || c.id)};
+    if (!have.has(it.poNumber + '|' + it.poItemNumber)) out.push(it); }));
+  return out;
+}
+let _cpoSyncing = false;
+async function syncCPOToPO(){
+  if (_cpoSyncing || !isAdmin || !ADMIN_TOKEN || USER_ROLE === 'hq') return false;
+  const items = cpoToPOItems(); if (!items.length) return false;
+  _cpoSyncing = true;
+  try { const r = await api('addPOItems', {items, token: ADMIN_TOKEN, user: (CURRENT_USER || '') + ' (본사 PO 연동)'});
+    if (r && r.ok && r.added) { setTimeout(() => alert(`🔗 본사에서 확정한 고객 PO ${r.added}건(라인)을 발주관리에 자동 등록했습니다.`), 50); return true; } }
+  catch (e) {} finally { _cpoSyncing = false; }
+  return false;
 }
 // 자재 발주(공급사) 목록은 발주관리 탭을 열 때마다 서버에서 새로 받는다
 const _goPO = () => { renderSupplyPO(); loadSupplyPO().then(renderSupplyPO); };
