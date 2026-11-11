@@ -14157,7 +14157,13 @@ function hqsCostSale(code, cur){
   const d = (typeof COST !== 'undefined' && COST.model) ? COST.model[code] : null;
   if (!d || !(+d.sale > 0)) { hqsCostKick(); return ''; }
   const sc = d.saleCur || 'USD', tc = cur || 'USD'; if (sc === tc) return +d.sale;
-  if (tc === 'USD') { const v = dsToUSD(+d.sale, sc, new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7)); return v ? Math.round(v * 10000) / 10000 : ''; }
+  const ym = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 7);
+  if (tc === 'USD') { const v = dsToUSD(+d.sale, sc, ym); return v ? Math.round(v * 10000) / 10000 : ''; }
+  if (tc === 'KRW' || tc === 'VND') {   // 원화·동 판매: 그 달 환율(VND 기준)로 환산
+    let f = null; try { f = costFx(ym); } catch (e) {}
+    const vnd = sc === 'VND' ? +d.sale : sc === 'USD' ? (f && f.usd ? +d.sale * f.usd : 0) : sc === 'KRW' ? (f && f.krw ? +d.sale * f.krw : 0) : 0;
+    if (!vnd) return ''; return tc === 'VND' ? Math.round(vnd) : (f && f.krw ? Math.round(vnd / f.krw) : '');
+  }
   return '';
 }
 async function hqsFillPrices(){
