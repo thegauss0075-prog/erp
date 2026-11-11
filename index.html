@@ -1006,6 +1006,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <button onclick="openLotTrace()" style="padding:7px 14px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔗 LOT 추적</button>
     <button onclick="openCapacity()" style="padding:7px 14px;border-radius:7px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🏭 생산 가능 수량</button>
   </div>
+  <div id="wo-cpo"></div>
   <div id="wo-status-btns" style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
     <button class="period-btn on" data-status=""        onclick="setWOStatusFilter('')">전체</button>
     <button class="period-btn"    data-status="대기"    onclick="setWOStatusFilter('대기')">대기</button>
@@ -3712,10 +3713,55 @@ function setWOPeriod(days) {
 
 async function renderWO(opts) {
   opts = opts || {};
-  if (opts.local) { _renderWOBody(); return; }
-  if (opts.soft) { _renderWOBody(); if (_isFresh(['wo'])) return; }
-  await Promise.all([loadWO(), _isFresh(['qc']) ? null : loadQC().catch(() => {})]);
-  _renderWOBody();
+  if (opts.local) { _renderWOBody(); renderWOCPO(); return; }
+  if (opts.soft) { _renderWOBody(); renderWOCPO(); if (_isFresh(['wo'])) return; }
+  await Promise.all([loadWO(), _isFresh(['qc']) ? null : loadQC().catch(() => {}), loadVNCPO().catch(() => {})]);
+  _renderWOBody(); renderWOCPO();
+}
+// 📥 [2026-11-11] 본사 영업이 확정한 고객 PO를 베트남 작업지시 화면에서 본다 (미출하 잔량·납기 → 작업지시 만들기)
+//    단가·금액은 보여 주지 않는다. 출하 수량은 본사 화면과 같은 계산(완제품 출고를 접수일 순으로 채움)을 쓴다.
+let _vnCpoAt = 0;
+async function loadVNCPO(force){
+  if (!(API_URL || IS_GAS)) return;
+  if (HQ.loaded && !force) return;                       // 본사 화면에서 이미 받아 둠
+  if (!force && Date.now() - _vnCpoAt < 60e3) return;
+  const r = await api('getHQCPO', {}); if (r && r.ok) { if (!HQ.loaded) HQ.cpo = r.data || []; _vnCpoAt = Date.now(); }
+}
+function woCPOLines(){
+  if (!(HQ.cpo || []).length) return [];
+  let rows; try { rows = hqCPORows(); } catch (e) { return []; }
+  const today = new Date().toISOString().slice(0, 10), out = [];
+  rows.filter(r => ['확정','출하중'].includes(r.st)).forEach(r => r.ls.forEach((l, i) => { if (l.rem > 0) out.push({r, l, i, due: l.replyDue || l.due || '', late: (l.replyDue || l.due) && (l.replyDue || l.due) < today}); }));
+  return out.sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')));
+}
+function renderWOCPO(){
+  const el = document.getElementById('wo-cpo'); if (!el) return;
+  const L = woCPOLines(); if (!L.length) { el.innerHTML = ''; return; }
+  const openWO = code => (WO || []).filter(w => w.code === code && !['완료','취소'].includes(w.status)).reduce((a, w) => a + Math.max(0, (+w.planQty||0) - (+w.producedQty||0)), 0);
+  let op = true; try { op = localStorage.getItem('wo_cpo_open') !== '0'; } catch (e) {}
+  el.innerHTML = `<details ${op ? 'open' : ''} ontoggle="try{localStorage.setItem('wo_cpo_open',this.open?'1':'0')}catch(e){}" style="border:1.5px solid #c4b5fd;background:#faf5ff;border-radius:10px;padding:8px 12px;margin-bottom:10px">
+    <summary style="cursor:pointer;font-weight:700;color:#5b21b6">📥 고객 주문 (본사 확정 PO) — 미출하 ${L.length}건 <span style="font-weight:400;font-size:12px;color:#5D6977">Đơn hàng khách đã xác nhận · 납기 순</span></summary>
+    <div class="tw" style="margin-top:8px"><table style="width:100%"><thead><tr><th>PO</th><th>고객</th><th>품목</th><th style="text-align:right">주문</th><th style="text-align:right">출하</th><th style="text-align:right">잔량</th><th style="text-align:right">진행 중 작업지시</th><th>납기</th><th></th></tr></thead><tbody>${L.map(x => { const ow = openWO(x.l.code), need = Math.max(0, x.l.rem - ow);
+      return `<tr><td style="white-space:nowrap">${hqE(x.r.cpoNo || '')}<div style="font-size:11px;color:#8A95A3">${hqE(x.r.custPoNo || '')}</div></td><td>${hqE(x.r.customer || '')}</td><td>${hqE(x.l.name || x.l.code)}<div style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(x.l.code)}</div></td>
+        <td style="text-align:right">${(+x.l.qty||0).toLocaleString()}</td><td style="text-align:right">${x.l.sh.toLocaleString()}</td><td style="text-align:right;font-weight:700">${x.l.rem.toLocaleString()}</td>
+        <td style="text-align:right;color:${ow >= x.l.rem ? '#166534' : '#b45309'}">${ow ? ow.toLocaleString() : '-'}${need ? `<div style="font-size:11px">부족 ${need.toLocaleString()}</div>` : ''}</td>
+        <td style="white-space:nowrap;color:${x.late ? '#b91c1c' : ''};font-weight:${x.late ? 700 : 400}">${hqE(x.due || '-')}${x.late ? ' ⚠️' : ''}</td>
+        <td>${isAdmin && need ? `<button class="edit-btn" style="white-space:nowrap" onclick="woFromCPO('${hqE(x.r.id)}',${x.i})">➕ 작업지시</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div></details>`;
+}
+function woFromCPO(id, i){
+  const r = (HQ.cpo || []).find(c => String(c.id) === String(id)); const l = r && (r.lines || [])[i]; if (!l) return;
+  const x = woCPOLines().find(z => String(z.r.id) === String(id) && z.i === i);
+  const item = allRows().find(it => it.code === l.code && it.cat === 'TP') || allRows().find(it => it.code === l.code && (it.cat === 'TP' || it.cat === 'BTP'));
+  if (!item) { alert(`ERP 품목에 ${l.code}가 없습니다. 품목을 먼저 등록하세요.`); return; }
+  const ow = (WO || []).filter(w => w.code === l.code && !['완료','취소'].includes(w.status)).reduce((a, w) => a + Math.max(0, (+w.planQty||0) - (+w.producedQty||0)), 0);
+  openAddWO(); if (!document.getElementById('wo-add-ov').classList.contains('show')) return;
+  woSelectedItem = item;
+  document.getElementById('wo-item-q').value = item.code + ' — ' + item.name;
+  document.getElementById('wo-code').value = item.code; document.getElementById('wo-name').value = item.name;
+  document.getElementById('wo-plan-qty').value = Math.max(0, (x ? x.l.rem : +l.qty || 0) - ow) || '';
+  const due = l.replyDue || l.due || ''; if (due) document.getElementById('wo-due').value = String(due).slice(0, 10);
+  document.getElementById('wo-note').value = `${r.cpoNo || ''} · ${r.customer || ''} ${r.custPoNo || ''}`.trim();
+  updateWOLotPreview(); try { woCapHint('add'); } catch (e) {}
 }
 // 🔬 작업지시별 출하검사 상태 (2026-11-03)
 //   완료된 작업지시마다 출하검사 기록을 찾는다 — 작업지시 연결(workOrderId) 우선, 없으면 같은 품목·LOT.
