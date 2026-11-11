@@ -3557,6 +3557,14 @@ function prefillIO(cat,code){
   setTimeout(()=>{setIOTab(dir);document.getElementById(dir+'-q').value=item.code+' — '+item.name;fillForm(dir,item);},50);
 }
 
+// ✅ [2026-11-11] 품목 자동완성 공통: 12개에서 잘려 뒤쪽 품목(예: NPL39/PCDU)이 안 보이던 문제 — 코드가 맞는 것부터 정렬하고 40개까지 보여준다(목록은 스크롤)
+function acRank(pool, q, rawFirst){
+  const nat = (a, b) => String(a.code).localeCompare(String(b.code), undefined, {numeric: true});
+  const sc = r => { const c = String(r.code||'').toLowerCase(), nm = String(r.name||'').toLowerCase(); return c === q ? 0 : c.startsWith(q) ? 1 : c.includes(q) ? 2 : nm.startsWith(q) ? 3 : 4; };
+  const raw = r => rawFirst && (r.cat === 'TP' || r.cat === 'BTP') ? 1 : 0;
+  return pool.filter(r => String(r.code||'').toLowerCase().includes(q) || String(r.name||'').toLowerCase().includes(q))
+    .sort((a, b) => sc(a) - sc(b) || raw(a) - raw(b) || nat(a, b)).slice(0, 40);
+}
 function acSearch(dir){
   const q=(document.getElementById(dir+'-q').value||'').toLowerCase().trim();
   const drop=document.getElementById(dir+'-drop');
@@ -3564,7 +3572,7 @@ function acSearch(dir){
   let pool=allRows();
   if(dir==='otp'||dir==='tp-in') pool=pool.filter(r=>r.cat==='TP'||r.cat==='BTP');
   if(dir==='omt') pool=pool.filter(r=>r.cat==='KR'||r.cat==='VN'||r.cat==='VTTH'||r.cat==='BTP'); // 반제품도 검색되게 — 고르면 반제품 출고(완제품 출고 탭)로 넘겨준다
-  const res=pool.filter(r=>r.code.toLowerCase().includes(q)||r.name.toLowerCase().includes(q)).slice(0,12);
+  const res=acRank(pool,q,dir==='omt');
   acResults[dir]=res;acIdx[dir]=-1;
   if(!res.length){drop.style.display='none';return;}
   drop.innerHTML=res.map((r,i)=>`<div class="ac-item" data-i="${i}" onmousedown="acPick('${dir}',${i})"><div>${hl(r.code,q)} <span class="badge ${CB[r.cat]}" style="font-size:11px;padding:2px 7px">${CL[r.cat]}</span></div><div class="ac-sub">${hl(r.name,q)} · ${r.unit} · 현재고: ${r.cur>0?r.cur.toLocaleString():'—'}</div></div>`).join('');
@@ -4021,7 +4029,7 @@ function acSearchWO() {
   const drop = document.getElementById('wo-item-drop');
   if (!q) { drop.style.display = 'none'; woAcResults = []; return; }
   const pool = allRows().filter(r => r.cat === 'TP' || r.cat === 'BTP');
-  const res = pool.filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)).slice(0, 12);
+  const res = acRank(pool, q);
   woAcResults = res; woAcIdx = -1;
   if (!res.length) { drop.style.display = 'none'; return; }
   drop.innerHTML = res.map((r,i) => `<div class="ac-item" data-i="${i}" onmousedown="acPickWO(${i})"><div>${hl(r.code,q)} <span class="badge ${CB[r.cat]}" style="font-size:11px;padding:2px 7px">${CL[r.cat]}</span></div><div class="ac-sub">${hl(r.name,q)} · ${r.unit}</div></div>`).join('');
@@ -4544,7 +4552,7 @@ function acSearchQC() {
   const q = (document.getElementById('qc-item-q').value || '').toLowerCase().trim();
   const drop = document.getElementById('qc-item-drop');
   if (!q) { drop.style.display = 'none'; qcAcResults = []; return; }
-  const res = allRows().filter(r => r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)).slice(0, 12);
+  const res = acRank(allRows(), q, true);
   qcAcResults = res; qcAcIdx = -1;
   if (!res.length) { drop.style.display = 'none'; return; }
   drop.innerHTML = res.map((r,i) => `<div class="ac-item" data-i="${i}" onmousedown="acPickQC(${i})"><div>${hl(r.code,q)} <span class="badge ${CB[r.cat]}" style="font-size:11px;padding:2px 7px">${CL[r.cat]}</span></div><div class="ac-sub">${hl(r.name,q)} · ${r.unit}</div></div>`).join('');
