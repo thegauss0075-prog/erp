@@ -13467,7 +13467,6 @@ function hqCPOView(){
     </div>
     <div class="toolbar" style="gap:6px;flex-wrap:wrap">
       <button onclick="hqCPOEdit(null)" style="padding:7px 14px;border-radius:8px;border:1px solid #5b21b6;background:#5b21b6;color:#fff;font-weight:600;cursor:pointer">➕ 고객 PO 접수</button>
-      <button onclick="hqCPOImportPO()" title="법인 발주관리에 엑셀로 등록해 둔 기존 솔루엠 PO 중 잔량이 남은 것을 주문서로 가져옵니다" style="padding:7px 14px;border-radius:8px;border:1px solid #5b21b6;background:#fff;color:#5b21b6;font-weight:600;cursor:pointer">📥 발주관리 기존 PO 가져오기</button>
       <div class="sw"><span class="si">🔍</span><input placeholder="고객사·PO No·품목 검색" value="${hqE(HQ.q)}" oninput="HQ.q=this.value;clearTimeout(window._hqT);window._hqT=setTimeout(()=>{renderHQ();const i=document.querySelector('#hq-body .sw input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>
       <select onchange="HQ.st=this.value;renderHQ()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px"><option value="">상태 전체</option><option value="진행" ${HQ.st==='진행'?'selected':''}>진행 중(완료·취소 제외)</option>${HQ_CPO_ST.map(s => `<option ${HQ.st===s?'selected':''}>${s}</option>`).join('')}</select>
       <button onclick="hqCPOExcel()" style="padding:7px 14px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-weight:600;cursor:pointer">📊 엑셀</button>
