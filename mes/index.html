@@ -200,10 +200,12 @@ const woOf = id => M.wo.find(w => w.wo_id === String(id)) || null;
 function routeOf(w){ if (!w) return []; const r = M.route.filter(x => x.item_code === w.code && String(x.cat||'TP').toUpperCase() === String(w.cat||'TP').toUpperCase()).sort((a,b) => a.seq - b.seq);
   return r.length ? r.map(x => ({...(M.proc.find(p => p.code === x.process_code) || {code: x.process_code, name: x.process_code}), seq: x.seq, is_final: x.is_final, note: x.note, lot_required: !!x.lot_required, unit_name: x.unit_name || '', unit_per: +x.unit_per > 1 ? +x.unit_per : 1, _r: true})) : M.proc.filter(p => p.active !== false && p.in_default !== false); }   // 공정 순서가 없는 품목은 '기본 공정'만
 // 고른 공정에 해당하는 작업지시가 없을 때: 다른 작업지시를 보여 주고, 누르면 그 품목의 첫 공정으로 바꾼다
-function woOther(){
+// ✅ [2026-11-11] 지금 공정의 작업지시가 있어도 다른 품목(예: 반제품 공정 선택 중일 때 완제품 지시서)을 아래에 함께 보여 준다
+function woOther(hasMine){
   const oth = activeWO().filter(w => !routeOf(w).some(p => p.code === S.proc));
-  if (!oth.length) return `<p class="muted">진행할 작업지시가 없습니다. 관리자가 🛠 기준정보에서 "ERP 작업지시 받기"를 누르세요.</p>`;
-  return `<p class="muted" style="grid-column:1/-1;margin:0 0 4px">${E(procName(S.proc))} 공정이 있는 작업지시가 없습니다. 아래 작업지시를 누르면 그 품목의 공정으로 바꿉니다.</p>` + oth.map(w => { const r = routeOf(w), first = r[0];
+  if (!oth.length) return hasMine ? '' : `<p class="muted">진행할 작업지시가 없습니다. 관리자가 🛠 기준정보에서 "ERP 작업지시 받기"를 누르세요.</p>`;
+  return (hasMine ? `<p class="muted" style="grid-column:1/-1;margin:10px 0 4px;padding-top:8px;border-top:1px dashed var(--line,#dde)">다른 공정 작업지시 <span class="vi">Lệnh của công đoạn khác</span> — 누르면 그 품목의 첫 공정으로 바뀝니다.</p>`
+    : `<p class="muted" style="grid-column:1/-1;margin:0 0 4px">${E(procName(S.proc))} 공정이 있는 작업지시가 없습니다. 아래 작업지시를 누르면 그 품목의 공정으로 바꿉니다.</p>`) + oth.map(w => { const r = routeOf(w), first = r[0];
     return `<button class="wo" style="opacity:.85" onclick="S.proc='${E(first ? first.code : S.proc)}';LS.set('mes_proc',S.proc);S.wo='${E(w.wo_id)}';render()"><div class="no">${E(w.order_no)} · ${E(w.lot||'')}</div><div class="nm">${E(w.name)}</div>
       <div class="muted">공정 ${E(r.map(p => p.name || procName(p.code)).join(' → ') || '-')}</div></button>`; }).join('');
 }
@@ -333,7 +335,7 @@ function floorView(){
       <div class="card"><h2>작업지시 <span class="vi">Lệnh sản xuất</span></h2>
         <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">${wos.map(w => { const ps = procSum(w.wo_id), done = ps[S.proc] || 0, pct = w.plan_qty ? Math.min(100, done / w.plan_qty * 100) : 0;
           return `<button class="wo ${S.wo === w.wo_id ? 'on' : ''}" onclick="S.wo='${E(w.wo_id)}';render()"><div class="no">${E(w.order_no)} · ${E(w.lot||'')}</div><div class="nm">${E(w.name)}</div>
-            <div class="muted">${E(procName(S.proc))} ${N(done)} / ${N(w.plan_qty)} ${E(w.unit||'')}</div><div class="bar" style="margin-top:6px"><i style="width:${pct}%"></i></div></button>`; }).join('') || woOther()}</div></div>
+            <div class="muted">${E(procName(S.proc))} ${N(done)} / ${N(w.plan_qty)} ${E(w.unit||'')}</div><div class="bar" style="margin-top:6px"><i style="width:${pct}%"></i></div></button>`; }).join('') + woOther(wos.length > 0)}</div></div>
       <div class="card">${sel ? `<h2>${E(sel.name)}</h2><div class="muted" style="margin-bottom:10px">${E(sel.order_no)} · LOT ${E(sel.lot||'-')} · 계획 ${N(sel.plan_qty)} ${E(sel.unit||'')}</div>
         ${curNote ? `<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:9px;padding:8px 12px;margin-bottom:10px;font-size:14px"><b>📋 ${E(procName(S.proc))} 관리기준</b><br>${E(curNote)}</div>` : ''}
         ${c4Open(S.proc).map(c => `<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:9px;padding:8px 12px;margin-bottom:10px;font-size:14px"><b>🔁 4M 변경 적용 중 — 초품 검사 필요</b> <span class="vi">Thay đổi 4M — kiểm tra sản phẩm đầu</span><br>${E(C4K[c.kind])} · ${E(c.title)}${c.doc_no ? ' · ' + E(c.doc_no) : ''}</div>`).join('')}
