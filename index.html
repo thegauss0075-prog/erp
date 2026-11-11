@@ -2888,9 +2888,9 @@ function cpoToPOItems(){   // 발주관리와 다른 것만 (추가·변경·취
 let _cpoSyncing = false;
 async function cpoPOPush(items, quiet){
   if (!items.length || !ADMIN_TOKEN) return null;
-  let r = await api('syncCPOPOItems', {items, token: ADMIN_TOKEN, user: (CURRENT_USER || '') + ' (본사 PO 연동)'});
+  let r = await apiAuto('syncCPOPOItems', {items, token: ADMIN_TOKEN, user: (CURRENT_USER || '') + ' (본사 PO 연동)'});
   if (r && !r.ok && /unknown action/i.test(r.error || '')) {   // 서버(Code.gs)가 옛 버전 → 추가만 가능
-    const add = items.filter(x => !x.cancel); r = add.length ? await api('addPOItems', {items: add, token: ADMIN_TOKEN, user: (CURRENT_USER || '') + ' (본사 PO 연동)'}) : {ok: true, added: 0};
+    const add = items.filter(x => !x.cancel); r = add.length ? await apiAuto('addPOItems', {items: add, token: ADMIN_TOKEN, user: (CURRENT_USER || '') + ' (본사 PO 연동)'}) : {ok: true, added: 0};
   }
   return r;
 }
@@ -4937,6 +4937,8 @@ async function openEditQC(id) {
 // ✅ 첨부파일은 JSONP(주소창에 데이터를 실어 보내는 방식)로는 몇 KB만 넘어도 실패할 수 있어서,
 //    실제 POST 요청으로 보낸다. Apps Script 서버(doPost)는 이미 이 방식을 지원하고 있었다.
 //    text/plain으로 보내면 브라우저가 사전 확인(preflight) 요청을 안 보내서 CORS 문제도 없다.
+// 큰 요청(주소 길이 제한을 넘는 GET)은 POST로 보낸다 — '네트워크 오류'로 저장이 안 되던 문제 (2026-11-11)
+function apiAuto(action, body = {}) { return JSON.stringify(body).length > 1500 && API_URL ? apiPost(action, body) : api(action, body); }
 async function apiPost(action, body = {}) {
   if (!API_URL) return { ok: false, error: 'API URL 없음' };
   try {
@@ -13812,7 +13814,7 @@ function hqBPRec(){ return (HQS.hqcfg || []).find(x => x.id === 'buyprice') || {
 function hqBP(code){ const v = (hqBPRec().items || {})[code]; return v && +v.price > 0 && ['USD','KRW'].includes(v.cur) ? {price: +v.price, cur: v.cur, note: v.note || ''} : null; }
 async function hqBPSave(items, msg){
   const rec = {...hqBPRec(), items}; hqsStamp(rec, !(HQS.hqcfg || []).some(x => x.id === 'buyprice'));
-  const r = await retrySafe(() => api('saveHQStore', {store: 'hqcfg', rec}));
+  const r = await retrySafe(() => apiAuto('saveHQStore', {store: 'hqcfg', rec}));
   if (!r || !r.ok) { alert('저장 실패: ' + ((r && r.error) || '서버 응답 없음')); return false; }
   HQS.hqcfg = (HQS.hqcfg || []).filter(x => x.id !== 'buyprice').concat([rec]); if (msg) alert(msg); renderHQ(); return true;
 }
