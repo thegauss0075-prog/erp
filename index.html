@@ -3830,6 +3830,13 @@ function _renderWOBody() {
 //    오늘 날짜 기준으로 다시 계산해서 덮어쓴다.
 async function regenerateWOLotUI(id) {
   const wo = WO.find(w => w.id === id); if (!wo) return;
+  if (isPCDUItem(wo)) {   // PCDU는 제조사 없이 PD/PB 규칙으로
+    const nl = pcduLot(wo.cat || (/-BTP$/i.test(wo.code) ? 'BTP' : 'TP'));
+    if (!confirm(`LOT을 "${nl}"로 재생성하시겠습니까?\n(기존: ${wo.lot || '없음'})\n\n⚠️ 이미 이 LOT으로 기록된 산출/실적 이력은 자동으로 바뀌지 않습니다.`)) return;
+    const r = await api('updateWorkOrder', { id, lot: nl, token: ADMIN_TOKEN });
+    if (!r || !r.ok) { alert('재생성 실패: ' + (r && r.error ? r.error : '알 수 없는 오류')); return; }
+    await renderWO(); alert(`✅ LOT을 ${nl}(으)로 바꿨습니다. MES에는 2분 안에 반영됩니다.`); return;
+  }
   // ✅ 작업지시는 항상 완제품/반제품이라 항상 제조사를 물어본다 (updateWOLotPreview와 동일한 이유)
   const input = (prompt('CORE 제조사 코드를 입력하세요\nC=CHANGSUNG, P=POCO, E=ELECTRO M, A=ACHROMAT', 'C') || '').toUpperCase().trim();
   if (!input) return;
@@ -4089,10 +4096,19 @@ function setWOLotMode(mode, silent) {
   }
 }
 
+// ✅ [2026-11-11] PCDU(현대차) 전용 LOT — 솔루엠 제품 LOT(TG…V, 같은 날·같은 제조사면 같은 LOT)과 겹치지 않게
+//    완제품 PDyymmdd-NN, 반제품 PByymmdd-NN (NN = 그날 같은 접두어의 다음 번호 → 지시서마다 LOT이 다르다)
+const isPCDUItem = it => !!it && /PCDU/i.test(String(it.code || '') + ' ' + String(it.name || ''));
+function pcduLot(cat, date){
+  const d = date || new Date(), yy = String(d.getFullYear()).slice(2), mm = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+  const pre = (String(cat).toUpperCase() === 'BTP' ? 'PB' : 'PD') + yy + mm + dd + '-';
+  return pre + String(nextLotSerial(pre)).padStart(2,'0');
+}
 function updateWOLotPreview() {
   const lotEl = document.getElementById('wo-lot');
   if (woLotMode === 'manual') { document.getElementById('wo-maker-row').style.display = 'none'; return; } // 수동: 입력값을 건드리지 않는다
   if (!woSelectedItem) { lotEl.value = ''; return; }
+  if (isPCDUItem(woSelectedItem)) { document.getElementById('wo-maker-row').style.display = 'none'; lotEl.style.color = '#1d4ed8'; lotEl.value = pcduLot(woSelectedItem.cat); return; }
   const needsMaker = woSelectedItem.cat === 'TP';
   document.getElementById('wo-maker-row').style.display = needsMaker ? 'block' : 'none';
 
