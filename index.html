@@ -13321,7 +13321,7 @@ async function loadHQ(force){
 // 부서별 탭 — 영업부: 고객 PO / 구매부: 자재 소요·구매요청·발주·선적 / 품질부: 검사 현황·불합격
 const HQ_DEPTS = [
   {k:'sales', l:'💼 영업', vi:'Kinh doanh', col:'#5b21b6', tabs:[['quote','📝 견적서'],['cpo','📥 주문서 (고객 PO)'],['sale','🧾 판매'],['ar','💰 수금·채권'],['cust','🏷️ 거래처']]},
-  {k:'buy',   l:'🛒 구매', vi:'Mua hàng',   col:'#b45309', tabs:[['mrp','🧮 자재 소요 계산'],['pr','📝 구매요청·승인'],['ship','🚢 발주서·선적·입고'],['hqwh','🏢 본사 입고·베트남 발송'],['purch','🧾 구매(매입)'],['ap','💸 지급·채무'],['sup','🏭 공급사']]},
+  {k:'buy',   l:'🛒 구매', vi:'Mua hàng',   col:'#b45309', tabs:[['mrp','🧮 자재 소요 계산'],['pr','📝 구매요청·승인'],['ship','🚢 발주서·선적·입고'],['hqwh','🏢 본사 입고·베트남 발송'],['purch','🧾 구매(매입)'],['ap','💸 지급·채무'],['sup','🏭 공급사'],['bprice','💲 자재 단가']]},
   {k:'qa',    l:'🔬 품질', vi:'Chất lượng', col:'#0f766e', tabs:[['qain','📥 본사 수입검사'],['qadr','📈 월별 불량률'],['qa','📊 검사 현황'],['qang','❌ 불합격·조건부']]},
   {k:'rep',   l:'📑 출력물', vi:'Báo cáo',    col:'#334155', tabs:[['rep','📑 출력물']]},
   {k:'users', l:'👥 사용자', vi:'', col:'#0f172a', tabs:[['users','👥 사용자·권한']]}];
@@ -13388,7 +13388,7 @@ async function renderHQ(opts){
   hqNav();
   const warn = HQ.err === 'server' ? '<div style="background:#FEF3C7;color:#92400e;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:13px">⚠️ 서버(Code.gs)를 새 버전으로 배포해야 본사 업무 데이터가 저장·조회됩니다.</div>' : '';
   HQS._bal = null;
-  el.innerHTML = warn + (HQ.tab === 'users' ? hqUsersView() : HQ.tab === 'rep' ? hqRepView() : HQ.tab === 'purch' ? hqPurchView() : HQ.tab === 'ap' ? hqAPView() : HQ.tab === 'sup' ? hqSupView() : HQ.tab === 'quote' ? hqQuoteView() : HQ.tab === 'sale' ? hqSaleView() : HQ.tab === 'ar' ? hqARView() : HQ.tab === 'cust' ? hqCustView() : HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'hqwh' ? hqWhView() : HQ.tab === 'qadr' ? hqDefectView() : HQ.tab === 'qain' ? hqQAView(false, true) : hqQAView(HQ.tab === 'qang'));
+  el.innerHTML = warn + (HQ.tab === 'users' ? hqUsersView() : HQ.tab === 'rep' ? hqRepView() : HQ.tab === 'purch' ? hqPurchView() : HQ.tab === 'ap' ? hqAPView() : HQ.tab === 'sup' ? hqSupView() : HQ.tab === 'bprice' ? hqBPView() : HQ.tab === 'quote' ? hqQuoteView() : HQ.tab === 'sale' ? hqSaleView() : HQ.tab === 'ar' ? hqARView() : HQ.tab === 'cust' ? hqCustView() : HQ.tab === 'cpo' ? hqCPOView() : HQ.tab === 'mrp' ? hqMRPView() : HQ.tab === 'pr' ? hqPRView() : HQ.tab === 'ship' ? hqShipView() : HQ.tab === 'hqwh' ? hqWhView() : HQ.tab === 'qadr' ? hqDefectView() : HQ.tab === 'qain' ? hqQAView(false, true) : hqQAView(HQ.tab === 'qang'));
   hqApplyRO(el);
 }
 function hqSetTab(k){ HQ.tab = k; const d = HQ_DEPTS.find(x => x.tabs.some(t => t[0] === k)); if (d) HQ.dept = d.k; HQ.q = ''; HQ.st = ''; renderHQ(); }
@@ -13803,8 +13803,70 @@ function hqPRLast(sup, code){
   const a = HQS.purch.filter(x => !sup || x.supplier === sup).sort((x,y) => String(y.date||'').localeCompare(String(x.date||''))).flatMap(x => (x.lines||[]).filter(y => y.code === code && y.price !== '' && y.price != null).map(y => ({price: +y.price, cur: x.cur})));
   if (a.length) return a[0];
   const b = [...SPO].filter(p => p.code === code && (!sup || p.supplier === sup) && p.price !== '' && p.price != null).sort((x,y) => String(y.orderDate||'').localeCompare(String(x.orderDate||'')));
-  return b.length ? {price: +b[0].price, cur: b[0].cur} : null;
+  if (b.length) return {price: +b[0].price, cur: b[0].cur};
+  const m = sup ? null : hqBP(code); return m ? {price: m.price, cur: m.cur} : null;   // 💲 구매 기준단가 (구매 → 자재 단가)
 }
+// ═══ 💲 [2026-11-11] 본사 구매 기준단가 — 본사가 사는 자재(USD·KRW)만. VND 자재는 베트남 법인이 현지 구매하므로 넣지 않는다.
+//     hqcfg 저장소에 레코드 1개(id 'buyprice')로 둔다: {items: {code: {cur, price, note, src, at, by}}}
+function hqBPRec(){ return (HQS.hqcfg || []).find(x => x.id === 'buyprice') || {id: 'buyprice', items: {}}; }
+function hqBP(code){ const v = (hqBPRec().items || {})[code]; return v && +v.price > 0 && ['USD','KRW'].includes(v.cur) ? {price: +v.price, cur: v.cur, note: v.note || ''} : null; }
+async function hqBPSave(items, msg){
+  const rec = {...hqBPRec(), items}; hqsStamp(rec, !(HQS.hqcfg || []).some(x => x.id === 'buyprice'));
+  const r = await retrySafe(() => api('saveHQStore', {store: 'hqcfg', rec}));
+  if (!r || !r.ok) { alert('저장 실패: ' + ((r && r.error) || '서버 응답 없음')); return false; }
+  HQS.hqcfg = (HQS.hqcfg || []).filter(x => x.id !== 'buyprice').concat([rec]); if (msg) alert(msg); renderHQ(); return true;
+}
+function hqBPView(){
+  const items = hqBPRec().items || {}, q = HQ.q.trim().toLowerCase();
+  const mats = allRows().filter(r => ['KR','VN','VTTH','BTP'].includes(r.cat));
+  const rows = Object.entries(items).map(([code, v]) => ({code, ...v, it: mats.find(m => m.code === code)}))
+    .filter(r => !q || [r.code, r.note, r.it && r.it.name].join(' ').toLowerCase().includes(q)).sort((a, b) => a.code.localeCompare(b.code, 'ko', {numeric: true}));
+  const unknown = rows.filter(r => !r.it).length, last = hqBPRec().updatedAt;
+  const fmt = (v, c) => c === 'KRW' ? Math.round(v).toLocaleString() + ' 원' : (+v).toLocaleString(undefined, {maximumFractionDigits: 4}) + ' USD';
+  return `<div style="font-size:12.5px;color:#5D6977;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:8px 12px;margin-bottom:10px">본사가 구매하는 자재의 <b>기준 단가(USD·KRW)</b>입니다. 구매요청·공급사 발주·매입에서 최근 구매가가 없을 때 이 단가가 기본으로 들어갑니다. <b>VND 자재는 베트남 법인이 현지에서 사므로 넣지 않습니다.</b> 단가는 ERP 자재 단위(Ea·Kg·Roll) 1개당 금액입니다.</div>
+    <div class="toolbar" style="gap:6px;flex-wrap:wrap">
+      ${hqCan('buy','W') ? `<button onclick="document.getElementById('hq-bp-file').click()" style="padding:7px 14px;border-radius:8px;border:1px solid #b45309;background:#b45309;color:#fff;font-weight:600;cursor:pointer">📥 단가 엑셀 불러오기</button><input type="file" id="hq-bp-file" accept=".xlsx,.xls" style="display:none" onchange="hqBPImport(this)">
+      <button onclick="hqBPEdit('')" style="padding:7px 14px;border-radius:8px;border:1px solid #b45309;background:#fff;color:#b45309;font-weight:600;cursor:pointer">➕ 단가 추가</button>` : ''}
+      <div class="sw"><span class="si">🔍</span><input placeholder="자재코드·품명·근거 검색" value="${hqE(HQ.q)}" oninput="HQ.q=this.value;clearTimeout(window._hqT);window._hqT=setTimeout(()=>{renderHQ();const i=document.querySelector('#hq-body .sw input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>
+      <span style="font-size:12px;color:#8A95A3">${Object.keys(items).length}개 자재${last ? ' · 최근 수정 ' + hqE(String(last).slice(0, 10)) : ''}${unknown ? ` · <b style="color:#b45309">ERP에 없는 코드 ${unknown}개</b>` : ''}</span>
+    </div>
+    ${rows.length ? `<div class="tw"><table><thead><tr><th>자재코드</th><th>품명 (ERP)</th><th>단위</th><th style="text-align:right">단가</th><th>통화</th><th>근거</th><th>출처</th><th></th></tr></thead><tbody>${rows.map(r => `<tr>
+      <td style="font-family:monospace;font-size:12.5px">${hqE(r.code)}</td><td>${r.it ? hqE(r.it.name) : '<span style="color:#b45309">ERP에 없음</span>'}</td><td>${hqE((r.it || {}).unit || '')}</td>
+      <td style="text-align:right;font-weight:700;white-space:nowrap">${fmt(r.price, r.cur)}</td><td style="white-space:nowrap">${hqE(r.cur)}</td><td style="font-size:12px;color:#5D6977;max-width:320px;white-space:normal">${hqE(r.note || '')}</td><td style="font-size:12px;color:#8A95A3">${hqE(r.src || '')}</td>
+      <td>${hqCan('buy','W') ? `<div class="hq-acts"><button onclick="hqBPEdit('${hqE(r.code)}')">수정</button><button class="del" onclick="hqBPDel('${hqE(r.code)}')">삭제</button></div>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+      : `<div class="empty">${Object.keys(items).length ? '검색 결과가 없습니다.' : '등록된 기준 단가가 없습니다. "📥 단가 엑셀 불러오기"로 시작하세요 (자재코드 | 통화 | 단가 | 근거).'}</div>`}`;
+}
+async function hqBPImport(inp){
+  const f = inp.files && inp.files[0]; inp.value = ''; if (!f || !hqCanWrite()) return;
+  if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
+  const wb = XLSX.read(await f.arrayBuffer(), {type: 'array'}), ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, {defval: ''});
+  const pick = (o, ks) => { const k = Object.keys(o).find(x => ks.some(t => String(x).replace(/\s/g, '').includes(t))); return k ? o[k] : ''; };
+  const cur0 = {...(hqBPRec().items || {})}, items = {...cur0}; let add = 0, chg = [], skipVND = 0, bad = 0, unknown = [];
+  const now = new Date().toISOString();
+  rows.forEach(o => {
+    const code = String(pick(o, ['자재코드','코드','Code'])).trim(), cur = String(pick(o, ['통화','Cur'])).trim().toUpperCase(), price = +String(pick(o, ['단가','Price'])).replace(/,/g, '');
+    if (!code) return; if (cur === 'VND') { skipVND++; return; }
+    if (!['USD','KRW'].includes(cur) || !(price > 0)) { bad++; return; }
+    if (!allRows().some(r => r.code === code)) unknown.push(code);
+    const v = {cur, price, note: String(pick(o, ['근거','비고','Note'])).trim(), src: String(pick(o, ['구분','출처'])).trim() || f.name, at: now, by: CURRENT_USER || ''};
+    const old = cur0[code]; if (!old) add++; else if (old.cur !== cur || +old.price !== price) chg.push(`${code}: ${old.price} ${old.cur} → ${price} ${cur}`); else return;
+    items[code] = v; });
+  if (!add && !chg.length) { alert(`바뀐 단가가 없습니다.${skipVND ? `\n(VND 자재 ${skipVND}개는 베트남 법인 현지 구매라 건너뜀)` : ''}`); return; }
+  if (!confirm(`본사 구매 기준단가 — 새로 ${add}개` + (chg.length ? `, 변경 ${chg.length}개:\n` + chg.slice(0, 10).join('\n') + (chg.length > 10 ? '\n…' : '') : '') + `\n\n· VND 자재 ${skipVND}개는 베트남 법인 현지 구매라 넣지 않습니다` + (bad ? `\n· 통화·단가가 비어 있거나 잘못된 줄 ${bad}개 건너뜀` : '') + (unknown.length ? `\n· ERP에 없는 자재코드 ${unknown.length}개 (그대로 저장, 목록에 표시): ${unknown.slice(0, 5).join(', ')}` : '') + '\n\n저장할까요?')) return;
+  await hqBPSave(items, `✅ 기준단가 저장 — 새로 ${add}개 · 변경 ${chg.length}개`);
+}
+function hqBPEdit(code){
+  if (!hqCanWrite()) return;
+  const v = (hqBPRec().items || {})[code] || {cur: 'USD'};
+  const c = code || (prompt('자재코드') || '').trim(); if (!c) return;
+  const pr = prompt(`${c} 단가 (ERP 자재 단위 1개당)`, v.price ?? ''); if (pr === null) return;
+  const cur = (prompt('통화 (USD 또는 KRW)', v.cur || 'USD') || '').trim().toUpperCase(); if (!['USD','KRW'].includes(cur)) { alert('USD 또는 KRW만 넣을 수 있습니다 (VND 자재는 베트남 법인 구매).'); return; }
+  const note = prompt('근거 (선택)', v.note || ''); if (note === null) return;
+  if (!(+pr > 0)) { alert('단가를 숫자로 넣어 주세요.'); return; }
+  hqBPSave({...(hqBPRec().items || {}), [c]: {...v, cur, price: +pr, note: note.trim(), src: v.src || '직접 입력', at: new Date().toISOString(), by: CURRENT_USER || ''}});
+}
+function hqBPDel(code){ if (!hqCanWrite() || !confirm(`${code} 기준단가를 지울까요?`)) return; const it = {...(hqBPRec().items || {})}; delete it[code]; hqBPSave(it); }
 function hqPRAutoPrice(l){
   if (!l.code) return;
   if (!l.cur) { const sc = (hqsSup(l.supplier || '') || {}).cur; if (HQ_PR_CURS.includes(sc)) l.cur = sc; }
@@ -14098,7 +14160,8 @@ function hqsLastBuyPrice(sup, code){
   const l = HQS.purch.filter(x => !sup || x.supplier === sup).sort((a,b) => String(b.date||'').localeCompare(String(a.date||''))).flatMap(x => (x.lines||[]).filter(y => y.code === code && y.price !== '' && y.price != null));
   if (l.length) return +l[0].price;
   const s2 = [...SPO].filter(p => p.code === code && (!sup || p.supplier === sup) && p.price !== '' && p.price != null).sort((a,b) => String(b.orderDate||'').localeCompare(String(a.orderDate||'')));
-  return s2.length ? +s2[0].price : '';
+  if (s2.length) return +s2[0].price;
+  const m = hqBP(code), ed = HQS.ed; return m && (!ed || !ed.cur || ed.cur === m.cur) ? m.price : '';   // 💲 기준단가 (같은 통화일 때만)
 }
 function hqsTotHtml(r){ const sup = hqsLineTot(r.lines), vat = sup * (+r.vatRate||0) / 100; return `공급가액 ${hqM(sup, r.cur)}${+r.vatRate ? ` · 부가세 ${hqM(vat, r.cur)} · <b>합계 ${hqM(sup + vat, r.cur)}</b>` : ` · <b>합계 ${hqM(sup, r.cur)}</b>`}`; }
 let _hqsRender = null; function hqsReRender(){ if (_hqsRender) _hqsRender(); }
