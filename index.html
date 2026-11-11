@@ -1723,13 +1723,14 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:8px">
     <h2 style="margin:0">📧 발주(PO) 관리</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button onclick="document.getElementById('po-excel-input').click()" style="padding:8px 16px;border-radius:8px;border:1px solid #166534;background:#166534;color:#fff;font-size:13px;cursor:pointer;font-weight:700">📊 엑셀 업로드로 등록</button>
+      <button id="po-excel-btn" onclick="document.getElementById('po-excel-input').click()" style="display:none;padding:8px 16px;border-radius:8px;border:1px solid #94a3b8;background:#fff;color:#475569;font-size:13px;cursor:pointer;font-weight:600" title="예전 방식 (마스터 전용) — 이제 발주는 본사 영업의 고객 PO 확정으로 자동 등록됩니다">📊 엑셀 업로드 (예전 방식)</button>
       <input type="file" id="po-excel-input" accept=".xlsx,.xls" style="display:none" onchange="handlePOExcelUpload(event)">
       <button onclick="exportPOExcel()" style="padding:8px 16px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:700">📊 엑셀 다운로드</button>
       <button onclick="clearAllPOItemsUI()" id="po-clear-btn" style="padding:8px 16px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-size:13px;cursor:pointer;font-weight:700">🗑️ 전체 삭제</button>
     </div>
   </div>
-  <div style="font-size:12px;color:#888;margin-bottom:1rem">SOLUM 발주 현황 엑셀을 업로드하면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다). 완제품이 실제로 출고되면 오래된 발주부터 자동으로 잔량이 차감됩니다.</div>
+  <div style="font-size:12.5px;color:#5b21b6;background:#faf5ff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 12px;margin-bottom:8px">🔗 발주는 <b>본사 영업 → 주문서(고객 PO)</b>에서 <b>확정</b>하면 여기에 자동 등록됩니다. 본사에서 수량·납기를 고치면 같이 바뀌고, PO를 취소하면 종결됩니다. (엑셀 업로드는 쓰지 않습니다)</div>
+  <div style="font-size:12px;color:#888;margin-bottom:1rem;display:none">SOLUM 발주 현황 엑셀을 업로드하면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다). 완제품이 실제로 출고되면 오래된 발주부터 자동으로 잔량이 차감됩니다.</div>
 
   <div id="po-review-wrap" style="display:none;background:#fdf4ff;border:1.5px solid #e9a3f0;border-radius:12px;padding:1rem;margin-bottom:1.5rem">
     <div style="font-weight:700;color:#a21caf;margin-bottom:8px">📥 읽어낸 발주 항목 (검토 후 등록하세요)</div>
@@ -1754,7 +1755,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <th>PO번호</th><th>항목</th><th>품목코드</th><th>품명</th><th style="text-align:right">발주수량</th>
       <th style="text-align:right">잔량</th><th>납기일</th><th>상태</th><th class="no-print">액션</th>
     </tr></thead><tbody id="po-body"></tbody></table></div>
-  <div id="po-empty" style="display:none;color:#aaa;font-size:13px;padding:20px;text-align:center">등록된 발주가 없습니다. "📊 엑셀 업로드로 등록"으로 시작해보세요.</div>
+  <div id="po-empty" style="display:none;color:#aaa;font-size:13px;padding:20px;text-align:center">등록된 발주가 없습니다. 본사 영업에서 고객 PO를 확정하면 자동으로 등록됩니다.</div>
 
   <!-- 🚚 공급사 자재 발주 · 입고 예정 (2026-10-31) -->
   <div style="margin-top:2rem;padding-top:1.25rem;border-top:1px solid var(--line,#DCE1E7)">
@@ -2863,26 +2864,41 @@ async function renderPO(opts) {
   _renderPOBody();
   if (await syncCPOToPO()) { await loadPO(); _renderPOBody(); }
 }
-// 🔗 [2026-11-11] 본사 영업이 '확정'한 고객 PO를 법인 발주관리(PO_LOG)에 자동 등록한다.
-//    PO번호 = 고객 PO No, 항번 = 라인 순서 ×10 (SAP 방식 10, 20 …). 같은 PO번호·항번이 이미 있으면(엑셀로 먼저 등록 등) 건너뛴다.
-function cpoToPOItems(){
-  const have = new Set((PO || []).map(r => String(r.poNumber).trim() + '|' + String(r.poItemNumber).trim()));
-  const out = [];
-  (HQ.cpo || []).filter(c => ['확정','출하중'].includes(c.status) && String(c.custPoNo || '').trim()).forEach(c => (c.lines || []).forEach((l, i) => {
-    if (!l.code || !(+l.qty > 0)) return;
-    const it = {poNumber: String(c.custPoNo).trim(), poItemNumber: String((i + 1) * 10), itemCode: l.code, itemName: l.name || l.code,
-      unit: (allRows().find(x => x.code === l.code) || {}).unit || 'EA', poQty: +l.qty || 0, receivedQtySolum: 0,
-      deliveryDate: String(l.replyDue || l.due || '').slice(0, 10), poDate: String(c.recvDate || '').slice(0, 10), closedYN: 'N', emailDate: '', messageId: 'CPO:' + (c.cpoNo || c.id)};
-    if (!have.has(it.poNumber + '|' + it.poItemNumber)) out.push(it); }));
-  return out;
+// 🔗 [2026-11-11] 본사 영업이 '확정'한 고객 PO = 법인 발주관리(PO_LOG)의 원본 (엑셀 업로드 대신).
+//    PO번호 = 고객 PO No, 항번 = 라인 순서 ×10. 없으면 추가, 수량·납기·품목이 바뀌면 갱신, PO '취소'면 종결.
+//    본사 PO에서 온 행(messageId 'CPO:…')만 고친다. 차감 누계(입고·출고 반영분)는 그대로 둔다.
+function cpoPOItemsOf(c){
+  if (!String(c.custPoNo || '').trim()) return [];
+  const cancel = c.status === '취소';
+  if (!cancel && !['확정','출하중','완료'].includes(c.status)) return [];
+  return (c.lines || []).map((l, i) => (!l.code || !(+l.qty > 0)) ? null : {poNumber: String(c.custPoNo).trim(), poItemNumber: String((i + 1) * 10), itemCode: l.code, itemName: l.name || l.code,
+    unit: (allRows().find(x => x.code === l.code) || {}).unit || 'EA', poQty: +l.qty || 0, receivedQtySolum: 0,
+    deliveryDate: String(l.replyDue || l.due || '').slice(0, 10), poDate: String(c.recvDate || '').slice(0, 10), closedYN: 'N', emailDate: '', messageId: 'CPO:' + (c.cpoNo || c.id), cancel}).filter(Boolean);
+}
+function cpoToPOItems(){   // 발주관리와 다른 것만 (추가·변경·취소)
+  const by = {}; (PO || []).forEach(r => { by[String(r.poNumber).trim() + '|' + String(r.poItemNumber).trim()] = r; });
+  const d = v => String(v || '').slice(0, 10);
+  return (HQ.cpo || []).flatMap(cpoPOItemsOf).filter(it => { const r = by[it.poNumber + '|' + it.poItemNumber];
+    if (!r) return !it.cancel;
+    if (!String(r.messageId || '').startsWith('CPO:')) return false;
+    if (it.cancel) return r.closedYN !== 'Y' || r.status !== '취소';
+    return +r.poQty !== it.poQty || d(r.deliveryDate) !== it.deliveryDate || r.itemCode !== it.itemCode || r.status === '취소'; });
 }
 let _cpoSyncing = false;
+async function cpoPOPush(items, quiet){
+  if (!items.length || !ADMIN_TOKEN) return null;
+  let r = await api('syncCPOPOItems', {items, token: ADMIN_TOKEN, user: (CURRENT_USER || '') + ' (본사 PO 연동)'});
+  if (r && !r.ok && /unknown action/i.test(r.error || '')) {   // 서버(Code.gs)가 옛 버전 → 추가만 가능
+    const add = items.filter(x => !x.cancel); r = add.length ? await api('addPOItems', {items: add, token: ADMIN_TOKEN, user: (CURRENT_USER || '') + ' (본사 PO 연동)'}) : {ok: true, added: 0};
+  }
+  return r;
+}
 async function syncCPOToPO(){
   if (_cpoSyncing || !isAdmin || !ADMIN_TOKEN || USER_ROLE === 'hq') return false;
   const items = cpoToPOItems(); if (!items.length) return false;
   _cpoSyncing = true;
-  try { const r = await api('addPOItems', {items, token: ADMIN_TOKEN, user: (CURRENT_USER || '') + ' (본사 PO 연동)'});
-    if (r && r.ok && r.added) { setTimeout(() => alert(`🔗 본사에서 확정한 고객 PO ${r.added}건(라인)을 발주관리에 자동 등록했습니다.`), 50); return true; } }
+  try { const r = await cpoPOPush(items);
+    if (r && r.ok && (r.added || r.updated)) { setTimeout(() => alert(`🔗 본사 고객 PO 반영: 새로 등록 ${r.added || 0}건 · 변경 ${r.updated || 0}건`), 50); return true; } }
   catch (e) {} finally { _cpoSyncing = false; }
   return false;
 }
@@ -2890,6 +2906,7 @@ async function syncCPOToPO(){
 const _goPO = () => { renderSupplyPO(); loadSupplyPO().then(renderSupplyPO); };
 function _renderPOBody() {
   document.getElementById('po-clear-btn').style.display = isMaster ? 'inline-block' : 'none';
+  { const eb = document.getElementById('po-excel-btn'); if (eb) eb.style.display = isMaster ? 'inline-block' : 'none'; }
   const body = document.getElementById('po-body');
   const emptyEl = document.getElementById('po-empty');
   if (!PO.length) {
@@ -13532,6 +13549,8 @@ async function hqCPOSave(){
   if (!res || !res.ok) { btn.disabled = false; btn.textContent = '💾 저장'; err.textContent = '저장 실패: ' + ((res && res.error) || '서버 응답 없음') + (/unknown action/i.test(res && res.error || '') ? ' — 서버(Code.gs)를 새 버전으로 배포해야 합니다.' : ''); return; }
   const i = HQ.cpo.findIndex(x => String(x.id) === String(r.id)); if (i >= 0) HQ.cpo[i] = r; else HQ.cpo.push(r);
   hqClose('hq-ed');
+  // 🔗 확정·변경·취소를 법인 발주관리에도 바로 반영 (서버가 옛 버전이거나 권한이 없으면 법인에서 발주관리를 열 때 반영됨)
+  if (cpoPOItemsOf(r).length) cpoPOPush(cpoPOItemsOf(r)).then(x => { if (x && x.ok && (x.added || x.updated)) console.log('CPO→발주관리', x); }).catch(() => {});
   if (r.quoteId) { const q = HQS.quote.find(x => x.id === r.quoteId); if (q && q.status !== '수주') { const q2 = {...q, status: '수주', cpoId: r.id, cpoNo: r.cpoNo}; await hqsSave('quote', q2); } }
   if (autoPR) {
     autoPR.prNo = hqNextNo('PR', HQ.pr, 'prNo', autoPR.date); autoPR.createdBy = CURRENT_USER || ''; autoPR.createdAt = new Date().toISOString();
