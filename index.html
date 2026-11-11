@@ -8999,17 +8999,29 @@ function renderCostBody(keepEdits){
       <div style="font-size:11px;color:#64748b">${label}</div><div style="font-size:17px;font-weight:700;color:${color}">${costV(v)} <span style="font-size:11px;font-weight:400">VND</span></div>
       <div style="font-size:12px;color:#475569">${c.fx.krw&&v?'₩'+Math.round(v/c.fx.krw).toLocaleString():''}</div></div>`;
   const SS = costSummary(m, basis), PS = costSummary(costPrevMonth(m), basis);
-  const revTile = (label, v, pv, color, note) => {
+  // 💰 [2026-11-11] 실제 판매(본사 판매 입력) — 기준 판매가(USD)로 계산한 표준 매출과 나란히 보여 준다
+  const actLine = (() => {
+    if (typeof HQS === 'undefined' || !(isMaster || (USER_ROLE === 'hq' && hqCan('sales', 'R')))) return '';
+    if (!HQS.loaded) { if (!window._costHQSLoading) { window._costHQSLoading = true; (typeof loadHQS === 'function' ? loadHQS(true) : Promise.resolve()).catch(() => {}).finally(() => { window._costHQSLoading = false; if (HQS.loaded) try { renderCostBody(); } catch (e) {} }); } return '<div style="font-size:11.5px;color:#94a3b8;margin-top:3px">실제 판매 불러오는 중…</div>'; }
+    const by = {}; HQS.sale.filter(x => String(x.date || '').slice(0, 7) === m).forEach(x => { by[x.cur] = (by[x.cur] || 0) + hqsSaleTotals(x).sup; });
+    if (!Object.keys(by).length) return '<div style="font-size:11.5px;color:#94a3b8;margin-top:3px;border-top:1px dashed #e2e8f0;padding-top:3px">실제 판매 (판매 입력): 이 달 입력 없음</div>';
+    const toVND = (v, cur) => cur === 'VND' ? v : cur === 'USD' ? (c.fx.usd ? v * c.fx.usd : 0) : cur === 'KRW' ? (c.fx.krw ? v * c.fx.krw : 0) : 0;
+    const vnd = Object.entries(by).reduce((a, [cur, v]) => a + toVND(v, cur), 0), krw = c.fx.krw ? vnd / c.fx.krw : 0, std = c.fx.krw ? SS.salesRev / c.fx.krw : 0, d = krw - std;
+    const txt = Object.entries(by).map(([cur, v]) => cur === 'USD' ? '$' + v.toLocaleString(undefined, {maximumFractionDigits: 2}) : Math.round(v).toLocaleString() + ' ' + cur).join(' + ');
+    return `<div style="font-size:11.5px;color:#334155;margin-top:4px;border-top:1px dashed #e2e8f0;padding-top:4px" title="본사 영업 → 판매에 입력한 실제 청구 금액(공급가). 국내 원화 판매 등은 기준 판매가와 단가가 달라 차이가 납니다.">
+      <b>실제 판매 (판매 입력)</b> ${krw ? '₩' + Math.round(krw).toLocaleString() : costV(vnd) + ' VND'} <span style="color:#64748b">(${costEsc(txt)})</span>${krw ? ` · 차이 <b style="color:${Math.abs(d) < 1 ? '#475569' : d > 0 ? '#166534' : '#b91c1c'}">${d >= 0 ? '+' : '−'}₩${Math.round(Math.abs(d)).toLocaleString()}</b>` : ''}</div>`;
+  })();
+  const revTile = (label, v, pv, color, note, extra) => {
     const usd = c.fx.usd ? v/c.fx.usd : 0, d = (pv && v) ? (v-pv)/pv : null;
     return `<div style="background:#fff;border:1.5px solid ${color}33;border-radius:10px;padding:10px 12px">
       <div style="font-size:11px;color:#64748b">${label}</div>
       <div style="font-size:17px;font-weight:700;color:${color}">${c.fx.usd?'$'+Math.round(usd).toLocaleString():costV(v)+' VND'}${d==null?'':` <span style="font-size:11px;font-weight:600;color:${d>=0?'#166534':'#b91c1c'}">${d>=0?'▲':'▼'}${Math.abs(d*100).toFixed(0)}%</span>`}</div>
       <div style="font-size:11.5px;color:#475569">${costV(v)} VND${c.fx.krw&&v?' · ₩'+Math.round(v/c.fx.krw).toLocaleString():''}</div>
-      <div style="font-size:10.5px;color:#94a3b8">${note}</div></div>`;
+      <div style="font-size:10.5px;color:#94a3b8">${note}</div>${extra || ''}</div>`;
   };
   document.getElementById('cost-tiles').innerHTML =
     `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:8px;margin-bottom:8px">` +
-    revTile('본사 매출 (출고 기준)', SS.salesRev, PS.salesRev, '#1d4ed8', `출고 ${(SS.ship||0).toLocaleString()}개 × 판매가 · 전월 대비`) +
+    revTile('본사 매출 (출고 기준)', SS.salesRev, PS.salesRev, '#1d4ed8', `출고 ${(SS.ship||0).toLocaleString()}개 × 기준 판매가 · 전월 대비`, actLine) +
     revTile('법인 임가공비 매출 (출고 기준)', SS.feeRev, PS.feeRev, '#0f766e', `출고 × 임가공비 · 본사 매출의 ${SS.salesRev?(SS.feeRev/SS.salesRev*100).toFixed(1):'-'}%`) +
     `</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">` +
     tile('제조원가', T.total, '#0f172a') + tile('재료비', T.mat, '#1d4ed8') + tile('노무비', T.labor, '#7c3aed') +
