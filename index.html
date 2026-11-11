@@ -13946,7 +13946,7 @@ async function hqsDelete(store, id, label){
   if (!res || !res.ok) { alert('삭제 실패: ' + ((res && res.error) || '')); return false; }
   HQS[store] = HQS[store].filter(x => String(x.id) !== String(id)); return true;
 }
-function hqsCustNames(){ return [...new Set([...HQS.cust.map(c => c.name), '솔루엠비나 (Solum Vina)', ...HQ.cpo.map(c => c.customer), ...HQS.sale.map(s => s.customer)].filter(Boolean))]; }
+function hqsCustNames(){ return [...new Set([...HQS.cust.map(c => c.name), '솔루엠 (SOLUM KR)', ...HQ.cpo.map(c => c.customer), ...HQS.sale.map(s => s.customer)].filter(Boolean))]; }
 function hqsCust(name){ return HQS.cust.find(c => c.name === name) || null; }
 function hqsLineTot(lines){ return (lines||[]).reduce((a,l) => a + (+l.qty||0) * (+l.price||0), 0); }
 function hqsToolbar(btns, ph, extra){
@@ -14215,7 +14215,7 @@ function hqSaleFromShipGo(){
   const ids = [...document.querySelectorAll('#hq-ship .hqsh-cb:checked')].map(i => i.value); if (!ids.length) { alert('출고를 선택해주세요.'); return; }
   const tx = (txLog||[]).filter(t => ids.includes(String(t.id)));
   const by = {}; tx.forEach(t => { const o = by[t.code] = by[t.code] || {code: t.code, name: t.name, cat: 'TP', unit: t.unit, qty: 0, price: '', txIds: [], lots: []}; o.qty += +t.qty||0; o.txIds.push(String(t.id)); if (t.lot) o.lots.push(t.lot); });
-  const dest = tx[0].dest, cust = dest === 'KR' ? '' : /sol/i.test(String(dest||'')) ? (hqsCustNames().find(n => /sol|솔루엠/i.test(n)) || '솔루엠비나 (Solum Vina)') : '';
+  const dest = tx[0].dest, cust = dest === 'KR' ? '' : /sol/i.test(String(dest||'')) ? (hqsCustNames().find(n => /sol|솔루엠/i.test(n) && !/vina|비나/i.test(n)) || '솔루엠 (SOLUM KR)') : '';
   const c = hqsCust(cust);
   // 같은 거래처의 진행 중 주문서에서 단가·주문서를 찾는다
   const cpo = hqCPORows().filter(x => (!cust || x.customer === cust) && ['확정','출하중','완료'].includes(x.st) && x.ls.some(l => by[l.code])).sort((a,b) => String(a.recvDate).localeCompare(String(b.recvDate)))[0];
