@@ -13438,7 +13438,8 @@ function hqCPOView(){
   const open = all.filter(r => ['확정','출하중'].includes(r.st));
   const tile = (l, vi, v, sub, col) => `<div style="flex:1;min-width:140px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${l}</div><div style="font-size:21px;font-weight:700;color:${col||'#18212B'}">${v}</div><div style="font-size:11px;color:#8A95A3">${sub||''}</div></div>`;
   const remBy = {}; open.forEach(r => r.ls.forEach(l => { if (l.rem > 0) remBy[l.name || l.code] = (remBy[l.name || l.code] || 0) + l.rem; }));
-  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+  const dups = hqCPODups();
+  return (dups.length ? `<div style="border:2px solid #fca5a5;background:#fef2f2;border-radius:10px;padding:8px 12px;margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="color:#b91c1c">⚠️ 같은 고객 PO No가 중복된 주문서 ${dups.length}개 PO (중복 ${dups.reduce((a, g) => a + g.length - 1, 0)}건)</b><span style="font-size:12.5px;color:#5D6977">${dups.slice(0, 6).map(g => hqE(g[0].custPoNo) + ' ×' + g.length).join(' · ')}${dups.length > 6 ? ' …' : ''}</span><span style="flex:1"></span><button onclick="hqCPODedup()" style="padding:6px 12px;border-radius:8px;border:1px solid #b91c1c;background:#b91c1c;color:#fff;font-weight:600;cursor:pointer">🧹 중복 정리</button></div>` : '') + `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       ${tile('회신 대기','Chờ phản hồi', all.filter(r => r.st === '접수').length + '건', '접수 후 납기 회신 전', all.some(r => r.st === '접수') ? '#b45309' : '')}
       ${tile('진행 중 PO','Đang thực hiện', open.length + '건', Object.entries(remBy).slice(0,3).map(([k,v]) => `${hqE(k)} ${hqN(v)}`).join(' · ') || '잔량 없음')}
       ${tile('납기 2주 이내','≤ 14 ngày', all.filter(r => r.soon).length + '건', '', all.some(r => r.soon) ? '#b45309' : '')}
@@ -13585,6 +13586,11 @@ async function hqCPODelete(id){
 //    라인은 항번(itemNo)·발주관리 연결(poRef)을 갖고, 출하 수량은 발주관리의 차감 누계를 그대로 따른다.
 async function hqCPOImportPO(){
   if (!hqCanWrite()) return;
+  if (window._cpoImp) { alert('가져오는 중입니다. 잠시 기다려 주세요.'); return; }   // 진행 중에 다시 눌러 같은 PO가 2~3번 들어가던 문제
+  window._cpoImp = true;
+  try { await hqCPOImportPO_(); } finally { window._cpoImp = false; }
+}
+async function hqCPOImportPO_(){
   await loadPO();
   const vnD = v => { const t = String(v || ''); if (/^\d{4}-\d{2}-\d{2}T/.test(t)) { const x = new Date(t); if (!isNaN(x)) return new Date(x.getTime() + 7 * 3600e3).toISOString().slice(0, 10); } return t.slice(0, 10); };
   const have = new Set(HQ.cpo.map(c => String(c.custPoNo || '').trim()).filter(Boolean));
@@ -13597,6 +13603,7 @@ async function hqCPOImportPO(){
   if (!confirm(`법인 발주관리의 기존 PO ${open.length}건(라인 ${open.reduce((a, [, ps]) => a + ps.length, 0)}개)을 주문서에 '확정'으로 등록합니다.\n\n· 고객: ${cust}\n· 출하·잔량: 발주관리 수치를 그대로 따릅니다\n· 단가: 이 고객의 최근 단가 (없으면 빈칸 — 나중에 입력)\n· 잔량이 없는 완료 PO ${done}건은 가져오지 않습니다\n\n진행할까요?`)) return;
   let ok = 0, fail = [];
   for (const [no, ps] of open.sort((a, b) => String(vnD(a[1][0].poDate)).localeCompare(String(vnD(b[1][0].poDate))))) {
+    if (HQ.cpo.some(c => String(c.custPoNo || '').trim() === no)) continue;
     ps.sort((a, b) => (+a.poItemNumber || 0) - (+b.poItemNumber || 0));
     const recv = vnD(ps[0].poDate) || vnD(ps[0].createdAt) || hqToday();
     const now = new Date().toISOString();
@@ -13609,6 +13616,19 @@ async function hqCPOImportPO(){
   }
   renderHQ();
   alert(`✅ 주문서 ${ok}건을 가져왔습니다.` + (fail.length ? `\n\n실패 ${fail.length}건:\n` + fail.slice(0, 8).join('\n') : ''));
+}
+// 🧹 같은 고객 PO No가 여러 건이면(가져오기 중복) 가장 먼저 만든 1건만 남기고 지운다
+function hqCPODups(){ const by = {}; HQ.cpo.forEach(c => { const k = String(c.customer || '').trim() + '|' + String(c.custPoNo || '').trim(); if (String(c.custPoNo || '').trim()) (by[k] = by[k] || []).push(c); });
+  return Object.values(by).filter(g => g.length > 1).map(g => g.sort((a, b) => String(a.createdAt || a.id).localeCompare(String(b.createdAt || b.id)))); }
+async function hqCPODedup(){
+  if (!hqCanWrite()) return;
+  const gs = hqCPODups(); if (!gs.length) return;
+  const del = gs.flatMap(g => g.slice(1));
+  const diff = gs.filter(g => g.slice(1).some(c => JSON.stringify((c.lines || []).map(l => [l.code, +l.qty, l.price, l.due])) !== JSON.stringify((g[0].lines || []).map(l => [l.code, +l.qty, l.price, l.due])) || c.status !== g[0].status));
+  if (!confirm(`같은 고객 PO No가 중복된 주문서 ${gs.length}개 PO — 중복 ${del.length}건을 삭제하고 PO마다 처음 만든 1건만 남깁니다.` + (diff.length ? `\n\n⚠️ 이 중 ${diff.length}개 PO는 중복본 내용(수량·단가·납기·상태)이 다릅니다: ${diff.map(g => g[0].custPoNo).join(', ')}\n처음 만든 것이 남습니다.` : '') + '\n\n삭제한 주문서는 되돌릴 수 없습니다. 진행할까요?')) return;
+  let ok = 0, fail = [];
+  for (const c of del) { const r = await retrySafe(() => api('deleteHQCPO', {id: c.id})); if (r && r.ok) { HQ.cpo = HQ.cpo.filter(x => x.id !== c.id); ok++; } else fail.push(c.cpoNo + ': ' + ((r && r.error) || '응답 없음')); }
+  renderHQ(); alert(`🧹 중복 ${ok}건을 삭제했습니다.` + (fail.length ? `\n실패 ${fail.length}건:\n` + fail.slice(0, 8).join('\n') : ''));
 }
 function hqCPOExcel(){
   if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
