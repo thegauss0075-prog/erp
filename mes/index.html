@@ -431,7 +431,7 @@ function startDlg(w){
       if (b.dataset.go) {
         const pend = $('sd-lot').value.trim(); if (pend) add(pend);
         if (st.mach === undefined) { alert('설비를 고르세요. (없으면 "설비 없음")\nChọn máy.'); return; }
-        if (st.mach) { const mm = M.mach.find(x => x.code === st.mach); if (mm && chkItemsFor(mm).length && !chkToday(mm.code)) { if (confirm(`${mm.name} 오늘 일상점검을 아직 안 했습니다. 점검한 뒤 시작하세요.\nChưa kiểm tra máy hôm nay.\n\n[확인]을 누르면 점검 창을 엽니다.`)) { ov.remove(); res(null); checkDlg(mm.code); } return; }  if (mm && chkToday(mm.code) && !chkToday(mm.code).all_ok && !confirm(`${mm.name} 오늘 점검에서 NG가 있었습니다 (${chkToday(mm.code).note || ''}).\n조치가 끝났으면 [확인]을 눌러 시작하세요.`)) return; }
+        if (st.mach) { const mm = M.mach.find(x => x.code === st.mach); if (mm && chkItemsFor(mm).length && !chkToday(mm.code)) { if (confirm(`${mm.name} 오늘 일상점검을 아직 안 했습니다. 점검한 뒤 시작하세요.\nChưa kiểm tra máy hôm nay.\n\n[확인]을 누르면 점검 창을 엽니다.`)) { ov.remove(); res(null); const sib = M.mach.filter(x => x.active !== false && mm.process_code && x.process_code === mm.process_code && x.code !== mm.code && chkItemsFor(x).length && !chkToday(x.code)).map(x => x.code); checkDlg([mm.code, ...sib]); } return; }  if (mm && chkToday(mm.code) && !chkToday(mm.code).all_ok && !confirm(`${mm.name} 오늘 점검에서 NG가 있었습니다 (${chkToday(mm.code).note || ''}).\n조치가 끝났으면 [확인]을 눌러 시작하세요.`)) return; }
         const bad = gaugeBad(S.proc); if (bad.length) { alert('교정 기한이 지난 계측기가 있습니다. 사용하지 마세요.\nThiết bị đo quá hạn hiệu chuẩn.\n\n' + bad.map(g => `· ${g.name} (${g.code}) 기한 ${g.next_due}`).join('\n') + '\n\n관리자가 교정을 등록하거나, 이 공정에서 빼야 시작할 수 있습니다.'); return; }
         if (req && !st.lots.length) { alert('이 공정은 투입 자재 LOT이 필수입니다.\nCông đoạn này bắt buộc quét LOT NVL.'); $('sd-lot').focus(); return; }
         if (!st.worker) { alert('작업자를 고르세요.\nChọn công nhân.'); return; }
@@ -527,7 +527,7 @@ function machineView(){
   if (!ms.length) return '<div class="card"><p class="muted">등록된 설비가 없습니다. 🛠 기준정보에서 설비를 추가하세요.</p></div>';
   const lbl = {run: '가동 / Chạy', stop: '정지 / Dừng', setup: '셋업 / Cài đặt', idle: '대기 / Chờ'};
   return `<div class="muted" style="margin-bottom:8px">설비를 누르고 상태를 바꾸세요. 정지는 사유를 꼭 고릅니다. · Chạm vào máy để đổi trạng thái.</div>
-    <div style="display:flex;flex-wrap:wrap;gap:14px 18px;align-items:flex-start">${machGroups(ms).map((g, gi) => `<div style="flex:0 1 auto"><h3 style="margin:4px 0 6px;font-size:15px">${gi + 1}. ${E(g.name)} <span class="muted" style="font-weight:400">${g.ms.length}대</span></h3><div style="display:flex;flex-wrap:wrap;gap:8px">${g.ms.map(m => { const s = machState(m.code), st = s ? s.state : 'idle', rs = s && s.reason_code ? (M.reasons.find(r => r.code === s.reason_code) || {}).name : '';
+    <div style="display:flex;flex-wrap:wrap;gap:14px 18px;align-items:flex-start">${machGroups(ms).map((g, gi) => `<div style="flex:0 1 auto"><h3 style="margin:4px 0 6px;font-size:15px">${gi + 1}. ${E(g.name)} <span class="muted" style="font-weight:400">${g.ms.length}대</span>${(c => c.length > 1 ? ` <button class="btn" style="padding:4px 10px;font-size:13px;margin-left:6px" onclick='checkDlg(${JSON.stringify(c).replace(/'/g, '&#39;')})'>📋 ${c.length}대 한 번에 점검</button>` : '')(g.ms.filter(m => chkItemsFor(m).length).map(m => m.code))}</h3><div style="display:flex;flex-wrap:wrap;gap:8px">${g.ms.map(m => { const s = machState(m.code), st = s ? s.state : 'idle', rs = s && s.reason_code ? (M.reasons.find(r => r.code === s.reason_code) || {}).name : '';
       const w = s && s.wo_id ? woOf(s.wo_id) : null;
       const ci = chkItemsFor(m), ck = chkToday(m.code);
       return `<div style="width:200px"><button class="mtile s-${st}" style="width:100%" onclick="machDlg('${E(m.code)}')"><div><div style="font-size:18px;font-weight:800">${E(m.name)}</div><div style="opacity:.85;font-size:12.5px">${E(procName(m.process_code))}</div></div>
@@ -557,31 +557,43 @@ const chkToday = code => M.chk.find(c => c.machine_code === code) || null;
 const addMonths = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setMonth(x.getMonth() + (+n || 0)); return ymd(x); };
 const gaugeState = g => { if (!g.next_due) return 'none'; const t = ymd(new Date()); if (g.next_due < t) return 'over'; return g.next_due <= addMonths(t, 1) ? 'soon' : 'ok'; };
 const gaugeBad = proc => M.gauge.filter(g => g.active !== false && g.process_code === proc && gaugeState(g) === 'over');
-function checkDlg(code){
-  const m = M.mach.find(x => x.code === code); if (!m) return;
+// ✅ [2026-11-11] 같은 공정 설비(예: 몰딩기·경화로)를 한 화면에서 한 번에 점검 — 기록은 설비마다 따로 남는다(월별 점검표 그대로)
+function checkDlg(codes){
+  const ms = (Array.isArray(codes) ? codes : [codes]).map(c => M.mach.find(x => x.code === c)).filter(Boolean); if (!ms.length) return;
   if (!S.worker) { alert('먼저 📝 실적 입력에서 작업자를 고르세요.\nChọn công nhân trước.'); return; }
-  const items = chkItemsFor(m), st = items.map(() => ({ok: null, value: ''}));
+  const items = []; ms.forEach(m => chkItemsFor(m).forEach(it => items.push({...it, _m: m.code})));
+  if (!items.length) { alert('점검 항목이 없습니다.'); return; }
+  const st = items.map(() => ({ok: null, value: ''})), multi = ms.length > 1;
   const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
-  const draw = () => { ov.innerHTML = `<div class="box" style="max-width:720px"><h2>📋 일상점검 <span class="vi">Kiểm tra hằng ngày</span></h2><div class="muted" style="margin-bottom:10px">${E(m.name)} · ${ymd(new Date())} · ${E(workName(S.worker))}</div>
-    <div style="max-height:56vh;overflow:auto"><table><thead><tr><th>항목</th><th>기준 / 방법</th><th style="width:170px">결과</th><th style="width:110px">측정값</th></tr></thead><tbody>${items.map((it, i) => `<tr>
+  const row = (it, i) => `<tr>
       <td><b>${E(it.item)}</b><div class="vi">${E(it.item_vi||'')}</div></td><td class="muted">${E(it.standard||'')}${it.method ? '<br>' + E(it.method) : ''}</td>
       <td><button class="btn ${st[i].ok === true ? 'ok' : ''}" style="padding:10px 14px" data-i="${i}" data-v="1">OK</button> <button class="btn" style="padding:10px 14px;${st[i].ok === false ? 'background:var(--bad);color:#fff' : ''}" data-i="${i}" data-v="0">NG</button></td>
-      <td><input data-val="${i}" value="${E(st[i].value)}" style="width:100px;padding:8px"></td></tr>`).join('')}</tbody></table></div>
+      <td><input data-val="${i}" value="${E(st[i].value)}" style="width:100px;padding:8px"></td></tr>`;
+  const draw = () => { ov.innerHTML = `<div class="box" style="max-width:760px"><h2>📋 일상점검 <span class="vi">Kiểm tra hằng ngày</span></h2><div class="muted" style="margin-bottom:10px">${ms.map(m => E(m.name)).join(' · ')} · ${ymd(new Date())} · ${E(workName(S.worker))}</div>
+    <div style="max-height:56vh;overflow:auto"><table><thead><tr><th>항목</th><th>기준 / 방법</th><th style="width:170px">결과</th><th style="width:110px">측정값</th></tr></thead><tbody>${ms.map(m => {
+      const rs = items.map((it, i) => [it, i]).filter(([it]) => it._m === m.code); if (!rs.length) return '';
+      const ck = chkToday(m.code);
+      return (multi ? `<tr><td colspan="4" style="background:#EEF2F6;font-weight:800">⚙️ ${E(m.name)}${ck ? ` <span class="muted" style="font-weight:400">— 오늘 이미 점검함 ${hm(ck.created_at)} (다시 저장하면 기록이 하나 더 남습니다)</span>` : ''} <button class="btn" style="padding:4px 10px;margin-left:6px" data-mall="${E(m.code)}">이 설비 전부 OK</button></td></tr>` : '') + rs.map(([it, i]) => row(it, i)).join(''); }).join('')}</tbody></table></div>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn" data-all="1">✔ 전부 OK</button><input id="ck-note" placeholder="특이사항 / Ghi chú" style="flex:1;min-width:200px;padding:10px;border:1px solid var(--line);border-radius:9px"></div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn big" data-x="1">취소</button><button class="btn ok big" data-go="1">✔ 점검 저장 / Lưu</button></div></div>`; };
+  const redraw = () => { const n = $('ck-note').value, sc = ov.querySelector('.box > div[style*="overflow"]'), y = sc ? sc.scrollTop : 0; draw(); $('ck-note').value = n; const s2 = ov.querySelector('.box > div[style*="overflow"]'); if (s2) s2.scrollTop = y; };
   ov.oninput = e => { const v = e.target.dataset && e.target.dataset.val; if (v !== undefined) st[+v].value = e.target.value; };
   ov.onclick = async e => { const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.x) { ov.remove(); return; }
-    if (b.dataset.all) { st.forEach(x => x.ok = true); const n = $('ck-note').value; draw(); $('ck-note').value = n; return; }
-    if (b.dataset.i !== undefined) { st[+b.dataset.i].ok = b.dataset.v === '1'; const n = $('ck-note').value; draw(); $('ck-note').value = n; return; }
+    if (b.dataset.all) { st.forEach(x => x.ok = true); redraw(); return; }
+    if (b.dataset.mall) { items.forEach((it, i) => { if (it._m === b.dataset.mall) st[i].ok = true; }); redraw(); return; }
+    if (b.dataset.i !== undefined) { st[+b.dataset.i].ok = b.dataset.v === '1'; redraw(); return; }
     if (b.dataset.go) {
-      const miss = st.findIndex(x => x.ok === null); if (miss >= 0) { alert(`"${items[miss].item}" 결과를 고르세요.`); return; }
-      const allOk = st.every(x => x.ok), note = $('ck-note').value.trim();
-      if (!allOk && !note) { alert('NG 항목이 있으면 특이사항(조치 내용)을 적어주세요.'); $('ck-note').focus(); return; }
-      const row = {machine_code: code, check_date: ymd(new Date()), worker_code: S.worker, results: items.map((it, i) => ({item: it.item, standard: it.standard || '', ok: st[i].ok, value: st[i].value || ''})), all_ok: allOk, note: note || null, device: S.device};
-      const r = await sb.from('machine_checks').insert(row); if (r.error) { alert('저장 실패: ' + r.error.message); return; }
-      ov.remove(); await loadLive(); render(); toast(allOk ? '📋 점검 완료 — 이상 없음' : '📋 점검 저장 — NG 있음');
-      if (!allOk && confirm(`${m.name}에 NG 항목이 있습니다. 설비를 "정지(설비 고장)"로 바꿀까요?`)) await setMachine(code, 'stop', M.reasons.some(x => x.code === 'BRK') ? 'BRK' : null, null);
+      const miss = st.findIndex(x => x.ok === null); if (miss >= 0) { alert(`${multi ? machName(items[miss]._m) + ' — ' : ''}"${items[miss].item}" 결과를 고르세요.`); return; }
+      const note = $('ck-note').value.trim();
+      if (!st.every(x => x.ok) && !note) { alert('NG 항목이 있으면 특이사항(조치 내용)을 적어주세요.'); $('ck-note').focus(); return; }
+      const rows = ms.map(m => { const ix = items.map((it, i) => i).filter(i => items[i]._m === m.code); if (!ix.length) return null; const ok = ix.every(i => st[i].ok);
+        return {machine_code: m.code, check_date: ymd(new Date()), worker_code: S.worker, results: ix.map(i => ({item: items[i].item, standard: items[i].standard || '', ok: st[i].ok, value: st[i].value || ''})), all_ok: ok, note: note || null, device: S.device}; }).filter(Boolean);
+      const r = await sb.from('machine_checks').insert(rows); if (r.error) { alert('저장 실패: ' + r.error.message); return; }
+      ov.remove(); await loadLive(); render();
+      const ng = rows.filter(x => !x.all_ok);
+      toast(ng.length ? `📋 점검 저장 — NG 있음 (${ng.map(x => machName(x.machine_code)).join(', ')})` : `📋 점검 완료 — 이상 없음${multi ? ' (' + rows.length + '대)' : ''}`);
+      for (const x of ng) if (confirm(`${machName(x.machine_code)}에 NG 항목이 있습니다. 설비를 "정지(설비 고장)"로 바꿀까요?`)) await setMachine(x.machine_code, 'stop', M.reasons.some(y => y.code === 'BRK') ? 'BRK' : null, null);
     } };
   draw();
 }
