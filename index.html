@@ -13267,7 +13267,7 @@ function hqSetDept(k){ const d = HQ_DEPTS.find(x => x.k === k) || HQ_DEPTS[0]; H
 function hqNav(){
   const VD = hqDeptsVisible(); if (!VD.some(x => x.k === HQ.dept) && VD.length) { HQ.dept = VD[0].k; HQ.tab = VD[0].tabs[0][0]; }
   const d = VD.find(x => x.k === HQ.dept) || VD[0] || HQ_DEPTS[0];
-  const cnt = {rep: 0, sales: HQ.cpo.filter(c => (c.status || '접수') === '접수').length + (HQS.quote||[]).filter(q => q.status === '제출').length, buy: HQ.pr.filter(p => p.status === '요청' || p.status === '승인').length, qa: 0};
+  const cnt = {rep: 0, sales: HQ.cpo.filter(c => (c.status || '접수') === '접수').length + (HQS.quote||[]).filter(q => q.status === '제출').length, buy: HQ.pr.filter(p => p.status === '요청' || p.status === '승인').length + hqMrpAlerts().length, qa: 0};
   const de = document.getElementById('hq-depts'), te = document.getElementById('hq-tabs'); if (!de || !te) return;
   const ti = document.getElementById('hq-title'); if (ti) ti.textContent = d.l + ' · 본사';
   document.querySelectorAll('.tb-hq').forEach(b => b.classList.toggle('on', b.id === 'tb-hq-' + d.k && document.getElementById('tab-hq').classList.contains('on')));
@@ -13444,9 +13444,10 @@ async function hqCPOSave(){
   if (r.status === '회신' && !r.replyDate) r.replyDate = hqToday();
   r.updatedAt = new Date().toISOString(); r.updatedBy = CURRENT_USER||''; if (!old) { r.createdAt = r.updatedAt; r.createdBy = r.updatedBy; }
   const btn = document.getElementById('hq-save'); btn.disabled = true; btn.textContent = '⏳ 저장 중…';
-  // ✅ [2026-11-06] 확정되는 순간 자재 소요를 계산해서, 새로 부족해진 자재로 구매요청 초안을 자동으로 만든다
+  // ✅ [2026-11-11 변경] 확정되는 순간 자재 소요를 계산해서 부족 자재를 PO에 남기고 구매부에 '알림'만 띄운다
+  //    (구매요청서는 구매부가 자재 소요 계산에서 여러 PO를 묶어 직접 만든다 — 중복 요청 방지)
   const nowConfirmed = r.status === '확정' && !(old && ['확정','출하중','완료'].includes(old.status));
-  let autoPR = null;
+  const autoPR = null;
   if (nowConfirmed) {
     const keep = HQ.cpo, fc = HQ.mrpFc, ts = HQ.mrpTpStock;
     HQ.cpo = keep.filter(x => String(x.id) !== String(r.id)).concat([r]); HQ.mrpFc = false; HQ.mrpTpStock = true;
@@ -13454,10 +13455,8 @@ async function hqCPOSave(){
     const mine = new Set(r.lines.map(l => l.code));
     const short = m.mats.filter(x => x.short > 0);
     const dues = r.lines.map(l => l.replyDue || l.due).filter(Boolean).sort();
-    if (short.length) autoPR = {id: String(Date.now() + 1), date: hqToday(), status: '요청', auto: true, needBy: dues[0] ? hqAddDays(dues[0], -21) : '',
-      basis: r.cpoNo, reason: `고객 PO 확정 자동 생성 (${r.customer} ${r.custPoNo})`, history: [],
-      lines: short.map(x => ({code: x.code, name: x.name, cat: x.cat, unit: x.unit, qty: hqMRPDefQty(x), supplier: x.sup || '', note: x.from}))};
-    r.mrpNote = short.length ? `부족 자재 ${short.length}건 → 구매요청 자동 생성` : (m.noBom.filter(c => mine.has(c)).length ? `BOM 없음 — 자재 확인 불가 (${m.noBom.join(', ')})` : '자재 충분 — 구매요청 없음');
+    r.mrpShort = short.map(x => ({code: x.code, name: x.name, unit: x.unit, short: x.short})); r.mrpAt = new Date().toISOString(); r.mrpNeedBy = dues[0] ? hqAddDays(dues[0], -21) : '';
+    r.mrpNote = short.length ? `부족 자재 ${short.length}건 → 구매부 알림` : (m.noBom.filter(c => mine.has(c)).length ? `BOM 없음 — 자재 확인 불가 (${m.noBom.join(', ')})` : '자재 충분 — 구매요청 없음');
   }
   const res = await retrySafe(() => api('saveHQCPO', {rec: r}));
   if (!res || !res.ok) { btn.disabled = false; btn.textContent = '💾 저장'; err.textContent = '저장 실패: ' + ((res && res.error) || '서버 응답 없음') + (/unknown action/i.test(res && res.error || '') ? ' — 서버(Code.gs)를 새 버전으로 배포해야 합니다.' : ''); return; }
@@ -13539,11 +13538,24 @@ function hqMRP(){
 // 자재의 모델명: 품목 마스터의 model, 없으면 어느 제품 생산용인지(근거)에서 제품명
 function hqMatModel(code, cat, from){ const it = hqItem(code, cat) || {}; const m = it.model && it.model !== '기타' ? it.model : ''; return m || String(from || '').split(', ').map(x => x.replace(/ 생산용$/, '').replace(/ \(BTP\)$/, '')).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', '); }
 const hqModelTag = m => m ? `<span style="display:inline-block;font-size:11px;font-weight:600;color:#5b21b6;background:#EDE9FE;border-radius:5px;padding:0 6px;margin-right:5px;white-space:nowrap">${hqE(m)}</span>` : '';
+// 🔔 [2026-11-11] 고객 PO 확정 → 부족 자재 알림 (구매부가 '확인'할 때까지 구매 탭에 표시)
+function hqMrpAlerts(){ const ack = new Set((HQS.hqcfg || []).filter(x => String(x.id).startsWith('mrpack|')).map(x => x.cpoId));
+  return (HQ.cpo || []).filter(c => ['확정','출하중'].includes(c.status) && (c.mrpShort || []).length && !ack.has(c.id) && !ack.has(c.id + '@' + (c.mrpAt || ''))); }
+function hqMrpAlertBox(){ const a = hqMrpAlerts(); if (!a.length) return '';
+  return `<div style="border:2px solid #f59e0b;background:#fffbeb;border-radius:10px;padding:10px 14px;margin-bottom:12px"><div style="font-weight:800;color:#92400e;margin-bottom:6px">🔔 고객 PO 확정 — 부족 자재 알림 ${a.length}건 <span style="font-weight:400;font-size:12.5px;color:#5D6977">자재 소요 계산에서 묶어서 구매요청을 만든 뒤 '확인'을 누르세요.</span></div>${a.map(c => `<div style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-top:1px dashed #fcd34d;flex-wrap:wrap">
+    <div style="min-width:200px"><b>${hqE(c.cpoNo)}</b> · ${hqE(c.customer)} ${hqE(c.custPoNo || '')}<div style="font-size:12px;color:#5D6977">확정 ${hqE(String(c.mrpAt || '').slice(0, 10))}${c.mrpNeedBy ? ' · 자재 필요일 ' + hqE(c.mrpNeedBy) : ''}</div></div>
+    <div style="flex:1;font-size:13px">${c.mrpShort.map(x => `${hqE(x.name || x.code)} <b style="color:#b91c1c">-${hqN(x.short)}</b> ${hqE(x.unit || '')}`).join(' · ')}</div>
+    <div class="hq-acts">${HQ.tab !== 'mrp' ? `<button onclick="hqSetTab('mrp')">🧮 자재 소요 계산</button>` : ''}${ADMIN_TOKEN && hqCan(hqAreaOf(HQ.dept), 'W') ? `<button onclick="hqMrpAck('${hqE(c.id)}')">✔ 확인</button>` : ''}</div></div>`).join('')}</div>`; }
+async function hqMrpAck(id){ if (!hqCanWrite()) return; const c = HQ.cpo.find(x => String(x.id) === String(id)); if (!c) return;
+  const rec = {id: 'mrpack|' + c.id + '@' + (c.mrpAt || ''), cpoId: c.id + '@' + (c.mrpAt || ''), cpoNo: c.cpoNo}; hqsStamp(rec, true);
+  const res = await retrySafe(() => api('saveHQStore', {store: 'hqcfg', rec}));
+  if (!res || !res.ok) { alert('저장 실패: ' + ((res && res.error) || '서버 응답 없음')); return; }
+  HQS.hqcfg = (HQS.hqcfg || []).concat([rec]); renderHQ(); }
 function hqMRPView(){
   const m = hqMRP(), short = m.mats.filter(x => x.short > 0);
   short.forEach(x => { if (HQ.mrpSel[x.k] === undefined) HQ.mrpSel[x.k] = true; });
   const dem = Object.entries(m.demand).map(([k, q]) => { const [code, cat] = k.split('|'), it = hqItem(code, cat) || {}; return {code, cat, name: it.name || code, q, st: capStock(code, cat), refs: [...(m.refs[k]||[])].join(', ')}; });
-  return `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:13px">
+  return hqMrpAlertBox() + `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:13px">
       <label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${HQ.mrpSolum!==false?'checked':''} onchange="HQ.mrpSolum=this.checked;renderHQ()" style="width:auto;margin:0"> 솔루엠 PO 잔량 포함 (발주관리)</label>
       <label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${HQ.mrpFc?'checked':''} onchange="HQ.mrpFc=this.checked;renderHQ()" style="width:auto;margin:0"> 접수·회신 단계 PO도 포함 (예측)</label>
       <label style="display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" ${HQ.mrpTpStock?'checked':''} onchange="HQ.mrpTpStock=this.checked;renderHQ()" style="width:auto;margin:0"> 완제품·반제품 재고 먼저 차감</label>
@@ -13587,7 +13599,7 @@ function hqPRView(){
   const q = HQ.q.trim().toLowerCase();
   const rows = HQ.pr.filter(p => (!HQ.st || p.status === HQ.st) && (!q || [p.prNo, p.basis, p.reason, ...(p.lines||[]).map(l => l.code + ' ' + l.name + ' ' + (l.supplier||''))].join(' ').toLowerCase().includes(q)))
     .sort((a,b) => ({'요청':0,'승인':1,'반려':2,'발주완료':3})[a.status] - ({'요청':0,'승인':1,'반려':2,'발주완료':3})[b.status] || String(b.date||'').localeCompare(String(a.date||'')));
-  return `<div class="toolbar" style="gap:6px;flex-wrap:wrap">
+  return hqMrpAlertBox() + `<div class="toolbar" style="gap:6px;flex-wrap:wrap">
       <button onclick="hqPREdit(null)" style="padding:7px 14px;border-radius:8px;border:1px solid #b45309;background:#b45309;color:#fff;font-weight:600;cursor:pointer">➕ 구매요청 직접 작성</button>
       <div class="sw"><span class="si">🔍</span><input placeholder="요청번호·자재·공급사 검색" value="${hqE(HQ.q)}" oninput="HQ.q=this.value;clearTimeout(window._hqT);window._hqT=setTimeout(()=>{renderHQ();const i=document.querySelector('#hq-body .sw input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>
       <select onchange="HQ.st=this.value;renderHQ()" style="padding:6px 8px;border:1px solid #DCE1E7;border-radius:8px"><option value="">상태 전체</option>${['요청','승인','반려','발주완료'].map(s => `<option ${HQ.st===s?'selected':''}>${s}</option>`).join('')}</select>
