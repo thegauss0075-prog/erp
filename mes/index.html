@@ -163,7 +163,7 @@ async function syncWO(silent){
     if (u.error) { if (!silent) alert('작업지시 저장 실패: ' + u.error.message); return; } }
   // ERP에서 지운 작업지시는 MES에서도 "삭제됨"으로 바꿔 현장 목록에서 뺀다 (실적 기록은 그대로 남김)
   const erpIds = new Set((r.data || []).filter(w => inScope(w.code, w.name)).map(w => String(w.id)));
-  const gone = M.wo.filter(w => !erpIds.has(w.wo_id) && w.status !== '삭제됨').map(w => w.wo_id);
+  const gone = M.wo.filter(w => !erpIds.has(w.wo_id) && w.status !== '삭제됨' && !String(w.wo_id).startsWith('SIM-')).map(w => w.wo_id);   // SIM- = 시뮬레이션용 (ERP에 없음)
   if (gone.length) await sb.from('work_orders').update({status: '삭제됨', synced_at: new Date().toISOString()}).in('wo_id', gone);
   if (!silent) toast(`🔄 ERP 작업지시 ${rows.length}건을 받았습니다.` + (gone.length ? ` (ERP에서 삭제된 ${gone.length}건 정리)` : ''));
   await loadMaster();
