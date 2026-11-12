@@ -200,6 +200,9 @@ async function loadLive(fromIso){
   M.ev = c.data || [];
   const ck = await sb.from('machine_checks').select('*').eq('check_date', ymd(new Date())).order('created_at', {ascending: false}).limit(500); M.chk = ck.data || [];
   try { const q = await sb.from('ncr').select('id,status,qty').in('status', ['open','decided','approved']); M.ncrOpen = q.error ? [] : (q.data || []); } catch (e) { M.ncrOpen = []; }
+  // 현황판(TV)은 알림 줄(4M 초품·교정·자격)도 실시간으로 — 작은 표라 매번 다시 읽는다 (2026-11-12)
+  if (S.view === 'tv') { try { const [g, sk, c4] = await Promise.all([sb.from('gauges').select('*'), sb.from('worker_skills').select('*'), sb.from('changes_4m').select('*').order('created_at', {ascending: false}).limit(200)]);
+    if (!g.error) M.gauge = g.data || []; if (!sk.error) M.skill = sk.data || []; if (!c4.error) M.c4 = c4.data || []; } catch (e) {} }
 }
 const procName = c => (M.proc.find(p => p.code === c) || {}).name || c || '-';
 const workName = c => (M.work.find(p => p.code === c) || {}).name || c || '-';
