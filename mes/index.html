@@ -392,13 +392,27 @@ function scanWO(v){
   if (!w) { toast(`❓ ${v} — 작업지시를 찾지 못했습니다`); return; }
   S.wo = w.wo_id; render(); toast(`✅ ${w.order_no} ${w.name}`);
 }
+// 📷 카메라 스캔 — 전면/후면 전환 가능, 마지막에 쓴 카메라를 이 기기에 기억한다 (2026-11-13)
 async function camScan(){
+  let st = null, on = true, ov = null;
+  const stop = () => { on = false; if (st) st.getTracks().forEach(t => t.stop()); if (ov) ov.remove(); };
+  const open = async () => {
+    if (st) st.getTracks().forEach(t => t.stop());
+    const face = LS.get('mes_cam', 'environment');
+    st = await navigator.mediaDevices.getUserMedia({video: {facingMode: face}});
+    const vd = $('cam'); vd.srcObject = st; vd.style.transform = face === 'user' ? 'scaleX(-1)' : '';
+    $('cam-sw').textContent = face === 'user' ? '🔄 후면 카메라로 / Camera sau' : '🔄 전면 카메라로 / Camera trước';
+  };
   try {
-    const st = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}}); const det = new BarcodeDetector();
-    const ov = document.createElement('div'); ov.className = 'ov'; ov.innerHTML = '<div class="box" style="text-align:center"><video id="cam" autoplay playsinline style="width:100%;border-radius:10px"></video><button class="btn" style="margin-top:10px" id="cam-x">닫기</button></div>'; document.body.appendChild(ov);
-    const vd = $('cam'); vd.srcObject = st; let on = true; const stop = () => { on = false; st.getTracks().forEach(t => t.stop()); ov.remove(); }; $('cam-x').onclick = stop;
-    const loop = async () => { if (!on) return; try { const r = await det.detect(vd); if (r.length) { stop(); (window._camTarget || scanWO)(r[0].rawValue); return; } } catch(e){} requestAnimationFrame(loop); }; vd.onloadeddata = loop;
-  } catch (e) { alert('카메라를 열 수 없습니다: ' + e.message); }
+    const det = new BarcodeDetector();
+    ov = document.createElement('div'); ov.className = 'ov'; ov.innerHTML = '<div class="box" style="text-align:center"><video id="cam" autoplay playsinline style="width:100%;border-radius:10px"></video><div style="display:flex;gap:8px;justify-content:center;margin-top:10px"><button class="btn" id="cam-sw"></button><button class="btn" id="cam-x">닫기</button></div></div>'; document.body.appendChild(ov);
+    $('cam-x').onclick = stop;
+    $('cam-sw').onclick = async () => { LS.set('mes_cam', LS.get('mes_cam', 'environment') === 'user' ? 'environment' : 'user'); try { await open(); } catch (e) { alert('카메라를 열 수 없습니다: ' + e.message); } };
+    await open();
+    const vd = $('cam');
+    const loop = async () => { if (!on) return; try { if (vd.readyState >= 2) { const r = await det.detect(vd); if (r.length) { stop(); (window._camTarget || scanWO)(r[0].rawValue); return; } } } catch(e){} requestAnimationFrame(loop); };
+    loop();
+  } catch (e) { stop(); alert('카메라를 열 수 없습니다: ' + e.message); }
 }
 function machPicker(sel){ const ms = M.mach.filter(m => m.active !== false && (!m.process_code || m.process_code === S.proc)); return ms.length ? `<label class="field"><span>설비 / Máy</span><select id="f-mach"><option value="">(선택 안 함)</option>${ms.map(m => `<option value="${E(m.code)}" ${sel === m.code ? 'selected' : ''}>${E(m.name)}</option>`).join('')}</select></label>` : ''; }
 let _starting = false;
