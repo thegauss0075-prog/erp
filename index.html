@@ -17214,6 +17214,8 @@ function invOpenRecord(key){
   const r = (COST.model||{})[key]; if (!r) return;
   INV = JSON.parse(JSON.stringify(r)); delete INV.savedAt; delete INV.savedBy;
   if (key.includes('#')) { INV._oldRev = true; INV.revs = ((COST.model||{})[key.split('#')[0]]||{}).revs || []; }
+  // ✅ [2026-11-13] 발행된 인보이스를 열 때 저장된 CBM은 그대로 둔다 (계산 방식이 바뀌어도 발행값 유지 · 칸을 비우면 다시 계산)
+  if (INV.cbm !== '' && INV.cbm != null) { INV.auto = INV.auto || {}; INV.auto.cbm = false; }
   document.getElementById('inv-kind').value = INV.kind;
   renderInvEditor();
   document.getElementById('inv-editor').scrollIntoView({behavior:'smooth', block:'start'});
