@@ -5205,12 +5205,19 @@ async function autoConsumeBOMMaterials(qcBody, totalQty, woId, woNo) {
   const consumed = [], shortages = [];
   if (!bomItems.length) return { consumed, shortages };
 
+  // ✅ 세트 포장 자재는 같은 LOT끼리 함께 차감되도록 미리 배분 계획을 세운다
+  const setLines = bomItems.map(b => ({ code: b.materialCode, cat: b.materialCat, name: b.materialName, qty: (+b.qtyPerUnit || 0) * totalQty }));
+  const setPlan = allocateSetAware(setLines);
   for (const bomItem of bomItems) {
     let needed = (+bomItem.qtyPerUnit || 0) * totalQty;
     if (needed <= 0) continue;
 
     const { outType } = woMatLotTypes(bomItem.materialCat);
-    const { activeLots } = computeActiveLots(bomItem.materialCode, woMatLotTypes(bomItem.materialCat).inType, outType, bomItem.materialCat);
+    let { activeLots } = computeActiveLots(bomItem.materialCode, woMatLotTypes(bomItem.materialCat).inType, outType, bomItem.materialCat);
+    const bi = bomItems.indexOf(bomItem);
+    if (SET_MAT_GROUPS.some(g => g.includes(bomItem.materialCode)) && setPlan.allocs[bi]) {
+      activeLots = setPlan.allocs[bi].filter(a => a.lot !== '__nolot__').map(a => ({ lot: a.lot, remain: a.qty }));
+    }
 
     let remaining = needed;
     for (const lotInfo of activeLots) {
@@ -6098,6 +6105,66 @@ function resolveStockSummary(code, cat) {
 //    설명 안 되는 나머지(untracked, resolveStockSummary 설명 참고)"까지 LOT 미지정으로
 //    풀에 추가해서 배분한다 — 다른 화면(일반 자재출고 등)에서 쓰는 기존 allocateFIFO()는
 //    그대로 두고, 작업지시 자재출고 목록 전용으로 별도 함수로 분리했다.
+// ✅ [2026-11-13] 세트 포장 자재 — 한 박스에 같은 LOT으로 같이 들어오는 자재는 출고도
+//    반드시 같은 LOT끼리 세트로 나가야 한다 (예: CORE BK6310 1 : CORE 2025-060 2).
+//    같은 그룹의 자재가 한 번에 같이 출고되면 공통 LOT부터 비율대로 함께 배분한다.
+const SET_MAT_GROUPS = [
+  ['NONE/PFC-07', 'NPL12/PFC-02'],   // CORE BK6310-060EG + CORE NPF R 2025-060
+  ['NPL05/PFC-01', 'NPL12/PFC-02'],  // CORE BK6310-060RG + CORE NPF R 2025-060
+];
+function _lotPool(code, cat) {
+  const {inType, outType} = woMatLotTypes(cat);
+  const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
+  const lotTotal = activeLots.reduce((s, l) => s + l.remain, 0) + Math.max(0, noLotRemain);
+  const untracked = Math.max(0, findItemCurByCodeCat(code, cat) - lotTotal);
+  const pool = activeLots.map(d => ({ lot: d.lot, remain: d.remain }));
+  const extra = Math.max(0, noLotRemain) + untracked;
+  if (extra > 0) pool.push({ lot: '__nolot__', remain: extra });
+  return pool;
+}
+// lines: [{code, cat, qty}] → { ok, allocs: [[{lot,qty}], ...] (lines 순서), shortage: [이름idx], mixed: [설명] }
+function allocateSetAware(lines) {
+  const allocs = lines.map(() => null), mixed = [], short = [];
+  const used = new Set();
+  lines.forEach((l, i) => {
+    if (used.has(i)) return;
+    const grp = SET_MAT_GROUPS.find(g => g.includes(l.code));
+    const idxs = grp ? lines.map((x, j) => (j !== i && !used.has(j) && grp.includes(x.code) && x.code !== l.code && x.qty > 0) ? j : -1).filter(j => j >= 0) : [];
+    if (!idxs.length || !(l.qty > 0)) return;
+    const mem = [i, ...idxs];
+    mem.forEach(j => used.add(j));
+    const pools = mem.map(j => _lotPool(lines[j].code, lines[j].cat));
+    const ratio = mem.map(j => lines[j].qty / l.qty);
+    const rem = mem.map(j => lines[j].qty);
+    const out = mem.map(() => []);
+    const add = (k, lot, q) => { if (q <= 0) return; const e = out[k].find(a => a.lot === lot); if (e) e.qty += q; else out[k].push({ lot, qty: q }); rem[k] -= q; pools[k].find(p => p.lot === lot).remain -= q; };
+    // ① 공통 LOT(박스)부터 비율대로 같이 배분 — 기준 자재의 선입선출 순서
+    for (const p0 of pools[0]) {
+      if (rem[0] <= 0) break;
+      if (p0.lot === '__nolot__') continue;
+      const ps = pools.map(pl => pl.find(p => p.lot === p0.lot));
+      if (ps.some(p => !p || p.remain <= 0)) continue;
+      let base = Math.min(rem[0], ...ps.map((p, k) => Math.floor(p.remain / ratio[k] + 1e-9)));
+      if (base <= 0) continue;
+      ps.forEach((p, k) => add(k, p0.lot, k === 0 ? base : Math.min(rem[k], Math.round(base * ratio[k]))));
+    }
+    // ② 공통 LOT으로 다 못 채운 나머지는 각자 선입선출 (세트가 섞이므로 경고)
+    mem.forEach((j, k) => {
+      if (rem[k] <= 0) return;
+      for (const p of pools[k]) { if (rem[k] <= 0) break; const t = Math.min(rem[k], p.remain); if (t > 0) add(k, p.lot, t); }
+    });
+    const mixedLots = new Set(); out.forEach((o, k) => o.forEach(a => { if (out.some((o2, k2) => k2 !== k && !o2.some(b => b.lot === a.lot))) mixedLots.add(a.lot); }));
+    if (mixedLots.size) mixed.push(`${mem.map(j => lines[j].name || lines[j].code).join(' + ')}: 같은 LOT 세트가 부족해서 LOT ${[...mixedLots].map(x => x === '__nolot__' ? '미지정' : x).join(', ')} 은 세트가 맞지 않습니다.`);
+    mem.forEach((j, k) => { allocs[j] = out[k]; if (rem[k] > 0) short.push(j); });
+  });
+  lines.forEach((l, i) => {
+    if (allocs[i]) return;
+    const a = allocateFIFOWithUntracked(l.code, l.cat, l.qty);
+    allocs[i] = a.allocations; if (!a.ok) short.push(i);
+  });
+  return { ok: !short.length, allocs, shortage: short, mixed };
+}
+
 function allocateFIFOWithUntracked(code, cat, qty) {
   const {inType, outType} = woMatLotTypes(cat);
   const {activeLots, noLotRemain} = computeActiveLots(code, inType, outType, cat);
@@ -6289,15 +6356,20 @@ async function submitWOMatBrowse() {
   //    출고 항목을 만든다 — "같은 모델 반제품 작업지시"처럼 사용자가 직접 특정 LOT
   //    하나를 고른 행(multilot=false)은 그 LOT 그대로 사용한다.
   const rows = [];
+  // ✅ 세트 포장 자재(SET_MAT_GROUPS)는 같은 LOT끼리 함께 배분한다
+  const multi = inputs.filter(r => r.multilot);
+  const setPlan = allocateSetAware(multi);
+  if (setPlan.mixed.length && !confirm('⚠️ 세트 자재 LOT 확인\n\n' + setPlan.mixed.join('\n') + '\n\n그래도 출고하시겠습니까?')) return;
   for (const r of inputs) {
     if (!r.multilot) { rows.push({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: r.lot, qty: r.qty }); continue; }
-    const alloc = allocateFIFOWithUntracked(r.code, r.cat, r.qty);
-    if (!alloc.ok || !alloc.allocations.length) {
+    const mi = multi.indexOf(r);
+    const allocations = setPlan.allocs[mi] || [];
+    if (setPlan.shortage.includes(mi) || !allocations.length) {
       errEl.textContent = `"${r.name}" LOT 배분 계산에 실패했습니다 (재고를 다시 확인해주세요).`;
       errEl.style.display = 'block';
       return;
     }
-    alloc.allocations.forEach(a => rows.push({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: a.lot, qty: a.qty }));
+    allocations.forEach(a => rows.push({ code: r.code, cat: r.cat, name: r.name, unit: r.unit, lot: a.lot, qty: a.qty }));
   }
 
   if (!confirm(`선택한 자재 ${inputs.length}건을 출고 처리하시겠습니까?\n창고 재고가 실제로 줄어듭니다.`)) return;
@@ -6482,11 +6554,13 @@ async function ngfSubmit(){
   if (!lines.length) return fail('다시 출고할 자재가 없습니다.');
   // 재고 확인 + LOT 배분(오래된 LOT부터)
   const rows = [];
-  for (const l of lines) {
-    const a = allocateFIFOWithUntracked(l.code, l.cat, l.need);
-    if (!a.ok) return fail(`"${l.name}" 재고가 부족합니다 (필요 ${l.need.toLocaleString()}, 재고 ${(+a.totalAvailable||0).toLocaleString()}).`);
-    a.allocations.forEach(x => rows.push({code: l.code, cat: l.cat, name: l.name, unit: l.unit, lot: x.lot, qty: x.qty}));
+  const setPlan = allocateSetAware(lines.map(l => ({code: l.code, cat: l.cat, name: l.name, qty: l.need})));
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (setPlan.shortage.includes(i)) { const a = allocateFIFOWithUntracked(l.code, l.cat, l.need); return fail(`"${l.name}" 재고가 부족합니다 (필요 ${l.need.toLocaleString()}, 재고 ${(+a.totalAvailable||0).toLocaleString()}).`); }
+    setPlan.allocs[i].forEach(x => rows.push({code: l.code, cat: l.cat, name: l.name, unit: l.unit, lot: x.lot, qty: x.qty}));
   }
+  if (setPlan.mixed.length && !confirm('⚠️ 세트 자재 LOT 확인\n\n' + setPlan.mixed.join('\n') + '\n\n그래도 출고하시겠습니까?')) return;
   const ngItem = NGF.kind === 'mat' ? NGF.cands.find(c => c.code + '|' + c.cat === NGF.mat) : {code: wo.code, cat: String(wo.cat||'TP').toUpperCase(), name: wo.name, unit: wo.unit};
   if (!confirm(`불량 ${q.toLocaleString()} ${ngItem.unit||''} (${ngItem.name}) 을 등록하고,\n자재 ${lines.length}종을 다시 출고합니다.\n${lines.map(l => `• ${l.name} ${l.need.toLocaleString()} ${l.unit||''}`).join('\n')}\n\n진행할까요?`)) return;
   const btn = document.getElementById('ngf-go'); btn.disabled = true; btn.textContent = '⏳ 처리 중...';
