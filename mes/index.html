@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>MES · THE GAUSS VINA</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0F5C8C">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <style>
 :root{--ink:#14202B;--sub:#5B6875;--line:#DDE3E9;--bg:#F3F5F7;--card:#fff;--brand:#0F5C8C;--ok:#15803D;--warn:#B45309;--bad:#B91C1C;--run:#16A34A;--stop:#DC2626;--setup:#D97706;--idle:#64748B}
@@ -1467,6 +1471,12 @@ async function boot(){
   render();
 }
 boot();
+</script>
+<script>
+// 📱 앱 설치(홈 화면 추가) → 주소창 없이 전체 화면 실행 + 작업 중 화면 꺼짐 방지
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+(function(){ let wl = null; const keep = async () => { try { if ('wakeLock' in navigator && document.visibilityState === 'visible' && !wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } } catch (e) {} };
+  document.addEventListener('visibilitychange', keep); document.addEventListener('click', keep, {once: true}); keep(); })();
 </script>
 </body>
 </html>
