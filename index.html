@@ -16678,11 +16678,12 @@ const INV_CO = {
   contract: 'TG-TGV241001'
 };
 // 처음 쓸 때의 기본값(받은 인보이스 기준) — 화면에서 고치면 서버에 저장된 값이 우선
+// ✅ [2026-11-13] 무게는 출하 정보(THÔNG TIN XUẤT HÀNG 16/11) Kg/Box ÷ 박스 입수 기준. _v보다 예전에 저장된 값은 이 기본값으로 덮는다.
 const INV_ITEM_DEFAULT = {
-  'ML27A040127A': {hs:'85045010', pcsBox:48, unitKg:0.157, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-OUT-L3, 14.4uH, +-2.16uH, 10Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
-  'ML27A040112A': {hs:'85045010', pcsBox:12, unitKg:0.792, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-PFC-US, 108uH, +-16.2uH, 26Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
-  'ML27A040118A': {hs:'85045010', pcsBox:48, unitKg:0.1063, vi:'Cuộn cảm cắm 0.84uH 0.126uH, dùng cho bộ sạc của ô tô điện, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
-  'ML27M040025A': {hs:'85045010', pcsBox:12, unitKg:0.641667, vi:'Cuộn cảm cắm, 175uH, dùng cho bộ nguồn trạm sạc xe điện'},   // COIL-PFC PM50KW 175uH — 이전 출고 600개·50박스·N.W 385.00·G.W 391.80 기준
+  'ML27A040127A': {_v:'2026-11-13', hs:'85045010', pcsBox:48, unitKg:0.157292, palDims:'1.1*1.1*0.50', vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-OUT-L3, 14.4uH, +-2.16uH, 10Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
+  'ML27A040112A': {_v:'2026-11-13', hs:'85045010', pcsBox:12, unitKg:0.791667, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-PFC-US, 108uH, +-16.2uH, 26Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
+  'ML27A040118A': {_v:'2026-11-13', hs:'85045010', pcsBox:48, unitKg:0.10625, vi:'Cuộn cảm cắm 0.84uH 0.126uH, dùng cho bộ sạc của ô tô điện, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
+  'ML27M040025A': {_v:'2026-11-13', hs:'85045010', pcsBox:12, unitKg:0.591667, vi:'Cuộn cảm cắm, 175uH, dùng cho bộ nguồn trạm sạc xe điện'},   // COIL-PFC PM50KW 175uH
   'CH330125 IND-5T': {hs:'85045093', pcsBox:315, unitKg:0.0534, en:'CH330125-IND-5T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 5T, công suất danh định không quá 2.500KVA'},
   'CH330125 IND-8T': {hs:'85045093', pcsBox:315, en:'CH330125-IND-8T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 8T, công suất danh định không quá 2.500KVA'},
   'CH330125 IND-10T': {hs:'85045093', pcsBox:315, unitKg:0.0534, en:'CH330125-IND-10T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 10T, công suất danh định không quá 2.500KVA'}
@@ -16746,7 +16747,8 @@ function renderInvImgRow(){
   }).join('') + '<span id="inv-img-status" style="color:#5D6977"></span>';
 }
 function invDoc(){ return (COST.model && COST.model._doc) || {}; }
-function invItem(code){ const sv = (invDoc().items||{})[code]||{}, o = {...(INV_ITEM_DEFAULT[code]||{})}; Object.keys(sv).forEach(k => { if (sv[k] !== '' && sv[k] != null) o[k] = sv[k]; }); return o; }   // 저장값이 빈칸이면 기본값 유지
+function invItem(code){ const df = INV_ITEM_DEFAULT[code]||{}, sv = (invDoc().items||{})[code]||{}, o = {...df}, old = df._v && !(sv._v >= df._v);
+  Object.keys(sv).forEach(k => { if (sv[k] === '' || sv[k] == null) return; if (old && ['unitKg','pcsBox','palDims'].includes(k) && df[k] != null) return; o[k] = sv[k]; }); return o; }   // 저장값이 빈칸이거나 기준 갱신 전 값이면 기본값   // 저장값이 빈칸이면 기본값 유지
 function invKindOf(dest){ const d = String(dest||'').toUpperCase(); return (d === 'KR' || d.includes('한국') || d.includes('GAUSS INC')) ? 'KR' : (d === 'NG' ? '' : 'SOL'); }
 function invVNDate(t){ const d = Date.parse(t.dt); return isNaN(d) ? '' : new Date(d + 7*3600e3).toISOString().slice(0,10); }
 function invShipments(kind, from, to){
@@ -16974,7 +16976,10 @@ function invEstimate(){
   if (INV.auto.net) INV.net = W.some(w=>w.net) ? r2(W.reduce((s,w)=>s+w.net,0)) : '';
   if (INV.auto.gross) INV.gross = W.some(w=>w.gross) ? r2(W.reduce((s,w)=>s+w.gross,0)) : '';
   const vol = invPalVol(), pal = +INV.pallets || 0;
-  if (INV.auto.cbm) INV.cbm = (vol && pal) ? Math.round(vol*pal*10000)/10000 : '';
+  // ✅ 팔레트마다 가장 많이 실린 품목의 팔레트 규격으로 부피 계산 (예: 30KW OUT L3는 높이 0.50m)
+  const dimVol = d => { const dv = String(d||'').replace(/,/g,'.').split(/[*x×X]/).map(Number); return dv.length === 3 && dv.every(n => n > 0) ? dv[0]*dv[1]*dv[2] : 0; };
+  const perPal = used.map(pp => { let bi = -1, bq = 0; pp.q.forEach((v,i) => { if (+v > bq) { bq = +v; bi = i; } }); const l = INV.lines[bi]; return dimVol(l && l.palDims) || vol; });
+  if (INV.auto.cbm) INV.cbm = (vol && pal) ? Math.round((pal === used.length ? perPal.reduce((a,v)=>a+v,0) : vol*pal)*10000)/10000 : '';
   ['net','gross','cbm','pallets'].forEach(k => {
     const el = document.getElementById('inv-f-'+k); if (el && document.activeElement !== el) el.value = INV[k];
     const tag = document.getElementById('inv-t-'+k); if (!tag) return;
@@ -17109,7 +17114,7 @@ async function invSaveMaster(){
   // 품목별 HS·품명·박스 입수, 양식별 연락처·운송 정보를 저장(다음 서류에 자동으로 채움)
   const d = JSON.parse(JSON.stringify(invDoc()));
   d.items = d.items || {}; d.tpl = d.tpl || {};
-  INV.lines.forEach(l => { d.items[l.code] = {hs:l.hs, vi:l.vi, en:l.en, pcsBox:+l.pcsBox||'', unitKg:+l.unitKg||'', perPallet:+l.perPallet||'', palDims:l.palDims, palTare:+l.palTare||0}; });
+  INV.lines.forEach(l => { d.items[l.code] = {_v: bdToday(), hs:l.hs, vi:l.vi, en:l.en, pcsBox:+l.pcsBox||'', unitKg:+l.unitKg||'', perPallet:+l.perPallet||'', palDims:l.palDims, palTare:+l.palTare||0}; });
   d.tpl[INV.kind] = {contact:INV.contact, phone:INV.phone, mode:INV.mode, incoterm:INV.incoterm};
   d.tpl[INV.kind + '_' + INV.mode] = {from:INV.from, to:INV.to, packMode: INV.packMode || 'pallet', boxDims: INV.boxDims || '', boxTare: INV.boxTare ?? ''};
   if (JSON.stringify(d) !== JSON.stringify(invDoc())) await saveCost('model', '_doc', d);
