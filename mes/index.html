@@ -237,7 +237,7 @@ function routeOf(w){ if (!w) return []; const r = M.route.filter(x => x.item_cod
 // ✅ [2026-11-11] 지금 공정의 작업지시가 있어도 다른 품목(예: 반제품 공정 선택 중일 때 완제품 지시서)을 아래에 함께 보여 준다
 function woOther(hasMine){
   const oth = activeWO().filter(w => !routeOf(w).some(p => p.code === S.proc));
-  if (!oth.length) return hasMine ? '' : `<p class="muted">진행할 작업지시가 없습니다. 관리자가 🛠 기준정보에서 "ERP 작업지시 받기"를 누르세요.</p>`;
+  if (!oth.length) return hasMine ? '' : `<p class="muted">진행할 작업지시가 없습니다. ERP에서 발행했으면 위 🔄 작업지시 받기를 누르세요.<br>Không có lệnh SX — bấm 🔄 Tải lệnh SX.</p>`;
   return (hasMine ? `<p class="muted" style="grid-column:1/-1;margin:10px 0 4px;padding-top:8px;border-top:1px dashed var(--line,#dde)">다른 공정 작업지시 <span class="vi">Lệnh của công đoạn khác</span> — 누르면 그 품목의 첫 공정으로 바뀝니다.</p>`
     : `<p class="muted" style="grid-column:1/-1;margin:0 0 4px">${E(procName(S.proc))} 공정이 있는 작업지시가 없습니다. 아래 작업지시를 누르면 그 품목의 공정으로 바꿉니다.</p>`) + oth.map(w => { const r = routeOf(w), first = r[0];
     return `<button class="wo" style="opacity:.85" onclick="S.proc='${E(first ? first.code : S.proc)}';LS.set('mes_proc',S.proc);S.wo='${E(w.wo_id)}';render()"><div class="no">${E(w.order_no)} · ${E(w.lot||'')}</div><div class="nm">${E(w.name)}</div>
@@ -363,6 +363,7 @@ function floorView(){
       <button class="btn" onclick="S.proc='';LS.del('mes_proc');render()">🔧 ${E(procName(S.proc))} <span class="muted">바꾸기</span></button>
       <input id="scan" placeholder="📷 작업지시·LOT 바코드 스캔 / Quét mã" onkeydown="if(event.key==='Enter'){scanWO(this.value);this.value=''}" style="flex:1;min-width:220px;padding:12px 14px;border:2px solid var(--brand);border-radius:10px;font-size:16px">
       ${'BarcodeDetector' in window ? '<button class="btn" onclick="camScan()">📷 카메라</button>' : ''}
+      <button class="btn" onclick="this.disabled=true;syncWO(false).then(render)" title="ERP에서 새로 발행한 작업지시 받기 (2분마다 자동으로도 받음)">🔄 작업지시 받기<span class="vi">Tải lệnh SX</span></button>
     </div>
     ${running.length ? `<div class="card" style="margin-bottom:12px;border-color:#86EFAC;background:#F0FDF4"><h2>⏱ 진행 중 <span class="vi">Đang làm</span></h2>${running.map(r => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #D1FAE5;flex-wrap:wrap">
         <div style="flex:1;min-width:200px"><b>${E(r.item_name||'')}</b> <span class="muted">${E(r.order_no||'')} · ${E(workName(r.worker_code))}${r.machine_code ? ' · ' + E(machName(r.machine_code)) : ''}</span><div class="muted">시작 ${hm(r.start_at)} · ${dur(Date.now() - new Date(r.start_at))} 경과${(p => p.n ? ` · <b style="color:var(--ok)">중간 저장 ${p.n}회 · 양품 ${N(p.g)}</b>` : '')(partOf(r.id))}</div></div>
