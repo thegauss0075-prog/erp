@@ -16746,7 +16746,7 @@ function renderInvImgRow(){
   }).join('') + '<span id="inv-img-status" style="color:#5D6977"></span>';
 }
 function invDoc(){ return (COST.model && COST.model._doc) || {}; }
-function invItem(code){ return {...(INV_ITEM_DEFAULT[code]||{}), ...((invDoc().items||{})[code]||{})}; }
+function invItem(code){ const sv = (invDoc().items||{})[code]||{}, o = {...(INV_ITEM_DEFAULT[code]||{})}; Object.keys(sv).forEach(k => { if (sv[k] !== '' && sv[k] != null) o[k] = sv[k]; }); return o; }   // 저장값이 빈칸이면 기본값 유지
 function invKindOf(dest){ const d = String(dest||'').toUpperCase(); return (d === 'KR' || d.includes('한국') || d.includes('GAUSS INC')) ? 'KR' : (d === 'NG' ? '' : 'SOL'); }
 function invVNDate(t){ const d = Date.parse(t.dt); return isNaN(d) ? '' : new Date(d + 7*3600e3).toISOString().slice(0,10); }
 function invShipments(kind, from, to){
