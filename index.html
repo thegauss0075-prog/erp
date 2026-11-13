@@ -16984,10 +16984,7 @@ function invEstimate(){
   const vol = invPalVol(), pal = +INV.pallets || 0;
   // ✅ 팔레트마다 가장 많이 실린 품목의 팔레트 규격으로 부피 계산 (예: 30KW OUT L3는 높이 0.50m)
   //    표준 팔레트(1.1×1.1×0.88)는 높이 = 팔레트 0.12m + 층수×박스 0.19m (한 층 14박스, 4층 56박스) → 27박스면 2층 0.50m
-  const palBoxes = invPalBoxN;
-  const perPal = used.map(pp => { const dv = String(INV.dims||'').replace(/,/g,'.').split(/[*x×X]/).map(Number);
-    if (dv.length === 3 && Math.abs(dv[0]-1.1) < 1e-6 && Math.abs(dv[1]-1.1) < 1e-6 && Math.abs(dv[2]-0.88) < 1e-6) { const lay = Math.min(4, Math.max(1, Math.ceil(palBoxes(pp) / 14))); return 1.1*1.1*(0.12 + lay*0.19); }
-    return vol; });
+  const perPal = used.map(pp => invPalDV(pp).vol);
   if (INV.auto.cbm) INV.cbm = (vol && pal) ? Math.round((pal === used.length ? perPal.reduce((a,v)=>a+v,0) : vol*pal)*10000)/10000 : '';
   ['net','gross','cbm','pallets'].forEach(k => {
     const el = document.getElementById('inv-f-'+k); if (el && document.activeElement !== el) el.value = INV[k];
@@ -17027,7 +17024,7 @@ function invPlanRefresh(){
   if (mode) { mode.textContent = INV.palAuto ? '자동' : '직접 입력'; mode.style.background = INV.palAuto ? '#FEF3C7' : '#DCFCE7'; mode.style.color = INV.palAuto ? '#92400E' : '#166534'; }
   INV.plan.forEach((p,k) => {
     const b = document.getElementById('inv-pb-'+k);
-    if (b) { b.placeholder = String(invPalNatural(p)); b.style.background = (p.boxes !== '' && p.boxes != null) ? '#DCFCE7' : ''; }
+    if (b) { b.placeholder = String(invPalNatural(p)); const g = invPalBoxGuess(p); b.style.background = g ? '#FEE2E2' : (p.boxes !== '' && p.boxes != null) ? '#DCFCE7' : ''; b.title = g ? `박스 수(${invPalBoxN(p)})가 계산(${invPalNatural(p)})과 다릅니다. LOT 버튼을 눌러 LOT별 수량을 넣어야 패킹리스트에 끝수 박스가 바르게 나옵니다.` : 'LOT별 끝수 박스 등으로 실제 박스가 다르면 직접 입력 (비우면 자동 계산)'; }
     const w = invPalWeights(p);
     const n = document.getElementById('inv-pn-'+k), g = document.getElementById('inv-pg-'+k);
     if (n) n.placeholder = w.est ? String(w.est) : '';
@@ -17089,6 +17086,15 @@ function invPlanLots(k, i, txt){
   INV.palAuto = false; const sm = document.getElementById(`inv-pl-sum-${k}-${i}`); if (sm) sm.textContent = arr.length ? `LOT ${arr.length}개 · ${p.q[i].toLocaleString()}개 · ${invPalBase(p).find(o => o.i === i)?.cs.reduce((a,c)=>a+c.n,0) || 0}박스` : '';
   invEstimate(); invRefreshTotals();
 }
+// 팔레트 1개의 규격·부피: 표준 팔레트(1.1×1.1×0.88)는 높이 = 0.12 + 층수×0.19 (한 층 14박스)
+function invPalDV(p){
+  const vol = invPalVol(), dv = String(INV.dims||'').replace(/,/g,'.').split(/[*x×X]/).map(Number);
+  if (dv.length === 3 && Math.abs(dv[0]-1.1) < 1e-6 && Math.abs(dv[1]-1.1) < 1e-6 && Math.abs(dv[2]-0.88) < 1e-6) {
+    const lay = Math.min(4, Math.max(1, Math.ceil(invPalBoxN(p) / 14))), h = Math.round((0.12 + lay*0.19)*100)/100;
+    return {dims: `1.1*1.1*${h.toFixed(2)}`, vol: 1.1*1.1*h}; }
+  return {dims: INV.dims, vol}; }
+// 박스 수만 바꾸고 LOT을 안 넣은 팔레트 → 끝수 박스 구성을 알 수 없음
+const invPalBoxGuess = p => { const o = invPalBase(p); return (p.boxes !== '' && p.boxes != null && +p.boxes > 0) && invPalBoxN(p) !== invPalNatural(p) && !(o.length && invPalLots(p, o[o.length-1].i)); };
 function invPlanBoxes(k, v){ INV.plan[k].boxes = v === '' ? '' : (+v || ''); invEstimate(); invRefreshTotals(); }
 function renderInvEditor(){
   const ed = document.getElementById('inv-editor'); if (!INV) { ed.innerHTML=''; return; }
@@ -17256,6 +17262,8 @@ async function invMakeExcel(){
   try {
     const EX = await invLoadExcelJS();
     delete INV._oldRev;
+    const gp = invIsBox() ? [] : (INV.plan||[]).map((p,k) => invPalBoxGuess(p) ? k+1 : 0).filter(Boolean);
+    if (gp.length && !confirm(`⚠️ ${gp.join(', ')}번 팔레트는 박스 수만 바꾸고 LOT별 수량을 넣지 않아 끝수 박스 구성을 알 수 없습니다.\n팔레트 번호 옆 LOT 버튼으로 LOT별 수량을 넣으면 패킹리스트가 LOT별로 나옵니다.\n\n그래도 이대로 만들까요?`)) return;
     invPrepareRev();
     const wb = new EX.Workbook();
     const wsI = wb.addWorksheet('invoice', {pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0}});
@@ -17467,7 +17475,7 @@ function invSheetPacking(ws){
     const w = invPalWeights(p);
     invCell(ws, `A${r0}`, k+1, {h:'center', bold:true});
     invCell(ws, `G${r0}`, w.net || '', {h:'center', fmt:'#,##0.00'}); invCell(ws, `H${r0}`, w.gross || '', {h:'center', fmt:'#,##0.00'});
-    invCell(ws, `I${r0}`, [INV.dims, vol ? (Math.round(vol*10000)/10000) : ''].filter(Boolean).join('\n'), {h:'center', wrap:true});
+    const pdv = invPalDV(p); invCell(ws, `I${r0}`, [pdv.dims, pdv.vol ? (Math.round(pdv.vol*10000)/10000) : ''].filter(Boolean).join('\n'), {h:'center', wrap:true});
     if (r - 1 > r0) ['A','G','H','I'].forEach(c => ws.mergeCells(`${c}${r0}:${c}${r-1}`));
   });
   invGrid(ws, start, 1, r-1, 9);
