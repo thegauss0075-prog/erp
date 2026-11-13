@@ -6162,8 +6162,11 @@ function getSameModelBTPWorkOrders(wo) {
 async function woLinkBTP(btpWoId) {
   const t = woTraceTarget; if (!t) return;
   const b = WO.find(w => String(w.id) === String(btpWoId)); if (!b) return;
-  const def = Math.max(0, (+t.planQty||0) - WO_MAT.filter(m => m.workOrderId === t.id && m.code === b.code).reduce((a,m)=>a+(+m.qty||0),0));
-  const v = prompt(`${b.orderNo} (LOT ${b.lot})\n완제품 ${t.orderNo}에 연결할 반제품 수량`, def || (+t.planQty||0));
+  // ✅ 기본값 = 완제품 계획수량 × BOM 소요량(반제품/완제품 1개) − 이미 연결된 수량
+  const bomRow = (BOM||[]).find(x => x.productCode === t.code && x.materialCode === b.code);
+  const per = bomRow ? (+bomRow.qtyPerUnit || 1) : 1;
+  const def = Math.max(0, (+t.planQty||0) * per - WO_MAT.filter(m => m.workOrderId === t.id && m.code === b.code).reduce((a,m)=>a+(+m.qty||0),0));
+  const v = prompt(`${b.orderNo} (LOT ${b.lot})\n완제품 ${t.orderNo} (${(+t.planQty||0).toLocaleString()}개 × BOM ${per})에 연결할 반제품 수량`, def || (+t.planQty||0) * per);
   if (v === null) return;
   const qty = parseFloat(v); if (!(qty > 0)) { alert('수량을 입력해주세요.'); return; }
   const body = { workOrderId: t.id, orderNo: t.orderNo, productCode: t.code, code: b.code, name: b.name, cat: 'BTP', unit: b.unit || 'Ea', lot: b.lot, qty, token: ADMIN_TOKEN, user: CURRENT_USER || '' };
