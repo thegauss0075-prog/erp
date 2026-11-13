@@ -103,6 +103,15 @@ function mesZoomAuto(){ const touch = matchMedia('(pointer:coarse)').matches; if
 function mesZoomGet(){ let z = NaN; try { z = parseFloat(localStorage.getItem('mes_zoom')); } catch (e) {} return z > 0 ? z : mesZoomAuto(); }
 function mesZoomApply(){ const tv = document.body.classList.contains('tv'); const z = tv ? 1 : mesZoomGet(); document.documentElement.style.zoom = z; const v = document.getElementById('zoomv'); if (v) v.textContent = Math.round(z * 100) + '%'; const c = document.getElementById('zoomc'); if (c) c.style.display = tv ? 'none' : ''; }
 function mesZoomStep(d){ const z = Math.round(Math.min(2, Math.max(0.8, mesZoomGet() + d * 0.1)) * 10) / 10; try { localStorage.setItem('mes_zoom', z); } catch (e) {} mesZoomApply(); }
+// ⌨️ [2026-11-13] 스캔 입력칸은 자동 포커스돼도 화면 자판이 뜨지 않게 한다(QR 리더기는 그대로 입력됨).
+//    작업자가 그 칸을 직접 손가락으로 누를 때만 자판이 나온다(라벨이 망가져 손으로 칠 때).
+(function(){ if (!matchMedia('(pointer:coarse)').matches) return;
+  const isScan = t => t && t.tagName === 'INPUT' && /^(scan|sd-lot|fd-lot|sd-slot-\d+)$/.test(t.id || '');
+  document.addEventListener('pointerdown', e => { const t = e.target; if (!isScan(t)) return; t._tap = true;
+    if (document.activeElement === t && t.getAttribute('inputmode') === 'none') { t.blur(); t._tap = true; t.setAttribute('inputmode', 'text'); setTimeout(() => t.focus(), 0); } }, true);
+  document.addEventListener('focusin', e => { const t = e.target; if (isScan(t)) t.setAttribute('inputmode', t._tap ? 'text' : 'none'); }, true);
+  document.addEventListener('focusout', e => { const t = e.target; if (isScan(t)) t._tap = false; }, true);
+})();
 mesZoomApply(); addEventListener('resize', mesZoomApply); addEventListener('hashchange', () => setTimeout(mesZoomApply, 0));
 </script>
 <main id="app"><div class="card">⏳ 불러오는 중… / Đang tải…</div></main>
