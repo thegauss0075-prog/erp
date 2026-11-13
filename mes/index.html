@@ -314,9 +314,11 @@ function go(v){ location.hash = v; }
 window.addEventListener('hashchange', () => render());
 function render(){
   if (ME.mustPw) return;
-  const v = (location.hash || '').slice(1) || (ME.role === 'viewer' ? 'tv' : 'floor');
+  let v = (location.hash || '').slice(1) || (ME.role === 'viewer' ? 'tv' : 'floor');
+  // ✅ [2026-11-13] 현장 공용 계정(floor)은 태블릿용 — 실적 입력 + 설비(정지 사유·점검)만 보여준다
+  if (ME.role === 'floor' && !['floor','machine'].includes(v)) { v = 'floor'; if (location.hash) history.replaceState(null, '', location.pathname + location.search); }
   S.view = v; document.body.classList.toggle('tv', v === 'tv');
-  $('nav').innerHTML = VIEWS.filter(([k]) => ME.role === 'viewer' ? ['tv','report','ncr'].includes(k) : k !== 'admin' || ME.role === 'admin').map(([k,l]) => `<a href="#${k}" class="${k === v ? 'on' : ''}">${l}</a>`).join('');
+  $('nav').innerHTML = VIEWS.filter(([k]) => ME.role === 'floor' ? ['floor','machine'].includes(k) : ME.role === 'viewer' ? ['tv','report','ncr'].includes(k) : k !== 'admin' || ME.role === 'admin').map(([k,l]) => `<a href="#${k}" class="${k === v ? 'on' : ''}">${l}</a>`).join('');
   const app = $('app');
   if (v === 'floor') app.innerHTML = floorView(); else if (v === 'machine') app.innerHTML = machineView(); else if (v === 'tv') app.innerHTML = tvView();
   else if (v === 'report') { app.innerHTML = reportView(); loadReport().catch(e => { const el = $('rp-body'); if (el) el.innerHTML = '<p style="color:var(--bad)">불러오기 실패: ' + E(e.message || e) + '</p>'; }); } else if (v === 'admin') { app.innerHTML = adminView(); if (ME.role === 'admin') pwUsersCard(); }
