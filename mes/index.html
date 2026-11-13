@@ -485,7 +485,7 @@ function startDlg(w){
       const inp = $('sd-lot'); inp.onkeydown = e => { if (e.key === 'Enter') { add(inp.value); inp.value = ''; } };
       SL.forEach((x, k) => { const si = $('sd-slot-' + k); si.onkeydown = e => { if (e.key === 'Enter') { const v = si.value; si.value = ''; setSlot(k, v); draw(); const nx = slot.findIndex(z => !z); setTimeout(() => { const f = $(nx >= 0 ? 'sd-slot-' + nx : 'sd-lot'); f && f.focus(); }, 30); } }; }); };
     // ✅ [2026-11-13] 설비를 고르는 순간, 오늘 일상점검을 안 했으면 점검 창부터 연다 (점검 → 시작 창으로 복귀)
-    const needChk = code => { const mm = code && M.mach.find(x => x.code === code); if (!mm || !S.worker || !chkItemsFor(mm).length || chkToday(mm.code)) return false;
+    const needChk = code => { const mm = code && M.mach.find(x => x.code === code); if (!mm || !S.worker || !chkItemsFor(mm).length || (chkToday(mm.code) && chkToday(mm.code).all_ok)) return false;
       const sib = M.mach.filter(x => x.active !== false && mm.process_code && x.process_code === mm.process_code && x.code !== mm.code && chkItemsFor(x).length && !chkToday(x.code)).map(x => x.code);
       toast(`📋 ${mm.name} 일상점검 먼저 / Kiểm tra máy trước`);
       ov.style.display = 'none'; checkDlg([mm.code, ...sib], {onCancel: () => { ov.style.display = ''; draw(); }, onDone: () => { ov.style.display = ''; draw(); }}); return true; };
@@ -504,7 +504,7 @@ function startDlg(w){
         if (st.mach === undefined) { alert('설비를 고르세요. (없으면 "설비 없음")\nChọn máy.'); return; }
         if (st.mach) { const mm = M.mach.find(x => x.code === st.mach); if (mm && chkItemsFor(mm).length && !chkToday(mm.code)) { if (confirm(`${mm.name} 오늘 일상점검을 아직 안 했습니다. 점검한 뒤 시작하세요.\nChưa kiểm tra máy hôm nay.\n\n[확인]을 누르면 점검 창을 엽니다.`)) { const sib = M.mach.filter(x => x.active !== false && mm.process_code && x.process_code === mm.process_code && x.code !== mm.code && chkItemsFor(x).length && !chkToday(x.code)).map(x => x.code);
             // ✅ [2026-11-11] 점검을 마치면 이 시작 창으로 돌아와 그대로 시작한다 (설비를 다시 고를 필요 없음)
-            ov.style.display = 'none'; checkDlg([mm.code, ...sib], {onCancel: () => { ov.style.display = ''; }, onDone: ok => { ov.style.display = ''; if (ok || chkToday(mm.code)) { const g = ov.querySelector('[data-go]'); if (g) g.click(); } }}); } return; }  if (mm && chkToday(mm.code) && !chkToday(mm.code).all_ok && !confirm(`${mm.name} 오늘 점검에서 NG가 있었습니다 (${chkToday(mm.code).note || ''}).\n조치가 끝났으면 [확인]을 눌러 시작하세요.`)) return; }
+            ov.style.display = 'none'; checkDlg([mm.code, ...sib], {onCancel: () => { ov.style.display = ''; }, onDone: ok => { ov.style.display = ''; if (ok) { const g = ov.querySelector('[data-go]'); if (g) g.click(); } }}); } return; }  if (mm && chkToday(mm.code) && !chkToday(mm.code).all_ok) { alert(`⛔ ${mm.name} 오늘 점검에 NG가 있습니다 (${chkToday(mm.code).note || ''}).\n조치한 뒤 다시 점검해서 전부 OK여야 시작할 수 있습니다.\nMáy có NG — sửa xong rồi kiểm tra lại.`); needChk(mm.code); return; } }
         const bad = gaugeBad(S.proc); if (bad.length) { alert('교정 기한이 지난 계측기가 있습니다. 사용하지 마세요.\nThiết bị đo quá hạn hiệu chuẩn.\n\n' + bad.map(g => `· ${g.name} (${g.code}) 기한 ${g.next_due}`).join('\n') + '\n\n관리자가 교정을 등록하거나, 이 공정에서 빼야 시작할 수 있습니다.'); return; }
         if (req && !st.lots.length && !SL.length) { alert('이 공정은 투입 자재 LOT이 필수입니다.\nCông đoạn này bắt buộc quét LOT NVL.'); $('sd-lot').focus(); return; }
         if (!st.worker) { alert('작업자를 고르세요.\nChọn công nhân.'); return; }
@@ -645,6 +645,18 @@ const addMonths = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setMonth(x.
 const gaugeState = g => { if (!g.next_due) return 'none'; const t = ymd(new Date()); if (g.next_due < t) return 'over'; return g.next_due <= addMonths(t, 1) ? 'soon' : 'ok'; };
 const gaugeBad = proc => M.gauge.filter(g => g.active !== false && g.process_code === proc && gaugeState(g) === 'over');
 // ✅ [2026-11-11] 같은 공정 설비(예: 몰딩기·경화로)를 한 화면에서 한 번에 점검 — 기록은 설비마다 따로 남는다(월별 점검표 그대로)
+// ✅ [2026-11-13] 점검 기준에서 숫자 허용범위를 읽는다 — "400±20℃", "0.5 ± 0.1 MPa", "12~15 kgf·cm",
+//    "0.09 MPa 이상", "250μH ±8%" 같은 형식. 범위가 있는 항목은 측정값 필수 + 범위 밖이면 자동 NG.
+function stdRange(std){ const t = String(std || '').replace(/,/g, '').replace(/\s+/g, ' ');
+  const n = '(-?\\d+(?:\\.\\d+)?)';
+  let m = t.match(new RegExp(n + '\\s*[^\\d±~\\s]*\\s*±\\s*' + n + '\\s*%')); if (m) { const a = +m[1], d = a * m[2] / 100; return {lo: a - d, hi: a + d}; }
+  m = t.match(new RegExp(n + '\\s*±\\s*' + n)); if (m) return {lo: +m[1] - +m[2], hi: +m[1] + +m[2]};
+  m = t.match(new RegExp(n + '\\s*(?:~|∼|-)\\s*' + n)); if (m && +m[2] > +m[1]) return {lo: +m[1], hi: +m[2]};
+  m = t.match(new RegExp(n + '[^\\d]{0,8}?이상\\s*(?:\\(|$)')); if (m) return {lo: +m[1], hi: Infinity};
+  m = t.match(new RegExp(n + '[^\\d]{0,8}?이하\\s*(?:\\(|$)')); if (m) return {lo: -Infinity, hi: +m[1]};
+  return null; }
+function rangeTxt(r){ const f = x => +x.toFixed(4); return r.hi === Infinity ? `${f(r.lo)} 이상` : r.lo === -Infinity ? `${f(r.hi)} 이하` : `${f(r.lo)} ~ ${f(r.hi)}`; }
+function valNum(v){ const m = String(v || '').replace(/,/g, '.').match(/-?\d+(?:\.\d+)?/); return m ? +m[0] : NaN; }
 function checkDlg(codes, opt){
   opt = opt || {};
   const ms = (Array.isArray(codes) ? codes : [codes]).map(c => M.mach.find(x => x.code === c)).filter(Boolean); if (!ms.length) return;
@@ -652,11 +664,13 @@ function checkDlg(codes, opt){
   const items = []; ms.forEach(m => chkItemsFor(m).forEach(it => items.push({...it, _m: m.code})));
   if (!items.length) { alert('점검 항목이 없습니다.'); return; }
   const st = items.map(() => ({ok: null, value: ''})), multi = ms.length > 1;
+  const rg = items.map(it => stdRange(it.standard));
+  const judge = i => { if (!rg[i]) return; const v = valNum(st[i].value); if (isNaN(v)) return; st[i].ok = v >= rg[i].lo - 1e-9 && v <= rg[i].hi + 1e-9; };
   const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
   const row = (it, i) => `<tr>
-      <td><b>${E(it.item)}</b><div class="vi">${E(it.item_vi||'')}</div></td><td class="muted">${E(it.standard||'')}${it.method ? '<br>' + E(it.method) : ''}</td>
+      <td><b>${E(it.item)}</b><div class="vi">${E(it.item_vi||'')}</div></td><td class="muted">${E(it.standard||'')}${rg[i] ? `<br><b style="color:var(--brand)">허용 ${rangeTxt(rg[i])}</b>` : ''}${it.method ? '<br>' + E(it.method) : ''}</td>
       <td><button class="btn ${st[i].ok === true ? 'ok' : ''}" style="padding:10px 14px" data-i="${i}" data-v="1">OK</button> <button class="btn" style="padding:10px 14px;${st[i].ok === false ? 'background:var(--bad);color:#fff' : ''}" data-i="${i}" data-v="0">NG</button></td>
-      <td><input data-val="${i}" value="${E(st[i].value)}" style="width:100px;padding:8px"></td></tr>`;
+      <td><input data-val="${i}" value="${E(st[i].value)}" ${rg[i] ? 'inputmode="decimal" placeholder="필수"' : ''} style="width:100px;padding:8px;${rg[i] && st[i].value !== '' && st[i].ok === false ? 'border:2px solid var(--bad);color:var(--bad);font-weight:700' : rg[i] && st[i].value === '' ? 'border:2px solid #F59E0B' : ''}"></td></tr>`;
   const draw = () => { ov.innerHTML = `<div class="box" style="max-width:760px"><h2>📋 일상점검 <span class="vi">Kiểm tra hằng ngày</span></h2><div class="muted" style="margin-bottom:10px">${ms.map(m => E(m.name)).join(' · ')} · ${ymd(new Date())} · ${E(workName(S.worker))}</div>
     <div style="max-height:56vh;overflow:auto"><table><thead><tr><th>항목</th><th>기준 / 방법</th><th style="width:170px">결과</th><th style="width:110px">측정값</th></tr></thead><tbody>${ms.map(m => {
       const rs = items.map((it, i) => [it, i]).filter(([it]) => it._m === m.code); if (!rs.length) return '';
@@ -666,12 +680,21 @@ function checkDlg(codes, opt){
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn big" data-x="1">취소</button><button class="btn ok big" data-go="1">✔ 점검 저장 / Lưu</button></div></div>`; };
   const redraw = () => { const n = $('ck-note').value, sc = ov.querySelector('.box > div[style*="overflow"]'), y = sc ? sc.scrollTop : 0; draw(); $('ck-note').value = n; const s2 = ov.querySelector('.box > div[style*="overflow"]'); if (s2) s2.scrollTop = y; };
   ov.oninput = e => { const v = e.target.dataset && e.target.dataset.val; if (v !== undefined) st[+v].value = e.target.value; };
+  // 측정값 입력을 마치면(칸을 벗어나면) 허용범위로 OK/NG 자동 판정
+  //  (다시 그리지 않고 그 줄의 OK/NG 버튼·입력칸 색만 바꿔서, 다음 칸으로 넘어가는 손가락 터치가 끊기지 않게 한다)
+  const paint = i => { const okB = ov.querySelector(`[data-i="${i}"][data-v="1"]`), ngB = ov.querySelector(`[data-i="${i}"][data-v="0"]`), inp = ov.querySelector(`[data-val="${i}"]`);
+    if (okB) okB.classList.toggle('ok', st[i].ok === true); if (ngB) { ngB.style.background = st[i].ok === false ? 'var(--bad)' : ''; ngB.style.color = st[i].ok === false ? '#fff' : ''; }
+    if (inp && rg[i]) { const bad = st[i].value !== '' && st[i].ok === false; inp.style.border = bad ? '2px solid var(--bad)' : st[i].value === '' ? '2px solid #F59E0B' : '1px solid var(--line)'; inp.style.color = bad ? 'var(--bad)' : ''; inp.style.fontWeight = bad ? '700' : ''; } };
+  ov.addEventListener('input', e => { const v = e.target.dataset && e.target.dataset.val; if (v === undefined || !rg[+v]) return; if (isNaN(valNum(st[+v].value))) st[+v].ok = null; else judge(+v); paint(+v); });
   ov.onclick = async e => { const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.x) { ov.remove(); if (opt.onCancel) opt.onCancel(); return; }
-    if (b.dataset.all) { st.forEach(x => x.ok = true); redraw(); return; }
-    if (b.dataset.mall) { items.forEach((it, i) => { if (it._m === b.dataset.mall) st[i].ok = true; }); redraw(); return; }
-    if (b.dataset.i !== undefined) { st[+b.dataset.i].ok = b.dataset.v === '1'; redraw(); return; }
+    if (b.dataset.all) { st.forEach((x, i) => { x.ok = true; judge(i); }); redraw(); return; }
+    if (b.dataset.mall) { items.forEach((it, i) => { if (it._m === b.dataset.mall) { st[i].ok = true; judge(i); } }); redraw(); return; }
+    if (b.dataset.i !== undefined) { const i = +b.dataset.i; st[i].ok = b.dataset.v === '1'; judge(i); if (rg[i] && b.dataset.v === '1' && st[i].ok === false) toast(`⛔ 측정값 ${st[i].value}이(가) 허용범위(${rangeTxt(rg[i])}) 밖이라 OK를 고를 수 없습니다`); redraw(); return; }
     if (b.dataset.go) {
+      ov.querySelectorAll('[data-val]').forEach(inp => { st[+inp.dataset.val].value = inp.value; judge(+inp.dataset.val); });
+      const noVal = items.findIndex((it, i) => rg[i] && isNaN(valNum(st[i].value)));
+      if (noVal >= 0) { redraw(); alert(`${multi ? machName(items[noVal]._m) + ' — ' : ''}"${items[noVal].item}" 측정값을 입력하세요. (허용 ${rangeTxt(rg[noVal])})\nNhập giá trị đo.`); return; }
       const miss = st.findIndex(x => x.ok === null); if (miss >= 0) { alert(`${multi ? machName(items[miss]._m) + ' — ' : ''}"${items[miss].item}" 결과를 고르세요.`); return; }
       const note = $('ck-note').value.trim();
       if (!st.every(x => x.ok) && !note) { alert('NG 항목이 있으면 특이사항(조치 내용)을 적어주세요.'); $('ck-note').focus(); return; }
