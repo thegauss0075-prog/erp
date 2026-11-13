@@ -16936,7 +16936,7 @@ function invPalWeights(p){
 const INV_BOX_STD = '0.34*0.21*0.19';   // 더가우스비나 카톤 박스 바깥 치수(m) — 출하 정보 표(2026-11-13) 기준
 function invIsBox(){ return INV && INV.packMode === 'box'; }
 function invAutoBoxes(){ return INV.lines.reduce((s,l)=>s+invCartons(l).reduce((a,c)=>a+c.n,0),0); }
-function invBoxCount(){ return invIsBox() ? (+INV.boxes || invAutoBoxes()) : invAutoBoxes(); }
+function invBoxCount(){ if (invIsBox()) return +INV.boxes || invAutoBoxes(); const ps = (INV.plan||[]).filter(p => p.q && p.q.some(v => +v > 0)); return ps.length ? ps.reduce((s,p)=>s+invPalBoxN(p),0) : invAutoBoxes(); }
 function invBoxVol(){ const dv = String(INV.boxDims||'').replace(/,/g,'.').split(/[*x×X]/).map(Number); return dv.length === 3 && dv.every(n => n > 0) ? dv[0]*dv[1]*dv[2] : 0; }
 function invEstimateBox(){
   const r2 = v => Math.round(v*100)/100;
@@ -16969,7 +16969,7 @@ function invEstimate(){
   if (INV.palAuto || !Array.isArray(INV.plan) || INV.plan.some(p => !p.q || p.q.length !== INV.lines.length)) {
     const keep = Array.isArray(INV.plan) ? INV.plan : [];
     INV.plan = invAutoPlan(); INV.palAuto = true;
-    INV.plan.forEach((p,k) => { if (keep[k]) { p.net = keep[k].net ?? ''; p.gross = keep[k].gross ?? ''; } });
+    INV.plan.forEach((p,k) => { if (keep[k]) { p.net = keep[k].net ?? ''; p.gross = keep[k].gross ?? ''; p.boxes = keep[k].boxes ?? ''; } });
   }
   const used = INV.plan.filter(p => p.q.some(v => +v > 0));
   // 팔레트 규격·무게는 가장 많이 실린 품목의 팔레트 기준
@@ -16984,7 +16984,7 @@ function invEstimate(){
   const vol = invPalVol(), pal = +INV.pallets || 0;
   // ✅ 팔레트마다 가장 많이 실린 품목의 팔레트 규격으로 부피 계산 (예: 30KW OUT L3는 높이 0.50m)
   //    표준 팔레트(1.1×1.1×0.88)는 높이 = 팔레트 0.12m + 층수×박스 0.19m (한 층 14박스, 4층 56박스) → 27박스면 2층 0.50m
-  const palBoxes = pp => INV.lines.reduce((s,l,i)=>s+(+pp.q[i] ? invCartons({...l, qty:+pp.q[i]}).reduce((a,c)=>a+c.n,0) : 0),0);
+  const palBoxes = invPalBoxN;
   const perPal = used.map(pp => { const dv = String(INV.dims||'').replace(/,/g,'.').split(/[*x×X]/).map(Number);
     if (dv.length === 3 && Math.abs(dv[0]-1.1) < 1e-6 && Math.abs(dv[1]-1.1) < 1e-6 && Math.abs(dv[2]-0.88) < 1e-6) { const lay = Math.min(4, Math.max(1, Math.ceil(palBoxes(pp) / 14))); return 1.1*1.1*(0.12 + lay*0.19); }
     return vol; });
@@ -17012,7 +17012,7 @@ function renderInvPlan(){
     <div class="tw"><table style="font-size:12.5px"><thead><tr><th>팔레트<span class="vi">Pallet</span></th>${INV.lines.map(l=>`<th style="text-align:right;white-space:normal;min-width:90px">${l.name||l.code}</th>`).join('')}<th style="text-align:right">박스<span class="vi">Thùng</span></th><th style="text-align:right">순중량 kg<span class="vi">N.W</span></th><th style="text-align:right">총중량 kg<span class="vi">G.W</span></th><th></th></tr></thead><tbody>
       ${INV.plan.map((p,k) => `<tr><td style="font-weight:600">${k+1}</td>
         ${INV.lines.map((l,i)=>`<td><input type="number" min="0" value="${+p.q[i]||''}" oninput="invPlanSet(${k},${i},this.value)" style="${cell};min-width:70px"></td>`).join('')}
-        <td style="text-align:right" id="inv-pb-${k}"></td>
+        <td style="text-align:right"><input type="number" min="0" id="inv-pb-${k}" value="${p.boxes||''}" oninput="invPlanBoxes(${k},this.value)" title="LOT별 끝수 박스 등으로 실제 박스가 다르면 직접 입력 (비우면 자동 계산)" style="${cell};width:58px;text-align:right"></td>
         <td><input type="number" value="${p.net??''}" id="inv-pn-${k}" oninput="invPlanW(${k},'net',this.value)" style="${cell};min-width:80px"></td>
         <td><input type="number" value="${p.gross??''}" id="inv-pg-${k}" oninput="invPlanW(${k},'gross',this.value)" style="${cell};min-width:80px"></td>
         <td><button onclick="invPlanDel(${k})" title="팔레트 빼기" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></td></tr>`).join('')}
@@ -17026,7 +17026,7 @@ function invPlanRefresh(){
   if (mode) { mode.textContent = INV.palAuto ? '자동' : '직접 입력'; mode.style.background = INV.palAuto ? '#FEF3C7' : '#DCFCE7'; mode.style.color = INV.palAuto ? '#92400E' : '#166534'; }
   INV.plan.forEach((p,k) => {
     const b = document.getElementById('inv-pb-'+k);
-    if (b) b.textContent = INV.lines.reduce((s,l,i)=>s+(+p.q[i] ? invCartons({...l, qty:+p.q[i]}).reduce((a,c)=>a+c.n,0) : 0),0);
+    if (b) { b.placeholder = String(invPalNatural(p)); b.style.background = (p.boxes !== '' && p.boxes != null) ? '#DCFCE7' : ''; }
     const w = invPalWeights(p);
     const n = document.getElementById('inv-pn-'+k), g = document.getElementById('inv-pg-'+k);
     if (n) n.placeholder = w.est ? String(w.est) : '';
@@ -17058,6 +17058,24 @@ function invCartons(l){
   if (rem) out.push({per:rem, n:1, qty:rem});
   return out;
 }
+// ✅ [2026-11-13] 팔레트별 박스 수 직접 입력 — LOT별 끝수 박스 때문에 계산보다 박스가 많을 때(예: 2,000개 → 42가 아니라 44박스)
+const invPalNatural = p => INV.lines.reduce((s,l,i)=>s+(+p.q[i] ? invCartons({...l, qty:+p.q[i]}).reduce((a,c)=>a+c.n,0) : 0),0);
+const invPalBoxN = p => (p.boxes !== '' && p.boxes != null && +p.boxes > 0) ? +p.boxes : invPalNatural(p);
+// 팔레트의 품목별 카톤 구성. 박스 수를 바꿨으면 마지막 품목에서 차이를 맞춘다: 꽉 찬 박스는 그대로 두고 나머지를 끝수 박스(혼합)로
+function invPalCartons(p){
+  const idx = INV.lines.map((l,i)=>i).filter(i => +p.q[i] > 0);
+  const out = idx.map(i => ({i, cs: invCartons({...INV.lines[i], qty:+p.q[i]})}));
+  const extra = invPalBoxN(p) - invPalNatural(p);
+  if (!extra || !out.length) return out;
+  const t = out[out.length-1], l = INV.lines[t.i], q = +p.q[t.i], P = +l.pcsBox || q;
+  const T = Math.max(1, t.cs.reduce((a,c)=>a+c.n,0) + extra);
+  if (T < Math.ceil(q / P)) { t.cs = [{per: Math.ceil(q / T), n: T, qty: q}]; return out; }
+  const F = Math.max(0, Math.min(Math.floor(q / P), T - 1)), rem = q - F*P, pn = T - F;
+  t.cs = []; if (F) t.cs.push({per:P, n:F, qty:F*P});
+  if (pn) t.cs.push(pn === 1 ? {per:rem, n:1, qty:rem} : {per:'', n:pn, qty:rem, mixed:true});
+  return out;
+}
+function invPlanBoxes(k, v){ INV.plan[k].boxes = v === '' ? '' : (+v || ''); invEstimate(); invRefreshTotals(); }
 function renderInvEditor(){
   const ed = document.getElementById('inv-editor'); if (!INV) { ed.innerHTML=''; return; }
   const inp = (path, val, w, type) => `<input ${type?`type="${type}"`:''} value="${String(val??'').replace(/"/g,'&quot;')}" oninput="invSet('${path}', this.value)" style="width:${w||'100%'};padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:13px">`;
@@ -17420,13 +17438,12 @@ function invSheetPacking(ws){
   let totCtn = 0;
   pals.forEach((p, k) => {
     const r0 = r;
-    INV.lines.forEach((l, i) => {
-      const q = +p.q[i] || 0; if (!q) return;
-      const cs = invCartons({...l, qty:q}), rl = r;
+    invPalCartons(p).forEach(({i, cs}) => {
+      const l = INV.lines[i], rl = r;
       cs.forEach((c, j) => {
         if (j === 0) invCell(ws, `B${r}`, INV.kind==='KR' ? (l.en||l.code) : l.code, {h:'center'});
-        invCell(ws, `C${r}`, 'Inductor', {h:'center'}); invCell(ws, `D${r}`, c.per, {h:'center', fmt:'#,##0'}); invCell(ws, `E${r}`, c.n, {h:'center'});
-        invCell(ws, `F${r}`, {formula:`D${r}*E${r}`, result:c.qty}, {h:'center', fmt:'#,##0'});
+        invCell(ws, `C${r}`, 'Inductor', {h:'center'}); invCell(ws, `D${r}`, c.mixed ? '' : c.per, {h:'center', fmt:'#,##0'}); invCell(ws, `E${r}`, c.n, {h:'center'});
+        invCell(ws, `F${r}`, c.mixed ? c.qty : {formula:`D${r}*E${r}`, result:c.qty}, {h:'center', fmt:'#,##0'});
         totCtn += c.n; r++;
       });
       if (cs.length > 1) ws.mergeCells(`B${rl}:B${r-1}`);
