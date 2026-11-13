@@ -17553,6 +17553,7 @@ function invSheetPacking(ws){
 //  서버: SHIP_PLAN 시트 (getShipPlans / saveShipPlan / deleteShipPlan)
 // ════════════════════════════════════════════════════════════
 let SPL = [], _splLoaded = false, _splLoading = null, SPL_DRAFT = [], SPL_FORM = {dest:'Solum Vina', date:'', note:''}, SPL_PICK = null, SPL_EDIT = null;
+let SPL_PAL = [];   // ✅ [2026-11-13] 팔레트별·LOT별 박스 구성 [{rows:[{code, lot, per, n}]}]
 const SPL_DEST = {KR:'🏠 본사(한국) / Trụ sở HQ', 'Solum Vina':'🏭 솔루엠비나 / Solum Vina'};
 const SPL_ST = {wait:['출고 대기','Chờ xuất','#b45309','#FEF3C7'], inv:['인보이스 발행','Đã có Invoice','#185FA5','#E8F0F8'], done:['출고 완료','Đã xuất','#166534','#DCFCE7'], cancel:['취소','Đã hủy','#8A95A3','#F1F5F9']};
 async function loadShipPlans(){
@@ -17619,6 +17620,50 @@ function splKeepForm(){
   const d = document.getElementById('spl-dest'), t = document.getElementById('spl-date'), n = document.getElementById('spl-note');
   if (d) SPL_FORM.dest = d.value; if (t) SPL_FORM.date = t.value; if (n) SPL_FORM.note = n.value;
 }
+const splPer = code => { try { return +invItem(code).pcsBox || 0; } catch (e) { return 0; } };
+const splPerPal = code => { try { return +invItem(code).perPallet || 56; } catch (e) { return 56; } };
+// 지정한 LOT 수량을 박스(꽉 찬 박스 + 끝수 박스)로 나눠 팔레트에 순서대로 쌓는다 (한 팔레트 56박스)
+function splPalAuto(){
+  if (SPL_PAL.length && !confirm('지금 팔레트 구성을 지우고 자동으로 다시 만들까요?')) return;
+  const cap = 56, out = []; let cur = {rows: []}, used = 0;
+  const push = (code, lot, per, n) => { while (n > 0) { if (used >= cap) { out.push(cur); cur = {rows: []}; used = 0; } const t = Math.min(n, cap - used); cur.rows.push({code, lot, per, n: t}); used += t; n -= t; } };
+  SPL_DRAFT.forEach(l => (l.lots||[]).forEach(x => { const q = +x.qty||0, per = splPer(l.code) || q; if (!q) return; const full = Math.floor(q / per), rem = q - full * per; if (full) push(l.code, x.lot, per, full); if (rem) push(l.code, x.lot, rem, 1); }));
+  if (cur.rows.length) out.push(cur); SPL_PAL = out; renderShipPlans();
+}
+function splPalKeep(){ document.querySelectorAll('[data-splpal]').forEach(el => { const [k, j, f] = el.dataset.splpal.split('|'); const r = SPL_PAL[+k] && SPL_PAL[+k].rows[+j]; if (r) r[f] = (f === 'per' || f === 'n') ? (+el.value || 0) : el.value; }); }
+function splPalAddRow(k){ splPalKeep(); const l = SPL_DRAFT[0] || {}; SPL_PAL[k].rows.push({code: l.code || '', lot: ((l.lots||[])[0]||{}).lot || '', per: splPer(l.code) || '', n: 1}); renderShipPlans(); }
+function splPalCheck(){
+  const need = {}, got = {};
+  SPL_DRAFT.forEach(l => (l.lots||[]).forEach(x => { need[l.code + '|' + x.lot] = (need[l.code + '|' + x.lot] || 0) + (+x.qty||0); }));
+  SPL_PAL.forEach(p => p.rows.forEach(r => { got[r.code + '|' + r.lot] = (got[r.code + '|' + r.lot] || 0) + (+r.per||0) * (+r.n||0); }));
+  return Object.keys({...need, ...got}).map(k => ({k, code: k.split('|')[0], lot: k.split('|')[1], need: need[k] || 0, got: got[k] || 0}));
+}
+function splPalHtml(){
+  if (!SPL_DRAFT.length) return '';
+  const n = v => (+v||0).toLocaleString(), inp = 'padding:4px 6px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12.5px';
+  const nm = c => (SPL_DRAFT.find(l => l.code === c) || {}).name || c;
+  const pals = SPL_PAL.map((p, k) => { const nb = p.rows.reduce((a,r)=>a+(+r.n||0),0), lay = Math.min(4, Math.max(1, Math.ceil(nb / 14)));
+    return `<div style="border:1px solid var(--line,#DCE1E7);border-radius:8px;padding:8px;margin-bottom:6px;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><b style="font-size:13px">팔레트 ${k+1} / Pallet ${k+1}</b><span style="font-size:12px;color:${nb > 56 ? '#b91c1c' : '#5D6977'}">박스 ${nb}개${nb > 56 ? ' ⚠️ 56박스 초과' : ''} · ${lay}층 (높이 ${(0.12 + lay*0.19).toFixed(2)}m) <button onclick="splPalKeep();SPL_PAL.splice(${k},1);renderShipPlans()" title="팔레트 빼기" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></span></div>
+      <table style="font-size:12.5px;width:100%"><thead><tr><th>모델<span class="vi">Model</span></th><th>LOT</th><th style="text-align:right">박스당 수량<span class="vi">SL/thùng</span></th><th style="text-align:right">박스 수<span class="vi">Số thùng</span></th><th style="text-align:right">수량<span class="vi">SL</span></th><th></th></tr></thead><tbody>
+      ${p.rows.map((r, j) => `<tr>
+        <td><select data-splpal="${k}|${j}|code" onchange="splPalKeep();renderShipPlans()" style="${inp};max-width:200px">${SPL_DRAFT.map(l => `<option value="${l.code}" ${l.code === r.code ? 'selected' : ''}>${l.name}</option>`).join('')}</select></td>
+        <td><select data-splpal="${k}|${j}|lot" onchange="splPalKeep();renderShipPlans()" style="${inp};font-family:monospace">${((SPL_DRAFT.find(l => l.code === r.code) || {}).lots || []).map(x => `<option value="${x.lot}" ${x.lot === r.lot ? 'selected' : ''}>${splLotName(x.lot)}</option>`).join('')}</select></td>
+        <td style="text-align:right"><input type="number" min="1" data-splpal="${k}|${j}|per" value="${r.per||''}" onchange="splPalKeep();renderShipPlans()" style="${inp};width:70px;text-align:right"></td>
+        <td style="text-align:right"><input type="number" min="1" data-splpal="${k}|${j}|n" value="${r.n||''}" onchange="splPalKeep();renderShipPlans()" style="${inp};width:60px;text-align:right"></td>
+        <td style="text-align:right;font-weight:600">${n((+r.per||0) * (+r.n||0))}</td>
+        <td><button onclick="splPalKeep();SPL_PAL[${k}].rows.splice(${j},1);renderShipPlans()" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></td></tr>`).join('')}
+      </tbody></table><button onclick="splPalAddRow(${k})" style="margin-top:4px;padding:3px 9px;border-radius:6px;border:1px dashed #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:12px">+ 줄 / Dòng</button></div>`; }).join('');
+  const ck = splPalCheck(), bad = ck.filter(c => Math.abs(c.need - c.got) > 0.0005);
+  return `<div style="border-top:1px dashed var(--line,#DCE1E7);margin-top:8px;padding-top:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px"><div style="font-weight:600;font-size:13px">🧱 팔레트·박스 구성 (LOT별) <span class="vi">Phân bổ pallet theo LOT</span> <span style="font-weight:400;font-size:12px;color:#5D6977">— 인보이스·패킹리스트에 그대로 들어갑니다 (선택)</span></div>
+      <div style="display:flex;gap:6px"><button onclick="splPalAuto()" title="LOT별 수량을 박스로 나눠 56박스씩 쌓기" style="padding:5px 10px;border-radius:6px;border:1px solid var(--line,#DCE1E7);background:#fff;cursor:pointer;font-size:12.5px">자동 채우기 / Tự động</button>
+      <button onclick="splPalKeep();SPL_PAL.push({rows:[]});splPalAddRow(SPL_PAL.length-1)" style="padding:5px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:12.5px">+ 팔레트 / Pallet</button></div></div>
+    ${pals || '<div style="font-size:12.5px;color:#5D6977;margin-bottom:6px">아직 팔레트 구성이 없습니다. "자동 채우기"로 만든 뒤 실제 포장대로 고치세요.</div>'}
+    ${SPL_PAL.length ? `<div style="font-size:12px;margin-top:4px">${ck.map(c => `<span style="display:inline-block;margin:2px 8px 2px 0;color:${Math.abs(c.need - c.got) > 0.0005 ? '#b91c1c' : '#166534'}">${nm(c.code)} ${splLotName(c.lot)}: ${n(c.got)} / ${n(c.need)} ${Math.abs(c.need - c.got) > 0.0005 ? '⚠️' : '✓'}</span>`).join('')}</div>
+      <div style="font-size:12.5px;color:#5D6977;margin-top:2px">팔레트 ${SPL_PAL.length}개 · 박스 ${n(SPL_PAL.reduce((a,p)=>a+p.rows.reduce((b,r)=>b+(+r.n||0),0),0))}개${bad.length ? ' · <b style="color:#b91c1c">LOT 수량과 박스 합계가 다른 줄이 있습니다</b>' : ''}</div>` : ''}
+  </div>`;
+}
 function renderShipPlans(){
   const box = document.getElementById('spl-panel'); if (!box) return;
   splKeepForm();
@@ -17641,7 +17686,7 @@ function renderShipPlans(){
   }).join('');
   const form = canEdit ? `
     <div style="border:1px solid var(--line,#DCE1E7);border-radius:8px;padding:12px;margin-bottom:12px;background:#F8FAFC">
-      <div style="font-weight:600;font-size:13px;margin-bottom:8px">${SPL_EDIT ? `✏️ 출고 예정 수정 — ${(SPL.find(x=>x.id===SPL_EDIT)||{}).no||''} <a href="javascript:void 0" onclick="SPL_EDIT=null;SPL_DRAFT=[];SPL_PICK=null;renderShipPlans()" style="font-weight:400;font-size:12px">수정 취소</a>` : '➕ 출고 예정 등록'} <span style="font-weight:400;color:#5D6977;font-size:12px">/ Đăng ký kế hoạch xuất — 재고는 출고 확정 때 줄어듭니다 / Tồn kho chỉ giảm khi xác nhận xuất</span></div>
+      <div style="font-weight:600;font-size:13px;margin-bottom:8px">${SPL_EDIT ? `✏️ 출고 예정 수정 — ${(SPL.find(x=>x.id===SPL_EDIT)||{}).no||''} <a href="javascript:void 0" onclick="SPL_EDIT=null;SPL_DRAFT=[];SPL_PAL=[];SPL_PICK=null;renderShipPlans()" style="font-weight:400;font-size:12px">수정 취소</a>` : '➕ 출고 예정 등록'} <span style="font-weight:400;color:#5D6977;font-size:12px">/ Đăng ký kế hoạch xuất — 재고는 출고 확정 때 줄어듭니다 / Tồn kho chỉ giảm khi xác nhận xuất</span></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
         <select id="spl-dest">${Object.entries(SPL_DEST).map(([k,v]) => `<option value="${k}" ${SPL_FORM.dest===k?'selected':''}>${v}</option>`).join('')}</select>
         <label style="font-size:12.5px;color:#5D6977">출고 예정일 / Ngày dự kiến <input type="date" id="spl-date" value="${SPL_FORM.date || bdToday()}"></label>
@@ -17660,7 +17705,8 @@ function renderShipPlans(){
         <button onclick="splAddLine()" style="padding:7px 12px;border-radius:8px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer;margin-bottom:8px">이 LOT으로 추가 / Thêm</button>`
         : '<div style="color:#b91c1c;font-size:12.5px;margin-bottom:8px">이 모델은 출고할 재고가 없습니다. / Không có tồn kho.</div>') : ''}
       ${SPL_DRAFT.length ? `<div class="tw" style="margin-bottom:8px"><table><thead><tr><th>모델<span class="vi">Model</span></th><th style="text-align:right">수량<span class="vi">SL</span></th><th style="text-align:right">출고 가능<span class="vi">Có thể xuất</span></th><th></th></tr></thead><tbody>${draft}</tbody></table></div>
-        <button id="spl-save" onclick="splSave()" style="padding:8px 16px;border-radius:8px;border:none;background:#166534;color:#fff;font-weight:700;cursor:pointer">${SPL_EDIT ? '수정 저장 / Lưu' : '출고 예정 등록 / Đăng ký'}</button>` : ''}
+        ${splPalHtml()}
+        <button id="spl-save" onclick="splSave()" style="margin-top:8px;padding:8px 16px;border-radius:8px;border:none;background:#166534;color:#fff;font-weight:700;cursor:pointer">${SPL_EDIT ? '수정 저장 / Lưu' : '출고 예정 등록 / Đăng ký'}</button>` : ''}
     </div>` : '';
   const rows = list.map(p => {
     const st = SPL_ST[p.status] || SPL_ST.wait;
@@ -17678,7 +17724,7 @@ function renderShipPlans(){
     return `<tr>
       <td style="font-family:monospace;font-size:12px">${p.no||''}</td><td style="white-space:nowrap">${p.date||''}</td><td>${(SPL_DEST[p.dest]||p.dest||'').replace(/^\S+\s/,'')}</td>
       <td style="white-space:normal">${(p.lines||[]).map(l => `${l.name||l.code} <b>${n(l.qty)}</b><div style="font-size:11px;color:#185FA5">${(l.lots||[]).map(x => `${splLotName(x.lot)} ${n(x.qty)}`).join(' · ')}</div>`).join('')}${splMismatch(p).length ? `<div style="font-size:11.5px;color:#b91c1c;font-weight:600">⚠️ 인보이스 수량과 다름: ${splMismatch(p).join(', ')} — ✏️로 LOT 수량을 맞춰주세요</div>` : ''}</td>
-      <td style="text-align:right;font-weight:600">${n(qty)}</td>
+      <td style="text-align:right;font-weight:600">${n(qty)}${(p.pallets||[]).length ? `<div style="font-size:11px;font-weight:400;color:#5D6977">🧱 팔레트 ${p.pallets.length} · 박스 ${n(p.pallets.reduce((a,x)=>a+x.rows.reduce((b,r)=>b+(+r.n||0),0),0))}</div>` : ''}</td>
       <td style="white-space:nowrap"><span style="font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;color:${st[2]};background:${st[3]}">${st[0]}</span>${p.invNo ? `<div style="font-family:monospace;font-size:11.5px;margin-top:2px">${p.invNo}${p.invRev ? ` Rev.${p.invRev}` : ''}</div>` : ''}${p.status === 'done' ? `<div style="font-size:11px;color:#8A95A3">${String(p.doneAt||'').slice(0,10)} ${p.doneBy||''}</div>` : ''}</td>
       <td>${p.createdBy||''}${p.note ? `<div style="font-size:11.5px;color:#5D6977">${p.note}</div>` : ''}</td>
       <td style="white-space:nowrap">${act.join(' ')}</td></tr>`;
@@ -17709,16 +17755,21 @@ async function splSave(){
   const over = SPL_DRAFT.filter(l => l.qty > splStock(l.code) - splReserved(l.code, SPL_EDIT));
   if (over.length && !confirm(`재고(다른 출고 예정 제외)보다 많은 모델이 있습니다: ${over.map(l=>l.name).join(', ')}\n그래도 등록할까요? (출고 확정 때 재고가 부족하면 확정되지 않습니다)`)) return;
   if (SPL_DRAFT.some(l => !(l.lots && l.lots.length))) { alert('모든 모델에 LOT을 지정해주세요. / Chọn LOT cho tất cả model.'); return; }
+  splPalKeep();
+  const pals = SPL_PAL.map(p => ({rows: p.rows.filter(r => r.code && r.lot && +r.per > 0 && +r.n > 0).map(r => ({code: r.code, lot: r.lot, per: +r.per, n: +r.n}))})).filter(p => p.rows.length);
+  if (pals.length) { const bad = splPalCheck().filter(c => Math.abs(c.need - c.got) > 0.0005);
+    if (bad.length && !confirm(`팔레트 박스 합계가 LOT 지정 수량과 다릅니다:\n${bad.map(c => `${c.code} ${splLotName(c.lot)}: 박스 ${c.got.toLocaleString()} / 지정 ${c.need.toLocaleString()}`).join('\n')}\n\n그래도 저장할까요?`)) return; }
   const date = document.getElementById('spl-date').value || bdToday();
   const old = SPL_EDIT ? SPL.find(x => x.id === SPL_EDIT) : null;
   const rec = old ? {...old, date, dest: document.getElementById('spl-dest').value, lines: SPL_DRAFT.map(l => JSON.parse(JSON.stringify(l))), note: document.getElementById('spl-note').value.trim(), editedBy: CURRENT_USER||'', editedAt: new Date().toISOString()}
     : {id:'P'+Date.now(), no: splNextNo(date), date, dest: document.getElementById('spl-dest').value, lines: SPL_DRAFT.map(l => JSON.parse(JSON.stringify(l))),
     note: document.getElementById('spl-note').value.trim(), status:'wait', createdBy: CURRENT_USER||'', createdAt: new Date().toISOString()};
+  rec.pallets = pals;
   const guard = withButtonGuard('#spl-save', '⏳'); if (guard === null) return;
-  let r; try { r = await api('saveShipPlan', {rec}); } finally { guard.release(); }
+  let r; try { r = await apiAuto('saveShipPlan', {rec}); } finally { guard.release(); }
   if (!r || !r.ok) { alert('저장 실패: ' + (r && r.error || '서버 응답 없음') + (r && /unknown action/i.test(r.error||'') ? '\n서버(Code.gs)를 새 버전으로 배포해야 합니다.' : '')); return; }
   if (old) Object.assign(old, rec); else SPL.push(rec);
-  SPL_DRAFT = []; SPL_EDIT = null; SPL_PICK = null; SPL_FORM.note = ''; document.getElementById('spl-note').value = '';
+  SPL_DRAFT = []; SPL_PAL = []; SPL_EDIT = null; SPL_PICK = null; SPL_FORM.note = ''; document.getElementById('spl-note').value = '';
   renderShipPlans(); if (typeof renderInvPanel === 'function' && isMaster) renderInvPanel();
 }
 // 인보이스(수정본) 수량과 LOT 지정 수량이 다른 모델
@@ -17734,7 +17785,7 @@ function splMismatch(p){
 }
 function splEdit(id){
   const p = SPL.find(x => x.id === id); if (!p) return;
-  SPL_EDIT = id; SPL_DRAFT = JSON.parse(JSON.stringify(p.lines||[])); SPL_PICK = null;
+  SPL_EDIT = id; SPL_DRAFT = JSON.parse(JSON.stringify(p.lines||[])); SPL_PAL = JSON.parse(JSON.stringify(p.pallets||[])); SPL_PICK = null;
   Object.assign(SPL_FORM, {dest:p.dest, date:p.date, note:p.note||''});
   const d = document.getElementById('spl-dest'); if (d) d.value = p.dest; const t = document.getElementById('spl-date'); if (t) t.value = p.date; const nn = document.getElementById('spl-note'); if (nn) nn.value = p.note||'';
   renderShipPlans();
@@ -17786,7 +17837,7 @@ async function splDownloadInv(id){
     a.download = r.name || (p.invNo + '.xlsx'); document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   } finally { if (btn) { btn.disabled = false; btn.textContent = old; } }
 }
-async function splSavePlan(p){ const r = await api('saveShipPlan', {rec:p}); return r && r.ok; }
+async function splSavePlan(p){ const r = await apiAuto('saveShipPlan', {rec:p}); return r && r.ok; }
 // ③ 출고 확정: 모델별로 LOT 오래된 순 배정 → 완제품 출고(otp) 등록 → '완료'
 async function splConfirm(id){
   const p = SPL.find(x => x.id === id); if (!p) return;
@@ -17847,6 +17898,16 @@ function invFromPlan(id){
   document.getElementById('inv-kind').value = kind;
   invStart(kind, p.date || bdToday(), (p.lines||[]).map(l => ({code:l.code, name:l.name, qty:+l.qty||0})));
   INV.planId = p.id;
+  // ✅ 출고 예정에 팔레트·LOT별 박스 구성이 있으면 인보이스 팔레트 구성을 그대로 채운다
+  if ((p.pallets||[]).length && INV.packMode !== 'box') {
+    INV.plan = p.pallets.map(pp => { const q = INV.lines.map(() => 0), lots = {}, lotTxt = {};
+      pp.rows.forEach(r => { const i = INV.lines.findIndex(l => l.code === r.code); if (i < 0) return; lots[i] = lots[i] || [];
+        let x = lots[i].find(y => y.lot === r.lot); if (!x) { x = {lot: r.lot, qty: 0, cartons: []}; lots[i].push(x); } x.qty += r.per * r.n; x.cartons.push({per: r.per, n: r.n}); q[i] += r.per * r.n; });
+      Object.keys(lots).forEach(i => { lotTxt[i] = lots[i].map(x => `${x.lot} ${x.qty}`).join('\n'); });
+      return {q, lots, lotTxt, boxes: '', net: '', gross: ''}; });
+    INV.palAuto = false; INV.auto = {...(INV.auto || {}), net: true, gross: true, cbm: true, pallets: true};
+    invEstimate();
+  }
   renderInvEditor();
   document.getElementById('inv-panel').scrollIntoView({behavior:'smooth', block:'start'});
 }
