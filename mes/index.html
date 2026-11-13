@@ -484,6 +484,11 @@ function startDlg(w){
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="btn big" data-x="1">취소</button><button class="btn pri big" data-go="1">▶ 시작 / Bắt đầu</button></div></div>`;
       const inp = $('sd-lot'); inp.onkeydown = e => { if (e.key === 'Enter') { add(inp.value); inp.value = ''; } };
       SL.forEach((x, k) => { const si = $('sd-slot-' + k); si.onkeydown = e => { if (e.key === 'Enter') { const v = si.value; si.value = ''; setSlot(k, v); draw(); const nx = slot.findIndex(z => !z); setTimeout(() => { const f = $(nx >= 0 ? 'sd-slot-' + nx : 'sd-lot'); f && f.focus(); }, 30); } }; }); };
+    // ✅ [2026-11-13] 설비를 고르는 순간, 오늘 일상점검을 안 했으면 점검 창부터 연다 (점검 → 시작 창으로 복귀)
+    const needChk = code => { const mm = code && M.mach.find(x => x.code === code); if (!mm || !S.worker || !chkItemsFor(mm).length || chkToday(mm.code)) return false;
+      const sib = M.mach.filter(x => x.active !== false && mm.process_code && x.process_code === mm.process_code && x.code !== mm.code && chkItemsFor(x).length && !chkToday(x.code)).map(x => x.code);
+      toast(`📋 ${mm.name} 일상점검 먼저 / Kiểm tra máy trước`);
+      ov.style.display = 'none'; checkDlg([mm.code, ...sib], {onCancel: () => { ov.style.display = ''; draw(); }, onDone: () => { ov.style.display = ''; draw(); }}); return true; };
     ov.onclick = e => {
       const a = e.target.closest('[data-del]'); if (a) { e.preventDefault(); st.lots.splice(+a.dataset.del, 1); draw(); return; }
       const as = e.target.closest('[data-sdel]'); if (as) { e.preventDefault(); slot[+as.dataset.sdel] = ''; draw(); return; }
@@ -491,7 +496,7 @@ function startDlg(w){
       if (b.dataset.cam) { window._camTarget = v => { add(v); window._camTarget = null; }; camScan(); return; }
       if (b.dataset.x) { ov.remove(); res(null); return; }
       if (b.dataset.wk) { st.worker = b.dataset.wk; draw(); return; }
-      if (b.dataset.c !== undefined) { st.mach = b.dataset.c; if (st.mach && mw(st.mach) && wkList.some(x => x.code === mw(st.mach))) st.worker = mw(st.mach); draw(); if (ms.length && !st.lots.length && !req) {} return; }
+      if (b.dataset.c !== undefined) { st.mach = b.dataset.c; if (st.mach && mw(st.mach) && wkList.some(x => x.code === mw(st.mach))) st.worker = mw(st.mach); draw(); needChk(st.mach); return; }
       if (b.dataset.go) {
         const pend = $('sd-lot').value.trim(); if (pend) add(pend);
         SL.forEach((x, k) => { const pv = $('sd-slot-' + k) && $('sd-slot-' + k).value.trim(); if (pv) setSlot(k, pv); });
@@ -508,7 +513,8 @@ function startDlg(w){
         if (st.mach) LS.set('mes_mw|' + st.mach, st.worker);
         ov.remove(); res({mach: st.mach, lots: [...slot.filter(Boolean), ...st.lots], worker: st.worker});
       } };
-    draw(); setTimeout(() => { const nx = slot.findIndex(z => !z), f = $(nx >= 0 ? 'sd-slot-' + nx : 'sd-lot'); f && f.focus(); }, 50);
+    if (ms.length === 1 && !busy(ms[0].code)) st.mach = ms[0].code;   // 설비가 1대뿐이면 자동 선택
+    draw(); if (st.mach && needChk(st.mach)) {} else setTimeout(() => { const nx = slot.findIndex(z => !z), f = $(nx >= 0 ? 'sd-slot-' + nx : 'sd-lot'); f && f.focus(); }, 50);
   });
 }
 let FD = null;
