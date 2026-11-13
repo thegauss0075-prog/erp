@@ -5947,8 +5947,11 @@ function renderWOTraceLists() {
     const ngRefBadge = r.ngRefLabel
       ? `<div style="margin-top:2px;font-size:11px;color:#991b1b" title="${String(r.ngRefLabel).replace(/"/g,'&quot;')}">🔴 불량 대체 · ${r.ngRefLabel}</div>`
       : '';
+    // ✅ 반제품(BTP) 투입이면 같은 코드+LOT의 반제품 작업지시 번호를 같이 보여준다
+    const btpWO = r.cat === 'BTP' && r.lot ? WO.find(w => w.code === r.code && w.lot === r.lot && w.cat === 'BTP') : null;
+    const btpBadge = btpWO ? `<div style="margin-top:2px;font-size:11px;color:#3730a3">🧩 반제품 지시 <b>${btpWO.orderNo}</b> · ${btpWO.status||'대기'}</div>` : '';
     return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#fffbeb;border-radius:6px;margin-bottom:4px;font-size:12px">
-      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · ${qcLink}<span style="font-family:monospace;color:#92400e">${lotDisplay}</span>${ngRefBadge}</span>
+      <span>${r.name} <span style="color:#aaa;font-family:monospace">${r.code}</span> · ${qcLink}<span style="font-family:monospace;color:#92400e">${lotDisplay}</span>${ngRefBadge}${btpBadge}</span>
       <span style="white-space:nowrap">${(+r.qty||0).toLocaleString()} ${r.unit||''}${!['viewer','hq'].includes(USER_ROLE) ? `<button onclick="woReturnMat(${r.id})" title="남은 자재 창고로 반납 / Trả NVL về kho" style="margin-left:6px;padding:2px 8px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:11.5px">↩ 반납</button>` : ''}${isAdmin ? `<button onclick="deleteWOMaterialUI(${r.id})" title="잘못 등록한 투입 기록 삭제 (재고로 되돌림)" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button>` : ''}</span>
     </div>`;
   }).join('') : `<div style="color:#aaa;font-size:12px">아직 투입 자재 기록이 없습니다.</div>`;
@@ -6145,10 +6148,29 @@ function getSameModelBTPWorkOrders(wo) {
     const { activeLots } = computeActiveLots(w.code, 'tp-in', 'otp', 'BTP');
     const lotInfo = activeLots.find(l => l.lot === w.lot);
     const remain = lotInfo ? lotInfo.remain : 0;
-    if (remain <= 0) return; // 이미 다 소진된 LOT은 제외
-    results.push({ woId: w.id, orderNo: w.orderNo, code: w.code, name: w.name, unit: w.unit, lot: w.lot, producedQty: +w.producedQty||0, remain });
+    // ✅ [2026-11-13] 재고 입고 전이라도 "생산중"인 반제품 지시서는 지시번호 연결(추적 기록만)용으로 보여준다
+    const live = !['완료','취소'].includes(w.status || '대기');
+    if (remain <= 0 && !live) return; // 이미 다 소진된 완료 LOT은 제외
+    results.push({ woId: w.id, orderNo: w.orderNo, code: w.code, name: w.name, unit: w.unit, lot: w.lot, producedQty: +w.producedQty||0, remain, status: w.status || '대기', linkOnly: remain <= 0 });
   });
   return results;
+}
+
+// ✅ [2026-11-13] 생산중인 반제품(BTP) 지시서를 완제품 지시서의 전공정 추적에 연결한다.
+//    반제품이 아직 재고 입고 전(재고 0)이라 출고(재고 차감)는 하지 않고, 투입 자재 기록에
+//    BTP 코드 + 지시서 LOT만 남긴다 → 추적 화면에 BTP 지시번호가 함께 표시된다.
+async function woLinkBTP(btpWoId) {
+  const t = woTraceTarget; if (!t) return;
+  const b = WO.find(w => String(w.id) === String(btpWoId)); if (!b) return;
+  const def = Math.max(0, (+t.planQty||0) - WO_MAT.filter(m => m.workOrderId === t.id && m.code === b.code).reduce((a,m)=>a+(+m.qty||0),0));
+  const v = prompt(`${b.orderNo} (LOT ${b.lot})\n완제품 ${t.orderNo}에 연결할 반제품 수량`, def || (+t.planQty||0));
+  if (v === null) return;
+  const qty = parseFloat(v); if (!(qty > 0)) { alert('수량을 입력해주세요.'); return; }
+  const body = { workOrderId: t.id, orderNo: t.orderNo, productCode: t.code, code: b.code, name: b.name, cat: 'BTP', unit: b.unit || 'Ea', lot: b.lot, qty, token: ADMIN_TOKEN, user: CURRENT_USER || '' };
+  const res = await api('addWOMaterial', body);
+  if (!res || !res.ok) { alert('연결 실패: ' + (res && res.error || '네트워크 오류')); return; }
+  WO_MAT.push({ id: res.id, workOrderId: t.id, orderNo: t.orderNo, productCode: t.code, code: b.code, name: b.name, cat: 'BTP', unit: b.unit || 'Ea', lot: b.lot, qty, user: CURRENT_USER || '' });
+  renderWOTraceLists(); renderWOMatBrowse();
 }
 
 // ✅ 재고가 있는 자재 전체를 검색으로 좁혀서, 체크 없이 수량만 입력하면 되는 목록.
@@ -6191,6 +6213,17 @@ function renderWOMatBrowse() {
       <div style="font-size:11px;font-weight:700;color:#3730a3;margin-bottom:4px">🔗 같은 모델 반제품 작업지시 (특정 LOT을 바로 지정해서 사용)</div>
       ${sameModelWOs.map(w => {
         const savedVal = prevValues[w.code + '|BTP|' + w.lot] || '';
+        if (w.linkOnly) {
+          const linked = WO_MAT.some(m => m.workOrderId === woTraceTarget.id && m.code === w.code && m.lot === w.lot);
+          return `<div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #dbeafe;font-size:12px">
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${w.name} (${w.code})">
+            <span style="color:#3730a3;font-weight:600">${w.orderNo}</span> · ${w.name} <span style="color:#b45309;font-size:11px">${w.status} · 생산 ${w.producedQty.toLocaleString()}</span>
+          </span>
+          <span style="color:#888;font-family:monospace;font-size:10px;white-space:nowrap">${w.lot}</span>
+          ${linked ? `<span style="color:#166534;font-weight:600;font-size:11px;white-space:nowrap">✅ 연결됨</span>`
+            : (['viewer','hq'].includes(USER_ROLE) ? '' : `<button onclick="woLinkBTP('${w.woId}')" title="반제품 재고 입고 전이라 재고 차감 없이 지시번호·LOT만 추적 기록에 남깁니다" style="padding:2px 8px;border:1px solid #6366f1;background:#fff;color:#3730a3;border-radius:5px;font-size:11px;cursor:pointer;white-space:nowrap">🔗 지시번호 연결</button>`)}
+        </div>`;
+        }
         return `<div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #dbeafe;font-size:12px">
           <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${w.name} (${w.code})">
             <span style="color:#3730a3;font-weight:600">${w.orderNo}</span> · ${w.name}
