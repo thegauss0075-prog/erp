@@ -16680,10 +16680,16 @@ const INV_CO = {
 // 처음 쓸 때의 기본값(받은 인보이스 기준) — 화면에서 고치면 서버에 저장된 값이 우선
 // ✅ [2026-11-13] 무게는 출하 정보(THÔNG TIN XUẤT HÀNG 16/11) Kg/Box ÷ 박스 입수 기준. _v보다 예전에 저장된 값은 이 기본값으로 덮는다.
 const INV_ITEM_DEFAULT = {
-  'ML27A040127A': {_v:'2026-11-13', hs:'85045010', pcsBox:48, unitKg:0.157292, palDims:'1.1*1.1*0.50', vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-OUT-L3, 14.4uH, +-2.16uH, 10Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
+  'ML27A040127A': {_v:'2026-11-13', hs:'85045010', pcsBox:48, unitKg:0.157292, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-OUT-L3, 14.4uH, +-2.16uH, 10Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
   'ML27A040112A': {_v:'2026-11-13', hs:'85045010', pcsBox:12, unitKg:0.791667, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-PFC-US, 108uH, +-16.2uH, 26Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
   'ML27A040118A': {_v:'2026-11-13', hs:'85045010', pcsBox:48, unitKg:0.10625, vi:'Cuộn cảm cắm 0.84uH 0.126uH, dùng cho bộ sạc của ô tô điện, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
   'ML27M040025A': {_v:'2026-11-13', hs:'85045010', pcsBox:12, unitKg:0.591667, vi:'Cuộn cảm cắm, 175uH, dùng cho bộ nguồn trạm sạc xe điện'},   // COIL-PFC PM50KW 175uH
+  // 출하 정보 표(Q'ty/Box·Kg/Box)만 있는 모델 — HS·베트남어 품명은 처음 작성 때 넣으면 기억됨
+  'ML27M020003A': {_v:'2026-11-13', pcsBox:12, unitKg:0.5875},     // PM50KW-DM 7.05kg/12
+  'ML27M040145A': {_v:'2026-11-13', pcsBox:48, unitKg:0.163125},   // 40KW-OUT-L 7.83kg/48
+  'ML27M040143A': {_v:'2026-11-13', pcsBox:12, unitKg:0.808333},   // 40KW-PFC 9.7kg/12
+  'ML27A040091A': {_v:'2026-11-13', pcsBox:48},                    // 30KW OUT L1 (무게 미정)
+  'ML27A040090A': {_v:'2026-11-13', pcsBox:48},                    // 30KW OUT L2 (무게 미정)
   'CH330125 IND-5T': {hs:'85045093', pcsBox:315, unitKg:0.0534, en:'CH330125-IND-5T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 5T, công suất danh định không quá 2.500KVA'},
   'CH330125 IND-8T': {hs:'85045093', pcsBox:315, en:'CH330125-IND-8T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 8T, công suất danh định không quá 2.500KVA'},
   'CH330125 IND-10T': {hs:'85045093', pcsBox:315, unitKg:0.0534, en:'CH330125-IND-10T', vi:'Cuộn cảm lọc nhiều điện áp, sử dụng cho thiết bị điện tử CH330125-IND loại 10T, công suất danh định không quá 2.500KVA'}
@@ -16927,7 +16933,7 @@ function invPalWeights(p){
   return {est, net, gross, estGross: r2(net + (+INV.tare||0))};
 }
 // 📦 박스만(팔레트 없음) 포장 — 특송·항공 소량 출고용 (2026-11-03)
-const INV_BOX_STD = '0.34*0.20*0.20';   // 더가우스비나 카톤 박스 바깥 치수(m) — 2026-11-03 실측
+const INV_BOX_STD = '0.34*0.21*0.19';   // 더가우스비나 카톤 박스 바깥 치수(m) — 출하 정보 표(2026-11-13) 기준
 function invIsBox(){ return INV && INV.packMode === 'box'; }
 function invAutoBoxes(){ return INV.lines.reduce((s,l)=>s+invCartons(l).reduce((a,c)=>a+c.n,0),0); }
 function invBoxCount(){ return invIsBox() ? (+INV.boxes || invAutoBoxes()) : invAutoBoxes(); }
@@ -16977,8 +16983,11 @@ function invEstimate(){
   if (INV.auto.gross) INV.gross = W.some(w=>w.gross) ? r2(W.reduce((s,w)=>s+w.gross,0)) : '';
   const vol = invPalVol(), pal = +INV.pallets || 0;
   // ✅ 팔레트마다 가장 많이 실린 품목의 팔레트 규격으로 부피 계산 (예: 30KW OUT L3는 높이 0.50m)
-  const dimVol = d => { const dv = String(d||'').replace(/,/g,'.').split(/[*x×X]/).map(Number); return dv.length === 3 && dv.every(n => n > 0) ? dv[0]*dv[1]*dv[2] : 0; };
-  const perPal = used.map(pp => { let bi = -1, bq = 0; pp.q.forEach((v,i) => { if (+v > bq) { bq = +v; bi = i; } }); const l = INV.lines[bi]; return dimVol(l && l.palDims) || vol; });
+  //    표준 팔레트(1.1×1.1×0.88)는 높이 = 팔레트 0.12m + 층수×박스 0.19m (한 층 14박스, 4층 56박스) → 27박스면 2층 0.50m
+  const palBoxes = pp => INV.lines.reduce((s,l,i)=>s+(+pp.q[i] ? invCartons({...l, qty:+pp.q[i]}).reduce((a,c)=>a+c.n,0) : 0),0);
+  const perPal = used.map(pp => { const dv = String(INV.dims||'').replace(/,/g,'.').split(/[*x×X]/).map(Number);
+    if (dv.length === 3 && Math.abs(dv[0]-1.1) < 1e-6 && Math.abs(dv[1]-1.1) < 1e-6 && Math.abs(dv[2]-0.88) < 1e-6) { const lay = Math.min(4, Math.max(1, Math.ceil(palBoxes(pp) / 14))); return 1.1*1.1*(0.12 + lay*0.19); }
+    return vol; });
   if (INV.auto.cbm) INV.cbm = (vol && pal) ? Math.round((pal === used.length ? perPal.reduce((a,v)=>a+v,0) : vol*pal)*10000)/10000 : '';
   ['net','gross','cbm','pallets'].forEach(k => {
     const el = document.getElementById('inv-f-'+k); if (el && document.activeElement !== el) el.value = INV[k];
