@@ -16969,7 +16969,7 @@ function invEstimate(){
   if (INV.palAuto || !Array.isArray(INV.plan) || INV.plan.some(p => !p.q || p.q.length !== INV.lines.length)) {
     const keep = Array.isArray(INV.plan) ? INV.plan : [];
     INV.plan = invAutoPlan(); INV.palAuto = true;
-    INV.plan.forEach((p,k) => { if (keep[k]) { p.net = keep[k].net ?? ''; p.gross = keep[k].gross ?? ''; p.boxes = keep[k].boxes ?? ''; } });
+    INV.plan.forEach((p,k) => { if (keep[k]) { p.net = keep[k].net ?? ''; p.gross = keep[k].gross ?? ''; p.boxes = keep[k].boxes ?? ''; if (keep[k].lots && keep[k].q && keep[k].q.length === p.q.length) { p.lots = keep[k].lots; p.lotTxt = keep[k].lotTxt; p.q = keep[k].q.slice(); } } });
   }
   const used = INV.plan.filter(p => p.q.some(v => +v > 0));
   // 팔레트 규격·무게는 가장 많이 실린 품목의 팔레트 기준
@@ -17010,12 +17010,13 @@ function renderInvPlan(){
       <div style="display:flex;gap:6px"><button onclick="invPlanAdd()" style="padding:5px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:12.5px">+ 팔레트 / Pallet</button>
         <button onclick="INV.palAuto=true;invEstimate();renderInvPlan()" style="padding:5px 10px;border-radius:6px;border:1px solid var(--line,#DCE1E7);background:#fff;cursor:pointer;font-size:12.5px">자동 배정 / Tự động</button></div></div>
     <div class="tw"><table style="font-size:12.5px"><thead><tr><th>팔레트<span class="vi">Pallet</span></th>${INV.lines.map(l=>`<th style="text-align:right;white-space:normal;min-width:90px">${l.name||l.code}</th>`).join('')}<th style="text-align:right">박스<span class="vi">Thùng</span></th><th style="text-align:right">순중량 kg<span class="vi">N.W</span></th><th style="text-align:right">총중량 kg<span class="vi">G.W</span></th><th></th></tr></thead><tbody>
-      ${INV.plan.map((p,k) => `<tr><td style="font-weight:600">${k+1}</td>
-        ${INV.lines.map((l,i)=>`<td><input type="number" min="0" value="${+p.q[i]||''}" oninput="invPlanSet(${k},${i},this.value)" style="${cell};min-width:70px"></td>`).join('')}
+      ${INV.plan.map((p,k) => `<tr><td style="font-weight:600;white-space:nowrap">${k+1} <button onclick="INV.plan[${k}]._lo=!INV.plan[${k}]._lo;renderInvPlan()" title="LOT별 포장 입력" style="padding:1px 6px;border-radius:5px;border:1px solid ${p.lots && Object.values(p.lots).some(a => a && a.length) ? '#16a34a;background:#DCFCE7' : 'var(--line,#DCE1E7);background:#fff'};cursor:pointer;font-size:11px">LOT</button></td>
+        ${INV.lines.map((l,i)=>`<td><input type="number" min="0" id="inv-pq-${k}-${i}" value="${+p.q[i]||''}" oninput="invPlanSet(${k},${i},this.value)" ${invPalLots(p,i) ? 'readonly title="LOT별 수량 합계 (LOT 칸에서 고치세요)"' : ''} style="${cell};min-width:70px${invPalLots(p,i) ? ';background:#F0FDF4' : ''}"></td>`).join('')}
         <td style="text-align:right"><input type="number" min="0" id="inv-pb-${k}" value="${p.boxes||''}" oninput="invPlanBoxes(${k},this.value)" title="LOT별 끝수 박스 등으로 실제 박스가 다르면 직접 입력 (비우면 자동 계산)" style="${cell};width:58px;text-align:right"></td>
         <td><input type="number" value="${p.net??''}" id="inv-pn-${k}" oninput="invPlanW(${k},'net',this.value)" style="${cell};min-width:80px"></td>
         <td><input type="number" value="${p.gross??''}" id="inv-pg-${k}" oninput="invPlanW(${k},'gross',this.value)" style="${cell};min-width:80px"></td>
-        <td><button onclick="invPlanDel(${k})" title="팔레트 빼기" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></td></tr>`).join('')}
+        <td><button onclick="invPlanDel(${k})" title="팔레트 빼기" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></td></tr>
+        ${p._lo ? `<tr style="background:#F8FAFC"><td style="font-size:11px;color:#5D6977;vertical-align:top">LOT별<br>LOT 수량</td>${INV.lines.map((l,i)=>`<td style="vertical-align:top"><textarea rows="4" placeholder="TGGOFEV 1000&#10;TGGOJEV 460" oninput="invPlanLots(${k},${i},this.value)" style="width:100%;min-width:120px;padding:5px 6px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12px;font-family:monospace">${String((p.lotTxt||{})[i]||'').replace(/</g,'&lt;')}</textarea><div id="inv-pl-sum-${k}-${i}" style="font-size:11px;color:#166534">${invPalLots(p,i) ? `LOT ${invPalLots(p,i).length}개 · ${(+p.q[i]).toLocaleString()}개 · ${(invPalBase(p).find(o => o.i === i)||{cs:[]}).cs.reduce((a,c)=>a+c.n,0)}박스` : ''}</div></td>`).join('')}<td colspan="4" style="font-size:11.5px;color:#5D6977;vertical-align:top">한 줄에 "LOT 수량"씩 넣거나 엑셀 표를 그대로 붙여넣으세요.<br>LOT마다 박스를 따로 나눕니다 (1,000개 → 48×20 + 40×1).<br>Dán bảng LOT từ Excel.</td></tr>` : ''}`).join('')}
       <tr style="background:#F6F8FA"><td style="font-weight:600">배정 합계 / Tổng</td>${INV.lines.map((l,i)=>`<td style="text-align:right" id="inv-ps-${i}"></td>`).join('')}<td colspan="4" style="color:#5D6977;font-size:11.5px">무게 칸이 비어 있으면 회색 예상값을 씁니다 · 계근 후 팔레트별 실측값을 넣으세요</td></tr>
     </tbody></table></div>`;
   invPlanRefresh();
@@ -17059,14 +17060,17 @@ function invCartons(l){
   return out;
 }
 // ✅ [2026-11-13] 팔레트별 박스 수 직접 입력 — LOT별 끝수 박스 때문에 계산보다 박스가 많을 때(예: 2,000개 → 42가 아니라 44박스)
-const invPalNatural = p => INV.lines.reduce((s,l,i)=>s+(+p.q[i] ? invCartons({...l, qty:+p.q[i]}).reduce((a,c)=>a+c.n,0) : 0),0);
+// ✅ LOT별 포장: 팔레트·품목마다 LOT과 수량을 넣으면 LOT마다 따로 박스를 나눈다 (예: 1,000 → 48×20 + 40×1)
+const invPalLots = (p, i) => (p.lots && Array.isArray(p.lots[i]) && p.lots[i].length) ? p.lots[i] : null;
+function invPalBase(p){ return INV.lines.map((l,i)=>i).filter(i => +p.q[i] > 0).map(i => { const L = INV.lines[i], lots = invPalLots(p, i);
+  return {i, cs: lots ? lots.flatMap(x => invCartons({...L, qty:+x.qty}).map(c => ({...c, lot:x.lot}))) : invCartons({...L, qty:+p.q[i]})}; }); }
+const invPalNatural = p => invPalBase(p).reduce((s,o)=>s+o.cs.reduce((a,c)=>a+c.n,0),0);
 const invPalBoxN = p => (p.boxes !== '' && p.boxes != null && +p.boxes > 0) ? +p.boxes : invPalNatural(p);
 // 팔레트의 품목별 카톤 구성. 박스 수를 바꿨으면 마지막 품목에서 차이를 맞춘다: 꽉 찬 박스는 그대로 두고 나머지를 끝수 박스(혼합)로
 function invPalCartons(p){
-  const idx = INV.lines.map((l,i)=>i).filter(i => +p.q[i] > 0);
-  const out = idx.map(i => ({i, cs: invCartons({...INV.lines[i], qty:+p.q[i]})}));
+  const out = invPalBase(p);
   const extra = invPalBoxN(p) - invPalNatural(p);
-  if (!extra || !out.length) return out;
+  if (!extra || !out.length || invPalLots(p, out[out.length-1].i)) return out;
   const t = out[out.length-1], l = INV.lines[t.i], q = +p.q[t.i], P = +l.pcsBox || q;
   const T = Math.max(1, t.cs.reduce((a,c)=>a+c.n,0) + extra);
   if (T < Math.ceil(q / P)) { t.cs = [{per: Math.ceil(q / T), n: T, qty: q}]; return out; }
@@ -17074,6 +17078,16 @@ function invPalCartons(p){
   t.cs = []; if (F) t.cs.push({per:P, n:F, qty:F*P});
   if (pn) t.cs.push(pn === 1 ? {per:rem, n:1, qty:rem} : {per:'', n:pn, qty:rem, mixed:true});
   return out;
+}
+// LOT 붙여넣기 해석: 줄마다 "LOT 수량 ..." (엑셀에서 복사한 탭 구분도 됨). LOT 없이 숫자로 시작하는 줄(끝수 박스 줄)은 건너뜀
+function invPlanLots(k, i, txt){
+  const p = INV.plan[k]; p.lots = p.lots || {}; p.lotTxt = p.lotTxt || {};
+  const arr = String(txt||'').split(/\n/).map(r => r.trim().split(/[\t ]+/).filter(Boolean)).filter(c => c.length >= 2 && !/^[\d.,]+$/.test(c[0]))
+    .map(c => ({lot: c[0], qty: +String(c.find((x,j) => j > 0 && /^[\d.,]+$/.test(x)) || '').replace(/,/g,'') || 0})).filter(x => x.qty > 0);
+  p.lotTxt[i] = txt; p.lots[i] = arr;
+  if (arr.length) { p.q[i] = arr.reduce((a,x)=>a+x.qty,0); const el = document.getElementById(`inv-pq-${k}-${i}`); if (el) el.value = p.q[i]; }
+  INV.palAuto = false; const sm = document.getElementById(`inv-pl-sum-${k}-${i}`); if (sm) sm.textContent = arr.length ? `LOT ${arr.length}개 · ${p.q[i].toLocaleString()}개 · ${invPalBase(p).find(o => o.i === i)?.cs.reduce((a,c)=>a+c.n,0) || 0}박스` : '';
+  invEstimate(); invRefreshTotals();
 }
 function invPlanBoxes(k, v){ INV.plan[k].boxes = v === '' ? '' : (+v || ''); invEstimate(); invRefreshTotals(); }
 function renderInvEditor(){
@@ -17442,7 +17456,7 @@ function invSheetPacking(ws){
       const l = INV.lines[i], rl = r;
       cs.forEach((c, j) => {
         if (j === 0) invCell(ws, `B${r}`, INV.kind==='KR' ? (l.en||l.code) : l.code, {h:'center'});
-        invCell(ws, `C${r}`, 'Inductor', {h:'center'}); invCell(ws, `D${r}`, c.mixed ? '' : c.per, {h:'center', fmt:'#,##0'}); invCell(ws, `E${r}`, c.n, {h:'center'});
+        invCell(ws, `C${r}`, c.lot ? `Inductor\nLOT ${c.lot}` : 'Inductor', {h:'center', wrap: !!c.lot}); invCell(ws, `D${r}`, c.mixed ? '' : c.per, {h:'center', fmt:'#,##0'}); invCell(ws, `E${r}`, c.n, {h:'center'});
         invCell(ws, `F${r}`, c.mixed ? c.qty : {formula:`D${r}*E${r}`, result:c.qty}, {h:'center', fmt:'#,##0'});
         totCtn += c.n; r++;
       });
