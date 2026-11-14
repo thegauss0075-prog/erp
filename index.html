@@ -16969,7 +16969,7 @@ function invEstimate(){
   if (INV.palAuto || !Array.isArray(INV.plan) || INV.plan.some(p => !p.q || p.q.length !== INV.lines.length)) {
     const keep = Array.isArray(INV.plan) ? INV.plan : [];
     INV.plan = invAutoPlan(); INV.palAuto = true;
-    INV.plan.forEach((p,k) => { if (keep[k]) { p.net = keep[k].net ?? ''; p.gross = keep[k].gross ?? ''; p.boxes = keep[k].boxes ?? ''; if (keep[k].lots && keep[k].q && keep[k].q.length === p.q.length) { p.lots = keep[k].lots; p.lotTxt = keep[k].lotTxt; p.q = keep[k].q.slice(); } } });
+    INV.plan.forEach((p,k) => { if (keep[k]) { p.net = keep[k].net ?? ''; p.gross = keep[k].gross ?? ''; p.boxes = keep[k].boxes ?? ''; } });   // 자동 배정은 수량·LOT을 새로 짠다 (LOT별 구성은 '직접 입력' 상태에서만 유지)
   }
   const used = INV.plan.filter(p => p.q.some(v => +v > 0));
   // 팔레트 규격·무게는 가장 많이 실린 품목의 팔레트 기준
