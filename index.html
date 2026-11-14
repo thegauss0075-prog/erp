@@ -17627,6 +17627,9 @@ const splBase = lot => String(lot || '').replace(/-\d{3,4}$/, '');
 const splBoxes = (code, q) => { const per = splPer(code) || q; q = +q || 0; if (!q) return []; const full = Math.floor(q / per), rem = q - full * per, out = []; if (full) out.push({per, n: full}); if (rem) out.push({per: rem, n: 1}); return out; };
 const splRowQty = r => r.qty != null ? (+r.qty || 0) : (+r.per || 0) * (+r.n || 0);   // 예전 형식(박스당×박스수) 호환
 const splRowBoxes = r => splBoxes(r.code, splRowQty(r)).reduce((a, c) => a + c.n, 0);
+// 팔레트 박스 수: 같은 팔레트의 같은 LOT은 합쳐서 박스를 나눈다 (36개 + 8개 줄 → 44개 1박스) — 인보이스와 같은 계산
+const splPalMerge = rows => { const m = []; rows.forEach(r => { const lt = splBase(r.lot), x = m.find(y => y.code === r.code && y.lot === lt); if (x) x.qty += splRowQty(r); else m.push({code: r.code, lot: lt, qty: splRowQty(r)}); }); return m; };
+const splPalBoxN = p => splPalMerge(p.rows || []).reduce((a, r) => a + splRowBoxes(r), 0);
 // 이 출고 예정의 모델별 LOT(합친 LOT) 지정 수량
 function splDraftLots(){ const m = {}; SPL_DRAFT.forEach(l => (l.lots||[]).forEach(x => { const k = l.code + '|' + splBase(x.lot); m[k] = (m[k] || 0) + (+x.qty || 0); })); return m; }
 // LOT별 수량을 박스로 나눠 팔레트당 56박스씩 쌓는다 (같은 LOT은 한 줄, 넘치면 다음 팔레트로)
@@ -17646,7 +17649,7 @@ function splPalLeft(code, lot, skip){ const need = splDraftLots()[code + '|' + s
 // 남은 수량이 있는 LOT 중 첫 번째 (모델 우선, 없으면 다른 모델)
 function splPalNext(code){ const ks = Object.keys(splDraftLots()); const pick = ks.find(k => (!code || k.split('|')[0] === code) && splPalLeft(...k.split('|')) > 0) || ks.find(k => splPalLeft(...k.split('|')) > 0); return pick ? pick.split('|') : null; }
 // 팔레트에 남은 자리(박스)에 들어가는 만큼만
-function splPalFit(k, code, q){ const used = SPL_PAL[k].rows.reduce((a,r)=>a+splRowBoxes(r),0), room = Math.max(0, 56 - used), per = splPer(code) || q; return Math.ceil(q / per) <= room ? q : room * per; }
+function splPalFit(k, code, q){ const used = splPalBoxN(SPL_PAL[k]), room = Math.max(0, 56 - used), per = splPer(code) || q; return Math.ceil(q / per) <= room ? q : room * per; }
 function splPalAddRow(k){ splPalKeep(); const nx = splPalNext((SPL_PAL[k].rows.slice(-1)[0]||{}).code);
   if (!nx) { alert('모든 LOT을 팔레트에 다 넣었습니다. / Đã phân bổ hết LOT.'); return; }
   SPL_PAL[k].rows.push({code: nx[0], lot: nx[1], qty: splPalFit(k, nx[0], splPalLeft(nx[0], nx[1]))}); renderShipPlans(); }
@@ -17666,7 +17669,7 @@ function splPalHtml(){
   const n = v => (+v||0).toLocaleString(), inp = 'padding:4px 6px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12.5px';
   const nm = c => (SPL_DRAFT.find(l => l.code === c) || {}).name || c;
   const lotsOf = c => [...new Set(((SPL_DRAFT.find(l => l.code === c) || {}).lots || []).map(x => splBase(x.lot)))];
-  const pals = SPL_PAL.map((p, k) => { const nb = p.rows.reduce((a,r)=>a+splRowBoxes(r),0), lay = Math.min(4, Math.max(1, Math.ceil(nb / 14)));
+  const pals = SPL_PAL.map((p, k) => { const nb = splPalBoxN(p), lay = Math.min(4, Math.max(1, Math.ceil(nb / 14)));
     return `<div style="border:1px solid var(--line,#DCE1E7);border-radius:8px;padding:8px;margin-bottom:6px;background:#fff">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><b style="font-size:13px">팔레트 ${k+1} / Pallet ${k+1}</b><span style="font-size:12px;color:${nb > 56 ? '#b91c1c' : '#5D6977'}">박스 ${nb}개${nb > 56 ? ' ⚠️ 56박스 초과' : ''} · ${lay}층 (높이 ${(0.12 + lay*0.19).toFixed(2)}m) <button onclick="splPalKeep();SPL_PAL.splice(${k},1);renderShipPlans()" title="팔레트 빼기" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></span></div>
       <table style="font-size:12.5px;width:100%"><thead><tr><th>모델<span class="vi">Model</span></th><th>LOT</th><th style="text-align:right">수량<span class="vi">SL</span></th><th>박스 (자동)<span class="vi">Thùng</span></th><th></th></tr></thead><tbody>
@@ -17684,7 +17687,7 @@ function splPalHtml(){
       <button onclick="splPalKeep();SPL_PAL.push({rows:[]});splPalAddRow(SPL_PAL.length-1)" style="padding:5px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:12.5px">+ 팔레트 / Pallet</button></div></div>
     ${pals || '<div style="font-size:12.5px;color:#5D6977;margin-bottom:6px">아직 팔레트 구성이 없습니다. "자동 채우기"로 만든 뒤 실제 포장대로 수량만 고치세요.</div>'}
     ${SPL_PAL.length ? `<div style="font-size:12px;margin-top:4px">${ck.map(c => `<span style="display:inline-block;margin:2px 8px 2px 0;color:${Math.abs(c.need - c.got) > 0.0005 ? '#b91c1c' : '#166534'}">${nm(c.code)} ${splLotName(c.lot)}: ${n(c.got)} / ${n(c.need)} ${Math.abs(c.need - c.got) > 0.0005 ? '⚠️' : '✓'}</span>`).join('')}</div>
-      <div style="font-size:12.5px;color:#5D6977;margin-top:2px">팔레트 ${SPL_PAL.length}개 · 박스 ${n(SPL_PAL.reduce((a,p)=>a+p.rows.reduce((b,r)=>b+splRowBoxes(r),0),0))}개${bad.length ? ' · <b style="color:#b91c1c">LOT 지정 수량과 팔레트 합계가 다른 LOT이 있습니다</b>' : ''}</div>` : ''}
+      <div style="font-size:12.5px;color:#5D6977;margin-top:2px">팔레트 ${SPL_PAL.length}개 · 박스 ${n(SPL_PAL.reduce((a,p)=>a+splPalBoxN(p),0))}개${bad.length ? ' · <b style="color:#b91c1c">LOT 지정 수량과 팔레트 합계가 다른 LOT이 있습니다</b>' : ''}</div>` : ''}
   </div>`;
 }
 function renderShipPlans(){
@@ -17747,7 +17750,7 @@ function renderShipPlans(){
     return `<tr>
       <td style="font-family:monospace;font-size:12px">${p.no||''}</td><td style="white-space:nowrap">${p.date||''}</td><td>${(SPL_DEST[p.dest]||p.dest||'').replace(/^\S+\s/,'')}</td>
       <td style="white-space:normal">${(p.lines||[]).map(l => `${l.name||l.code} <b>${n(l.qty)}</b><div style="font-size:11px;color:#185FA5">${(l.lots||[]).map(x => `${splLotName(x.lot)} ${n(x.qty)}`).join(' · ')}</div>`).join('')}${splMismatch(p).length ? `<div style="font-size:11.5px;color:#b91c1c;font-weight:600">⚠️ 인보이스 수량과 다름: ${splMismatch(p).join(', ')} — ✏️로 LOT 수량을 맞춰주세요</div>` : ''}</td>
-      <td style="text-align:right;font-weight:600">${n(qty)}${(p.pallets||[]).length ? `<div style="font-size:11px;font-weight:400;color:#5D6977">🧱 팔레트 ${p.pallets.length} · 박스 ${n(p.pallets.reduce((a,x)=>a+x.rows.reduce((b,r)=>b+splRowBoxes(r),0),0))}</div>` : ''}</td>
+      <td style="text-align:right;font-weight:600">${n(qty)}${(p.pallets||[]).length ? `<div style="font-size:11px;font-weight:400;color:#5D6977">🧱 팔레트 ${p.pallets.length} · 박스 ${n(p.pallets.reduce((a,x)=>a+splPalBoxN(x),0))}</div>` : ''}</td>
       <td style="white-space:nowrap"><span style="font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;color:${st[2]};background:${st[3]}">${st[0]}</span>${p.invNo ? `<div style="font-family:monospace;font-size:11.5px;margin-top:2px">${p.invNo}${p.invRev ? ` Rev.${p.invRev}` : ''}</div>` : ''}${p.status === 'done' ? `<div style="font-size:11px;color:#8A95A3">${String(p.doneAt||'').slice(0,10)} ${p.doneBy||''}</div>` : ''}</td>
       <td>${p.createdBy||''}${p.note ? `<div style="font-size:11.5px;color:#5D6977">${p.note}</div>` : ''}</td>
       <td style="white-space:nowrap">${act.join(' ')}</td></tr>`;
@@ -17779,7 +17782,7 @@ async function splSave(){
   if (over.length && !confirm(`재고(다른 출고 예정 제외)보다 많은 모델이 있습니다: ${over.map(l=>l.name).join(', ')}\n그래도 등록할까요? (출고 확정 때 재고가 부족하면 확정되지 않습니다)`)) return;
   if (SPL_DRAFT.some(l => !(l.lots && l.lots.length))) { alert('모든 모델에 LOT을 지정해주세요. / Chọn LOT cho tất cả model.'); return; }
   splPalKeep();
-  const pals = SPL_PAL.map(p => ({rows: p.rows.filter(r => r.code && r.lot && splRowQty(r) > 0).map(r => ({code: r.code, lot: splBase(r.lot), qty: splRowQty(r)}))})).filter(p => p.rows.length);
+  const pals = SPL_PAL.map(p => ({rows: splPalMerge(p.rows.filter(r => r.code && r.lot && splRowQty(r) > 0))})).filter(p => p.rows.length);   // 같은 팔레트의 같은 LOT 줄은 하나로
   if (pals.length) { const bad = splPalCheck().filter(c => Math.abs(c.need - c.got) > 0.0005);
     if (bad.length && !confirm(`팔레트 박스 합계가 LOT 지정 수량과 다릅니다:\n${bad.map(c => `${c.code} ${splLotName(c.lot)}: 박스 ${c.got.toLocaleString()} / 지정 ${c.need.toLocaleString()}`).join('\n')}\n\n그래도 저장할까요?`)) return; }
   const date = document.getElementById('spl-date').value || bdToday();
