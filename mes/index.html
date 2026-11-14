@@ -1529,6 +1529,11 @@ function realtime(){
 function liveRefresh(){ clearTimeout(_rtT); _rtT = setTimeout(async () => { await loadLive(); if (!document.querySelector('.ov') && S.view !== 'report' && S.view !== 'admin') render(); }, 400); }
 setInterval(() => { if (sb && ME.role && (S.view === 'tv' || S.view === 'machine') && !document.querySelector('.ov')) render(); }, 30000);   // 경과 시간 표시 갱신
 setInterval(() => { if (sb && ME.role && S.view === 'tv') loadLive().then(render); }, 5 * 60000);
+// ✅ [2026-11-14] 현황판(무인 TV): 새 버전이 올라오면 5분 안에 스스로 새로고침 — 키보드 없이도 수정 사항 적용
+let _verSig = null;
+setInterval(async () => { if (S.view !== 'tv' || document.querySelector('.ov')) return;
+  try { const t = await (await fetch(location.pathname + '?v=' + Date.now(), {cache: 'no-store'})).text(); const sig = t.length + ':' + t.slice(-400);
+    if (_verSig === null) _verSig = sig; else if (sig !== _verSig) location.reload(); } catch (e) {} }, 5 * 60000);
 // ✅ [2026-11-14] 현황판: 새 작업지시(ERP 발행·변경)가 1분 안에 보이도록 기준정보도 주기적으로 다시 읽음
 setInterval(() => { if (sb && ME.role && S.view === 'tv' && !document.querySelector('.ov')) loadMaster().then(render).catch(() => {}); }, 60000);              // 실시간이 끊겨도 5분마다 새로
 
