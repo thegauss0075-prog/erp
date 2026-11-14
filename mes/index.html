@@ -1521,7 +1521,7 @@ setInterval(() => { if (sb && ME.role && S.view === 'tv') loadLive().then(render
 // ── 시작
 async function boot(){
   if (!SB_URL || !SB_KEY || !window.supabase) { $('app').innerHTML = cfgView(); return; }
-  if (!sb) sb = window.supabase.createClient(SB_URL, SB_KEY, {auth: {persistSession: true, autoRefreshToken: true}});
+  if (!sb) sb = window.supabase.createClient(SB_URL, SB_KEY, {auth: {persistSession: true, autoRefreshToken: true, lock: (n, t, fn) => fn()}});   // ✅ [2026-11-14] 브라우저 잠금 대기로 '불러오는 중'에서 멈추는 문제 방지
   const s = await sb.auth.getSession(), u = s.data && s.data.session && s.data.session.user;
   if (!u) { $('who').textContent = ''; $('app').innerHTML = loginView(); return; }
   ME.email = u.email;
@@ -1545,7 +1545,9 @@ async function boot(){
   if (ME.role !== 'viewer') { syncWO(true).then(render); woAutoSync(); }
   render();
 }
-boot();
+// ✅ [2026-11-14] 시작이 45초 넘게 멈추면 자동 새로고침 (현황판 TV 무인 운영)
+const BOOT_WD = setTimeout(() => location.reload(), 45000);
+boot().finally(() => clearTimeout(BOOT_WD));
 </script>
 <script>
 // 📱 앱 설치(홈 화면 추가) → 주소창 없이 전체 화면 실행 + 작업 중 화면 꺼짐 방지
