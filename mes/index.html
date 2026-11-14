@@ -1525,8 +1525,17 @@ async function boot(){
   const s = await sb.auth.getSession(), u = s.data && s.data.session && s.data.session.user;
   if (!u) { $('who').textContent = ''; $('app').innerHTML = loginView(); return; }
   ME.email = u.email;
-  const r = await sb.from('app_users').select('role,name,must_change_pw').eq('email', u.email).maybeSingle();
+  // ✅ [2026-11-14] 재부팅 직후엔 네트워크·토큰 갱신이 늦어 역할 조회가 빈 값으로 올 수 있다 → 토큰 갱신 후 몇 번 다시 확인
+  let r = null;
+  for (let i = 0; i < 6; i++) {
+    r = await sb.from('app_users').select('role,name,must_change_pw').eq('email', u.email).maybeSingle();
+    if (!r.error && r.data && r.data.role) break;
+    $('app').innerHTML = '<div class="card" style="max-width:420px;margin:40px auto">서버 연결 중… (' + (i + 1) + '/6)</div>';
+    try { await sb.auth.refreshSession(); } catch (e) {}
+    await new Promise(res => setTimeout(res, 5000));
+  }
   ME.role = r.data && r.data.role || ''; ME.name = r.data && r.data.name || u.email;
+  if (!ME.role && r.error) { $('app').innerHTML = '<div class="card" style="max-width:420px;margin:40px auto">서버에 연결할 수 없습니다. 30초 뒤 자동으로 다시 시도합니다.</div>'; setTimeout(() => location.reload(), 30000); return; }
   if (!ME.role) { $('app').innerHTML = `<div class="card" style="max-width:520px;margin:30px auto"><h2>권한 없음</h2><p>${E(u.email)} 계정이 MES 사용자(app_users)에 등록되지 않았습니다. 관리자에게 요청하세요.</p><button class="btn" onclick="logout()">로그아웃</button></div>`; return; }
   $('who').textContent = `👤 ${r.data.name || u.email} · ${ME.role}`;
   $('pwc').style.display = ME.role === 'floor' ? 'none' : '';   // 현장 공용 계정은 태블릿에서 비밀번호 변경 불가 (관리자만 초기화)
