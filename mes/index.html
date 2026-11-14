@@ -65,7 +65,7 @@ td.r,th.r{text-align:right}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#0B2A3F;color:#fff;padding:12px 20px;border-radius:10px;z-index:60;font-size:15px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
 /* TV — 현장 TV(멀리서 보기)용 고대비 (2026-11-11): 글자는 흰색·밝은 회색, 테두리 진하게, 설비 상태색은 흰 글씨와 대비 4.5 이상 */
 body.tv{background:#05090E;color:#FFFFFF}
-body.tv main{font-size:17px}
+body.tv main{font-size:17px;max-width:none}
 body.tv .top{background:#000}
 body.tv .card{background:#101B27;border:1.5px solid #3A4F66}
 body.tv h2{font-size:22px;color:#FFFFFF}
@@ -101,7 +101,12 @@ body.tv .kpi small{font-size:17px;color:#D0DCE6}
 // 📱 [2026-11-13] 태블릿 화면 크기 맞춤 — 터치 기기는 자동으로 크게, A−/A+로 기기마다 조절(이 기기에 저장)
 function mesZoomAuto(){ const touch = matchMedia('(pointer:coarse)').matches; if (!touch) return 1; return Math.round(Math.min(1.6, Math.max(1.25, innerWidth / 1000)) * 20) / 20; }
 function mesZoomGet(){ let z = NaN; try { z = parseFloat(localStorage.getItem('mes_zoom')); } catch (e) {} return z > 0 ? z : mesZoomAuto(); }
-function mesZoomApply(){ const tv = document.body.classList.contains('tv'); const z = tv ? 1 : mesZoomGet(); document.documentElement.style.zoom = z; const v = document.getElementById('zoomv'); if (v) v.textContent = Math.round(z * 100) + '%'; const c = document.getElementById('zoomc'); if (c) c.style.display = tv ? 'none' : ''; }
+// 📺 [2026-11-14] 현황판은 한 화면에 전부 들어오게 자동 축소(세로 넘침 기준, 최소 55%)
+function tvFit(){ const de = document.documentElement; if (!document.body.classList.contains('tv')) return;
+  const fits = z => { de.style.zoom = z; return de.scrollHeight <= de.clientHeight + 2 && de.scrollWidth <= de.clientWidth + 2; };
+  if (fits(1)) return; let lo = 0.55, hi = 1; if (!fits(lo)) return;
+  for (let i = 0; i < 7; i++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; } de.style.zoom = lo; }
+function mesZoomApply(){ const tv = document.body.classList.contains('tv'); if (tv) { tvFit(); const c = document.getElementById('zoomc'); if (c) c.style.display = 'none'; return; } const z = mesZoomGet(); document.documentElement.style.zoom = z; const v = document.getElementById('zoomv'); if (v) v.textContent = Math.round(z * 100) + '%'; const c = document.getElementById('zoomc'); if (c) c.style.display = tv ? 'none' : ''; }
 function mesZoomStep(d){ const z = Math.round(Math.min(2, Math.max(0.8, mesZoomGet() + d * 0.1)) * 10) / 10; try { localStorage.setItem('mes_zoom', z); } catch (e) {} mesZoomApply(); }
 // ⌨️ [2026-11-13] 스캔 입력칸은 자동 포커스돼도 화면 자판이 뜨지 않게 한다(QR 리더기는 그대로 입력됨).
 //    작업자가 그 칸을 직접 손가락으로 누를 때만 자판이 나온다(라벨이 망가져 손으로 칠 때).
@@ -338,7 +343,7 @@ function render(){
   S.view = v; document.body.classList.toggle('tv', v === 'tv'); try { mesZoomApply(); } catch (e) {}
   $('nav').innerHTML = VIEWS.filter(([k]) => ME.role === 'floor' ? ['floor','machine'].includes(k) : ME.role === 'viewer' ? ['tv','report','ncr'].includes(k) : k !== 'admin' || ME.role === 'admin').map(([k,l]) => `<a href="#${k}" class="${k === v ? 'on' : ''}">${l}</a>`).join('');
   const app = $('app');
-  if (v === 'floor') app.innerHTML = floorView(); else if (v === 'machine') app.innerHTML = machineView(); else if (v === 'tv') app.innerHTML = tvView();
+  if (v === 'floor') app.innerHTML = floorView(); else if (v === 'machine') app.innerHTML = machineView(); else if (v === 'tv') { app.innerHTML = tvView(); setTimeout(tvFit, 0); }
   else if (v === 'report') { app.innerHTML = reportView(); loadReport().catch(e => { const el = $('rp-body'); if (el) el.innerHTML = '<p style="color:var(--bad)">불러오기 실패: ' + E(e.message || e) + '</p>'; }); } else if (v === 'admin') { app.innerHTML = adminView(); if (ME.role === 'admin') pwUsersCard(); }
   else if (v === 'ncr') { app.innerHTML = ncrView(); ncrLoad().catch(e => { const el = $('nc-body'); if (el) el.innerHTML = '<p style="color:var(--bad)">불러오기 실패: ' + E(e.message || e) + '</p>'; }); }
   if (v === 'floor') setTimeout(() => { const i = $('scan'); if (i && !document.querySelector('.ov')) i.focus(); }, 50);
