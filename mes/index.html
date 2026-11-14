@@ -783,7 +783,10 @@ function tvChecks(ms){
 function tvView(){
   const t0 = today0().toISOString(), recs = M.rec.filter(r => r.status === 'done' && r.created_at >= t0);
   const finRecs = recs.filter(r => isFinalFor(woOf(r.wo_id) || {code: r.item_code}, r.process_code));
-  const good = finRecs.reduce((a,r) => a + (+r.good_qty||0), 0), ngAll = recs.reduce((a,r) => a + (+r.ng_qty||0), 0), goodAll = recs.reduce((a,r) => a + (+r.good_qty||0), 0);
+  // ✅ [2026-11-14] 오늘 완성을 반제품(BTP)·완제품(TP)으로 나눠 보여준다
+  const catOf = r => { const w = woOf(r.wo_id); const c = (w && w.cat) || ((M.route || []).find(x => x.item_code === r.item_code) || {}).cat || (/-BTP$/i.test(r.item_code || '') ? 'BTP' : 'TP'); return String(c).toUpperCase() === 'BTP' ? 'BTP' : 'TP'; };
+  const goodTP = finRecs.filter(r => catOf(r) === 'TP').reduce((a,r) => a + (+r.good_qty||0), 0), goodBTP = finRecs.filter(r => catOf(r) === 'BTP').reduce((a,r) => a + (+r.good_qty||0), 0);
+  const good = goodTP + goodBTP, ngAll = recs.reduce((a,r) => a + (+r.ng_qty||0), 0), goodAll = recs.reduce((a,r) => a + (+r.good_qty||0), 0);
   const ngRate = goodAll + ngAll ? ngAll / (goodAll + ngAll) * 100 : 0;
   const ms = M.mach.filter(m => m.active !== false), now = Date.now(), runN = ms.filter(m => (machState(m.code) || {}).state === 'run').length;
   const avs = ms.map(m => availability(m.code, today0().getTime(), now)).filter(v => v !== null), av = avs.length ? avs.reduce((a,b) => a + b, 0) / avs.length : null;
@@ -794,7 +797,8 @@ function tvView(){
   const TVMAX = 10, hidden = wos.slice(TVMAX), hidBusy = hidden.filter(w => w.status === '진행중' || recs.some(r => r.wo_id === w.wo_id)).length;
   const moreRow = hidden.length ? `<tr><td colspan="4" class="muted" style="font-size:17px;padding:12px 8px;text-align:center">＋ ${hidBusy ? '진행 ' + hidBusy + '건 · ' : ''}대기 ${hidden.length - hidBusy}건 더 (전체 ${wos.length}건)</td></tr>` : '';
   return `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:14px">
-      <div class="card"><div class="kpi"><small>오늘 완성 (품목별 마지막 공정)</small>${N(good)}</div></div>
+      <div class="card"><div class="kpi"><small>오늘 완성 · 완제품 (TP)</small>${N(goodTP)} <span style="font-size:22px;color:#CBD5E1">EA</span></div></div>
+      <div class="card"><div class="kpi" style="color:#7DD3FC"><small>오늘 완성 · 반제품 (BTP)</small>${N(goodBTP)} <span style="font-size:22px;color:#CBD5E1">EA</span></div></div>
       <div class="card"><div class="kpi" style="color:${ngRate > 1.5 ? '#F87171' : ngRate > 0.5 ? '#FBBF24' : '#4ADE80'}"><small>공정 불량률 · 불량 ${N(ngAll)}</small>${ngRate.toFixed(2)}%</div></div>
       <div class="card"><div class="kpi"><small>설비 가동 중</small>${runN} <span style="font-size:22px;color:#CBD5E1">/ ${ms.length}</span></div></div>
       <div class="card"><div class="kpi" style="color:${av === null ? '#CBD5E1' : av >= 85 ? '#4ADE80' : av >= 70 ? '#FBBF24' : '#F87171'}"><small>오늘 가동률 (계획 정지 제외)</small>${av === null ? '-' : av.toFixed(1) + '%'}</div></div>
