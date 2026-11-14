@@ -16683,7 +16683,7 @@ const INV_ITEM_DEFAULT = {
   'ML27A040127A': {_v:'2026-11-13', hs:'85045010', pcsBox:48, unitKg:0.157292, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-OUT-L3, 14.4uH, +-2.16uH, 10Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
   'ML27A040112A': {_v:'2026-11-13', hs:'85045010', pcsBox:12, unitKg:0.791667, vi:'Cuộn cảm cắm dùng cho bộ sạc của ô tô điện, 30KW-PFC-US, 108uH, +-16.2uH, 26Ts, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
   'ML27A040118A': {_v:'2026-11-13', hs:'85045010', pcsBox:48, unitKg:0.10625, vi:'Cuộn cảm cắm 0.84uH 0.126uH, dùng cho bộ sạc của ô tô điện, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},
-  'ML27M040025A': {_v:'2026-11-13', hs:'85045010', pcsBox:12, unitKg:0.591667, vi:'Cuộn cảm cắm, 175uH, dùng cho bộ nguồn trạm sạc xe điện'},   // COIL-PFC PM50KW 175uH
+  'ML27M040025A': {_v:'2026-11-14', _force:['vi','hs'], hs:'85045010', pcsBox:12, unitKg:0.591667, vi:'Cuộn cảm cắm, 175uH, dùng cho bộ nguồn trạm sạc xe điện, NSX: Thegauss Vina Co., LTD, xuất xứ: Việt Nam, hàng mới 100%'},   // 통관 인보이스(TGV20261116 CDGH) 문구   // COIL-PFC PM50KW 175uH
   // 출하 정보 표(Q'ty/Box·Kg/Box)만 있는 모델 — HS·베트남어 품명은 처음 작성 때 넣으면 기억됨
   'ML27M020003A': {_v:'2026-11-13', pcsBox:12, unitKg:0.5875},     // PM50KW-DM 7.05kg/12
   'ML27M040145A': {_v:'2026-11-13', pcsBox:48, unitKg:0.163125},   // 40KW-OUT-L 7.83kg/48
@@ -16754,7 +16754,7 @@ function renderInvImgRow(){
 }
 function invDoc(){ return (COST.model && COST.model._doc) || {}; }
 function invItem(code){ const df = INV_ITEM_DEFAULT[code]||{}, sv = (invDoc().items||{})[code]||{}, o = {...df}, old = df._v && !(sv._v >= df._v);
-  Object.keys(sv).forEach(k => { if (sv[k] === '' || sv[k] == null) return; if (old && ['unitKg','pcsBox','palDims'].includes(k) && df[k] != null) return; o[k] = sv[k]; }); return o; }   // 저장값이 빈칸이거나 기준 갱신 전 값이면 기본값   // 저장값이 빈칸이면 기본값 유지
+  Object.keys(sv).forEach(k => { if (sv[k] === '' || sv[k] == null) return; if (old && ['unitKg','pcsBox','palDims', ...(df._force||[])].includes(k) && df[k] != null) return; o[k] = sv[k]; }); return o; }   // 저장값이 빈칸이거나 기준 갱신 전 값이면 기본값   // 저장값이 빈칸이면 기본값 유지
 function invKindOf(dest){ const d = String(dest||'').toUpperCase(); return (d === 'KR' || d.includes('한국') || d.includes('GAUSS INC')) ? 'KR' : (d === 'NG' ? '' : 'SOL'); }
 function invVNDate(t){ const d = Date.parse(t.dt); return isNaN(d) ? '' : new Date(d + 7*3600e3).toISOString().slice(0,10); }
 function invShipments(kind, from, to){
