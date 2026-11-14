@@ -17006,6 +17006,7 @@ function renderInvPlan(){
         <span style="font-weight:400;color:#5D6977;font-size:12px">— 박스를 순서대로 쌓아 자동 배정합니다. 실제로 실은 대로 수량을 고치면 패킹리스트가 팔레트별로 나옵니다</span></div>
       <div style="display:flex;gap:6px"><button onclick="invPlanAdd()" style="padding:5px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:12.5px">+ 팔레트 / Pallet</button>
         <button onclick="INV.palAuto=true;INV.plan.forEach(p=>{p.lots={};p.lotTxt={};p.boxes='';});invEstimate();renderInvPlan()" style="padding:5px 10px;border-radius:6px;border:1px solid var(--line,#DCE1E7);background:#fff;cursor:pointer;font-size:12.5px">자동 배정 / Tự động</button>
+        ${INV.planId && typeof SPL !== 'undefined' && ((SPL.find(x => x.id === INV.planId) || {}).pallets || []).length ? `<button onclick="invReloadPlanPallets()" title="출고 예정에 입력한 팔레트·LOT·박스 구성 그대로" style="padding:5px 10px;border-radius:6px;border:1px solid #b45309;background:#FFFBEB;color:#92400E;cursor:pointer;font-size:12.5px">📦 출고 예정 구성 / Theo KH xuất</button>` : ''}
         <label style="padding:5px 10px;border-radius:6px;border:1px solid #16a34a;background:#F0FDF4;color:#166534;cursor:pointer;font-size:12.5px" title="THÔNG TIN XUẤT HÀNG 엑셀 — 팔레트·LOT·박스·무게를 그대로 채웁니다">📥 출하 정보 파일 / File xuất hàng<input type="file" accept=".xlsx" onchange="invImportShipInfo(this)" style="display:none"></label></div></div>
     <div class="tw"><table style="font-size:12.5px"><thead><tr><th>팔레트<span class="vi">Pallet</span></th>${INV.lines.map(l=>`<th style="text-align:right;white-space:normal;min-width:90px">${l.name||l.code}</th>`).join('')}<th style="text-align:right">박스<span class="vi">Thùng</span></th><th style="text-align:right">순중량 kg<span class="vi">N.W</span></th><th style="text-align:right">총중량 kg<span class="vi">G.W</span></th><th></th></tr></thead><tbody>
       ${INV.plan.map((p,k) => `<tr><td style="font-weight:600;white-space:nowrap">${k+1} <button onclick="INV.plan[${k}]._lo=!INV.plan[${k}]._lo;renderInvPlan()" title="LOT별 포장 입력" style="padding:1px 6px;border-radius:5px;border:1px solid ${p.lots && Object.values(p.lots).some(a => a && a.length) ? '#16a34a;background:#DCFCE7' : 'var(--line,#DCE1E7);background:#fff'};cursor:pointer;font-size:11px">LOT</button></td>
@@ -17627,9 +17628,8 @@ const splBase = lot => String(lot || '').replace(/-\d{3,4}$/, '');
 const splBoxes = (code, q) => { const per = splPer(code) || q; q = +q || 0; if (!q) return []; const full = Math.floor(q / per), rem = q - full * per, out = []; if (full) out.push({per, n: full}); if (rem) out.push({per: rem, n: 1}); return out; };
 const splRowQty = r => r.qty != null ? (+r.qty || 0) : (+r.per || 0) * (+r.n || 0);   // 예전 형식(박스당×박스수) 호환
 const splRowBoxes = r => splBoxes(r.code, splRowQty(r)).reduce((a, c) => a + c.n, 0);
-// 팔레트 박스 수: 같은 팔레트의 같은 LOT은 합쳐서 박스를 나눈다 (36개 + 8개 줄 → 44개 1박스) — 인보이스와 같은 계산
-const splPalMerge = rows => { const m = []; rows.forEach(r => { const lt = splBase(r.lot), x = m.find(y => y.code === r.code && y.lot === lt); if (x) x.qty += splRowQty(r); else m.push({code: r.code, lot: lt, qty: splRowQty(r)}); }); return m; };
-const splPalBoxN = p => splPalMerge(p.rows || []).reduce((a, r) => a + splRowBoxes(r), 0);
+// 팔레트 박스 수: 줄마다 실제 포장 그대로 센다 (같은 LOT도 36개 박스 + 8개 박스처럼 따로 포장했으면 줄을 나눠 입력)
+const splPalBoxN = p => (p.rows || []).reduce((a, r) => a + splRowBoxes(r), 0);
 // 이 출고 예정의 모델별 LOT(합친 LOT) 지정 수량
 function splDraftLots(){ const m = {}; SPL_DRAFT.forEach(l => (l.lots||[]).forEach(x => { const k = l.code + '|' + splBase(x.lot); m[k] = (m[k] || 0) + (+x.qty || 0); })); return m; }
 // LOT별 수량을 박스로 나눠 팔레트당 56박스씩 쌓는다 (같은 LOT은 한 줄, 넘치면 다음 팔레트로)
@@ -17782,7 +17782,7 @@ async function splSave(){
   if (over.length && !confirm(`재고(다른 출고 예정 제외)보다 많은 모델이 있습니다: ${over.map(l=>l.name).join(', ')}\n그래도 등록할까요? (출고 확정 때 재고가 부족하면 확정되지 않습니다)`)) return;
   if (SPL_DRAFT.some(l => !(l.lots && l.lots.length))) { alert('모든 모델에 LOT을 지정해주세요. / Chọn LOT cho tất cả model.'); return; }
   splPalKeep();
-  const pals = SPL_PAL.map(p => ({rows: splPalMerge(p.rows.filter(r => r.code && r.lot && splRowQty(r) > 0))})).filter(p => p.rows.length);   // 같은 팔레트의 같은 LOT 줄은 하나로
+  const pals = SPL_PAL.map(p => ({rows: p.rows.filter(r => r.code && r.lot && splRowQty(r) > 0).map(r => ({code: r.code, lot: splBase(r.lot), qty: splRowQty(r)}))})).filter(p => p.rows.length);
   if (pals.length) { const bad = splPalCheck().filter(c => Math.abs(c.need - c.got) > 0.0005);
     if (bad.length && !confirm(`팔레트 박스 합계가 LOT 지정 수량과 다릅니다:\n${bad.map(c => `${c.code} ${splLotName(c.lot)}: 박스 ${c.got.toLocaleString()} / 지정 ${c.need.toLocaleString()}`).join('\n')}\n\n그래도 저장할까요?`)) return; }
   const date = document.getElementById('spl-date').value || bdToday();
@@ -17924,19 +17924,23 @@ function invFromPlan(id){
   document.getElementById('inv-kind').value = kind;
   invStart(kind, p.date || bdToday(), (p.lines||[]).map(l => ({code:l.code, name:l.name, qty:+l.qty||0})));
   INV.planId = p.id;
-  // ✅ 출고 예정에 팔레트·LOT별 박스 구성이 있으면 인보이스 팔레트 구성을 그대로 채운다
+  invApplyPlanPallets(p);
+  renderInvEditor();
+  document.getElementById('inv-panel').scrollIntoView({behavior:'smooth', block:'start'});
+}
+// ✅ 출고 예정의 팔레트·LOT별 박스 구성을 인보이스 팔레트 구성에 그대로 넣는다 (줄마다 실제 포장 박스 유지)
+function invApplyPlanPallets(p){
   if ((p.pallets||[]).length && INV.packMode !== 'box') {
     INV.plan = p.pallets.map(pp => { const q = INV.lines.map(() => 0), lots = {}, lotTxt = {};
       pp.rows.forEach(r => { const i = INV.lines.findIndex(l => l.code === r.code); if (i < 0) return; lots[i] = lots[i] || [];
-        const lt = splBase(r.lot), rq = splRowQty(r); let x = lots[i].find(y => y.lot === lt); if (!x) { x = {lot: lt, qty: 0}; lots[i].push(x); } x.qty += rq; q[i] += rq; });
+        const lt = splBase(r.lot), rq = splRowQty(r); let x = lots[i].find(y => y.lot === lt); if (!x) { x = {lot: lt, qty: 0, cartons: []}; lots[i].push(x); } x.qty += rq; x.cartons.push(...splBoxes(r.code, rq)); q[i] += rq; });
       Object.keys(lots).forEach(i => { lotTxt[i] = lots[i].map(x => `${x.lot} ${x.qty}`).join('\n'); });
       return {q, lots, lotTxt, boxes: '', net: '', gross: ''}; });
     INV.palAuto = false; INV.auto = {...(INV.auto || {}), net: true, gross: true, cbm: true, pallets: true};
     invEstimate();
   }
-  renderInvEditor();
-  document.getElementById('inv-panel').scrollIntoView({behavior:'smooth', block:'start'});
 }
+function invReloadPlanPallets(){ const p = INV && INV.planId && SPL.find(x => x.id === INV.planId); if (!p || !(p.pallets||[]).length) { alert('연결된 출고 예정에 팔레트 구성이 없습니다.'); return; } if (!confirm(`출고 예정 ${p.no}의 팔레트 구성(LOT·박스)으로 바꿀까요?`)) return; invApplyPlanPallets(p); renderInvEditor(); }
 async function splUnlinkInvoice(no){
   if (!no || typeof SPL === 'undefined') return;
   for (const p of SPL.filter(x => x.invNo === no && x.status !== 'done' && x.status !== 'cancel')) {
