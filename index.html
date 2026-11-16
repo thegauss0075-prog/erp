@@ -3827,7 +3827,9 @@ function woQCMap(){
   const byWo = {}, byLot = {};
   (QC||[]).filter(q => q.inspType === '출하검사').forEach(q => {
     if (q.workOrderId) byWo[String(q.workOrderId)] = q;
-    if (q.lot) byLot[q.code + '|' + String(q.lot).trim().toLowerCase()] = q;
+    // ✅ [2026-11-16] 같은 LOT의 다른 작업지시에 연결된 검사는 이 작업지시 것으로 치지 않는다
+    //    (예: TGGNDEV — WO261113-082824 검사 합격이 WO261113-153726까지 '합격'으로 보였다)
+    if (q.lot && !(q.workOrderId && (WO||[]).some(w => String(w.id) === String(q.workOrderId)))) byLot[q.code + '|' + String(q.lot).trim().toLowerCase()] = q;
   });
   return w => byWo[String(w.id)] || (w.lot ? byLot[w.code + '|' + String(w.lot).trim().toLowerCase()] : null) || null;
 }
