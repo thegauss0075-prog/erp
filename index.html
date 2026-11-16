@@ -4642,7 +4642,7 @@ function _renderQCBody() {
     return `<tr>
     <td>${r.inspType||'-'}${r.site === 'HQ' ? '<div style="font-size:10.5px;font-weight:700;color:#0f766e">🏢 본사</div>' : ''}</td>
     <td>${r.name||''} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
-    <td style="font-family:monospace;font-size:11px;color:#1d4ed8">${attachIcon}${attachIcon2}${r.lot||'-'}</td>
+    <td style="font-family:monospace;font-size:11px;color:#1d4ed8">${attachIcon}${attachIcon2}${r.lot ? `<a href="#" onclick="qcLotDocs('${String(r.id).replace(/'/g,'')}');return false" title="이 LOT의 수입검사·공정검사·출하검사·특성 데이터 모두 보기" style="color:#1d4ed8;text-decoration:underline dotted;font-weight:700">${r.lot}</a>` : '-'}</td>
     <td style="font-family:monospace;font-size:11px">${r.workOrderNo||'-'}</td>
     <td style="text-align:right;font-weight:600;color:#1d4ed8">${(r.inspType==='수입검사'||r.inspType==='출하검사') ? (+r.totalQty||0).toLocaleString() : '-'}</td>
     <td style="text-align:right">${(+r.sampleQty||0).toLocaleString()}</td>
@@ -18445,6 +18445,48 @@ async function qcTesterAuto(file){
       ${ng.length ? `<div style="color:#b91c1c;margin-top:4px">NG 시리얼: ${ng.map(r => hqE(String(r[kSN]).split('-').pop()) + '(' + hqE(r[kRes]) + ')').slice(0, 20).join(', ')}</div>` : ''}
       <div style="color:#5D6977;margin-top:4px">수량·불량·판정·LOT·비고를 채웠습니다. 필요하면 고쳐서 저장하세요.</div>`;
   } catch (e) { box.style.display = ''; box.innerHTML = '⚠️ 파일을 읽지 못했습니다: ' + hqE(e.message || e); }
+}
+
+// ✅ [2026-11-16] LOT 문서 한눈에 — 검사 목록에서 LOT를 누르면 그 LOT의
+//    출하검사(특성 데이터·성적서) · 공정검사 · 투입 자재별 수입검사 성적서 · 반제품(BTP) 기록까지 모두 모아 보여준다
+async function qcLotDocs(id){
+  const r = (QC || []).find(x => String(x.id) === String(id)); if (!r) return;
+  qmModal('<div class="empty">⏳ 관련 문서를 모으는 중…</div>');
+  try { if (!WO.length) await loadWO(); if (!WO_MAT.length) await loadWOMaterials(); } catch (e) {}
+  const sameLot = (a, b) => String(a || '').replace(/-\d{4}$/, '') === String(b || '').replace(/-\d{4}$/, '');
+  const wo = WO.find(w => r.workOrderId && String(w.id) === String(r.workOrderId)) || WO.find(w => w.code === r.code && sameLot(w.lot, r.lot));
+  const fileBtns = q => hqQAFiles(q);
+  const row = (q, sub) => `<tr><td style="white-space:nowrap">${hqE(q.inspType)}</td><td>${hqE(q.name || '')} <span style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(q.code || '')}</span>${sub ? `<div style="font-size:11px;color:#8A95A3">${sub}</div>` : ''}</td><td style="font-family:monospace;font-size:12px">${hqE(q.lot || '-')}</td><td style="white-space:nowrap;font-size:12px">${hqE(String(q.inspDate || '').slice(0, 10))}</td><td><span style="font-weight:700;color:${q.result === '불합격' ? '#b91c1c' : q.result === '합격' ? '#166534' : '#b45309'}">${hqE(q.result || '-')}</span></td><td style="white-space:nowrap">${fileBtns(q)}${q.inspType === '출하검사' && !q.attachmentUrl2 ? ' <span style="font-size:11.5px;color:#b91c1c;font-weight:700">❌ 성적서 없음</span>' : ''}</td></tr>`;
+  const miss = (m, why) => `<tr style="background:#FEF2F2"><td>수입검사</td><td>${hqE(m.name || '')} <span style="font-size:11px;color:#8A95A3;font-family:monospace">${hqE(m.code || '')}</span></td><td style="font-family:monospace;font-size:12px">${hqE(m.lot || '-')}</td><td></td><td></td><td style="font-size:11.5px;color:#b91c1c;font-weight:700">❌ ${why}</td></tr>`;
+  const head = '<thead><tr><th>구분</th><th>품목</th><th>LOT</th><th>일자</th><th>판정</th><th>파일</th></tr></thead>';
+  // 이 작업지시(또는 같은 품목·LOT)의 공정·출하검사
+  const ownQC = w => (QC || []).filter(q => (q.inspType === '공정검사' || q.inspType === '출하검사') && ((w && String(q.workOrderId) === String(w.id)) || (q.code === (w ? w.code : r.code) && sameLot(q.lot, w ? w.lot : r.lot))));
+  const matRows = (w, depth) => {
+    if (!w || depth > 2) return [];
+    const mats = WO_MAT.filter(m => String(m.workOrderId) === String(w.id)), out = [], seen = new Set();
+    mats.forEach(m => {
+      const k = m.code + '|' + m.lot; if (seen.has(k)) return; seen.add(k);
+      if (m.cat === 'BTP') { const bw = WO.find(x => x.code === m.code && x.lot === m.lot && x.cat === 'BTP');
+        out.push(`<tr><td colspan="6" style="background:#EEF2FF;font-weight:700;font-size:12.5px">🧩 반제품 ${hqE(m.name || m.code)} · LOT ${hqE(m.lot || '-')}${bw ? ' · 지시 ' + hqE(bw.orderNo) : ''}</td></tr>`);
+        ownQC(bw || {code: m.code, lot: m.lot}).forEach(q => out.push(row(q, '반제품 검사')));
+        out.push(...matRows(bw, depth + 1)); return; }
+      if (!m.lot || m.lot === '__nolot__') { out.push(miss(m, 'LOT 미지정 투입 — 수입검사 연결 불가')); return; }
+      const q = (QC || []).filter(x => x.inspType === '수입검사' && x.code === m.code && x.lot === m.lot);
+      if (!q.length) out.push(miss(m, '수입검사 기록 없음'));
+      else q.forEach(x => out.push(row(x, x.attachmentUrl ? '' : '<span style="color:#b91c1c">성적서 첨부 없음</span>')));
+    });
+    return out;
+  };
+  const own = ownQC(wo), mats = matRows(wo, 0);
+  const shipN = own.filter(q => q.inspType === '출하검사'), noRep = shipN.filter(q => !q.attachmentUrl2).length;
+  qmModal(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><h3 style="margin:0">📂 LOT ${hqE(r.lot)} — 관련 문서</h3><span style="flex:1"></span><button onclick="qmClose()" style="border:0;background:none;font-size:20px;cursor:pointer">✕</button></div>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">${hqE(r.name || '')} <span style="font-family:monospace">${hqE(r.code || '')}</span>${wo ? ` · 작업지시 <b>${hqE(wo.orderNo)}</b> (${hqE(wo.status || '')}, 계획 ${(+wo.planQty || 0).toLocaleString()})` : ' · 연결된 작업지시를 찾지 못했습니다'}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${qmBadge('출하검사 ' + shipN.length, 'b')}${noRep ? qmBadge('성적서 없음 ' + noRep, 'r') : shipN.length ? qmBadge('성적서 첨부 완료', 'g') : ''}${qmBadge('공정검사 ' + own.filter(q => q.inspType === '공정검사').length)}${qmBadge('투입 자재 ' + (wo ? new Set(WO_MAT.filter(m => String(m.workOrderId) === String(wo.id)).map(m => m.code + m.lot)).size : 0) + '종')}</div>
+    <h4 style="margin:8px 0 4px">① 출하검사 · 공정검사</h4><div class="tw"><table style="width:100%;font-size:12.5px">${head}<tbody>${own.map(q => row(q)).join('') || '<tr><td colspan="6" class="empty">기록이 없습니다.</td></tr>'}</tbody></table></div>
+    <h4 style="margin:14px 0 4px">② 투입 자재 수입검사 성적서 ${wo ? '' : '<span style="font-size:12px;color:#8A95A3;font-weight:400">(작업지시가 없어 알 수 없음)</span>'}</h4><div class="tw"><table style="width:100%;font-size:12.5px">${head}<tbody>${mats.join('') || '<tr><td colspan="6" class="empty">투입 자재 기록이 없습니다.</td></tr>'}</tbody></table></div>
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:8px">파일을 누르면 엑셀·CSV는 ERP 보기 창, PDF는 드라이브로 열립니다. 빨간 줄은 성적서·기록이 빠진 곳입니다.</div>
+    <div style="text-align:right;margin-top:10px"><button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button></div>`);
+  const box = document.querySelector('#qm-modal > div'); if (box) box.style.width = 'min(1000px,100%)';
 }
 
 </script>
