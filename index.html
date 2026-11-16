@@ -17969,7 +17969,7 @@ async function splLinkInvoice(rec){
 //   저장: 서버 JSON 저장소(HQ 저장소 방식) — qcrit · qfai · qclaim · qtool · qedu · qdoc
 // ════════════════════════════════════════════════════════════
 const QM = {view: 'home', loaded: false, q: {}, f: {}};
-const QM_STORES = ['qcrit','qfai','qclaim','qtool','qedu','qdoc','qmes'];
+const QM_STORES = ['qcrit','qfai','qclaim','qtool','qedu','qdoc','qmes','qgauge','qskill'];
 const QM_CUSTS0 = ['솔루엠', '영화테크'];
 function qmCustOf(code, name){ return /PCDU/i.test(String(code || '') + ' ' + String(name || '')) ? '영화테크' : '솔루엠'; }
 function qmCusts(){ return [...new Set([...QM_CUSTS0, ...(HQS.qcrit || []).map(x => x.customer), ...(HQS.qclaim || []).map(x => x.customer), ...(HQS.qfai || []).map(x => x.customer)].filter(Boolean))]; }
@@ -17992,10 +17992,10 @@ const QM_DEF = {
   qclaim: {title: '고객사 부적합 (8D)', vi: 'Khiếu nại khách hàng', icon: '📮',
     fields: [['recvDate','접수일','date'],['customer','고객사','cust'],['claimNo','고객 관리번호','text'],['code','품목코드','text'],['name','품명','text'],['lot','LOT','text'],['qty','불량 수량','num'],['severity','등급','sel',['Major','Minor','Critical']],['defect','불량 내용','area'],['cause','원인 (D4)','area'],['action','대책 (D5~D6)','area'],['owner','담당자','text'],['dueDate','회신 기한','date'],['status','진행 단계','sel',['접수','원인 분석','대책 수립','효과 확인','완료']],['closeDate','완료일','date']],
     cols: ['recvDate','customer','name','lot','qty','defect','status','dueDate','owner'], def: () => ({recvDate: qmToday(), status: '접수', severity: 'Major', dueDate: qmAddMonths(qmToday(), 0)})},
-  qtool: {title: '기타 설비 · 치공구', vi: 'MES에 없는 것 · ERP 등록', icon: '🧰',
-    fields: [['kind','구분','sel',['검사설비','계측기','치공구 (Test Fixture)','게이지']],['code','관리번호','text'],['name','명칭','text'],['model','모델 · 규격','text'],['location','사용 공정 · 위치','text'],['owner','관리자','text'],['calCycle','교정 주기 (개월, 0=교정 없음)','num'],['lastCal','최근 교정일','date'],['calOrg','교정 기관','sel',['외부 공인기관','사내 교정','제조사']],['status','상태','sel',['사용','수리 중','보관','폐기']],['note','비고','area']],
-    cols: ['kind','code','name','location','calCycle','lastCal','nextCal','status'], def: () => ({kind: '계측기', calCycle: 12, status: '사용', calOrg: '외부 공인기관'})},
-  qedu: {title: '교육 기록', vi: 'Đào tạo · ERP 등록', icon: '🎓',
+  qtool: {title: '기타 설비 · 치공구', vi: 'Đồ gá · Dụng cụ', icon: '🧰',
+    fields: [['kind','구분','sel',['치공구 (Test Fixture)','검사 지그','공구','검사설비 (교정 없음)','기타']],['code','관리번호','text'],['name','명칭','text'],['model','모델 · 규격','text'],['location','사용 공정 · 위치','text'],['owner','관리자','text'],['calCycle','교정 주기 (개월, 0=교정 없음)','num'],['lastCal','최근 교정일','date'],['calOrg','교정 기관','sel',['외부 공인기관','사내 교정','제조사']],['status','상태','sel',['사용','수리 중','보관','폐기']],['note','비고','area']],
+    cols: ['kind','code','name','location','calCycle','lastCal','nextCal','status'], def: () => ({kind: '치공구 (Test Fixture)', calCycle: 0, status: '사용', calOrg: '사내 교정'})},
+  qedu: {title: '교육 기록', vi: 'Đào tạo', icon: '🎓',
     fields: [['date','교육일','date'],['kind','구분','sel',['신입 교육','정기 교육','특별 교육','자격 인증','고객 요구 교육']],['course','과정명','text'],['trainer','강사','text'],['target','대상자 (이름 쉼표로)','area'],['hours','시간','num'],['result','결과','sel',['이수','미이수','자격 취득','재교육 필요']],['validUntil','자격 유효기한','date'],['note','비고','area']],
     cols: ['date','kind','course','trainer','target','hours','result','validUntil'], def: () => ({date: qmToday(), kind: '정기 교육', result: '이수'})},
   qdoc: {title: '품질 문서 관리', vi: 'Quản lý tài liệu', icon: '📁',
@@ -18059,7 +18059,7 @@ function qmHome(){
   const fai = HQS.qfai || [], cl = HQS.qclaim || [], tl = HQS.qtool || [], ed = HQS.qedu || [], dc = HQS.qdoc || [];
   const ngM = qmNG(m0), ngQty = ngM.reduce((a, x) => a + (+x.qty || 0), 0), failM = qcM.filter(r => r.result === '불합격').length;
   const clOpen = cl.filter(x => x.status !== '완료'), clLate = clOpen.filter(x => (qmDays(x.dueDate) ?? 1) < 0);
-  const mg = (QM.mes && QM.mes.gauges) || [];
+  const mg = qmGauges().filter(g => g.active !== false);
   const calOver = tl.filter(r => qmCalState(r) === 'over').length + mg.filter(g => qmMesGaugeState(g) === 'over').length, calSoon = tl.filter(r => qmCalState(r) === 'soon').length + mg.filter(g => qmMesGaugeState(g) === 'soon').length;
   const edM = ed.filter(x => qmD(x.date).slice(0, 7) === qmMonth()).length, docRev = dc.filter(x => x.status === '개정 중').length;
   const wk = qmQC(qmWeekStart()), wkP = qmPass(wk);
@@ -18117,7 +18117,7 @@ function qmWeekView(){
   const clNew = cl.filter(x => qmD(x.recvDate) >= ws && qmD(x.recvDate) <= we), clDone = cl.filter(x => x.status === '완료' && qmD(x.closeDate) >= ws && qmD(x.closeDate) <= we);
   const fai = (HQS.qfai || []).filter(x => qmD(x.date) >= ws && qmD(x.date) <= we), ed = (HQS.qedu || []).filter(x => qmD(x.date) >= ws && qmD(x.date) <= we);
   const rows = ['수입검사','공정검사','출하검사'].map(t => { const l = qc.filter(r => r.inspType === t), p = qmPass(l); return `<tr><td>${t}</td><td style="text-align:right">${l.length}</td><td style="text-align:right">${hqN(l.reduce((a, r) => a + (+r.totalQty || 0), 0))}</td><td style="text-align:right">${l.filter(r => r.result === '불합격').length}</td><td style="text-align:right">${p === null ? '-' : p.toFixed(1) + '%'}</td></tr>`; }).join('');
-  const due = (HQS.qtool || []).filter(r => qmCalState(r) === 'over' || qmCalState(r) === 'soon').map(r => ({code: r.code, name: r.name, nextCal: r.nextCal || qmAddMonths(r.lastCal, r.calCycle)})).concat(((QM.mes && QM.mes.gauges) || []).filter(g => qmMesGaugeState(g) !== 'ok' && qmMesGaugeState(g) !== 'none').map(g => ({code: g.code, name: g.name, nextCal: g.nextDue})));
+  const due = (HQS.qtool || []).filter(r => qmCalState(r) === 'over' || qmCalState(r) === 'soon').map(r => ({code: r.code, name: r.name, nextCal: r.nextCal || qmAddMonths(r.lastCal, r.calCycle)})).concat(qmGauges().filter(g => ['over','soon'].includes(qmMesGaugeState(g))).map(g => ({code: g.code, name: g.name, nextCal: g.next_due})));
   return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><h3 style="margin:0;font-size:16px">📰 주간 품질 보고 · ${ws} ~ ${we}</h3><span style="flex:1"></span><button onclick="window.print()" style="padding:6px 12px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:12.5px;cursor:pointer;font-weight:600">🖨 인쇄</button></div>
   <div style="background:#fff;border:1px solid #E3E8EE;border-radius:12px;padding:14px 16px">
    <div style="font-weight:700;margin-bottom:6px">1. 검사 실적</div><div class="tw"><table style="width:100%"><thead><tr><th>구분</th><th style="text-align:right">건수</th><th style="text-align:right">검사 수량</th><th style="text-align:right">불합격</th><th style="text-align:right">합격률</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -18216,67 +18216,195 @@ async function qmDel(){
   if (await hqsDelete(e.store, e.rec.id, QM_DEF[e.store].title + ' 기록')) { qmClose(); QM.ed = null; qmRender(); }
 }
 
-// ── MES 연동: 계측기·검교정(gauges · gauge_cals), 작업자 자격(worker_skills) (2026-11-16)
-//   같은 사이트(github.io)라 이 브라우저에 MES 로그인이 있으면 MES DB를 직접 읽는다.
-//   읽은 내용은 ERP 저장소(qmes)에 사본으로 저장 → MES 로그인이 없는 사람도 마지막 사본을 본다.
+// ── 계측기·검교정 / 작업자 자격 — ERP가 원본, MES는 읽기만 (2026-11-16)
+//   ERP 저장소: qgauge(계측기 + 교정 이력 cals[]) · qskill(작업자×공정 자격)
+//   MES는 작업지시처럼 이 저장소를 받아가 현장(작업 시작 확인)에 쓴다.
+//   작업자 명단·공정 목록은 MES에 있으므로, MES에서 읽어 온 사본(qmes)을 쓴다.
 const QM_SB_URL = 'https://dorbfjtgnjnsnyamgnxy.supabase.co', QM_SB_KEY = 'sb_publishable_3f-9RqobsZ2Na6tUI8ruNg_eshe2vF2';
-const QM_MES_URL = 'https://thegauss0075-prog.github.io/erp/mes/#admin';
+const QM_SKL = {1: ['교육 중', 'Đang đào tạo', '#FDE2E2', '#991B1B'], 2: ['감독하 작업', 'Có giám sát', '#FEF3C7', '#92400E'], 3: ['단독 작업', 'Tự làm', '#DCFCE7', '#166534'], 4: ['강사', 'Hướng dẫn', '#DBEAFE', '#1E40AF']};
 let _qmSbLib = null, _qmSb = null;
 function qmSbLib(){ if (window.supabase) return Promise.resolve(); if (_qmSbLib) return _qmSbLib;
   _qmSbLib = new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js'; s.onload = ok; s.onerror = () => { _qmSbLib = null; no(new Error('supabase lib')); }; document.head.appendChild(s); });
   return _qmSbLib; }
-function qmMesNorm(snap){
-  return {at: snap.at, live: !!snap.live,
-    gauges: (snap.gauges || []).map(g => ({code: g.c, name: g.n, model: g.m, proc: g.p, location: g.l, cycle: g.cy, lastCal: g.lc, nextDue: g.nd || qmAddMonths(g.lc, g.cy), org: g.o, result: g.r})),
-    skills: (snap.skills || []).map(k => ({worker: k.wn || k.w, code: k.w, proc: k.pn || k.p, level: k.lv, certOn: k.co, validUntil: k.vu, evaluator: k.ev}))};
-}
+async function qmSbLive(){ try { await qmSbLib(); if (!_qmSb) _qmSb = window.supabase.createClient(QM_SB_URL, QM_SB_KEY, {auth: {persistSession: true, autoRefreshToken: true, lock: (n, t, fn) => fn()}}); const s = await _qmSb.auth.getSession(); return s.data && s.data.session ? _qmSb : null; } catch (e) { return null; } }
+// MES 작업자 명단·공정 목록 (자격표의 행·열). 이 브라우저에 MES 로그인이 있으면 새로 읽고 사본을 저장한다.
 async function qmMesLoad(force){
   if (QM.mes && QM.mes.live && !force) return;
-  let snap = null;
-  try {
-    await qmSbLib();
-    if (!_qmSb) _qmSb = window.supabase.createClient(QM_SB_URL, QM_SB_KEY, {auth: {persistSession: true, autoRefreshToken: true, lock: (n, t, fn) => fn()}});
-    const s = await _qmSb.auth.getSession();
-    if (s.data && s.data.session) {
-      const [g, c, k, w, p] = await Promise.all([_qmSb.from('gauges').select('*').order('code'), _qmSb.from('gauge_cals').select('gauge_code,cal_date,result').order('cal_date', {ascending: false}).limit(1000),
-        _qmSb.from('worker_skills').select('*'), _qmSb.from('workers').select('code,name'), _qmSb.from('processes').select('code,name')]);
-      if (!g.error && !k.error) {
-        const lastRes = {}; (c.data || []).forEach(x => { if (!lastRes[x.gauge_code]) lastRes[x.gauge_code] = x.result; });
-        const wn = Object.fromEntries((w.data || []).map(x => [x.code, x.name])), pn = Object.fromEntries((p.data || []).map(x => [x.code, x.name]));
-        snap = {id: 'snap', at: new Date().toISOString(), live: true,
-          gauges: (g.data || []).filter(x => x.active !== false).map(x => ({c: x.code, n: x.name, m: x.model || '', p: pn[x.process_code] || x.process_code || '', l: x.location || '', cy: x.cycle_months || 0, lc: x.last_cal || '', nd: x.next_due || '', o: x.cal_org || '', r: lastRes[x.code] || ''})),
-          skills: (k.data || []).map(x => ({w: x.worker_code, wn: wn[x.worker_code] || '', p: x.process_code, pn: pn[x.process_code] || '', lv: x.level, co: x.certified_on || '', vu: x.valid_until || '', ev: x.evaluator || ''}))};
-      }
-    }
-  } catch (e) {}
   const old = (HQS.qmes || []).find(x => x.id === 'snap');
-  if (snap) {
-    QM.mes = qmMesNorm(snap);
-    // 사본 저장: 내용이 바뀌었을 때만 (쓰기 권한이 없으면 조용히 건너뜀)
-    const sig = o => JSON.stringify({g: o.gauges, s: o.skills});
-    if (!old || sig(old) !== sig(snap)) { const rec = {...snap}; delete rec.live; apiAuto('saveHQStore', {store: 'qmes', rec}).then(r => { if (r && r.ok) HQS.qmes = [rec]; }).catch(() => {}); }
-  } else QM.mes = old ? qmMesNorm(old) : {gauges: [], skills: [], at: '', live: false, none: true};
+  const sb = await qmSbLive();
+  if (sb) {
+    const [w, p, rt] = await Promise.all([sb.from('workers').select('code,name,team,active').order('name'), sb.from('processes').select('code,name,active,seq').order('seq'), sb.from('routings').select('item_code,process_code,seq').order('seq')]);
+    if (!w.error && !p.error) {
+      const pcs = [...new Set((rt.data || []).filter(r => /PCDU/i.test(r.item_code)).map(r => r.process_code))];
+      const snap = {id: 'snap', at: new Date().toISOString(), workers: (w.data || []).filter(x => x.active !== false).map(x => ({c: x.code, n: x.name, t: x.team || ''})), procs: (p.data || []).filter(x => x.active !== false).map(x => ({c: x.code, n: x.name})), scope: pcs};
+      QM.mes = {...snap, live: true};
+      const sig = o => JSON.stringify([o.workers, o.procs, o.scope]);
+      if (!old || sig(old) !== sig(snap)) apiAuto('saveHQStore', {store: 'qmes', rec: snap}).then(r => { if (r && r.ok) HQS.qmes = [snap]; }).catch(() => {});
+      return;
+    }
+  }
+  QM.mes = old ? {...old, live: false} : {workers: [], procs: [], scope: [], live: false, none: true};
 }
-function qmMesGaugeState(g){ const d = qmDays(g.nextDue); return d === null ? 'none' : d < 0 ? 'over' : d <= 30 ? 'soon' : 'ok'; }
-function qmMesBanner(what){
+const qmProcName = c => (((QM.mes && QM.mes.procs) || []).find(p => p.c === c) || {}).n || c || '';
+const qmWorkName = c => (((QM.mes && QM.mes.workers) || []).find(w => w.c === c) || {}).n || c || '';
+const qmGauges = () => (HQS.qgauge || []).filter(g => !g.removed);
+const qmSkills = () => (HQS.qskill || []).filter(k => !k.removed && +k.level);
+function qmMesGaugeState(g){ if (g.active === false) return 'none'; const d = qmDays(g.next_due); return d === null ? 'none' : d < 0 ? 'over' : d <= 30 ? 'soon' : 'ok'; }
+async function qmPut(store, rec){
+  rec.updatedBy = CURRENT_USER || ''; rec.updatedAt = new Date().toISOString();
+  const res = await retrySafe(() => apiAuto('saveHQStore', {store, rec}));
+  if (!res || !res.ok) { alert('저장 실패: ' + ((res && res.error) || '서버 응답 없음') + (/bad store|unknown/i.test(res && res.error || '') ? '\n서버(Code.gs)를 새 버전으로 배포해야 합니다.' : '')); return false; }
+  const arr = HQS[store] = HQS[store] || [], i = arr.findIndex(x => String(x.id) === String(rec.id)); if (i >= 0) arr[i] = rec; else arr.push(rec);
+  return true;
+}
+function qmSrcNote(){
   const m = QM.mes || {};
-  const src = m.live ? qmBadge('MES 실시간', 'g') : m.at ? qmBadge('MES 사본 · ' + String(m.at).slice(0, 16).replace('T', ' ') + ' 기준', 'y') : qmBadge('MES 자료 없음', 'r');
-  const tip = m.live ? '' : `<span style="font-size:11.5px;color:#8A95A3">이 브라우저에서 MES에 로그인하면 실시간으로 보입니다.</span>`;
-  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0 8px">${src}${tip}<span style="flex:1"></span>
-    <button onclick="qmMesLoad(true).then(qmRender)" style="padding:5px 10px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:12px;cursor:pointer">🔄 MES에서 다시 받기</button>
-    <a href="${QM_MES_URL}" target="_blank" style="padding:5px 10px;border-radius:7px;border:1px solid #0f766e;color:#0f766e;font-size:12px;text-decoration:none">MES에서 ${what} 수정 ↗</a></div>`;
+  return `<div style="font-size:11.5px;color:#5D6977;margin:2px 0 8px">✅ 여기(ERP)가 원본입니다. MES는 이 내용을 받아서 현장 작업 시작 확인에 씁니다 (MES에서는 수정 불가).
+    ${m.live ? qmBadge('작업자·공정 명단: MES 실시간', 'g') : m.at ? qmBadge('작업자·공정 명단: MES 사본 ' + String(m.at).slice(0, 10), 'y') : qmBadge('작업자·공정 명단 없음 — 이 브라우저에서 MES에 한 번 로그인하세요', 'r')}</div>`;
 }
+// 최초 1회: MES에 있던 계측기·교정 이력·자격을 ERP로 옮긴다 (MES 로그인 필요)
+async function qmImportFromMES(){
+  const sb = await qmSbLive();
+  if (!sb) { alert('이 브라우저에서 MES에 관리자 계정으로 로그인한 뒤 다시 누르세요.\n(MES 주소: thegauss0075-prog.github.io/erp/mes/)'); return; }
+  const [g, c, k] = await Promise.all([sb.from('gauges').select('*').order('code'), sb.from('gauge_cals').select('*').order('cal_date'), sb.from('worker_skills').select('*')]);
+  if (g.error || c.error || k.error) { alert('MES 자료를 읽지 못했습니다: ' + ((g.error || c.error || k.error).message)); return; }
+  const have = new Set((HQS.qgauge || []).map(x => x.id)), haveK = new Set((HQS.qskill || []).map(x => x.id));
+  const gs = (g.data || []).filter(x => !have.has(x.code)), ks = (k.data || []).filter(x => !haveK.has(x.worker_code + '|' + x.process_code));
+  if (!gs.length && !ks.length) { alert('옮길 자료가 없습니다 (이미 모두 ERP에 있습니다).'); return; }
+  if (!confirm(`MES 자료를 ERP로 옮깁니다.\n· 계측기 ${gs.length}대 (교정 이력 포함)\n· 작업자 자격 ${ks.length}건\n\n옮긴 뒤에는 ERP에서만 수정합니다. 진행할까요?`)) return;
+  const box = document.getElementById('qm-view'); let n = 0, fail = 0; const tot = gs.length + ks.length;
+  for (const x of gs) {
+    const rec = {id: x.code, code: x.code, name: x.name, model: x.model || '', serial_no: x.serial_no || '', process_code: x.process_code || '', location: x.location || '', cycle_months: x.cycle_months || 12, last_cal: x.last_cal || '', next_due: x.next_due || '', cal_org: x.cal_org || '', active: x.active !== false, note: x.note || '',
+      cals: (c.data || []).filter(y => y.gauge_code === x.code).map(y => ({cal_date: y.cal_date, result: y.result || '', cal_org: y.cal_org || '', cert_no: y.cert_no || '', next_due: y.next_due || '', note: y.note || '', by: y.created_by || ''}))};
+    if (await qmPut('qgauge', rec)) n++; else { fail++; break; }
+    if (box) box.innerHTML = `<div class="empty">⏳ MES 자료 옮기는 중… ${n} / ${tot}</div>`;
+  }
+  if (!fail) for (const x of ks) {
+    const rec = {id: x.worker_code + '|' + x.process_code, worker_code: x.worker_code, process_code: x.process_code, level: x.level, certified_on: x.certified_on || '', valid_until: x.valid_until || '', evaluator: x.evaluator || '', note: x.note || ''};
+    if (await qmPut('qskill', rec)) n++; else { fail++; break; }
+    if (box) box.innerHTML = `<div class="empty">⏳ MES 자료 옮기는 중… ${n} / ${tot}</div>`;
+  }
+  qmRender(); alert(fail ? `일부만 옮겼습니다 (${n}/${tot}). 다시 누르면 남은 것만 옮깁니다.` : `✅ ${n}건을 ERP로 옮겼습니다. 이제부터 ERP에서 관리합니다.`);
+}
+
+// ── 📏 계측기 · 검교정 ─────────────────────────────────────
 function qmMesGaugeHtml(){
-  const gs = (QM.mes && QM.mes.gauges) || [], over = gs.filter(g => qmMesGaugeState(g) === 'over'), soon = gs.filter(g => qmMesGaugeState(g) === 'soon');
-  return `<h3 style="margin:0 0 2px;font-size:15px">📏 계측기 · 검교정 <span style="font-size:12px;color:#8A95A3;font-weight:400">MES 연동 · ${gs.length}대</span> ${over.length ? qmBadge('기한 지남 ' + over.length, 'r') : ''} ${soon.length ? qmBadge('30일 내 ' + soon.length, 'y') : ''}</h3>${qmMesBanner('계측기')}
-  <div class="tw" style="margin-bottom:18px"><table style="width:100%"><thead><tr><th>관리번호</th><th>명칭</th><th>모델</th><th>공정·위치</th><th style="text-align:right">주기(개월)</th><th>최근 교정</th><th>다음 교정</th><th>교정 기관</th><th>최근 결과</th></tr></thead><tbody>
-  ${gs.slice().sort((a, b) => String(a.nextDue || '9').localeCompare(String(b.nextDue || '9'))).map(g => { const st = qmMesGaugeState(g); return `<tr><td style="font-family:monospace;font-size:12px">${hqE(g.code)}</td><td>${hqE(g.name)}</td><td style="font-size:12px">${hqE(g.model || '-')}</td><td style="font-size:12px">${hqE([g.proc, g.location].filter(Boolean).join(' · ') || '-')}</td><td style="text-align:right">${hqE(g.cycle || '-')}</td><td>${hqE(g.lastCal || '-')}</td><td style="font-weight:700;color:${st === 'over' ? '#b91c1c' : st === 'soon' ? '#b45309' : '#1F2A37'}">${hqE(g.nextDue || '-')}${st === 'over' ? ' (지남)' : st === 'soon' ? ' (임박)' : ''}</td><td style="font-size:12px">${hqE(g.org || '-')}</td><td>${g.result ? qmBadge(g.result, /불합격|NG|fail/i.test(g.result) ? 'r' : 'g') : '-'}</td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">MES에 등록된 계측기가 없습니다.</td></tr>'}</tbody></table></div>`;
+  const gs = qmGauges(), act = gs.filter(g => g.active !== false), over = act.filter(g => qmMesGaugeState(g) === 'over'), soon = act.filter(g => qmMesGaugeState(g) === 'soon');
+  const tag = {over: ['r','기한 지남'], soon: ['y','30일 이내'], ok: ['g','정상'], none: ['n','교정 기록 없음']};
+  const btn = (t, on, c) => `<button onclick="event.stopPropagation();${on}" style="padding:4px 9px;border-radius:6px;border:1px solid ${c || '#DCE1E7'};background:#fff;color:${c || '#33404D'};font-size:12px;cursor:pointer;white-space:nowrap">${t}</button>`;
+  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0;font-size:16px">📏 계측기 · 검교정 <span style="font-size:12px;color:#8A95A3;font-weight:400">${act.length}대 사용 중</span></h3>${over.length ? qmBadge('기한 지남 ' + over.length, 'r') : ''}${soon.length ? qmBadge('30일 내 ' + soon.length, 'y') : ''}<span style="flex:1"></span>
+    ${!gs.length ? `<button onclick="qmImportFromMES()" style="padding:7px 12px;border-radius:7px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-size:12.5px;cursor:pointer;font-weight:600">⬇ MES에 있던 계측기·자격 가져오기 (최초 1회)</button>` : ''}
+    <button onclick="qmGaugePrint()" style="padding:7px 12px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:12.5px;cursor:pointer">🖨 교정 관리 대장</button>
+    <button onclick="qmGaugeEdit()" style="padding:7px 12px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-size:12.5px;cursor:pointer;font-weight:600">➕ 계측기 추가</button></div>${qmSrcNote()}
+  <div class="tw" style="margin-bottom:18px"><table style="width:100%"><thead><tr><th>관리번호</th><th>명칭</th><th>사용 공정</th><th style="text-align:right">주기</th><th>최근 교정</th><th>다음 교정</th><th>상태</th><th>최근 결과</th><th class="no-print"></th></tr></thead><tbody>
+  ${gs.slice().sort((a, b) => (a.active === false) - (b.active === false) || String(a.next_due || '9').localeCompare(String(b.next_due || '9'))).map(g => { const st = qmMesGaugeState(g), t = tag[st], last = (g.cals || []).slice().sort((a, b) => String(b.cal_date).localeCompare(String(a.cal_date)))[0];
+    return `<tr style="cursor:pointer;${g.active === false ? 'opacity:.55' : ''}" onclick="qmGaugeEdit('${hqE(g.id)}')"><td style="font-family:monospace;font-size:12px">${hqE(g.code)}</td><td><b>${hqE(g.name)}</b><div style="font-size:11px;color:#8A95A3">${hqE([g.model, g.serial_no].filter(Boolean).join(' · '))}</div></td><td style="font-size:12.5px">${hqE(qmProcName(g.process_code) || '-')}${g.location ? '<div style="font-size:11px;color:#8A95A3">' + hqE(g.location) + '</div>' : ''}</td><td style="text-align:right">${hqE(g.cycle_months || 12)}개월</td><td>${hqE(g.last_cal || '-')}</td><td style="font-weight:700;color:${st === 'over' ? '#b91c1c' : st === 'soon' ? '#b45309' : '#1F2A37'}">${hqE(g.next_due || '-')}</td><td>${g.active === false ? qmBadge('사용 중지', 'n') : qmBadge(t[1], t[0])}</td><td>${last ? qmBadge(last.result, /불합격/.test(last.result) ? 'r' : 'g') : '-'}</td>
+      <td class="no-print" style="white-space:nowrap">${btn('교정 등록', `qmCalDlg('${hqE(g.id)}')`, '#0d9488')} ${btn('이력', `qmCalHist('${hqE(g.id)}')`)}</td></tr>`; }).join('') || `<tr><td colspan="9" class="empty">아직 계측기가 없습니다. 처음이면 "⬇ MES에 있던 계측기·자격 가져오기"를 누르세요.</td></tr>`}</tbody></table></div>`;
 }
+function qmGaugeEdit(id){
+  const g = id ? qmGauges().find(x => String(x.id) === String(id)) : null;
+  const r = g ? {...g} : {cycle_months: 12, active: true, cals: []};
+  const procs = (QM.mes && QM.mes.procs) || [];
+  const I = (k, t, v) => `<input data-g="${k}" type="${t || 'text'}" value="${hqE(v ?? '')}" style="${HQ_IN}" ${k === 'code' && g ? 'readonly title="관리번호는 바꿀 수 없습니다"' : ''}>`;
+  qmModal(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><h3 style="margin:0">📏 계측기 ${g ? '수정' : '추가'}</h3><span style="flex:1"></span><button onclick="qmClose()" style="border:0;background:none;font-size:20px;cursor:pointer">✕</button></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${hqFld('관리번호 *', '', I('code', 'text', r.code))}${hqFld('명칭 *', '', I('name', 'text', r.name))}
+      ${hqFld('모델', '', I('model', 'text', r.model))}${hqFld('S/N', '', I('serial_no', 'text', r.serial_no))}
+      ${hqFld('사용 공정', '', `<select data-g="process_code" style="${HQ_IN}"><option value="">(공정 없음)</option>${procs.map(p => `<option value="${hqE(p.c)}" ${p.c === r.process_code ? 'selected' : ''}>${hqE(p.n)}</option>`).join('')}${r.process_code && !procs.some(p => p.c === r.process_code) ? `<option selected value="${hqE(r.process_code)}">${hqE(r.process_code)}</option>` : ''}</select>`)}
+      ${hqFld('위치', '', I('location', 'text', r.location))}
+      ${hqFld('교정 주기 (개월)', '', I('cycle_months', 'number', r.cycle_months))}${hqFld('교정 기관', '', I('cal_org', 'text', r.cal_org))}
+      ${hqFld('최근 교정일', '', I('last_cal', 'date', r.last_cal))}${hqFld('다음 교정일', '', I('next_due', 'date', r.next_due))}
+      ${hqFld('상태', '', `<select data-g="active" style="${HQ_IN}"><option value="1" ${r.active !== false ? 'selected' : ''}>사용</option><option value="0" ${r.active === false ? 'selected' : ''}>사용 중지</option></select>`)}
+      ${hqFld('비고', '', I('note', 'text', r.note))}</div>
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:8px">최근·다음 교정일은 "교정 등록"을 하면 자동으로 바뀝니다. 기한이 지난 계측기를 쓰는 공정은 MES에서 작업 시작이 막힙니다.</div>
+    <div style="display:flex;gap:8px;margin-top:14px"><span style="flex:1"></span><button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button><button onclick="qmGaugeSave(${g ? `'${hqE(g.id)}'` : 'null'})" style="padding:8px 18px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">💾 저장</button></div>`);
+}
+async function qmGaugeSave(id){
+  const g = id ? qmGauges().find(x => String(x.id) === String(id)) : null, rec = g ? {...g} : {cals: []};
+  document.querySelectorAll('#qm-modal [data-g]').forEach(el => { const k = el.dataset.g; rec[k] = k === 'active' ? el.value === '1' : k === 'cycle_months' ? (+el.value || 12) : el.value.trim(); });
+  if (!rec.code || !rec.name) { alert('관리번호와 명칭을 입력해 주세요.'); return; }
+  if (!g && (HQS.qgauge || []).some(x => x.id === rec.code && !x.removed)) { alert('같은 관리번호가 이미 있습니다.'); return; }
+  rec.id = rec.code;
+  if (await qmPut('qgauge', rec)) { qmClose(); qmRender(); }
+}
+function qmCalDlg(id){
+  const g = qmGauges().find(x => String(x.id) === String(id)); if (!g) return; const t = qmToday(), cy = +g.cycle_months || 12;
+  qmModal(`<h3 style="margin:0 0 12px">교정 등록 — ${hqE(g.name)} <span style="font-size:12px;color:#8A95A3">${hqE(g.code)}</span></h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${hqFld('교정일', '', `<input id="qc-cd" type="date" value="${t}" style="${HQ_IN}" onchange="document.getElementById('qc-cn').value=qmAddMonths(this.value,${cy})">`)}
+      ${hqFld('결과', '', `<select id="qc-cr" style="${HQ_IN}"><option>합격</option><option>조정 후 합격</option><option>불합격</option></select>`)}
+      ${hqFld('교정 기관', '', `<input id="qc-co" value="${hqE(g.cal_org || '')}" style="${HQ_IN}">`)}${hqFld('성적서 번호', '', `<input id="qc-cc" style="${HQ_IN}">`)}
+      ${hqFld(`다음 교정일 (주기 ${cy}개월)`, '', `<input id="qc-cn" type="date" value="${qmAddMonths(t, cy)}" style="${HQ_IN}">`)}${hqFld('비고', '', `<input id="qc-cx" style="${HQ_IN}">`)}</div>
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:8px">성적서 원본(PDF·종이)은 지금처럼 보관하고, 여기에는 번호를 적어 연결합니다. 불합격이면 그 계측기는 사용 중지로 바뀝니다.</div>
+    <div style="display:flex;gap:8px;margin-top:14px"><span style="flex:1"></span><button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button><button onclick="qmCalSave('${hqE(g.id)}')" style="padding:8px 18px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">💾 저장</button></div>`);
+}
+async function qmCalSave(id){
+  const g = qmGauges().find(x => String(x.id) === String(id)); if (!g) return; const v = k => document.getElementById(k).value.trim();
+  const c = {cal_date: v('qc-cd'), result: v('qc-cr'), cal_org: v('qc-co'), cert_no: v('qc-cc'), next_due: v('qc-cr') === '불합격' ? '' : v('qc-cn'), note: v('qc-cx'), by: CURRENT_USER || ''};
+  if (!c.cal_date) { alert('교정일을 넣어주세요.'); return; }
+  const rec = {...g, cals: (g.cals || []).concat([c])};
+  const latest = rec.cals.slice().sort((a, b) => String(b.cal_date).localeCompare(String(a.cal_date)))[0];
+  if (latest === c) { rec.last_cal = c.cal_date; rec.next_due = c.next_due; if (c.cal_org) rec.cal_org = c.cal_org; if (c.result === '불합격') rec.active = false; }
+  if (await qmPut('qgauge', rec)) { qmClose(); qmRender(); }
+}
+function qmCalHist(id){
+  const g = qmGauges().find(x => String(x.id) === String(id)); if (!g) return;
+  const cs = (g.cals || []).slice().sort((a, b) => String(b.cal_date).localeCompare(String(a.cal_date)));
+  qmModal(`<h3 style="margin:0 0 12px">교정 이력 — ${hqE(g.name)} <span style="font-size:12px;color:#8A95A3">${hqE(g.code)}</span></h3><div class="tw"><table style="width:100%"><thead><tr><th>교정일</th><th>결과</th><th>기관</th><th>성적서</th><th>다음 교정</th><th>비고</th><th>등록</th></tr></thead><tbody>
+    ${cs.map(c => `<tr><td>${hqE(c.cal_date)}</td><td>${qmBadge(c.result || '-', /불합격/.test(c.result) ? 'r' : 'g')}</td><td>${hqE(c.cal_org || '')}</td><td>${hqE(c.cert_no || '')}</td><td>${hqE(c.next_due || '-')}</td><td>${hqE(c.note || '')}</td><td style="font-size:11.5px;color:#8A95A3">${hqE(c.by || '')}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">교정 기록이 없습니다.</td></tr>'}</tbody></table></div>
+    <div style="text-align:right;margin-top:12px"><button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button></div>`);
+}
+function qmGaugePrint(){
+  const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
+  const rows = qmGauges().map(g => { const last = (g.cals || []).slice().sort((a, b) => String(b.cal_date).localeCompare(String(a.cal_date)))[0] || {}; return `<tr><td>${hqE(g.code)}</td><td>${hqE(g.name)}</td><td>${hqE(g.model || '')}</td><td>${hqE(g.serial_no || '')}</td><td>${hqE(qmProcName(g.process_code))}</td><td>${hqE(g.location || '')}</td><td>${hqE(g.cycle_months || 12)}개월</td><td>${hqE(g.last_cal || '')}</td><td>${hqE(last.result || '')}</td><td>${hqE(last.cert_no || '')}</td><td>${hqE(g.cal_org || '')}</td><td>${hqE(g.next_due || '')}</td><td>${g.active === false ? '사용 중지' : hqE(g.note || '')}</td></tr>`; }).join('');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>계측기 교정 관리 대장</title><style>@page{size:A4 landscape;margin:10mm}body{font-family:"Malgun Gothic",sans-serif;font-size:11px}h1{font-size:18px;text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:4px 5px}th{background:#eee}.sg{float:right;width:240px;margin-bottom:6px}.sg td{height:42px;text-align:center;vertical-align:top}</style></head><body>
+    <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr></table><h1 style="clear:both">계측기 교정 관리 대장</h1><div style="margin-bottom:6px">THE GAUSS VINA · 기준일 ${qmToday()}</div>
+    <table><thead><tr><th>관리번호</th><th>이름</th><th>모델</th><th>S/N</th><th>사용 공정</th><th>위치</th><th>주기</th><th>최근 교정</th><th>결과</th><th>성적서</th><th>교정 기관</th><th>다음 교정</th><th>비고</th></tr></thead><tbody>${rows}</tbody></table>
+    <script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
+}
+
+// ── 🪪 작업자 자격표 (작업자 × 공정) ─────────────────────────────
+function qmSkillProcs(){ const m = QM.mes || {}, sc = (m.scope && m.scope.length) ? m.scope : [...new Set(qmSkills().map(k => k.process_code))]; return sc.map(c => ({c, n: qmProcName(c)})); }
 function qmMesSkillHtml(){
-  const ks = (QM.mes && QM.mes.skills) || [], st = k => { const d = qmDays(k.validUntil); return d === null ? 'none' : d < 0 ? 'over' : d <= 30 ? 'soon' : 'ok'; };
-  return `<h3 style="margin:0 0 2px;font-size:15px">🪪 작업자 자격인증 <span style="font-size:12px;color:#8A95A3;font-weight:400">MES 연동 · ${ks.length}건</span> ${ks.filter(k => st(k) === 'over').length ? qmBadge('유효기한 지남 ' + ks.filter(k => st(k) === 'over').length, 'r') : ''}</h3>${qmMesBanner('작업자 자격')}
-  <div class="tw" style="margin-bottom:18px"><table style="width:100%"><thead><tr><th>작업자</th><th>공정</th><th style="text-align:right">레벨</th><th>인증일</th><th>유효기한</th><th>평가자</th></tr></thead><tbody>
-  ${ks.slice().sort((a, b) => String(a.worker).localeCompare(String(b.worker))).map(k => { const s = st(k); return `<tr><td>${hqE(k.worker)} <span style="font-size:11px;color:#8A95A3">${hqE(k.code)}</span></td><td>${hqE(k.proc)}</td><td style="text-align:right">${hqE(k.level ?? '-')}</td><td>${hqE(k.certOn || '-')}</td><td style="font-weight:700;color:${s === 'over' ? '#b91c1c' : s === 'soon' ? '#b45309' : '#1F2A37'}">${hqE(k.validUntil || '-')}${s === 'over' ? ' (지남)' : s === 'soon' ? ' (임박)' : ''}</td><td>${hqE(k.evaluator || '-')}</td></tr>`; }).join('') || '<tr><td colspan="6" class="empty">MES에 등록된 작업자 자격이 없습니다.</td></tr>'}</tbody></table></div>`;
+  const ps = qmSkillProcs(), ws = ((QM.mes && QM.mes.workers) || []).slice(), ks = qmSkills(), t = qmToday(), soon = qmAddMonths(t, 1);
+  ks.forEach(k => { if (!ws.some(w => w.c === k.worker_code)) ws.push({c: k.worker_code, n: k.worker_code}); });
+  const on = pc => ks.some(k => k.process_code === pc);
+  const cell = (w, p) => { const k = ks.find(x => x.worker_code === w.c && x.process_code === p.c);
+    if (!k) return `<td style="text-align:center;cursor:pointer" onclick="qmSkillDlg('${hqE(w.c)}','${hqE(p.c)}')"><span style="color:#CBD5E1">－</span></td>`;
+    const c = QM_SKL[k.level] || QM_SKL[1], ex = k.valid_until && k.valid_until < t, sn = !ex && k.valid_until && k.valid_until <= soon;
+    return `<td style="text-align:center;cursor:pointer;padding:4px" onclick="qmSkillDlg('${hqE(w.c)}','${hqE(p.c)}')"><span title="${hqE(c[0])}${k.valid_until ? ' ~' + hqE(k.valid_until) : ''}" style="display:inline-block;min-width:30px;padding:3px 6px;border-radius:6px;background:${c[2]};color:${c[3]};font-weight:800;${ex ? 'outline:2px solid #b91c1c' : sn ? 'outline:2px solid #F59E0B' : ''}">${k.level}</span></td>`; };
+  const exN = ks.filter(k => k.valid_until && k.valid_until < t).length;
+  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0;font-size:16px">🪪 작업자 자격표 <span style="font-size:12px;color:#8A95A3;font-weight:400">${ks.length}건</span></h3>${exN ? qmBadge('유효기간 지남 ' + exN, 'r') : ''}<span style="flex:1"></span>
+    ${!qmGauges().length && !ks.length ? `<button onclick="qmImportFromMES()" style="padding:7px 12px;border-radius:7px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-size:12.5px;cursor:pointer;font-weight:600">⬇ MES에 있던 계측기·자격 가져오기 (최초 1회)</button>` : ''}
+    <button onclick="qmSkillPrint()" style="padding:7px 12px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:12.5px;cursor:pointer">🖨 자격 인증 현황표</button></div>${qmSrcNote()}
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px;font-size:12px">${Object.entries(QM_SKL).map(([k, v]) => `<span><span style="display:inline-block;padding:1px 7px;border-radius:6px;background:${v[2]};color:${v[3]};font-weight:800">${k}</span> ${v[0]}${+k === 1 ? ' (작업 불가)' : ''}</span>`).join('')}<span style="color:#8A95A3">칸을 눌러 등록·수정 · 빨간 테두리 = 유효기간 지남</span></div>
+  <div class="tw" id="qm-skill-mx" style="margin-bottom:18px"><table style="width:100%;font-size:12.5px"><thead><tr><th>작업자</th>${ps.map(p => `<th style="text-align:center;white-space:nowrap">${hqE(p.n)}${on(p.c) ? '' : '<div style="font-size:10.5px;color:#8A95A3;font-weight:400">관리 안 함</div>'}</th>`).join('')}</tr></thead>
+  <tbody>${ws.map(w => `<tr><td style="white-space:nowrap"><b>${hqE(w.n)}</b> <span style="font-size:11px;color:#8A95A3">${hqE(w.c)}${w.t ? ' · ' + hqE(w.t) : ''}</span></td>${ps.map(p => cell(w, p)).join('')}</tr>`).join('') || `<tr><td colspan="${ps.length + 1}" class="empty">작업자 명단이 없습니다. 이 브라우저에서 MES에 한 번 로그인하면 명단을 받아옵니다.</td></tr>`}</tbody></table></div>
+  <div style="font-size:11.5px;color:#8A95A3;margin:-10px 0 16px">공정에 자격이 하나라도 등록되면, MES에서 그 공정은 자격 없는 작업자가 작업을 시작할 수 없습니다. 작업자 입사·퇴사는 MES 작업자 명단에서 관리합니다.</div>`;
+}
+function qmSkillDlg(wk, pc){
+  const k = qmSkills().find(x => x.worker_code === wk && x.process_code === pc) || {}, t = qmToday();
+  QM.skLv = +k.level || 0;
+  qmModal(`<h3 style="margin:0 0 12px">🪪 ${hqE(qmWorkName(wk))} — ${hqE(qmProcName(pc))}</h3>
+    <div id="qm-sk-lv" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px">${Object.entries(QM_SKL).map(([n, v]) => `<button data-l="${n}" onclick="QM.skLv=${n};document.querySelectorAll('#qm-sk-lv button').forEach(b=>b.style.outline=+b.dataset.l===QM.skLv?'3px solid #0f766e':'none')" style="padding:10px 6px;border-radius:8px;border:1px solid #DCE1E7;background:${v[2]};color:${v[3]};cursor:pointer;font-weight:700;${+k.level === +n ? 'outline:3px solid #0f766e' : ''}"><div style="font-size:18px">${n}</div>${v[0]}<div style="font-size:10.5px;font-weight:400">${v[1]}</div></button>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${hqFld('인증일', '', `<input id="qs-c" type="date" value="${hqE(k.certified_on || t)}" style="${HQ_IN}">`)}${hqFld('유효기간 (비우면 무기한)', '', `<input id="qs-v" type="date" value="${hqE(k.valid_until || qmAddMonths(t, 12))}" style="${HQ_IN}">`)}
+      ${hqFld('평가자', '', `<input id="qs-e" value="${hqE(k.evaluator || '')}" style="${HQ_IN}">`)}${hqFld('비고 (평가 문서 번호 등)', '', `<input id="qs-n" value="${hqE(k.note || '')}" style="${HQ_IN}">`)}</div>
+    <div style="display:flex;gap:8px;margin-top:14px">${k.level ? `<button onclick="qmSkillSave('${hqE(wk)}','${hqE(pc)}',true)" style="padding:8px 14px;border-radius:7px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">자격 삭제</button>` : ''}<span style="flex:1"></span><button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button><button onclick="qmSkillSave('${hqE(wk)}','${hqE(pc)}')" style="padding:8px 18px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">💾 저장</button></div>`);
+}
+async function qmSkillSave(wk, pc, del){
+  const id = wk + '|' + pc, old = (HQS.qskill || []).find(x => x.id === id) || {};
+  if (del && !confirm('이 자격 기록을 삭제할까요?')) return;
+  if (!del && !QM.skLv) { alert('단계를 고르세요.'); return; }
+  const v = k => document.getElementById(k).value.trim();
+  const rec = del ? {...old, id, removed: true, level: 0} : {id, worker_code: wk, process_code: pc, level: QM.skLv, certified_on: v('qs-c'), valid_until: v('qs-v'), evaluator: v('qs-e'), note: v('qs-n')};
+  if (await qmPut('qskill', rec)) { qmClose(); qmRender(); }
+}
+function qmSkillPrint(){
+  const mx = document.getElementById('qm-skill-mx'); if (!mx) return; const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>작업자 자격 인증 현황표</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:"Malgun Gothic",sans-serif;font-size:11px}h1{font-size:17px;text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:4px}.sg{float:right;width:240px;margin-bottom:6px}.sg td{height:42px;text-align:center;vertical-align:top}</style></head><body>
+    <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr></table><h1 style="clear:both">작업자 자격 인증 현황표 (Skill Matrix)</h1><div style="margin-bottom:6px">THE GAUSS VINA · 200kW PCDU · 기준일 ${qmToday()} · ${Object.entries(QM_SKL).map(([k, v]) => k + ' ' + v[0]).join(' / ')}</div>
+    ${mx.innerHTML}<script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
 }
 
 </script>

@@ -217,6 +217,41 @@ async function loadMaster(){
   const [p, m, w, r, o, rt, g, ci, sk, c4] = await Promise.all([sb.from('processes').select('*').order('seq'), sb.from('machines').select('*').order('code'), sb.from('workers').select('*').order('name'), sb.from('stop_reasons').select('*').order('seq'), sb.from('work_orders').select('*').order('order_no', {ascending: false}), sb.from('routings').select('*').order('seq'), sb.from('gauges').select('*').order('code'), sb.from('check_items').select('*').order('seq'), sb.from('worker_skills').select('*'), sb.from('changes_4m').select('*').order('created_at', {ascending: false}).limit(500)]);
   M.proc = p.data || []; M.mach = m.data || []; M.work = w.data || []; M.reasons = r.data || []; M.wo = o.data || []; M.route = rt.data || [];
   M.gauge = g.data || []; M.chkItem = ci.data || []; M.skill = sk.data || []; M.c4 = c4.data || [];
+  await qmErpApply(true);
+}
+// ✅ [2026-11-16] 계측기·검교정 / 작업자 자격은 ERP(품질관리)가 원본 — MES는 받아서 읽기만 한다 (작업지시와 같은 방식)
+//    ERP 저장소: qgauge(계측기 + 교정 이력 cals) · qskill(작업자×공정 자격). ERP에 아직 자료가 없으면(옮기기 전) MES DB 값을 그대로 쓴다.
+//    ERP에 연결이 안 되면 마지막으로 받은 값(이 기기 저장) → 그것도 없으면 MES DB 값.
+const QME = {g: null, k: null, at: 0};
+try { const c = JSON.parse(localStorage.getItem('mes_qm_erp') || 'null'); if (c) Object.assign(QME, c, {at: 0}); } catch (e) {}
+async function qmErpFetch(){
+  const to = new Promise(r => setTimeout(() => r(null), 8000));
+  const [g, k] = await Promise.race([Promise.all([erpCall('getHQStore', {store: 'qgauge'}), erpCall('getHQStore', {store: 'qskill'})]), to.then(() => [null, null])]);
+  if (g && g.ok) QME.g = (g.data || []).filter(x => !x.removed);
+  if (k && k.ok) QME.k = (k.data || []).filter(x => !x.removed && +x.level);
+  if ((g && g.ok) || (k && k.ok)) { QME.at = Date.now(); try { localStorage.setItem('mes_qm_erp', JSON.stringify({g: QME.g, k: QME.k})); } catch (e) {} }
+}
+async function qmErpApply(fetchNow){
+  if (fetchNow || Date.now() - QME.at > 2 * 60000) await qmErpFetch().catch(() => {});
+  M.erpGauge = !!(QME.g && QME.g.length); M.erpSkill = !!(QME.k && QME.k.length);
+  if (M.erpGauge) { M.gaugeCals = [];
+    M.gauge = QME.g.map(x => { (x.cals || []).forEach(c => M.gaugeCals.push({...c, gauge_code: x.code, created_by: c.by || ''}));
+      return {code: x.code, name: x.name, model: x.model || null, serial_no: x.serial_no || null, process_code: x.process_code || null, location: x.location || null, cycle_months: +x.cycle_months || 12, last_cal: x.last_cal || null, next_due: x.next_due || null, cal_org: x.cal_org || null, active: x.active !== false, note: x.note || null}; }); }
+  if (M.erpSkill) M.skill = QME.k.map(x => ({worker_code: x.worker_code, process_code: x.process_code, level: +x.level, certified_on: x.certified_on || null, valid_until: x.valid_until || null, evaluator: x.evaluator || null, note: x.note || null}));
+  if (ME.role === 'admin' && (M.erpGauge || M.erpSkill)) qmErpMirror().catch(() => {});
+}
+// 관리자 기기: ERP 값을 MES DB에도 복사해 둔다 (ERP 연결이 끊긴 기기의 예비값이 최신이 되도록)
+let _qmMirSig = '';
+async function qmErpMirror(){
+  const sig = JSON.stringify([QME.g, QME.k]); if (sig === _qmMirSig) return; _qmMirSig = sig;
+  if (M.erpGauge) { const known = new Set(M.proc.map(p => p.code));
+    const rows = M.gauge.map(g => ({...g, process_code: g.process_code && known.has(g.process_code) ? g.process_code : null}));
+    await sb.from('gauges').upsert(rows, {onConflict: 'code'}); }
+  if (M.erpSkill) { const wk = new Set(M.work.map(w => w.code)), pk = new Set(M.proc.map(p => p.code));
+    const rows = M.skill.filter(k => wk.has(k.worker_code) && pk.has(k.process_code)).map(k => ({...k, updated_at: new Date().toISOString()}));
+    if (rows.length) await sb.from('worker_skills').upsert(rows, {onConflict: 'worker_code,process_code'});
+    const cur = await sb.from('worker_skills').select('worker_code,process_code'); const keep = new Set(rows.map(k => k.worker_code + '|' + k.process_code));
+    for (const x of (cur.data || []).filter(x => !keep.has(x.worker_code + '|' + x.process_code))) await sb.from('worker_skills').delete().match({worker_code: x.worker_code, process_code: x.process_code}); }
 }
 async function loadLive(fromIso){
   const since = fromIso || new Date(today0().getTime() - 0).toISOString();
@@ -229,7 +264,7 @@ async function loadLive(fromIso){
   try { const q = await sb.from('ncr').select('id,status,qty').in('status', ['open','decided','approved']); M.ncrOpen = q.error ? [] : (q.data || []); } catch (e) { M.ncrOpen = []; }
   // 현황판(TV)은 알림 줄(4M 초품·교정·자격)도 실시간으로 — 작은 표라 매번 다시 읽는다 (2026-11-12)
   if (S.view === 'tv') { try { const [g, sk, c4] = await Promise.all([sb.from('gauges').select('*'), sb.from('worker_skills').select('*'), sb.from('changes_4m').select('*').order('created_at', {ascending: false}).limit(200)]);
-    if (!g.error) M.gauge = g.data || []; if (!sk.error) M.skill = sk.data || []; if (!c4.error) M.c4 = c4.data || []; } catch (e) {} }
+    if (!g.error) M.gauge = g.data || []; if (!sk.error) M.skill = sk.data || []; if (!c4.error) M.c4 = c4.data || []; } catch (e) {} await qmErpApply(false); }
 }
 const procName = c => (M.proc.find(p => p.code === c) || {}).name || c || '-';
 const workName = c => (M.work.find(p => p.code === c) || {}).name || c || '-';
@@ -1072,6 +1107,7 @@ function adminView(){
   if (AD.t === 'route') return routeAdmin();
   if (AD.t === 'chkitem') return chkItemAdmin();
   if (AD.t === 'skill') return skillAdmin();
+  if (AD.t === 'gauges' && M.erpGauge) return adminTabs() + qmErpNote('계측기 · 검교정') + gaugeCard();
   if (AD.t === 'c4') return c4Admin();
   if (AD.t === 'wo') return adminTabs() + `<div class="card"><h2>ERP 작업지시 <span class="muted">${M.wo.filter(w => w.status !== '삭제됨').length}건 · 진행 ${activeWO().length}건${M.wo[0] ? ' · 받은 시각 ' + new Date(M.wo.map(w => w.synced_at).sort().pop()).toLocaleString('ko-KR') : ''}</span></h2>
     <div style="overflow:auto"><table><thead><tr><th>지시번호</th><th>품목</th><th>구분</th><th>LOT</th><th class="r">계획</th><th>마감일</th><th>상태</th></tr></thead><tbody>${M.wo.filter(w => inScope(w.code, w.name) && (AD.woDel || w.status !== '삭제됨')).map(w => `<tr style="${w.status === '완료' ? 'color:var(--sub)' : w.status === '삭제됨' ? 'color:var(--sub);text-decoration:line-through' : ''}"><td style="font-family:monospace">${E(w.order_no)}</td><td><b>${E(w.name)}</b><div class="muted">${E(w.code)}</div></td><td>${E(w.cat||'')}</td><td style="font-family:monospace">${E(w.lot||'')}</td><td class="r">${N(w.plan_qty)} ${E(w.unit||'')}</td><td>${E(w.due_date||'')}</td><td><span class="tag ${w.status === '진행중' ? 'm-run' : w.status === '완료' || w.status === '삭제됨' ? 'm-idle' : 'm-setup'}">${E(w.status)}</span></td></tr>`).join('') || '<tr><td colspan="7" class="muted">아직 받은 작업지시가 없습니다.</td></tr>'}</tbody></table></div>
@@ -1159,10 +1195,12 @@ function gaugeCard(){
   return `<div class="card" style="margin-top:12px"><h2>📏 교정 현황 <span class="muted">기한이 지난 계측기를 쓰는 공정은 현장에서 작업 시작이 막힙니다.</span></h2>
     <div style="overflow:auto"><table><thead><tr><th>관리번호</th><th>이름</th><th>사용 공정</th><th>주기</th><th>최근 교정</th><th>다음 교정</th><th>상태</th><th></th></tr></thead><tbody>
     ${gs.map(g => { const t = tag[gaugeState(g)]; return `<tr><td style="font-family:monospace">${E(g.code)}</td><td><b>${E(g.name)}</b><div class="muted">${E([g.model, g.serial_no].filter(Boolean).join(' · '))}</div></td><td>${E(g.process_code ? procName(g.process_code) : '-')}</td><td>${N(g.cycle_months || 12)}개월</td><td>${E(g.last_cal || '-')}</td><td><b>${E(g.next_due || '-')}</b></td><td><span class="tag ${t[0]}">${t[1]}</span></td>
-      <td style="white-space:nowrap"><button class="btn pri" style="padding:6px 10px" onclick="calDlg('${E(g.code)}')">교정 등록</button> <button class="btn" style="padding:6px 10px" onclick="calHist('${E(g.code)}')">이력</button></td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">위 표에서 계측기를 먼저 추가하세요.</td></tr>'}</tbody></table></div>
+      <td style="white-space:nowrap">${M.erpGauge ? '' : `<button class="btn pri" style="padding:6px 10px" onclick="calDlg('${E(g.code)}')">교정 등록</button> `}<button class="btn" style="padding:6px 10px" onclick="calHist('${E(g.code)}')">이력</button></td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">위 표에서 계측기를 먼저 추가하세요.</td></tr>'}</tbody></table></div>
     <div style="margin-top:8px"><button class="btn" onclick="gaugePrint()">🖨 교정 대장 출력</button></div></div>`;
 }
+function qmErpNote(what){ return `<div class="card" style="border-left:4px solid var(--pri,#0f766e)"><b>${what}은(는) ERP에서 관리합니다.</b> <span class="muted">ERP → 🔬 품질관리 → 검사설비·검교정 / 교육훈련·자격인증에서 등록·수정하세요. MES는 2분마다 받아와 현장 작업 시작 확인에 씁니다.${QME.at ? ' (받은 시각 ' + new Date(QME.at).toLocaleTimeString('ko-KR') + ')' : ''}</span></div>`; }
 function calDlg(code){
+  if (M.erpGauge) { alert('계측기 교정은 ERP 품질관리에서 등록합니다.'); return; }
   const g = M.gauge.find(x => x.code === code); if (!g) return; const t = ymd(new Date());
   const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
   ov.innerHTML = `<div class="box"><h2>교정 등록 — ${E(g.name)}</h2><div class="grid" style="grid-template-columns:1fr 1fr">
@@ -1186,14 +1224,14 @@ function calDlg(code){
   };
 }
 async function calHist(code){
-  const g = M.gauge.find(x => x.code === code) || {name: code}; const r = await sb.from('gauge_cals').select('*').eq('gauge_code', code).order('cal_date', {ascending: false}).limit(200);
+  const g = M.gauge.find(x => x.code === code) || {name: code}; const r = M.erpGauge ? {data: (M.gaugeCals || []).filter(c => c.gauge_code === code).sort((a, b) => String(b.cal_date).localeCompare(String(a.cal_date)))} : await sb.from('gauge_cals').select('*').eq('gauge_code', code).order('cal_date', {ascending: false}).limit(200);
   const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
   ov.innerHTML = `<div class="box" style="max-width:720px"><h2>교정 이력 — ${E(g.name)}</h2><div style="overflow:auto;max-height:60vh"><table><thead><tr><th>교정일</th><th>결과</th><th>기관</th><th>성적서</th><th>다음 교정</th><th>비고</th><th>등록</th></tr></thead><tbody>
     ${(r.data || []).map(c => `<tr><td>${E(c.cal_date)}</td><td>${E(c.result)}</td><td>${E(c.cal_org||'')}</td><td>${E(c.cert_no||'')}</td><td>${E(c.next_due||'-')}</td><td>${E(c.note||'')}</td><td class="muted">${E(c.created_by||'')}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">기록이 없습니다.</td></tr>'}</tbody></table></div>
     <div style="text-align:right;margin-top:10px"><button class="btn" onclick="this.closest('.ov').remove()">닫기</button></div></div>`;
 }
 async function gaugePrint(){
-  const r = await sb.from('gauge_cals').select('*').order('cal_date', {ascending: false}).limit(5000), cals = r.data || [];
+  const r = M.erpGauge ? {data: (M.gaugeCals || []).slice().sort((a, b) => String(b.cal_date).localeCompare(String(a.cal_date)))} : await sb.from('gauge_cals').select('*').order('cal_date', {ascending: false}).limit(5000), cals = r.data || [];
   const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
   const rows = M.gauge.map(g => { const last = cals.find(c => c.gauge_code === g.code) || {}; return `<tr><td>${E(g.code)}</td><td>${E(g.name)}</td><td>${E(g.model||'')}</td><td>${E(g.serial_no||'')}</td><td>${E(g.process_code ? procName(g.process_code) : '')}</td><td>${E(g.location||'')}</td><td>${N(g.cycle_months||12)}개월</td><td>${E(g.last_cal||'')}</td><td>${E(last.result||'')}</td><td>${E(last.cert_no||'')}</td><td>${E(g.cal_org||'')}</td><td><b>${E(g.next_due||'')}</b></td><td>${g.active === false ? '사용 중지' : ''}</td></tr>`; }).join('');
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>계측기 교정 관리 대장</title><style>@page{size:A4 landscape;margin:10mm}body{font-family:"Malgun Gothic",sans-serif;font-size:11px}h1{font-size:18px;text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:4px 5px}th{background:#EEE}.sg{float:right;border-collapse:collapse;margin-bottom:8px}.sg td{width:70px;height:46px;text-align:center;vertical-align:top}</style></head><body>
@@ -1228,7 +1266,7 @@ function skillAdmin(){
   const cell = (w, p) => { const k = skillOf(w.code, p.code); if (!k) return `<td style="text-align:center;cursor:pointer" onclick="skillDlg('${E(w.code)}','${E(p.code)}')"><span class="muted">－</span></td>`;
     const c = SKL[k.level], warn = k.expired ? 'outline:2px solid var(--bad)' : (k.valid_until && k.valid_until <= soon ? 'outline:2px solid #F59E0B' : '');
     return `<td style="text-align:center;cursor:pointer;padding:4px" onclick="skillDlg('${E(w.code)}','${E(p.code)}')"><span style="display:inline-block;min-width:34px;padding:4px 6px;border-radius:6px;background:${c[2]};color:${c[3]};font-weight:800;${warn}" title="${E(c[0])}${k.valid_until ? ' ~' + E(k.valid_until) : ''}">${k.level}</span></td>`; };
-  return adminTabs() + `<div class="card"><h2>🎓 작업자 자격표 <span class="muted">칸을 눌러 자격을 등록·수정합니다. 공정에 자격이 하나라도 등록되면 그 공정은 자격 없는 작업자가 시작할 수 없습니다.</span></h2>
+  return adminTabs() + (M.erpSkill ? qmErpNote('작업자 자격') : '') + `<div class="card"><h2>🎓 작업자 자격표 <span class="muted">${M.erpSkill ? 'ERP에서 받은 자격 (읽기 전용).' : '칸을 눌러 자격을 등록·수정합니다.'} 공정에 자격이 하나라도 등록되면 그 공정은 자격 없는 작업자가 시작할 수 없습니다.</span></h2>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;font-size:13px">${Object.entries(SKL).map(([k, v]) => `<span><span style="display:inline-block;padding:2px 8px;border-radius:6px;background:${v[2]};color:${v[3]};font-weight:800">${k}</span> ${v[0]}${+k === 1 ? ' (작업 불가)' : +k === 2 ? ' (감독자 확인 후)' : ''}</span>`).join('')}<span><span style="outline:2px solid #F59E0B;padding:0 6px">　</span> 30일 내 만료</span><span><span style="outline:2px solid var(--bad);padding:0 6px">　</span> 만료</span></div>
     <div style="overflow:auto" id="skill-mx"><table style="font-size:13px"><thead><tr><th>작업자</th>${ps.map(p => `<th style="text-align:center;white-space:nowrap;padding:6px 4px">${E(p.name)}${skillOn(p.code) ? '' : '<div class="muted" style="font-weight:400">관리 안 함</div>'}</th>`).join('')}</tr></thead>
     <tbody>${ws.map(w => `<tr><td style="white-space:nowrap"><b>${E(w.name)}</b> <span class="muted">${E(w.code)}${w.team ? ' · ' + E(w.team) : ''}</span></td>${ps.map(p => cell(w, p)).join('')}</tr>`).join('') || `<tr><td colspan="${ps.length + 1}" class="muted">작업자 탭에서 작업자를 먼저 등록하세요.</td></tr>`}</tbody></table></div>
@@ -1236,6 +1274,7 @@ function skillAdmin(){
     <p class="muted">교육 일지·평가지 원본은 문서로 보관하고, 평가자와 문서 번호를 비고에 적어 두세요.</p></div>`;
 }
 function skillDlg(wk, pc){
+  if (M.erpSkill) { alert('작업자 자격은 ERP 품질관리 → 교육훈련·자격인증에서 등록합니다.'); return; }
   const k = M.skill.find(x => x.worker_code === wk && x.process_code === pc) || {}, t = ymd(new Date());
   const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
   ov.innerHTML = `<div class="box"><h2>🎓 ${E(workName(wk))} — ${E(procName(pc))}</h2>
