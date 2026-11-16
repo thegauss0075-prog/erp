@@ -1620,6 +1620,19 @@ boot().finally(() => clearTimeout(BOOT_WD));
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 (function(){ let wl = null; const keep = async () => { try { if ('wakeLock' in navigator && document.visibilityState === 'visible' && !wl) { wl = await navigator.wakeLock.request('screen'); wl.addEventListener('release', () => { wl = null; }); } } catch (e) {} };
   document.addEventListener('visibilitychange', keep); document.addEventListener('click', keep, {once: true}); keep(); })();
+// ✅ [2026-11-16] 한글 입력 상태에서 스캔하면 "MAT: NPL39…"가 "ㅡㅁㅆ: ㅜㅖㅣ39…"처럼 들어온다 → 영문 자판 글자로 되돌린다
+//    (두벌식 자판 기준. 바코드 내용은 대문자라 대문자로 복원) — 스캔 칸(scan · LOT · 슬롯)에서 Enter 직전에 바꾼다
+const KO_KEY = {'ㅂ':'Q','ㅈ':'W','ㄷ':'E','ㄱ':'R','ㅅ':'T','ㅛ':'Y','ㅕ':'U','ㅑ':'I','ㅐ':'O','ㅔ':'P','ㅁ':'A','ㄴ':'S','ㅇ':'D','ㄹ':'F','ㅎ':'G','ㅗ':'H','ㅓ':'J','ㅏ':'K','ㅣ':'L','ㅋ':'Z','ㅌ':'X','ㅊ':'C','ㅍ':'V','ㅠ':'B','ㅜ':'N','ㅡ':'M',
+  'ㅃ':'Q','ㅉ':'W','ㄸ':'E','ㄲ':'R','ㅆ':'T','ㅒ':'O','ㅖ':'P','ㅘ':'HK','ㅙ':'HO','ㅚ':'HL','ㅝ':'NJ','ㅞ':'NP','ㅟ':'NL','ㅢ':'ML',
+  'ㄳ':'RT','ㄵ':'SW','ㄶ':'SG','ㄺ':'FR','ㄻ':'FA','ㄼ':'FQ','ㄽ':'FT','ㄾ':'FX','ㄿ':'FV','ㅀ':'FG','ㅄ':'QT'};
+const KO_CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ', KO_JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ', KO_JONG = ['', 'ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+function koToEn(s){ return String(s || '').replace(/[ㄱ-ㆎ가-힣]/g, ch => { const c = ch.charCodeAt(0);
+  if (c >= 0xAC00 && c <= 0xD7A3) { const i = c - 0xAC00, a = KO_CHO[Math.floor(i / 588)], b = KO_JUNG[Math.floor((i % 588) / 28)], d = KO_JONG[i % 28]; return (KO_KEY[a] || '') + (KO_KEY[b] || '') + (KO_KEY[d] || ''); }
+  return KO_KEY[ch] || ch; }); }
+document.addEventListener('keydown', e => { const t = e.target;
+  if (e.key !== 'Enter' || !t || t.tagName !== 'INPUT' || !/^(scan|sd-lot|fd-lot|rp-lot|c4-lot|sd-slot-\d+)$/.test(t.id || '')) return;
+  if (/[ㄱ-ㆎ가-힣]/.test(t.value)) { t.value = koToEn(t.value); toast('⌨️ 한글 입력 상태로 스캔되어 영문으로 바꿨습니다. 한/영 키로 영문으로 바꿔 두세요.', 4000); } }, true);
+
 </script>
 </body>
 </html>
