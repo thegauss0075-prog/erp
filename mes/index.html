@@ -585,6 +585,14 @@ function lotInfo(v){ const l = parseLot(v); const q = l.code ? QCX[qcxKey(l.code
   if (q && q.exp && (!l.exp || q.exp < l.exp)) l.exp = q.exp;   // ERP에 기록된 유효기간이 우선(더 이른 날짜)
   if (q) l.qc = q.result; return l; }
 function lotOk(v){ const l = lotInfo(v);
+  // ✅ [2026-11-16] 스캐너가 글자를 빠뜨려 LOT가 잘못 읽히는 경우를 잡는다 (예: "20261111-07 | COER…" → "20261111-0C66…")
+  //    새 라벨은 "MAT: 코드 : LOT | 품명"이라 | 가 없으면 끝까지 못 읽은 것 / ERP 수입검사 기록에도 없으면 다시 찍게 한다
+  { const raw = String(v || '').trim();
+    if (/^MAT/i.test(raw) && l.code && !/\s(BTP|TP)$/i.test(l.code) && Object.keys(QCX).length && !QCX[qcxKey(l.code, l.lot)]) {
+      const msg = raw.includes('|')
+        ? `⚠️ ERP 수입검사 기록에 없는 LOT입니다.\nLOT không có trong kiểm tra đầu vào ERP.\n\n${l.code} · LOT ${l.lot}\n\n라벨을 다시 확인하세요. 그래도 이 LOT로 쓰려면 [확인]`
+        : `⚠️ 라벨이 끝까지 읽히지 않은 것 같습니다 (LOT: ${l.lot}).\nMã chưa đọc hết — hãy quét lại.\n\n[취소]를 누르고 라벨을 다시 찍으세요.\n(이 LOT가 맞으면 [확인])`;
+      if (!confirm(msg)) return false; } }
   if (l.qc === '불합격') { alert(`⛔ 수입검사 불합격 LOT입니다. 사용할 수 없습니다.\nLOT không đạt kiểm tra đầu vào.\n\n${l.code || ''} · LOT ${l.lot}`); return false; }
   if (!l.exp) return true; const d = lotDays(l.exp);
   if (d < 0) { alert(`⛔ 유효기간이 지난 자재입니다. 사용할 수 없습니다.\nNVL đã hết hạn sử dụng.\n\n${l.code || ''} · LOT ${l.lot} · 유효기간 ${l.exp}\n\n자재를 격리하고 관리자에게 알리세요.`); return false; }
