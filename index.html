@@ -500,6 +500,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   }
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:820px){.qm-wrap{flex-direction:column}#qm-nav{width:auto!important;position:static!important;display:flex;flex-wrap:wrap;gap:4px}#qm-nav>button{width:auto!important}#qm-nav>div{width:100%}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
@@ -1121,6 +1122,9 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 
 <!-- QC / 품질검사 -->
 <div id="tab-qc" class="sec">
+<div class="qm-wrap" style="display:flex;gap:14px;align-items:flex-start">
+<nav id="qm-nav" class="no-print" style="flex:none;width:200px;background:#fff;border:1px solid #E3E8EE;border-radius:12px;padding:8px;position:sticky;top:8px"></nav>
+<div style="flex:1;min-width:0"><div id="qm-view"></div><div id="qm-insp" style="display:none">
   <div class="toolbar">
     <button onclick="openAddQC()" style="padding:7px 16px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">➕ 검사 기록 추가</button>
     <button onclick="renderQC()" style="padding:7px 16px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:13px;cursor:pointer;font-weight:600;white-space:nowrap">🔄 새로고침</button>
@@ -1156,6 +1160,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <th style="text-align:right">불량</th><th>판정</th><th>검사자</th><th>일시</th><th>비고</th><th class="no-print">액션</th>
     </tr></thead><tbody id="qc-body"></tbody></table></div>
   <div class="pi" id="qc-pi"></div>
+</div></div></div>
 </div>
 
 <!-- 품질검사 추가/수정 모달 -->
@@ -2504,7 +2509,7 @@ function go(id){
   if(id==='inv'){initMS();renderInv();}
   if(id==='io') renderIOTable();
   if(id==='wo') renderWO({soft:true});
-  if(id==='qc') renderQC({soft:true});
+  if(id==='qc') { renderQC({soft:true}); qmShow(); }
   if(id==='hist') renderHist();
   if(id==='ng'){renderNG();renderNGLog();initNGLogModel();}
   if(id==='po') { renderPO({soft:true}); _goPO(); }
@@ -17956,6 +17961,261 @@ async function splLinkInvoice(rec){
   if (rec.fileId) Object.assign(p, {invFileId: rec.fileId, invFileName: rec.fileName || ''});
   if (await splSavePlan(p)) renderShipPlans();
 }
+
+// ════════════════════════════════════════════════════════════
+//  🔬 품질 관리(QMS) — 품질검사 탭 안의 품질 홈 + 하위 메뉴 (2026-11-16)
+//   홈 · 검사 기록(기존) · 고객사별 검사 · FAI · 불량 관리 · 고객사 부적합
+//   품질관리(검사설비·치공구 / 검교정 / 교육·자격 / 문서) · 품질관리현황(주간 보고 · 통계 · 협력사 평가)
+//   저장: 서버 JSON 저장소(HQ 저장소 방식) — qcrit · qfai · qclaim · qtool · qedu · qdoc · qsup
+// ════════════════════════════════════════════════════════════
+const QM = {view: 'home', loaded: false, q: {}, f: {}};
+const QM_STORES = ['qcrit','qfai','qclaim','qtool','qedu','qdoc','qsup'];
+const QM_CUSTS0 = ['솔루엠', '현대자동차'];
+function qmCustOf(code, name){ return /PCDU/i.test(String(code || '') + ' ' + String(name || '')) ? '현대자동차' : '솔루엠'; }
+function qmCusts(){ return [...new Set([...QM_CUSTS0, ...(HQS.qcrit || []).map(x => x.customer), ...(HQS.qclaim || []).map(x => x.customer), ...(HQS.qfai || []).map(x => x.customer)].filter(Boolean))]; }
+const qmToday = () => bdToday();
+const qmMonth = () => qmToday().slice(0, 7);
+const qmD = v => String(v || '').slice(0, 10);
+function qmAddMonths(d, n){ if (!d || !n) return ''; const t = new Date(qmD(d) + 'T00:00:00'); if (isNaN(t)) return ''; t.setMonth(t.getMonth() + (+n)); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }
+function qmDays(d){ if (!d) return null; const t = new Date(qmD(d) + 'T00:00:00'), n = new Date(qmToday() + 'T00:00:00'); return isNaN(t) ? null : Math.round((t - n) / 864e5); }
+function qmWeekStart(){ const t = new Date(qmToday() + 'T00:00:00'); const dw = (t.getDay() + 6) % 7; t.setDate(t.getDate() - dw); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }
+function qmBadge(t, c){ const C = {g:['#166534','#DCFCE7'], r:['#b91c1c','#FEE2E2'], y:['#92400e','#FEF3C7'], b:['#185FA5','#E8F0F8'], n:['#475569','#F1F5F9']}[c || 'n']; return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11.5px;font-weight:700;color:${C[0]};background:${C[1]};white-space:nowrap">${hqE(t)}</span>`; }
+
+// ── 모듈 정의 (입력 항목) ─────────────────────────────────────
+const QM_DEF = {
+  qcrit: {title: '고객사별 검사 기준', vi: 'Tiêu chuẩn KT theo khách hàng', icon: '📐',
+    fields: [['customer','고객사','cust'],['code','품목코드','text'],['name','품명','text'],['inspType','검사 구분','sel',['수입검사','공정검사','출하검사','신뢰성']],['item','검사 항목','text'],['spec','기준 (규격·공차)','text'],['method','검사 방법·장비','text'],['sampling','샘플링','text'],['freq','주기','text'],['note','비고','area']],
+    cols: ['customer','inspType','name','item','spec','method','sampling'], def: () => ({inspType: '출하검사', customer: '솔루엠'})},
+  qfai: {title: 'FAI (초도품 검사)', vi: 'Kiểm tra sản phẩm đầu tiên', icon: '🧪',
+    fields: [['date','검사일','date'],['customer','고객사','cust'],['code','품목코드','text'],['name','품명','text'],['reason','FAI 사유','sel',['신규 품목','설계 변경','4M 변경','장기 미생산(6개월↑)','공급사 변경','기타']],['lot','LOT','text'],['qty','샘플 수량','num'],['items','측정 결과 (한 줄에 한 항목: 항목 | 기준 | 측정값 | 판정)','area'],['inspector','검사자','text'],['status','상태','sel',['진행중','승인','조건부 승인','반려']],['approver','승인자','text'],['approveDate','승인일','date'],['note','비고','area']],
+    cols: ['date','customer','name','reason','lot','status','inspector','approveDate'], def: () => ({date: qmToday(), status: '진행중', reason: '신규 품목'})},
+  qclaim: {title: '고객사 부적합 (8D)', vi: 'Khiếu nại khách hàng', icon: '📮',
+    fields: [['recvDate','접수일','date'],['customer','고객사','cust'],['claimNo','고객 관리번호','text'],['code','품목코드','text'],['name','품명','text'],['lot','LOT','text'],['qty','불량 수량','num'],['severity','등급','sel',['Major','Minor','Critical']],['defect','불량 내용','area'],['cause','원인 (D4)','area'],['action','대책 (D5~D6)','area'],['owner','담당자','text'],['dueDate','회신 기한','date'],['status','진행 단계','sel',['접수','원인 분석','대책 수립','효과 확인','완료']],['closeDate','완료일','date']],
+    cols: ['recvDate','customer','name','lot','qty','defect','status','dueDate','owner'], def: () => ({recvDate: qmToday(), status: '접수', severity: 'Major', dueDate: qmAddMonths(qmToday(), 0)})},
+  qtool: {title: '검사설비 · 치공구 · 검교정', vi: 'Thiết bị KT · Đồ gá · Hiệu chuẩn', icon: '🛠',
+    fields: [['kind','구분','sel',['검사설비','계측기','치공구 (Test Fixture)','게이지']],['code','관리번호','text'],['name','명칭','text'],['model','모델 · 규격','text'],['location','사용 공정 · 위치','text'],['owner','관리자','text'],['calCycle','교정 주기 (개월, 0=교정 없음)','num'],['lastCal','최근 교정일','date'],['calOrg','교정 기관','sel',['외부 공인기관','사내 교정','제조사']],['status','상태','sel',['사용','수리 중','보관','폐기']],['note','비고','area']],
+    cols: ['kind','code','name','location','calCycle','lastCal','nextCal','status'], def: () => ({kind: '계측기', calCycle: 12, status: '사용', calOrg: '외부 공인기관'})},
+  qedu: {title: '교육훈련 · 자격인증', vi: 'Đào tạo · Chứng nhận', icon: '🎓',
+    fields: [['date','교육일','date'],['kind','구분','sel',['신입 교육','정기 교육','특별 교육','자격 인증','고객 요구 교육']],['course','과정명','text'],['trainer','강사','text'],['target','대상자 (이름 쉼표로)','area'],['hours','시간','num'],['result','결과','sel',['이수','미이수','자격 취득','재교육 필요']],['validUntil','자격 유효기한','date'],['note','비고','area']],
+    cols: ['date','kind','course','trainer','target','hours','result','validUntil'], def: () => ({date: qmToday(), kind: '정기 교육', result: '이수'})},
+  qdoc: {title: '품질 문서 관리', vi: 'Quản lý tài liệu', icon: '📁',
+    fields: [['docNo','문서번호','text'],['title','문서명','text'],['kind','구분','sel',['관리계획서 (CP)','PFMEA','작업표준서','검사기준서','절차서','성적서 양식','기타']],['code','관련 품목','text'],['rev','개정 번호','text'],['revDate','개정일','date'],['owner','담당자','text'],['status','상태','sel',['유효','개정 중','폐기']],['link','파일 링크 (드라이브 등)','text'],['note','개정 내용','area']],
+    cols: ['docNo','kind','title','code','rev','revDate','status','owner'], def: () => ({status: '유효', kind: '작업표준서', revDate: qmToday()})},
+  qsup: {title: '협력사 품질 평가', vi: 'Đánh giá NCC', icon: '🤝',
+    fields: [['period','평가 기간 (예: 2026-Q4)','text'],['supplier','협력사','text'],['items','공급 품목','text'],['recvLots','입고 LOT 수','num'],['ngLots','불합격 LOT 수','num'],['ppm','불량 PPM','num'],['delivery','납기 점수 (0~100)','num'],['quality','품질 점수 (0~100)','num'],['response','대응 점수 (0~100)','num'],['grade','등급','sel',['A','B','C','D']],['note','개선 요구 사항','area']],
+    cols: ['period','supplier','items','recvLots','ngLots','ppm','quality','grade'], def: () => ({period: qmToday().slice(0, 4) + '-Q' + (Math.floor((+qmToday().slice(5, 7) - 1) / 3) + 1)})},
+};
+const QM_LBL = k => { for (const d of Object.values(QM_DEF)) { const f = d.fields.find(x => x[0] === k); if (f) return f[1]; } return k === 'nextCal' ? '다음 교정일' : k; };
+
+// ── 메뉴 ──────────────────────────────────────────────────
+const QM_NAV = [
+  ['home','🏠 홈','Trang chủ'], ['insp','🔬 검사 및 결과','Kết quả kiểm tra'], ['cust','🏢 고객사별 검사','Theo khách hàng'], ['qfai','🧪 FAI 관리','FAI'],
+  ['ng','🚫 불량 관리','Quản lý NG'], ['qclaim','📮 고객사 부적합','Khiếu nại KH'],
+  ['-','품질관리'], ['qtool','🛠 검사설비·치공구·검교정','Thiết bị · Hiệu chuẩn'], ['qedu','🎓 교육훈련·자격인증','Đào tạo'], ['qdoc','📁 문서 관리','Tài liệu'],
+  ['-','품질관리현황'], ['week','📰 주간 보고','Báo cáo tuần'], ['stat','📊 통계 및 분석','Thống kê'], ['qsup','🤝 협력사 품질 평가','Đánh giá NCC']];
+async function qmLoad(force){
+  if (QM.loaded && !force) return;
+  QM_STORES.forEach(k => { if (!HQS[k]) HQS[k] = []; });
+  const rs = await Promise.all(QM_STORES.map(k => api('getHQStore', {store: k}).catch(() => null)));
+  QM.noServer = rs.some(r => r && !r.ok && /unknown|store|저장소/i.test(r.error || ''));
+  QM_STORES.forEach((k, i) => { if (rs[i] && rs[i].ok) HQS[k] = rs[i].data || []; });
+  QM.loaded = true;
+}
+function qmNavHtml(){
+  return QM_NAV.map(n => n[0] === '-' ? `<div style="font-size:11px;font-weight:700;color:#8A95A3;margin:12px 8px 4px">${n[1]}</div>`
+    : `<button onclick="qmShow('${n[0]}')" style="display:block;width:100%;text-align:left;padding:8px 10px;margin:1px 0;border:0;border-radius:8px;cursor:pointer;font-size:13px;${QM.view === n[0] ? 'background:#0f766e;color:#fff;font-weight:700' : 'background:transparent;color:#1F2A37'}">${n[1]}<div style="font-size:10.5px;opacity:.7;font-weight:400">${n[2]}</div></button>`).join('');
+}
+async function qmShow(v){
+  QM.view = v || QM.view || 'home';
+  const nav = document.getElementById('qm-nav'), view = document.getElementById('qm-view'), insp = document.getElementById('qm-insp');
+  if (!nav) return;
+  nav.innerHTML = qmNavHtml();
+  insp.style.display = QM.view === 'insp' ? '' : 'none';
+  view.style.display = QM.view === 'insp' ? 'none' : '';
+  if (QM.view === 'insp') { renderQC({soft: true}); return; }
+  if (!QM.loaded) { view.innerHTML = '<div class="empty">⏳ 불러오는 중…</div>'; await qmLoad(); if (!_loadedAt.qc) await loadQC().catch(() => {}); }
+  qmRender();
+}
+function qmRender(){
+  const view = document.getElementById('qm-view'); if (!view) return;
+  const warn = QM.noServer ? `<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12.5px;color:#92400e">⚠️ 서버(Code.gs)가 아직 새 버전이 아니라 FAI·부적합·설비·교육·문서 기록을 저장할 수 없습니다. Code.gs를 새 버전으로 배포해 주세요.</div>` : '';
+  const v = QM.view;
+  view.innerHTML = warn + (v === 'home' ? qmHome() : v === 'cust' ? qmCustView() : v === 'ng' ? qmNGView() : v === 'week' ? qmWeekView() : v === 'stat' ? qmStatView() : QM_DEF[v] ? qmListView(v) : '');
+}
+
+// ── 데이터 요약 ─────────────────────────────────────────────
+function qmQC(from, to){ return (QC || []).filter(r => { const d = qmD(r.inspDate); return (!from || d >= from) && (!to || d <= to); }); }
+function qmPass(list){ const n = list.length; if (!n) return null; return list.filter(r => r.result === '합격' || r.result === '조건부합격').length / n * 100; }
+function qmNG(from, to){ return (ngLog || []).filter(x => /in/.test(String(x.type || 'in')) && (() => { const d = qmD(x.dt || x.date); return (!from || d >= from) && (!to || d <= to); })()); }
+function qmCalState(r){ if (!(+r.calCycle) || r.status === '폐기') return null; const nx = r.nextCal || qmAddMonths(r.lastCal, r.calCycle); const d = qmDays(nx); return d === null ? 'none' : d < 0 ? 'over' : d <= 30 ? 'soon' : 'ok'; }
+function qmCard(view, icon, title, sub, body){
+  return `<div onclick="qmShow('${view}')" style="cursor:pointer;background:#fff;border:1px solid #E3E8EE;border-radius:14px;padding:16px 18px;min-height:150px;box-shadow:0 1px 2px rgba(15,23,42,.04);transition:border-color .15s" onmouseover="this.style.borderColor='#0f766e'" onmouseout="this.style.borderColor='#E3E8EE'">
+    <div style="font-size:24px;line-height:1">${icon}</div><div style="font-size:16px;font-weight:800;margin-top:8px">${title}</div><div style="font-size:12px;color:#5D6977;margin:2px 0 10px">${sub}</div>${body}</div>`;
+}
+const qmStat = (lbl, v, c) => `<div style="flex:1;min-width:70px"><div style="font-size:11.5px;color:#5D6977">${lbl}</div><div style="font-size:22px;font-weight:800;color:${c || '#1F2A37'}">${v}</div></div>`;
+function qmHome(){
+  const m0 = qmMonth() + '-01', today = qmToday();
+  const qcM = qmQC(m0), qcT = qmQC(today, today);
+  const custBox = qmCusts().slice(0, 3).map(c => { const l = qcM.filter(r => qmCustOf(r.code, r.name) === c && r.inspType === '출하검사'), p = qmPass(l);
+    return `<div style="flex:1;min-width:120px;background:#F0FDFA;border:1px solid #CCFBF1;border-radius:10px;padding:8px 10px"><div style="font-weight:700;font-size:13px">${hqE(c)}</div><div style="font-size:11.5px;color:#5D6977">이번 달 출하검사 ${l.length}건 · 합격률 ${p === null ? '-' : p.toFixed(1) + '%'}</div><div style="font-size:11.5px;color:#5D6977">검사 기준 ${(HQS.qcrit || []).filter(x => x.customer === c).length}항목</div></div>`; }).join('');
+  const fai = HQS.qfai || [], cl = HQS.qclaim || [], tl = HQS.qtool || [], ed = HQS.qedu || [], dc = HQS.qdoc || [];
+  const ngM = qmNG(m0), ngQty = ngM.reduce((a, x) => a + (+x.qty || 0), 0), failM = qcM.filter(r => r.result === '불합격').length;
+  const clOpen = cl.filter(x => x.status !== '완료'), clLate = clOpen.filter(x => (qmDays(x.dueDate) ?? 1) < 0);
+  const calOver = tl.filter(r => qmCalState(r) === 'over').length, calSoon = tl.filter(r => qmCalState(r) === 'soon').length;
+  const edM = ed.filter(x => qmD(x.date).slice(0, 7) === qmMonth()).length, docRev = dc.filter(x => x.status === '개정 중').length;
+  const wk = qmQC(qmWeekStart()), wkP = qmPass(wk);
+  return `<div style="font-size:12px;color:#8A95A3">${today}</div><h2 style="margin:2px 0 14px;font-size:20px">${hqE(CURRENT_USER || '')}${CURRENT_USER ? '님, ' : ''}어디로 갈까요? <span style="font-size:13px;color:#8A95A3;font-weight:400">Bạn muốn đi đâu?</span></h2>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">${qcT.length ? qmBadge('오늘 검사 ' + qcT.length + '건', 'b') : qmBadge('오늘 검사 기록 없음')}${clLate.length ? qmBadge('부적합 회신 기한 지남 ' + clLate.length + '건', 'r') : ''}${calOver ? qmBadge('검교정 기한 지남 ' + calOver + '대', 'r') : ''}${calSoon ? qmBadge('30일 내 검교정 ' + calSoon + '대', 'y') : ''}${fai.filter(x => x.status === '진행중').length ? qmBadge('FAI 진행중 ' + fai.filter(x => x.status === '진행중').length + '건', 'y') : ''}</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px">
+    ${qmCard('cust','🔍','고객사별 검사','고객사 검사 기준과 검사 기록 · Kiểm tra theo khách hàng', `<div style="display:flex;gap:8px;flex-wrap:wrap">${custBox}</div>`)}
+    ${qmCard('qfai','🧪','FAI','초도품 검사 등록 · 승인 · Kiểm tra sản phẩm đầu', `<div style="display:flex;gap:6px">${qmStat('진행중', fai.filter(x => x.status === '진행중').length, '#b45309')}${qmStat('반려', fai.filter(x => x.status === '반려').length, '#b91c1c')}${qmStat('이번 달 승인', fai.filter(x => /승인/.test(x.status) && qmD(x.approveDate || x.date).slice(0, 7) === qmMonth()).length, '#166534')}</div>`)}
+    ${qmCard('ng','🚫','불량 관리','공정 불량 · 검사 불합격 · Quản lý NG', `<div style="display:flex;gap:6px">${qmStat('이번 달 NG 건수', ngM.length, '#b91c1c')}${qmStat('NG 수량', hqN(ngQty))}${qmStat('검사 불합격', failM, failM ? '#b91c1c' : '#166534')}</div>`)}
+    ${qmCard('qclaim','⚠️','고객사 부적합','고객 클레임 접수 · 8D 대응 · Khiếu nại KH', `<div style="display:flex;gap:6px">${qmStat('진행 중', clOpen.length, clOpen.length ? '#b45309' : '#166534')}${qmStat('기한 지남', clLate.length, clLate.length ? '#b91c1c' : '#166534')}${qmStat('이번 달 접수', cl.filter(x => qmD(x.recvDate).slice(0, 7) === qmMonth()).length)}</div>`)}
+    ${qmCard('qtool','💼','품질관리','검사설비 · 치공구 · 검교정 · 교육 · 문서', `<div style="display:flex;gap:6px">${qmStat('관리 설비', tl.filter(x => x.status !== '폐기').length)}${qmStat('검교정 임박·지남', calSoon + calOver, calOver ? '#b91c1c' : calSoon ? '#b45309' : '#166534')}${qmStat('이번 달 교육', edM)}${qmStat('개정 중 문서', docRev)}</div>`)}
+    ${qmCard('stat','📈','품질관리현황','주간 보고 · 통계 · 협력사 평가 · Tình hình chất lượng', `<div style="display:flex;gap:6px">${qmStat('고객사', qmCusts().length)}${qmStat('이번 주 검사', wk.length)}${qmStat('이번 주 합격률', wkP === null ? '-' : wkP.toFixed(1) + '%', '#166534')}${qmStat('이번 달 검사', qcM.length)}</div>`)}
+  </div>`;
+}
+
+// ── 고객사별 검사 ───────────────────────────────────────────
+function qmCustView(){
+  const cs = qmCusts(), cur = QM.f.cust && cs.includes(QM.f.cust) ? QM.f.cust : cs[0]; QM.f.cust = cur;
+  const m0 = qmMonth() + '-01', all = (QC || []).filter(r => r.inspType !== '수입검사' && qmCustOf(r.code, r.name) === cur), mon = all.filter(r => qmD(r.inspDate) >= m0);
+  const byType = ['공정검사','출하검사'].map(t => { const l = mon.filter(r => r.inspType === t), p = qmPass(l); return `<div style="background:#fff;border:1px solid #E3E8EE;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${t} (이번 달)</div><div style="font-size:20px;font-weight:800">${l.length}건 <span style="font-size:13px;color:${p === null ? '#8A95A3' : p >= 99 ? '#166534' : '#b45309'}">${p === null ? '' : p.toFixed(1) + '%'}</span></div><div style="font-size:11.5px;color:#8A95A3">검사 수량 ${hqN(l.reduce((a, r) => a + (+r.totalQty || 0), 0))} · 불량 ${hqN(l.reduce((a, r) => a + (+r.defectQty || 0), 0))}</div></div>`; }).join('');
+  const crit = (HQS.qcrit || []).filter(x => x.customer === cur);
+  const recent = all.slice().sort((a, b) => String(b.inspDate).localeCompare(String(a.inspDate))).slice(0, 15);
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${cs.map(c => `<button class="period-btn ${c === cur ? 'on' : ''}" onclick="QM.f.cust='${hqE(c)}';qmRender()">${hqE(c)}</button>`).join('')}</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px">${byType}</div>
+  <div style="display:flex;align-items:center;gap:8px;margin:6px 0"><h3 style="margin:0;font-size:15px">📐 ${hqE(cur)} 검사 기준 <span style="font-size:12px;color:#8A95A3;font-weight:400">${crit.length}항목</span></h3><span style="flex:1"></span><button onclick="qmEdit('qcrit',null,{customer:'${hqE(cur)}'})" style="padding:6px 12px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-size:12.5px;cursor:pointer;font-weight:600">➕ 기준 추가</button></div>
+  ${qmTable('qcrit', crit)}
+  <h3 style="margin:16px 0 6px;font-size:15px">🔬 최근 검사 기록 <span style="font-size:12px;color:#8A95A3;font-weight:400">${hqE(cur)} 품목 · 최근 15건 (전체는 "검사 및 결과")</span></h3>
+  <div class="tw"><table style="width:100%"><thead><tr><th>일시</th><th>유형</th><th>품목</th><th>LOT</th><th style="text-align:right">수량</th><th style="text-align:right">샘플</th><th style="text-align:right">불량</th><th>판정</th><th>검사자</th></tr></thead><tbody>
+  ${recent.map(r => `<tr><td>${hqE(qmD(r.inspDate))}</td><td>${hqE(r.inspType)}</td><td>${hqE(r.name)} <span style="font-size:11px;color:#8A95A3">${hqE(r.code)}</span></td><td>${hqE(r.lot || '-')}</td><td style="text-align:right">${hqN(r.totalQty)}</td><td style="text-align:right">${hqN(r.sampleQty)}</td><td style="text-align:right">${hqN(r.defectQty)}</td><td>${qmBadge(r.result, r.result === '불합격' ? 'r' : r.result === '합격' ? 'g' : 'y')}</td><td>${hqE(r.inspector || '')}</td></tr>`).join('') || `<tr><td colspan="9" class="empty">${hqE(cur)} 품목의 검사 기록이 없습니다.</td></tr>`}</tbody></table></div>`;
+}
+
+// ── 불량 관리 (기존 NG 이력 + 검사 불합격 요약) ───────────────────
+function qmNGView(){
+  const m0 = qmMonth() + '-01', ng = qmNG(m0), fail = qmQC(m0).filter(r => r.result === '불합격');
+  const byR = {}; ng.forEach(x => { const k = (x.reason || String(x.note || '').replace(/^\[[^\]]*\]\s*/, '') || '사유 없음').slice(0, 40); byR[k] = (byR[k] || 0) + (+x.qty || 0); });
+  const byI = {}; ng.forEach(x => { const k = x.name || x.code; byI[k] = (byI[k] || 0) + (+x.qty || 0); });
+  const top = o => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const tot = ng.reduce((a, x) => a + (+x.qty || 0), 0);
+  const bar = (rows) => rows.map(([k, v]) => `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12.5px"><div style="width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${hqE(k)}">${hqE(k)}</div><div style="flex:1;background:#F1F5F9;border-radius:4px;height:14px"><div style="width:${tot ? v / tot * 100 : 0}%;background:#ef4444;height:14px;border-radius:4px"></div></div><div style="width:70px;text-align:right;font-weight:700">${hqN(v)}</div></div>`).join('') || '<div class="empty">이번 달 NG 기록이 없습니다.</div>';
+  return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px"><h3 style="margin:0;font-size:16px">🚫 불량 관리 · ${qmMonth()}</h3><span style="flex:1"></span><button onclick="go('ng')" style="padding:6px 12px;border-radius:7px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-size:12.5px;cursor:pointer;font-weight:600">불량(NG) 화면에서 입력·수정 →</button></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">
+    <div style="background:#fff;border:1px solid #E3E8EE;border-radius:10px;padding:10px 12px">${qmStat('이번 달 NG 건수', ng.length, '#b91c1c')}</div>
+    <div style="background:#fff;border:1px solid #E3E8EE;border-radius:10px;padding:10px 12px">${qmStat('NG 수량', hqN(tot), '#b91c1c')}</div>
+    <div style="background:#fff;border:1px solid #E3E8EE;border-radius:10px;padding:10px 12px">${qmStat('검사 불합격 LOT', fail.length, fail.length ? '#b91c1c' : '#166534')}</div></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">
+    <div style="background:#fff;border:1px solid #E3E8EE;border-radius:12px;padding:12px 14px"><div style="font-weight:700;margin-bottom:6px">불량 사유별 수량 (파레토)</div>${bar(top(byR))}</div>
+    <div style="background:#fff;border:1px solid #E3E8EE;border-radius:12px;padding:12px 14px"><div style="font-weight:700;margin-bottom:6px">품목별 NG 수량</div>${bar(top(byI))}</div></div>
+  <h3 style="margin:16px 0 6px;font-size:15px">검사 불합격 LOT (이번 달)</h3>
+  <div class="tw"><table style="width:100%"><thead><tr><th>일시</th><th>유형</th><th>품목</th><th>LOT</th><th style="text-align:right">샘플</th><th style="text-align:right">불량</th><th>비고</th></tr></thead><tbody>${fail.map(r => `<tr><td>${hqE(qmD(r.inspDate))}</td><td>${hqE(r.inspType)}</td><td>${hqE(r.name)}</td><td>${hqE(r.lot || '-')}</td><td style="text-align:right">${hqN(r.sampleQty)}</td><td style="text-align:right;color:#b91c1c">${hqN(r.defectQty)}</td><td>${hqE(r.note || '')}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">이번 달 불합격 LOT가 없습니다.</td></tr>'}</tbody></table></div>`;
+}
+
+// ── 주간 보고 ──────────────────────────────────────────────
+function qmWeekView(){
+  const ws = qmWeekStart(), we = qmAddDays(ws, 6), qc = qmQC(ws, we), ng = qmNG(ws, we), cl = HQS.qclaim || [];
+  const clNew = cl.filter(x => qmD(x.recvDate) >= ws && qmD(x.recvDate) <= we), clDone = cl.filter(x => x.status === '완료' && qmD(x.closeDate) >= ws && qmD(x.closeDate) <= we);
+  const fai = (HQS.qfai || []).filter(x => qmD(x.date) >= ws && qmD(x.date) <= we), ed = (HQS.qedu || []).filter(x => qmD(x.date) >= ws && qmD(x.date) <= we);
+  const rows = ['수입검사','공정검사','출하검사'].map(t => { const l = qc.filter(r => r.inspType === t), p = qmPass(l); return `<tr><td>${t}</td><td style="text-align:right">${l.length}</td><td style="text-align:right">${hqN(l.reduce((a, r) => a + (+r.totalQty || 0), 0))}</td><td style="text-align:right">${l.filter(r => r.result === '불합격').length}</td><td style="text-align:right">${p === null ? '-' : p.toFixed(1) + '%'}</td></tr>`; }).join('');
+  const due = (HQS.qtool || []).filter(r => qmCalState(r) === 'over' || qmCalState(r) === 'soon');
+  return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><h3 style="margin:0;font-size:16px">📰 주간 품질 보고 · ${ws} ~ ${we}</h3><span style="flex:1"></span><button onclick="window.print()" style="padding:6px 12px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:12.5px;cursor:pointer;font-weight:600">🖨 인쇄</button></div>
+  <div style="background:#fff;border:1px solid #E3E8EE;border-radius:12px;padding:14px 16px">
+   <div style="font-weight:700;margin-bottom:6px">1. 검사 실적</div><div class="tw"><table style="width:100%"><thead><tr><th>구분</th><th style="text-align:right">건수</th><th style="text-align:right">검사 수량</th><th style="text-align:right">불합격</th><th style="text-align:right">합격률</th></tr></thead><tbody>${rows}</tbody></table></div>
+   <div style="font-weight:700;margin:12px 0 6px">2. 공정 불량</div><div style="font-size:13px">NG ${ng.length}건 · ${hqN(ng.reduce((a, x) => a + (+x.qty || 0), 0))}개</div>
+   <div style="font-weight:700;margin:12px 0 6px">3. 고객사 부적합</div><div style="font-size:13px">신규 접수 ${clNew.length}건 · 완료 ${clDone.length}건 · 진행 중 ${cl.filter(x => x.status !== '완료').length}건</div>${clNew.map(x => `<div style="font-size:12.5px;color:#5D6977">· ${hqE(x.customer)} / ${hqE(x.name)} / ${hqE(x.defect || '')} — ${hqE(x.status)}</div>`).join('')}
+   <div style="font-weight:700;margin:12px 0 6px">4. FAI · 교육</div><div style="font-size:13px">FAI ${fai.length}건 (${fai.map(x => hqE(x.name) + ' ' + hqE(x.status)).join(', ') || '없음'}) · 교육 ${ed.length}건 (${ed.map(x => hqE(x.course)).join(', ') || '없음'})</div>
+   <div style="font-weight:700;margin:12px 0 6px">5. 검교정 예정·지남</div><div style="font-size:13px">${due.map(r => `${hqE(r.code)} ${hqE(r.name)} (${hqE(r.nextCal || qmAddMonths(r.lastCal, r.calCycle))})`).join(', ') || '없음'}</div></div>`;
+}
+function qmAddDays(d, n){ const t = new Date(qmD(d) + 'T00:00:00'); t.setDate(t.getDate() + n); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); }
+
+// ── 통계 및 분석 (최근 6개월) ───────────────────────────────────
+function qmStatView(){
+  const ms = []; const t = new Date(qmToday() + 'T00:00:00'); for (let i = 5; i >= 0; i--) { const d = new Date(t.getFullYear(), t.getMonth() - i, 1); ms.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')); }
+  const row = m => { const qc = (QC || []).filter(r => qmD(r.inspDate).slice(0, 7) === m), ship = qc.filter(r => r.inspType === '출하검사'), inc = qc.filter(r => r.inspType === '수입검사'), ng = (ngLog || []).filter(x => /in/.test(String(x.type || 'in')) && qmD(x.dt || x.date).slice(0, 7) === m);
+    const smp = qc.reduce((a, r) => a + (+r.sampleQty || 0), 0), dfc = qc.reduce((a, r) => a + (+r.defectQty || 0), 0), cl = (HQS.qclaim || []).filter(x => qmD(x.recvDate).slice(0, 7) === m);
+    const p = qmPass(qc), pi = qmPass(inc), ps = qmPass(ship);
+    return {m, n: qc.length, p, pi, ps, ppm: smp ? dfc / smp * 1e6 : null, ng: ng.reduce((a, x) => a + (+x.qty || 0), 0), cl: cl.length}; };
+  const R = ms.map(row), mx = Math.max(1, ...R.map(r => r.ng));
+  const pc = v => v === null ? '-' : v.toFixed(1) + '%';
+  return `<h3 style="margin:0 0 10px;font-size:16px">📊 통계 및 분석 · 최근 6개월</h3>
+  <div class="tw"><table style="width:100%"><thead><tr><th>월</th><th style="text-align:right">검사 건수</th><th style="text-align:right">전체 합격률</th><th style="text-align:right">수입검사 합격률</th><th style="text-align:right">출하검사 합격률</th><th style="text-align:right">샘플 불량 PPM</th><th style="text-align:right">공정 NG 수량</th><th style="text-align:right">고객 부적합</th></tr></thead><tbody>
+  ${R.map(r => `<tr><td>${r.m}</td><td style="text-align:right">${r.n}</td><td style="text-align:right">${pc(r.p)}</td><td style="text-align:right">${pc(r.pi)}</td><td style="text-align:right">${pc(r.ps)}</td><td style="text-align:right">${r.ppm === null ? '-' : Math.round(r.ppm).toLocaleString()}</td><td style="text-align:right">${hqN(r.ng)}</td><td style="text-align:right;${r.cl ? 'color:#b91c1c;font-weight:700' : ''}">${r.cl}</td></tr>`).join('')}</tbody></table></div>
+  <div style="background:#fff;border:1px solid #E3E8EE;border-radius:12px;padding:12px 14px;margin-top:14px"><div style="font-weight:700;margin-bottom:8px">월별 공정 NG 수량</div><div style="display:flex;align-items:flex-end;gap:14px;height:150px;padding:0 6px">${R.map(r => `<div style="flex:1;text-align:center"><div style="font-size:11.5px;font-weight:700">${hqN(r.ng)}</div><div style="height:${Math.round(r.ng / mx * 110)}px;background:#ef4444;border-radius:4px 4px 0 0;min-height:2px"></div><div style="font-size:11px;color:#5D6977;margin-top:4px">${r.m.slice(2)}</div></div>`).join('')}</div></div>
+  <h3 style="margin:16px 0 6px;font-size:15px">🏢 고객사 통합 현황 (이번 달)</h3>
+  <div class="tw"><table style="width:100%"><thead><tr><th>고객사</th><th style="text-align:right">출하검사</th><th style="text-align:right">합격률</th><th style="text-align:right">부적합 진행 중</th><th style="text-align:right">FAI 진행 중</th><th style="text-align:right">검사 기준</th></tr></thead><tbody>
+  ${qmCusts().map(c => { const l = qmQC(qmMonth() + '-01').filter(r => r.inspType === '출하검사' && qmCustOf(r.code, r.name) === c); return `<tr><td>${hqE(c)}</td><td style="text-align:right">${l.length}</td><td style="text-align:right">${pc(qmPass(l))}</td><td style="text-align:right">${(HQS.qclaim || []).filter(x => x.customer === c && x.status !== '완료').length}</td><td style="text-align:right">${(HQS.qfai || []).filter(x => x.customer === c && x.status === '진행중').length}</td><td style="text-align:right">${(HQS.qcrit || []).filter(x => x.customer === c).length}</td></tr>`; }).join('')}</tbody></table></div>`;
+}
+
+// ── 공통 목록 · 입력 ────────────────────────────────────────
+function qmCell(k, r){
+  let v = k === 'nextCal' ? (r.nextCal || qmAddMonths(r.lastCal, r.calCycle)) : r[k];
+  if (k === 'status' || k === 'result' || k === 'grade') { const s = String(v || ''); return qmBadge(s || '-', /완료|승인|이수|유효|사용|취득|^A$/.test(s) ? 'g' : /반려|폐기|미이수|^D$/.test(s) ? 'r' : /진행|접수|분석|수립|확인|개정|수리|^C$/.test(s) ? 'y' : 'b'); }
+  if (k === 'nextCal') { const st = qmCalState(r); return v ? `<span style="font-weight:700;color:${st === 'over' ? '#b91c1c' : st === 'soon' ? '#b45309' : '#1F2A37'}">${hqE(v)}${st === 'over' ? ' (지남)' : st === 'soon' ? ' (임박)' : ''}</span>` : '-'; }
+  if (k === 'dueDate' && r.status !== '완료') { const d = qmDays(v); return v ? `<span style="${d !== null && d < 0 ? 'color:#b91c1c;font-weight:700' : ''}">${hqE(v)}${d !== null && d < 0 ? ' (지남)' : ''}</span>` : '-'; }
+  const s = String(v ?? ''); return s.length > 60 ? hqE(s.slice(0, 60)) + '…' : (hqE(s) || '-');
+}
+function qmTable(store, list){
+  const d = QM_DEF[store];
+  return `<div class="tw"><table style="width:100%"><thead><tr>${d.cols.map(c => `<th>${hqE(QM_LBL(c))}</th>`).join('')}</tr></thead><tbody>
+  ${list.map(r => `<tr style="cursor:pointer" onclick="qmEdit('${store}','${hqE(r.id)}')">${d.cols.map(c => `<td style="font-size:12.5px">${qmCell(c, r)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${d.cols.length}" class="empty">아직 등록된 내용이 없습니다. ➕ 버튼으로 추가하세요.</td></tr>`}</tbody></table></div>`;
+}
+function qmListView(store){
+  const d = QM_DEF[store], q = (QM.q[store] || '').toLowerCase();
+  let list = (HQS[store] || []).slice();
+  if (q) list = list.filter(r => Object.values(r).some(v => String(v ?? '').toLowerCase().includes(q)));
+  const dk = d.fields.find(f => f[2] === 'date'); if (dk) list.sort((a, b) => String(b[dk[0]] || '').localeCompare(String(a[dk[0]] || ''))); else list.sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')));
+  let extra = '';
+  if (store === 'qtool') { const over = (HQS.qtool || []).filter(r => qmCalState(r) === 'over'), soon = (HQS.qtool || []).filter(r => qmCalState(r) === 'soon');
+    extra = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${qmBadge('검교정 기한 지남 ' + over.length, over.length ? 'r' : 'g')}${qmBadge('30일 내 교정 ' + soon.length, soon.length ? 'y' : 'g')}${qmBadge('관리 대상 ' + (HQS.qtool || []).filter(r => r.status !== '폐기').length)}</div>`; }
+  if (store === 'qclaim') { const op = (HQS.qclaim || []).filter(x => x.status !== '완료'); extra = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${['접수','원인 분석','대책 수립','효과 확인'].map(s => qmBadge(s + ' ' + op.filter(x => x.status === s).length, 'y')).join('')}${qmBadge('기한 지남 ' + op.filter(x => (qmDays(x.dueDate) ?? 1) < 0).length, 'r')}</div>`; }
+  return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap"><h3 style="margin:0;font-size:16px">${d.icon} ${d.title} <span style="font-size:12px;color:#8A95A3;font-weight:400">${d.vi} · ${list.length}건</span></h3><span style="flex:1"></span>
+    <div class="sw"><span class="si">🔍</span><input placeholder="검색..." value="${hqE(QM.q[store] || '')}" oninput="QM.q['${store}']=this.value;clearTimeout(QM._t);QM._t=setTimeout(()=>{qmRender();const i=document.querySelector('#qm-view input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>
+    <button onclick="qmEdit('${store}')" style="padding:7px 14px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-size:13px;cursor:pointer;font-weight:600">➕ 추가</button></div>${extra}${qmTable(store, list)}`;
+}
+function qmModal(html){
+  let m = document.getElementById('qm-modal');
+  if (!m) { m = document.createElement('div'); m.id = 'qm-modal'; m.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9992;display:flex;align-items:center;justify-content:center;padding:14px'; document.body.appendChild(m); }
+  m.innerHTML = `<div style="background:#fff;border-radius:12px;width:min(760px,100%);max-height:94vh;overflow:auto;padding:18px 20px">${html}</div>`;
+}
+function qmClose(){ const m = document.getElementById('qm-modal'); if (m) m.remove(); }
+function qmEdit(store, id, preset){
+  const d = QM_DEF[store], r = id ? (HQS[store] || []).find(x => String(x.id) === String(id)) : null;
+  const rec = r ? {...r} : {...d.def(), ...(preset || {})};
+  QM.ed = {store, rec, isNew: !r};
+  const inp = f => { const [k, , t, opts] = f, v = rec[k] ?? '';
+    if (t === 'area') return `<textarea data-k="${k}" rows="${k === 'items' ? 5 : 2}" style="${HQ_IN};resize:vertical">${hqE(v)}</textarea>`;
+    if (t === 'sel') return `<select data-k="${k}" style="${HQ_IN}">${opts.map(o => `<option ${String(v) === o ? 'selected' : ''}>${hqE(o)}</option>`).join('')}</select>`;
+    if (t === 'cust') return `<input data-k="${k}" list="qm-cust-dl" value="${hqE(v)}" style="${HQ_IN}"><datalist id="qm-cust-dl">${qmCusts().map(c => `<option value="${hqE(c)}">`).join('')}</datalist>`;
+    return `<input data-k="${k}" type="${t === 'num' ? 'number' : t === 'date' ? 'date' : 'text'}" value="${hqE(v)}" style="${HQ_IN}">`; };
+  qmModal(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><h3 style="margin:0">${d.icon} ${d.title} ${r ? '수정' : '추가'}</h3><span style="flex:1"></span><button onclick="qmClose()" style="border:0;background:none;font-size:20px;cursor:pointer">✕</button></div>
+    <div id="qm-form" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${d.fields.map(f => hqFld(f[1], '', inp(f), f[2] === 'area')).join('')}</div>
+    ${r && (r.updatedBy || r.updatedAt) ? `<div style="font-size:11.5px;color:#8A95A3;margin-top:8px">최근 수정: ${hqE(r.updatedBy || '')} ${hqE(String(r.updatedAt || '').slice(0, 16).replace('T', ' '))}</div>` : ''}
+    <div style="display:flex;gap:8px;margin-top:14px">${r ? `<button onclick="qmDel()" style="padding:8px 14px;border-radius:7px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}<span style="flex:1"></span><button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button><button id="qm-save" onclick="qmSave()" style="padding:8px 18px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">💾 저장</button></div>`);
+}
+async function qmSave(){
+  const e = QM.ed; if (!e) return; const d = QM_DEF[e.store], rec = {...e.rec};
+  document.querySelectorAll('#qm-form [data-k]').forEach(el => { const k = el.dataset.k, f = d.fields.find(x => x[0] === k); rec[k] = f && f[2] === 'num' ? (el.value === '' ? '' : +el.value) : el.value.trim(); });
+  const need = {qcrit: ['customer','item'], qfai: ['name'], qclaim: ['customer','defect'], qtool: ['name'], qedu: ['course'], qdoc: ['title'], qsup: ['supplier']}[e.store] || [];
+  const miss = need.filter(k => !String(rec[k] ?? '').trim()); if (miss.length) { alert(miss.map(QM_LBL).join(', ') + '을(를) 입력해 주세요.'); return; }
+  if (e.store === 'qtool') rec.nextCal = (+rec.calCycle && rec.lastCal) ? qmAddMonths(rec.lastCal, rec.calCycle) : '';
+  if (e.store === 'qclaim' && rec.status === '완료' && !rec.closeDate) rec.closeDate = qmToday();
+  if (e.store === 'qfai' && /승인|반려/.test(rec.status) && !rec.approveDate) rec.approveDate = qmToday();
+  if (!rec.id) rec.id = e.store + '-' + Date.now();
+  rec.updatedBy = CURRENT_USER || ''; rec.updatedAt = new Date().toISOString();
+  const b = document.getElementById('qm-save'); if (b) { b.disabled = true; b.textContent = '저장 중…'; }
+  const res = await retrySafe(() => apiAuto('saveHQStore', {store: e.store, rec}));
+  const ok = !!(res && res.ok);
+  if (ok) { const arr = HQS[e.store] = HQS[e.store] || [], i = arr.findIndex(x => String(x.id) === String(rec.id)); if (i >= 0) arr[i] = rec; else arr.push(rec); }
+  else alert('저장 실패: ' + ((res && res.error) || '서버 응답 없음') + (/bad store|unknown/i.test(res && res.error || '') ? '\n서버(Code.gs)를 새 버전으로 배포해야 합니다.' : ''));
+  if (b) { b.disabled = false; b.textContent = '💾 저장'; }
+  if (ok) { qmClose(); QM.ed = null; qmRender(); }
+}
+async function qmDel(){
+  const e = QM.ed; if (!e) return;
+  if (await hqsDelete(e.store, e.rec.id, QM_DEF[e.store].title + ' 기록')) { qmClose(); QM.ed = null; qmRender(); }
+}
+
 </script>
 </body>
 </html>
