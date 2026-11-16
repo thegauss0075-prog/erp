@@ -1603,7 +1603,7 @@ async function boot(){
   ME.role = r.data && r.data.role || ''; ME.name = r.data && r.data.name || u.email;
   if (!ME.role && r.error) { $('app').innerHTML = '<div class="card" style="max-width:420px;margin:40px auto">서버에 연결할 수 없습니다. 30초 뒤 자동으로 다시 시도합니다.</div>'; setTimeout(() => location.reload(), 30000); return; }
   if (!ME.role) { $('app').innerHTML = `<div class="card" style="max-width:520px;margin:30px auto"><h2>권한 없음</h2><p>${E(u.email)} 계정이 MES 사용자(app_users)에 등록되지 않았습니다. 관리자에게 요청하세요.</p><button class="btn" onclick="logout()">로그아웃</button></div>`; return; }
-  $('who').textContent = `👤 ${r.data.name || u.email} · ${ME.role}`;
+  $('who').textContent = ME.role === 'admin' ? '👤 admin' : `👤 ${r.data.name || u.email} · ${ME.role}`;   // 관리자는 직함 없이 admin만 표시 (2026-11-16)
   $('pwc').style.display = ME.role === 'floor' ? 'none' : '';   // 현장 공용 계정은 태블릿에서 비밀번호 변경 불가 (관리자만 초기화)
   ME.mustPw = !!r.data.must_change_pw;
   if (r.data.must_change_pw) { $('app').innerHTML = '<div class="card" style="max-width:420px;margin:40px auto">새 비밀번호로 바꾼 뒤 사용할 수 있습니다.</div>'; if (!$('pw')) pwChange(true); return; }
