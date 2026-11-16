@@ -1227,7 +1227,8 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <div class="ov-fr"><label>검사자 (선택)</label><input id="qc-inspector" placeholder="선택사항"></div>
     <div class="ov-fr">
       <label id="qc-attachment-label">첨부파일 (선택) — 특성 데이터, 검사성적서 등</label>
-      <input id="qc-attachment" type="file" onchange="updateQCAttachCountLabel()">
+      <input id="qc-attachment" type="file" onchange="updateQCAttachCountLabel();qcTesterAuto(this.files[0])">
+      <div id="qc-tester-sum" style="display:none;font-size:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px;margin-top:6px"></div>
       <div id="qc-attachment-current" style="font-size:11px;color:#1d4ed8;margin-top:4px"></div>
     </div>
     <!-- ✅ 출하검사 전용 두 번째 첨부: 특성 데이터(위 qc-attachment)와 별도로
@@ -4793,6 +4794,7 @@ function qcSiteUI(){
   if (t && hq) t.textContent = (qcEditTarget ? '✏️ ' : '➕ ') + '🏢 본사 수입검사 — 법인 재고는 바뀌지 않습니다';
 }
 async function openAddQC(presetType, site) {
+  { const tb = document.getElementById('qc-tester-sum'); if (tb) { tb.style.display = 'none'; tb.innerHTML = ''; } }
   QC_SITE = site === 'HQ' ? 'HQ' : '';
   await loadWO();
   qcEditTarget = null;
@@ -4901,6 +4903,7 @@ function updateQCAttachmentLabel() {
 }
 
 async function openEditQC(id) {
+  { const tb = document.getElementById('qc-tester-sum'); if (tb) { tb.style.display = 'none'; tb.innerHTML = ''; } }
   if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
   const r = QC.find(x => x.id === id); if (!r) return;
   await loadWO();
@@ -18405,6 +18408,43 @@ function qmSkillPrint(){
   w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>작업자 자격 인증 현황표</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:"Malgun Gothic",sans-serif;font-size:11px}h1{font-size:17px;text-align:center}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:4px}.sg{float:right;width:240px;margin-bottom:6px}.sg td{height:42px;text-align:center;vertical-align:top}</style></head><body>
     <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr></table><h1 style="clear:both">작업자 자격 인증 현황표 (Skill Matrix)</h1><div style="margin-bottom:6px">THE GAUSS VINA · 200kW PCDU · 기준일 ${qmToday()} · ${Object.entries(QM_SKL).map(([k, v]) => k + ' ' + v[0]).join(' / ')}</div>
     ${mx.innerHTML}<script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
+}
+
+// ✅ [2026-11-16] 특성검사기 데이터 자동 입력 — 특성 데이터 파일(xlsx·csv)을 첨부하면
+//    수량·불량·판정·LOT를 채우고 항목별 최소/평균/최대를 요약해 비고에 남긴다 (공정·출하검사)
+//    파일 형식: SN, EndTime, LCR1, LCR2, LCR_LK, DCR1, DCR2, LS, IR1, ACW1, IR2, ACW2, Result (특성검사기 출력)
+async function qcTesterAuto(file){
+  const box = document.getElementById('qc-tester-sum'); if (!box) return; box.style.display = 'none'; box.innerHTML = '';
+  const type = document.getElementById('qc-type').value;
+  if (!file || type === '수입검사' || !/\.(xlsx|xls|csv)$/i.test(file.name) || typeof XLSX === 'undefined') return;
+  try {
+    const buf = await file.arrayBuffer(), wb = XLSX.read(buf, {type: 'array'}), ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, {defval: '', raw: false});
+    const key = (r, re) => Object.keys(r).find(k => re.test(String(k).trim()));
+    if (!rows.length) return;
+    const k0 = rows[0], kSN = key(k0, /^(SN|S\/N|SERIAL)/i), kRes = key(k0, /^(RESULT|판정|JUDG)/i);
+    if (!kSN || !kRes) { box.style.display = ''; box.innerHTML = 'ℹ️ 특성검사기 데이터 형식이 아니라서 자동 입력하지 않았습니다 (SN·Result 열이 없음).'; return; }
+    const data = rows.filter(r => String(r[kSN] || '').trim());
+    const n = data.length, ng = data.filter(r => !/^OK$/i.test(String(r[kRes]).trim()));
+    const num = v => { const x = parseFloat(String(v).replace(/,/g, '')); return isFinite(x) ? x : null; };
+    const cols = Object.keys(k0).filter(k => k !== kSN && k !== kRes && !/time|date/i.test(k) && data.some(r => num(r[k]) !== null));
+    const stat = cols.map(k => { const v = data.map(r => num(r[k])).filter(x => x !== null); if (!v.length) return null; const mn = Math.min(...v), mx = Math.max(...v), av = v.reduce((a, b) => a + b, 0) / v.length; return {k, mn, mx, av}; }).filter(Boolean);
+    const f = x => Math.abs(x) >= 1000 ? Math.round(x).toLocaleString() : (+x.toPrecision(4)).toString();
+    // SN = 품목코드-LOT-일련번호
+    const m = String(data[0][kSN]).trim().match(/^(.+?)-([A-Z0-9]+)-(\d+)$/i), sns = data.map(r => String(r[kSN]).trim().split('-').pop()).sort();
+    const lotEl = document.getElementById('qc-lot'); if (m && lotEl && !lotEl.value.trim()) lotEl.value = m[2];
+    const codeEl = document.getElementById('qc-code'), warn = m && codeEl && codeEl.value && codeEl.value.trim() !== m[1] ? `<div style="color:#b91c1c;font-weight:700">⚠️ 파일의 품목(${hqE(m[1])})이 선택한 품목(${hqE(codeEl.value)})과 다릅니다.</div>` : '';
+    const tot = document.getElementById('qc-total-qty'); if (tot && tot.offsetParent !== null && !+tot.value) tot.value = n;
+    const smp = document.getElementById('qc-sample'); if (smp && !+smp.value) smp.value = n;
+    document.getElementById('qc-defect').value = ng.length; document.getElementById('qc-result').value = ng.length ? '불합격' : '합격';
+    const sumTxt = `[특성검사 ${n}EA · NG ${ng.length}${ng.length ? ' (' + ng.slice(0, 10).map(r => String(r[kSN]).split('-').pop()).join(',') + (ng.length > 10 ? '…' : '') + ')' : ''} · S/N ${sns[0]}~${sns[sns.length - 1]}] ` + stat.map(s => `${s.k} ${f(s.mn)}~${f(s.mx)}(평균 ${f(s.av)})`).join(' / ');
+    const note = document.getElementById('qc-note'); if (note) note.value = (note.value.replace(/\[특성검사[^\]]*\][^|]*\|?\s*/, '').trim() ? note.value.replace(/\[특성검사[^\]]*\][^|]*\|?\s*/, '').trim() + ' | ' : '') + sumTxt;
+    box.style.display = '';
+    box.innerHTML = `${warn}<b>✅ 특성검사기 데이터 자동 입력</b> — ${n}EA, NG <b style="color:${ng.length ? '#b91c1c' : '#166534'}">${ng.length}</b>, 판정 <b>${ng.length ? '불합격' : '합격'}</b>${m ? `, LOT ${hqE(m[2])}` : ''}, S/N ${hqE(sns[0])}~${hqE(sns[sns.length - 1])}
+      <table style="margin-top:6px;font-size:11.5px;border-collapse:collapse"><tr style="color:#5D6977"><td style="padding:1px 8px 1px 0">항목</td><td style="padding:1px 8px">최소</td><td style="padding:1px 8px">평균</td><td style="padding:1px 8px">최대</td></tr>${stat.map(s => `<tr><td style="padding:1px 8px 1px 0;font-weight:700">${hqE(s.k)}</td><td style="padding:1px 8px">${f(s.mn)}</td><td style="padding:1px 8px">${f(s.av)}</td><td style="padding:1px 8px">${f(s.mx)}</td></tr>`).join('')}</table>
+      ${ng.length ? `<div style="color:#b91c1c;margin-top:4px">NG 시리얼: ${ng.map(r => hqE(String(r[kSN]).split('-').pop()) + '(' + hqE(r[kRes]) + ')').slice(0, 20).join(', ')}</div>` : ''}
+      <div style="color:#5D6977;margin-top:4px">수량·불량·판정·LOT·비고를 채웠습니다. 필요하면 고쳐서 저장하세요.</div>`;
+  } catch (e) { box.style.display = ''; box.innerHTML = '⚠️ 파일을 읽지 못했습니다: ' + hqE(e.message || e); }
 }
 
 </script>
