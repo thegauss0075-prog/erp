@@ -17970,8 +17970,8 @@ async function splLinkInvoice(rec){
 // ════════════════════════════════════════════════════════════
 const QM = {view: 'home', loaded: false, q: {}, f: {}};
 const QM_STORES = ['qcrit','qfai','qclaim','qtool','qedu','qdoc','qsup'];
-const QM_CUSTS0 = ['솔루엠', '현대자동차'];
-function qmCustOf(code, name){ return /PCDU/i.test(String(code || '') + ' ' + String(name || '')) ? '현대자동차' : '솔루엠'; }
+const QM_CUSTS0 = ['솔루엠', '영화테크'];
+function qmCustOf(code, name){ return /PCDU/i.test(String(code || '') + ' ' + String(name || '')) ? '영화테크' : '솔루엠'; }
 function qmCusts(){ return [...new Set([...QM_CUSTS0, ...(HQS.qcrit || []).map(x => x.customer), ...(HQS.qclaim || []).map(x => x.customer), ...(HQS.qfai || []).map(x => x.customer)].filter(Boolean))]; }
 const qmToday = () => bdToday();
 const qmMonth = () => qmToday().slice(0, 7);
