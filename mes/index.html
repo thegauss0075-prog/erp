@@ -503,7 +503,7 @@ async function startJob2(w){
 // 작업 시작 창: 설비 고르기 + 투입 자재 LOT 스캔 (자재를 올릴 때 찍는다)
 // ✅ [2026-11-11] 공정별로 따로 찍어야 하는 자재(몰딩: 실리콘 A제·B제) — 칸마다 해당 자재만 받는다
 const LOT_SLOTS = {MOLD: [{code: 'NPL32/PCDU', label: 'A제', vi: 'Chất A'}, {code: 'NPL33/PCDU', label: 'B제', vi: 'Chất B'}],
-  CASE: [{code: 'PCDU INDUCTOR-BTP', label: "반제품(BOBBIN ASS'Y)", vi: 'Bán thành phẩm'},
+  CASE: [{code: 'PCDU INDUCTOR-BTP', label: "WINDING ASS'Y", vi: "WINDING ASS'Y"},
          {code: 'NPL38/PCDU', label: '보빈', vi: 'Bobbin', re: /BOBBIN|보빈/i},
          {code: 'NPL41/PCDU', label: '케이스', vi: 'Vỏ (Case)', re: /CASE|HOUSING|하우징|케이스/i}]};   // ✅ [2026-11-17] 케이스 조립: 반제품·보빈·케이스 LOT 필수
 // 슬롯 판정: 코드가 같거나, 라벨 QR의 품명(| 뒤)이 그 슬롯의 이름과 맞으면 그 슬롯 (케이스처럼 코드를 모를 때)
