@@ -502,7 +502,8 @@ async function startJob2(w){
 }
 // 작업 시작 창: 설비 고르기 + 투입 자재 LOT 스캔 (자재를 올릴 때 찍는다)
 // ✅ [2026-11-11] 공정별로 따로 찍어야 하는 자재(몰딩: 실리콘 A제·B제) — 칸마다 해당 자재만 받는다
-const LOT_SLOTS = {MOLD: [{code: 'NPL32/PCDU', label: 'A제', vi: 'Chất A'}, {code: 'NPL33/PCDU', label: 'B제', vi: 'Chất B'}]};
+const LOT_SLOTS = {MOLD: [{code: 'NPL32/PCDU', label: 'A제', vi: 'Chất A'}, {code: 'NPL33/PCDU', label: 'B제', vi: 'Chất B'}],
+  CASE: [{code: 'PCDU INDUCTOR-BTP', label: "반제품(BOBBIN ASS'Y)", vi: 'Bán thành phẩm'}]};   // ✅ [2026-11-17] 케이스 조립: 반제품 LOT(작업지시서 QR) 필수
 const slotsFor = () => LOT_SLOTS[S.proc] || [];
 function startDlg(w){
   const ms = M.mach.filter(m => m.active !== false && (!m.process_code || m.process_code === S.proc)), req = lotReq(w);
@@ -510,16 +511,17 @@ function startDlg(w){
   const wkList = M.work.filter(x => x.active !== false && (!skillOn(S.proc) || (k => k && !k.expired && k.level >= 2)(skillOf(x.code, S.proc))));
   const mw = c => LS.get('mes_mw|' + c, '');
   const st = {mach: ms.length ? undefined : '', lots: lotMem(w), worker: wkList.some(x => x.code === S.worker) ? S.worker : (wkList[0] || {}).code || S.worker};
-  const SL = slotsFor(), slot = SL.map(x => { const i = st.lots.findIndex(v => String(parseLot(v).code || '').toUpperCase() === x.code.toUpperCase()); return i >= 0 ? st.lots.splice(i, 1)[0] : ''; });
-  const setSlot = (k, v) => { v = String(v||'').trim(); if (!v) return; const l = parseLot(v), want = SL[k];
+  const SL = slotsFor(), slot = SL.map(x => { const i = st.lots.findIndex(v => String(parseLot(v).code || '').replace(/\s+(BTP|TP)$/i, '').trim().toUpperCase() === x.code.toUpperCase()); return i >= 0 ? st.lots.splice(i, 1)[0] : ''; });
+  const slotCode = c => String(c || '').replace(/\s+(BTP|TP)$/i, '').trim().toUpperCase();   // 작업지시서 QR은 'MAT:코드 BTP:LOT'로 바뀌어 들어온다
+  const setSlot = (k, v) => { v = String(v||'').trim(); if (!v) return; if (!/^MAT/i.test(v)) { const wl = lotFromWO(v); if (wl) { toast(`📋 작업지시 ${v} → 반제품 LOT ${parseLot(wl).lot}`); v = wl; } } const l = parseLot(v), want = SL[k];
     if (!l.code) { alert(`${want.label} 칸에는 자재 라벨 QR을 찍으세요.\nQuét mã QR nhãn NVL.`); return; }
-    if (l.code.toUpperCase() !== want.code.toUpperCase()) { const o = SL.findIndex(x => x.code.toUpperCase() === l.code.toUpperCase());
+    if (slotCode(l.code) !== slotCode(want.code)) { const o = SL.findIndex(x => slotCode(x.code) === slotCode(l.code));
       alert(o >= 0 ? `⛔ ${want.label} 칸에 ${SL[o].label}(${l.code})를 찍었습니다. ${want.label}(${want.code}) 라벨을 찍으세요.\nSai chất: cần ${want.vi}.` : `⛔ ${want.label}(${want.code})가 아닙니다: ${l.code}\nSai NVL.`); return; }
     if (!lotOk(v)) return; slot[k] = v; };
   const busy = c => M.rec.find(r => r.status === 'running' && r.machine_code === c);
   return new Promise(res => {
     const ov = document.createElement('div'); ov.className = 'ov'; ov.id = 'sd'; document.body.appendChild(ov);
-    const add = v => { v = String(v||'').trim(); { const c = String(parseLot(v).code || '').toUpperCase(), k = SL.findIndex(x => x.code.toUpperCase() === c); if (k >= 0) { setSlot(k, v); draw(); return; } } const wl = lotFromWO(v); if (wl) { toast(`📋 작업지시 ${v} → 반제품 LOT ${parseLot(wl).lot}`); v = wl; } if (v && !st.lots.includes(v) && lotOk(v)) st.lots.push(v); draw(); setTimeout(() => $('sd-lot') && $('sd-lot').focus(), 30); };
+    const add = v => { v = String(v||'').trim(); { const v2 = /^MAT/i.test(v) ? v : (lotFromWO(v) || v), c = slotCode(parseLot(v2).code), k = SL.findIndex(x => slotCode(x.code) === c); if (c && k >= 0) { setSlot(k, v); draw(); return; } } const wl = lotFromWO(v); if (wl) { toast(`📋 작업지시 ${v} → 반제품 LOT ${parseLot(wl).lot}`); v = wl; } if (v && !st.lots.includes(v) && lotOk(v)) st.lots.push(v); draw(); setTimeout(() => $('sd-lot') && $('sd-lot').focus(), 30); };
     const draw = () => { ov.innerHTML = `<div class="box"><h2>▶ 작업 시작 <span class="vi">Bắt đầu</span></h2><div class="muted" style="margin-bottom:10px">${E(w.order_no)} · ${E(w.name)} · ${E(procName(S.proc))}</div>
       ${ms.length ? `<div style="font-weight:700;margin-bottom:4px">설비 / Máy</div><div class="pick">${ms.map(m => { const b = busy(m.code); return `<button data-c="${E(m.code)}" class="${st.mach === m.code ? 'on' : ''}" ${b ? 'style="opacity:.55"' : ''}>${E(m.name)}${b ? `<span class="vi">사용 중 · ${E(workName(b.worker_code))}</span>` : ''}</button>`; }).join('')}<button data-c="" class="${st.mach === '' ? 'on' : ''}">설비 없음</button></div>` : ''}
       <div style="margin-top:12px;font-weight:700">작업자 / Công nhân ${skillOn(S.proc) ? '<span class="muted">(이 공정 자격 있는 사람만)</span>' : ''}</div><div class="pick">${wkList.map(x => `<button data-wk="${E(x.code)}" class="${st.worker === x.code ? 'on' : ''}">${E(x.name)}${(k => k ? `<span class="vi">${SKL[k.level][0]}</span>` : '')(skillOf(x.code, S.proc))}</button>`).join('') || '<span style="color:var(--bad)">이 공정 자격이 있는 작업자가 없습니다.</span>'}</div>
@@ -594,7 +596,7 @@ function lotOk(v){ const l = lotInfo(v);
   // ✅ [2026-11-16] 스캐너가 글자를 빠뜨려 LOT가 잘못 읽히는 경우를 잡는다 (예: "20261111-07 | COER…" → "20261111-0C66…")
   //    새 라벨은 "MAT: 코드 : LOT | 품명"이라 | 가 없으면 끝까지 못 읽은 것 / ERP 수입검사 기록에도 없으면 다시 찍게 한다
   { const raw = String(v || '').trim();
-    if (/^MAT/i.test(raw) && l.code && !/\s(BTP|TP)$/i.test(l.code) && Object.keys(QCX).length && !QCX[qcxKey(l.code, l.lot)]) {
+    if (/^MAT/i.test(raw) && l.code && !/(\s(BTP|TP)|-BTP)$/i.test(l.code) && Object.keys(QCX).length && !QCX[qcxKey(l.code, l.lot)]) {
       const msg = raw.includes('|')
         ? `⚠️ ERP 수입검사 기록에 없는 LOT입니다.\nLOT không có trong kiểm tra đầu vào ERP.\n\n${l.code} · LOT ${l.lot}\n\n라벨을 다시 확인하세요. 그래도 이 LOT로 쓰려면 [확인]`
         : `⚠️ 라벨이 끝까지 읽히지 않은 것 같습니다 (LOT: ${l.lot}).\nMã chưa đọc hết — hãy quét lại.\n\n[취소]를 누르고 라벨을 다시 찍으세요.\n(이 LOT가 맞으면 [확인])`;
