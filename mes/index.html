@@ -104,8 +104,14 @@ function mesZoomGet(){ let z = NaN; try { z = parseFloat(localStorage.getItem('m
 // 📺 [2026-11-14] 현황판은 한 화면에 전부 들어오게 자동 축소(세로 넘침 기준, 최소 55%)
 function tvFit(){ const de = document.documentElement; if (!document.body.classList.contains('tv')) return;
   const fits = z => { de.style.zoom = z; return de.scrollHeight <= de.clientHeight + 2 && de.scrollWidth <= de.clientWidth + 2; };
-  if (fits(1)) return; let lo = 0.55, hi = 1; if (!fits(lo)) return;
-  for (let i = 0; i < 7; i++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; } de.style.zoom = lo; }
+  // ✅ [2026-11-16] 실적이 들어올 때마다 배율이 조금씩 바뀌어 화면이 흔들리던 문제 — 지금 배율로 들어가면 그대로 두고,
+  //    넘칠 때만 줄이며, 키우는 건 8% 넘게 여유가 생겼을 때만 한다
+  const cur = window._tvZ;
+  if (cur && fits(cur)) { if (cur >= 1 || !fits(Math.min(1, cur + 0.08))) { de.style.zoom = cur; return; } }
+  let best;
+  if (fits(1)) best = 1; else { let lo = 0.55, hi = 1; if (!fits(lo)) best = lo; else { for (let i = 0; i < 7; i++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; } best = lo; } }
+  best = Math.floor(best * 50) / 50;   // 2% 단위로만 바꿔 미세한 흔들림 방지
+  window._tvZ = best; de.style.zoom = best; }
 function mesZoomApply(){ const tv = document.body.classList.contains('tv'); if (tv) { tvFit(); const c = document.getElementById('zoomc'); if (c) c.style.display = 'none'; return; } const z = mesZoomGet(); document.documentElement.style.zoom = z; const v = document.getElementById('zoomv'); if (v) v.textContent = Math.round(z * 100) + '%'; const c = document.getElementById('zoomc'); if (c) c.style.display = tv ? 'none' : ''; }
 function mesZoomStep(d){ const z = Math.round(Math.min(2, Math.max(0.8, mesZoomGet() + d * 0.1)) * 10) / 10; try { localStorage.setItem('mes_zoom', z); } catch (e) {} mesZoomApply(); }
 // ⌨️ [2026-11-13] 스캔 입력칸은 자동 포커스돼도 화면 자판이 뜨지 않게 한다(QR 리더기는 그대로 입력됨).
@@ -378,7 +384,7 @@ function render(){
   S.view = v; document.body.classList.toggle('tv', v === 'tv'); try { mesZoomApply(); } catch (e) {}
   $('nav').innerHTML = VIEWS.filter(([k]) => ME.role === 'floor' ? ['floor','machine'].includes(k) : ME.role === 'viewer' ? ['tv','report','ncr'].includes(k) : k !== 'admin' || ME.role === 'admin').map(([k,l]) => `<a href="#${k}" class="${k === v ? 'on' : ''}">${l}</a>`).join('');
   const app = $('app');
-  if (v === 'floor') app.innerHTML = floorView(); else if (v === 'machine') app.innerHTML = machineView(); else if (v === 'tv') { app.innerHTML = tvView(); setTimeout(tvFit, 0); }
+  if (v === 'floor') app.innerHTML = floorView(); else if (v === 'machine') app.innerHTML = machineView(); else if (v === 'tv') { const sy = window.scrollY; app.innerHTML = tvView(); tvFit(); window.scrollTo(0, sy); }
   else if (v === 'report') { app.innerHTML = reportView(); loadReport().catch(e => { const el = $('rp-body'); if (el) el.innerHTML = '<p style="color:var(--bad)">불러오기 실패: ' + E(e.message || e) + '</p>'; }); } else if (v === 'admin') { app.innerHTML = adminView(); if (ME.role === 'admin') pwUsersCard(); }
   else if (v === 'ncr') { app.innerHTML = ncrView(); ncrLoad().catch(e => { const el = $('nc-body'); if (el) el.innerHTML = '<p style="color:var(--bad)">불러오기 실패: ' + E(e.message || e) + '</p>'; }); }
   if (v === 'floor') setTimeout(() => { const i = $('scan'); if (i && !document.querySelector('.ov')) i.focus(); }, 50);
