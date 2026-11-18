@@ -6217,9 +6217,13 @@ function getSameModelBTPWorkOrders(wo) {
   const woItem = allRows().find(r => r.code === wo.code);
   const targetPrefix = woItem ? getPowerPrefix(woItem.model || woItem.name) : null;
   if (!targetPrefix) return [];
+  // ✅ [2026-11-18] BOM에 반제품이 등록돼 있으면 그 반제품 지시서만 보여준다
+  //    (전에는 '30KW'처럼 용량만 같으면 다 나와서, 30KW PFC에 30KW OUT L3 반제품이 잘못 연결됨)
+  const bomBTP = new Set((BOM||[]).filter(b => b.productCode === wo.code && allRows().some(r => r.code === b.materialCode && r.cat === 'BTP')).map(b => b.materialCode));
   const results = [];
   WO.forEach(w => {
     if (String(w.id) === String(wo.id) || !w.lot) return;
+    if (bomBTP.size && !bomBTP.has(w.code)) return;
     const item = allRows().find(r => r.code === w.code && r.cat === 'BTP');
     if (!item) return;
     const itemPrefix = getPowerPrefix(item.model || item.name);
