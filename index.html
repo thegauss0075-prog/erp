@@ -5912,7 +5912,9 @@ async function applyBOMSuggestion() {
   const warnings = [], rolls = [];
   items.forEach(b => {
     const needQty = (+b.qtyPerUnit || 0) * planQty;
-    const input = document.querySelector(`#wo-trace-mat-browse .wmb-qty[data-code="${b.materialCode}"][data-cat="${b.materialCat}"]`);
+    // ✅ [2026-11-18] 전체 재고 줄(여러 LOT 자동 배분)에만 채운다. 전에는 위쪽 '같은 모델 반제품' LOT 한 줄이 먼저 잡혀
+    //    그 LOT 재고(예: 325)만 채우고 '재고 부족'으로 잘못 알렸음
+    const input = document.querySelector(`#wo-trace-mat-browse .wmb-qty[data-multilot="1"][data-code="${b.materialCode}"][data-cat="${b.materialCat}"]`) || document.querySelector(`#wo-trace-mat-browse .wmb-qty[data-code="${b.materialCode}"][data-cat="${b.materialCat}"]`);
     if (!input) { warnings.push(`${b.materialName} (재고 없음, 목록에 없음)`); return; }
     const remain = +input.dataset.remain || 0;
     let applyQty = Math.min(needQty, remain);
@@ -6271,7 +6273,8 @@ function renderWOMatBrowse() {
   document.querySelectorAll('#wo-trace-mat-browse .wmb-qty').forEach(inp => {
     if (!inp.value) return;
     prevValues[inp.dataset.code + '|' + inp.dataset.cat + '|' + inp.dataset.lot] = inp.value;
-    prevByCodeCat[inp.dataset.code + '|' + inp.dataset.cat] = inp.value;
+    // ✅ [2026-11-18] LOT 지정 줄의 값이 전체 재고 줄에 복사되던 문제 (같은 수량이 두 줄에 들어가 두 번 출고될 수 있었음)
+    if (inp.dataset.multilot === '1' || !inp.dataset.lot) prevByCodeCat[inp.dataset.code + '|' + inp.dataset.cat] = inp.value;
   });
 
   const q = (document.getElementById('wo-trace-mat-filter').value || '').toLowerCase().trim();
