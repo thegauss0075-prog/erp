@@ -13635,8 +13635,12 @@ function hqCPOAlloc(){
   Object.entries(byCode).forEach(([code, ls]) => {
     ls.sort((a,b) => String(a.c.recvDate||'').localeCompare(String(b.c.recvDate||'')) || String(a.l.due||'').localeCompare(String(b.l.due||'')));
     // ✅ [2026-11-11] 법인 발주관리에서 가져온 라인(poRef)은 그 발주의 차감 누계(출고 반영분)를 그대로 쓴다
-    const linked = ls.filter(x => x.l.poRef && (PO || []).some(p => String(p.poNumber).trim() + '|' + String(p.poItemNumber).trim() === x.l.poRef));
-    linked.forEach(x => { const p = PO.find(q => String(q.poNumber).trim() + '|' + String(q.poItemNumber).trim() === x.l.poRef); out[x.c.id][x.i] = Math.min(+x.l.qty || 0, poDeducted(p)); });
+    // ✅ [2026-11-18] 본사 PO가 확정되어 발주관리로 넘어간 라인(고객 PO No-항번이 같은 발주)도 같은 차감 누계를 쓴다.
+    //    (전에는 출고 이력을 다시 채워서, 이미 옛 발주에 차감된 출고가 새 PO에 한 번 더 잡혀 '완료'로 보였음)
+    const refOf = x => x.l.poRef || (String(x.c.custPoNo || '').trim() ? String(x.c.custPoNo).trim() + '|' + String(x.l.itemNo || (x.i + 1) * 10).trim() : '');
+    const poOf = x => { const k = refOf(x); return k ? (PO || []).find(p => String(p.poNumber).trim() + '|' + String(p.poItemNumber).trim() === k) : null; };
+    const linked = ls.filter(x => poOf(x));
+    linked.forEach(x => { out[x.c.id][x.i] = Math.min(+x.l.qty || 0, poDeducted(poOf(x))); });
     const manual = ls.filter(x => !linked.includes(x) && x.l.shipped !== undefined && x.l.shipped !== '' && x.l.shipped !== null);
     manual.forEach(x => out[x.c.id][x.i] = +x.l.shipped || 0);
     const auto = ls.filter(x => !manual.includes(x) && !linked.includes(x)); if (!auto.length) return;
