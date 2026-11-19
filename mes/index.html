@@ -768,7 +768,7 @@ function patrolDlg(pc){
     if (b.dataset.i !== undefined) { st.r[+b.dataset.i].ok = b.dataset.v === '1'; redraw(); return; }
     if (b.dataset.go) {
       const note = keep().trim();
-      items.forEach((it, i) => { if (/핀홀/.test(it.item) && st.r[i].value !== '' && valNum(st.r[i].value) > 0) st.r[i].ok = false; });
+      // 핀홀 판정 기준은 고객(영화테크) 협의 후 확정 — 지금은 핀홀 수만 기록하고 OK/NG는 검사자가 고른다 (자동 판정 없음)
       if (!st.lot) { alert('와이어 LOT을 스캔하세요.\nQuét LOT dây.'); return; }
       const nv = items.findIndex((it, i) => needVal(it) && st.r[i].value === ''); if (nv >= 0) { redraw(); alert(`"${items[nv].item}" 값을 입력하세요.`); return; }
       const miss = st.r.findIndex(x => x.ok === null); if (miss >= 0) { redraw(); alert(`"${items[miss].item}" 결과(OK/NG)를 고르세요.`); return; }
