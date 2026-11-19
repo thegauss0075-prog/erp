@@ -18005,8 +18005,8 @@ function qmBadge(t, c){ const C = {g:['#166534','#DCFCE7'], r:['#b91c1c','#FEE2E
 // ── 모듈 정의 (입력 항목) ─────────────────────────────────────
 const QM_DEF = {
   qcrit: {title: '고객사별 검사 기준', vi: 'Tiêu chuẩn KT theo khách hàng', icon: '📐',
-    fields: [['customer','고객사','cust'],['code','품목코드','text'],['name','품명','text'],['inspType','검사 구분','sel',['수입검사','공정검사','출하검사','신뢰성']],['item','검사 항목','text'],['spec','기준 (규격·공차)','text'],['method','검사 방법·장비','text'],['sampling','샘플링','text'],['freq','주기','text'],['note','비고','area']],
-    cols: ['customer','inspType','name','item','spec','method','sampling'], def: () => ({inspType: '출하검사', customer: '솔루엠'})},
+    fields: [['customer','고객사','cust'],['code','품목코드','text'],['name','품명','text'],['inspType','검사 구분','sel',['수입검사','공정검사','출하검사','신뢰성']],['item','검사 항목','text'],['spec','기준 (규격·공차)','text'],['method','검사 방법·장비','text'],['sampling','샘플링','text'],['freq','주기','text'],['param','특성검사기 측정 열 (Cpk용: LCR1·DCR1 등)','text'],['lsl','하한 LSL (규격 단위)','num'],['usl','상한 USL (규격 단위)','num'],['scale','측정값 환산 배수 (예: nH→µH 0.001)','num'],['note','비고','area']],
+    cols: ['customer','inspType','name','item','spec','method','param'], def: () => ({inspType: '출하검사', customer: '솔루엠'})},
   qfai: {title: 'FAI (초도품 검사)', vi: 'Kiểm tra sản phẩm đầu tiên', icon: '🧪',
     fields: [['date','검사일','date'],['customer','고객사','cust'],['code','품목코드','text'],['name','품명','text'],['reason','FAI 사유','sel',['신규 품목','설계 변경','4M 변경','장기 미생산(6개월↑)','공급사 변경','기타']],['lot','LOT','text'],['qty','샘플 수량','num'],['items','측정 결과 (한 줄에 한 항목: 항목 | 기준 | 측정값 | 판정)','area'],['inspector','검사자','text'],['status','상태','sel',['진행중','승인','조건부 승인','반려']],['approver','승인자','text'],['approveDate','승인일','date'],['note','비고','area']],
     cols: ['date','customer','name','reason','lot','status','inspector','approveDate'], def: () => ({date: qmToday(), status: '진행중', reason: '신규 품목'})},
@@ -18030,7 +18030,7 @@ const QM_NAV = [
   ['home','🏠 홈','Trang chủ'], ['insp','🔬 검사 및 결과','Kết quả kiểm tra'], ['cust','🏢 고객사별 검사','Theo khách hàng'], ['qfai','🧪 FAI 관리','FAI'],
   ['ng','🚫 불량 관리','Quản lý NG'], ['qclaim','📮 고객사 부적합','Khiếu nại KH'],
   ['-','품질관리'], ['qtool','🛠 검사설비·치공구·검교정','Thiết bị · Hiệu chuẩn'], ['qedu','🎓 교육훈련·자격인증','Đào tạo'], ['qdoc','📁 문서 관리','Tài liệu'],
-  ['-','품질관리현황'], ['week','📰 주간 보고','Báo cáo tuần'], ['stat','📊 통계 및 분석','Thống kê']];
+  ['-','품질관리현황'], ['cpk','📈 공정능력 (Cpk)','Năng lực quá trình'], ['week','📰 주간 보고','Báo cáo tuần'], ['stat','📊 통계 및 분석','Thống kê']];
 async function qmLoad(force){
   if (QM.loaded && !force) return;
   QM_STORES.forEach(k => { if (!HQS[k]) HQS[k] = []; });
@@ -18059,7 +18059,86 @@ function qmRender(){
   const view = document.getElementById('qm-view'); if (!view) return;
   const warn = QM.noServer ? `<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12.5px;color:#92400e">⚠️ 서버(Code.gs)가 아직 새 버전이 아니라 FAI·부적합·설비·교육·문서 기록을 저장할 수 없습니다. Code.gs를 새 버전으로 배포해 주세요.</div>` : '';
   const v = QM.view;
-  view.innerHTML = warn + (v === 'home' ? qmHome() : v === 'cust' ? qmCustView() : v === 'ng' ? qmNGView() : v === 'week' ? qmWeekView() : v === 'stat' ? qmStatView() : QM_DEF[v] ? qmListView(v) : '');
+  view.innerHTML = warn + (v === 'home' ? qmHome() : v === 'cust' ? qmCustView() : v === 'ng' ? qmNGView() : v === 'week' ? qmWeekView() : v === 'stat' ? qmStatView() : v === 'cpk' ? qmCpkView() : QM_DEF[v] ? qmListView(v) : '');
+}
+
+// ✅ [2026-11-19] 공정능력(Cpk) — 출하검사에 첨부한 특성검사기 데이터(MES test_results)로 계산
+//    규격은 '고객사별 검사 기준'(승인원)의 측정 열·LSL·USL·환산 배수에서 가져온다.
+//    Cpk = LOT 안 산포(합동 표준편차) 기준, Ppk = 전체 산포 기준. 히스토그램·LOT별 표·인쇄
+const CPK = {code: '', key: '', from: '', to: '', data: null, busy: false, err: ''};
+function cpkSpecs(){ return (HQS.qcrit || []).filter(r => r.param && (r.lsl !== '' && r.lsl != null || r.usl !== '' && r.usl != null)); }
+function cpkStats(v, L, U){ const n = v.length; if (n < 2) return null; const mu = v.reduce((a, b) => a + b, 0) / n, sd = Math.sqrt(v.reduce((a, b) => a + (b - mu) ** 2, 0) / (n - 1));
+  const hasL = L !== '' && L != null && isFinite(+L), hasU = U !== '' && U != null && isFinite(+U);
+  const up = hasU ? (+U - mu) / (3 * sd) : null, lo = hasL ? (mu - +L) / (3 * sd) : null, cp = hasL && hasU ? (+U - +L) / (6 * sd) : null;
+  const k = [up, lo].filter(x => x !== null), out = v.filter(x => (hasL && x < +L) || (hasU && x > +U)).length;
+  return {n, mu, sd, cp, cpk: k.length ? Math.min(...k) : null, min: Math.min(...v), max: Math.max(...v), out}; }
+async function cpkLoad(){
+  const sp = cpkSpecs().find(r => r.code === CPK.code && r.param === CPK.key); if (!sp) return;
+  const sb = await qmSbLive(); if (!sb) { CPK.err = '특성검사 데이터(MES)를 읽으려면 이 브라우저에서 MES에 한 번 로그인하세요.'; qmRender(); return; }
+  CPK.busy = true; CPK.err = ''; qmRender(); const rows = [];
+  try { for (let i = 0; i < 50; i++) { let q = sb.from('test_results').select('lot,end_time,result,vals').eq('item_code', CPK.code).order('end_time').range(i * 1000, i * 1000 + 999);
+      if (CPK.from) q = q.gte('end_time', CPK.from + 'T00:00:00+07:00'); if (CPK.to) q = q.lte('end_time', CPK.to + 'T23:59:59+07:00');
+      const r = await q; if (r.error) throw r.error; rows.push(...(r.data || [])); if (!r.data || r.data.length < 1000) break; }
+    const sc = +sp.scale || 1; CPK.data = rows.map(r => ({lot: r.lot, t: r.end_time, v: parseFloat(r.vals && r.vals[CPK.key]) * sc})).filter(r => isFinite(r.v));
+  } catch (e) { CPK.err = '불러오기 실패: ' + (e.message || e); CPK.data = null; }
+  CPK.busy = false; qmRender();
+}
+function cpkHist(v, L, U){
+  if (!v.length) return ''; const hasL = L !== '' && L != null, hasU = U !== '' && U != null;
+  let lo = Math.min(...v, hasL ? +L : Infinity), hi = Math.max(...v, hasU ? +U : -Infinity); const pad = (hi - lo) * 0.05 || 1; lo -= pad; hi += pad;
+  const B = 30, w = (hi - lo) / B, cnt = Array(B).fill(0); v.forEach(x => cnt[Math.min(B - 1, Math.max(0, Math.floor((x - lo) / w)))]++);
+  const W = 640, H = 200, mx = Math.max(...cnt), X = x => 30 + (x - lo) / (hi - lo) * (W - 40);
+  const mu = v.reduce((a, b) => a + b, 0) / v.length, f = x => +x.toPrecision(4);
+  return `<svg viewBox="0 0 ${W} ${H + 24}" style="width:100%;max-width:${W}px;font-family:inherit">${cnt.map((c, i) => `<rect x="${X(lo + i * w) + 1}" y="${H - c / mx * (H - 20)}" width="${Math.max(1, (W - 40) / B - 2)}" height="${c / mx * (H - 20)}" fill="#0f766e" opacity=".75"><title>${f(lo + i * w)}~${f(lo + (i + 1) * w)}: ${c}</title></rect>`).join('')}
+    <line x1="30" y1="${H}" x2="${W - 10}" y2="${H}" stroke="#94a3b8"/>
+    ${hasL ? `<line x1="${X(+L)}" y1="8" x2="${X(+L)}" y2="${H}" stroke="#b91c1c" stroke-width="2" stroke-dasharray="5 3"/><text x="${X(+L)}" y="${H + 16}" font-size="11" text-anchor="middle" fill="#b91c1c">LSL ${f(+L)}</text>` : ''}
+    ${hasU ? `<line x1="${X(+U)}" y1="8" x2="${X(+U)}" y2="${H}" stroke="#b91c1c" stroke-width="2" stroke-dasharray="5 3"/><text x="${X(+U)}" y="${H + 16}" font-size="11" text-anchor="middle" fill="#b91c1c">USL ${f(+U)}</text>` : ''}
+    <line x1="${X(mu)}" y1="8" x2="${X(mu)}" y2="${H}" stroke="#1F2A37" stroke-width="1.5"/><text x="${X(mu)}" y="8" font-size="11" text-anchor="middle" fill="#1F2A37">평균 ${f(mu)}</text></svg>`;
+}
+function qmCpkView(){
+  const specs = cpkSpecs(), codes = [...new Map(specs.map(r => [r.code, r.name || r.code])).entries()];
+  if (!specs.length) return `<div class="empty">Cpk 규격이 없습니다. <b>고객사별 검사 기준</b>에 품목별 측정 열(LCR1 등)·LSL·USL을 넣으세요.</div>`;
+  if (!CPK.code || !specs.some(r => r.code === CPK.code)) { CPK.code = codes[0][0]; CPK.key = ''; CPK.data = null; }
+  const mine = specs.filter(r => r.code === CPK.code); if (!mine.some(r => r.param === CPK.key)) { CPK.key = mine[0].param; CPK.data = null; }
+  const sp = mine.find(r => r.param === CPK.key), L = sp.lsl, U = sp.usl, f = x => x === null || x === undefined || !isFinite(x) ? '-' : (+(+x).toPrecision(4)).toString(), f2 = x => x === null || !isFinite(x) ? '-' : x.toFixed(2);
+  const col = x => x === null ? '#5D6977' : x >= 1.67 ? '#166534' : x >= 1.33 ? '#15803d' : x >= 1.0 ? '#b45309' : '#b91c1c';
+  const sel = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:12px">
+    ${hqFld('품목', '', `<select onchange="CPK.code=this.value;CPK.key='';CPK.data=null;qmRender()" style="${HQ_IN}">${codes.map(([c, n]) => `<option value="${hqE(c)}" ${c === CPK.code ? 'selected' : ''}>${hqE(n)} (${hqE(c)})</option>`).join('')}</select>`)}
+    ${hqFld('측정 항목', '', `<select onchange="CPK.key=this.value;CPK.data=null;qmRender()" style="${HQ_IN}">${mine.map(r => `<option value="${hqE(r.param)}" ${r.param === CPK.key ? 'selected' : ''}>${hqE(r.item || r.param)} · ${hqE(r.param)}</option>`).join('')}</select>`)}
+    ${hqFld('기간 (시작)', '', `<input type="date" value="${hqE(CPK.from)}" onchange="CPK.from=this.value;CPK.data=null" style="${HQ_IN}">`)}${hqFld('기간 (끝)', '', `<input type="date" value="${hqE(CPK.to)}" onchange="CPK.to=this.value;CPK.data=null" style="${HQ_IN}">`)}
+    <button onclick="cpkLoad()" style="padding:8px 16px;border-radius:7px;border:0;background:#0f766e;color:#fff;font-weight:700;cursor:pointer">${CPK.busy ? '⏳ 계산 중…' : '📈 계산'}</button>
+    ${CPK.data && CPK.data.length ? `<button onclick="cpkPrint()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">🖨️ 인쇄</button>` : ''}</div>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">규격: <b>${hqE(sp.spec || '')}</b> → LSL ${f(L)} / USL ${f(U)} · 근거: ${hqE(sp.method || '고객사별 검사 기준')} · 측정값 × ${hqE(sp.scale || 1)}</div>`;
+  if (CPK.err) return sel + `<div class="empty" style="color:#b91c1c">${hqE(CPK.err)}</div>`;
+  if (!CPK.data) return sel + '<div class="empty">기간을 고르고 <b>📈 계산</b>을 누르세요. (비우면 전체 기간)</div>';
+  if (!CPK.data.length) return sel + '<div class="empty">이 기간에 특성검사 데이터가 없습니다.</div>';
+  const all = CPK.data.map(x => x.v), lots = {}; CPK.data.forEach(x => (lots[x.lot] = lots[x.lot] || []).push(x));
+  const LS = Object.entries(lots).map(([lot, a]) => ({lot, t: a[0].t, s: cpkStats(a.map(x => x.v), L, U)})).filter(x => x.s).sort((a, b) => String(a.t).localeCompare(String(b.t)));
+  const P = cpkStats(all, L, U); // Ppk: 전체 산포
+  const df = LS.reduce((a, x) => a + x.s.n - 1, 0), sw = df ? Math.sqrt(LS.reduce((a, x) => a + (x.s.n - 1) * x.s.sd ** 2, 0) / df) : P.sd; // 합동 LOT 내 표준편차
+  const C = cpkStats(all, L, U); const hasL = L !== '' && L != null, hasU = U !== '' && U != null;
+  const cpW = hasL && hasU ? (+U - +L) / (6 * sw) : null, cpkW = Math.min(...[hasU ? (+U - P.mu) / (3 * sw) : Infinity, hasL ? (P.mu - +L) / (3 * sw) : Infinity]);
+  CPK.last = {sp, P, sw, cpW, cpkW, LS, all};
+  const card = (lbl, v, c, sub) => `<div style="flex:1;min-width:120px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:#5D6977">${lbl}</div><div style="font-size:22px;font-weight:800;color:${c || '#1F2A37'}">${v}</div><div style="font-size:11px;color:#8A95A3">${sub || ''}</div></div>`;
+  return sel + `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      ${card('Cpk (LOT 내 산포)', f2(cpkW), col(cpkW), 'Cp ' + f2(cpW))}${card('Ppk (전체 산포)', f2(P.cpk), col(P.cpk), 'Pp ' + f2(P.cp))}
+      ${card('데이터', hqN(P.n) + '개', '', LS.length + ' LOT')}${card('평균 / 표준편차', f(P.mu), '', 'σ전체 ' + f(P.sd) + ' · σLOT내 ' + f(sw))}${card('규격 밖', P.out, P.out ? '#b91c1c' : '#166534', '최소 ' + f(P.min) + ' / 최대 ' + f(P.max))}</div>
+    <div style="font-size:12px;color:#5D6977;margin-bottom:6px">판정 기준(일반): Cpk ≥ 1.67 우수 · ≥ 1.33 양호 · 1.00~1.33 관리 필요 · &lt; 1.00 부적합 — 고객 요구가 있으면 그 기준을 따릅니다.</div>
+    <div style="background:#fff;border:1px solid #E3E8EE;border-radius:10px;padding:10px;margin-bottom:12px">${cpkHist(all, L, U)}</div>
+    <div class="tw"><table><thead><tr><th>LOT</th><th>검사일</th><th style="text-align:right">수량</th><th style="text-align:right">평균</th><th style="text-align:right">σ</th><th style="text-align:right">최소</th><th style="text-align:right">최대</th><th style="text-align:right">Cp</th><th style="text-align:right">Cpk</th><th style="text-align:right">규격 밖</th></tr></thead><tbody>${
+      LS.map(x => `<tr><td style="font-family:monospace">${hqE(x.lot)}</td><td>${hqE(String(x.t).slice(0, 10))}</td><td style="text-align:right">${hqN(x.s.n)}</td><td style="text-align:right">${f(x.s.mu)}</td><td style="text-align:right">${f(x.s.sd)}</td><td style="text-align:right">${f(x.s.min)}</td><td style="text-align:right">${f(x.s.max)}</td><td style="text-align:right">${f2(x.s.cp)}</td><td style="text-align:right;font-weight:800;color:${col(x.s.cpk)}">${f2(x.s.cpk)}</td><td style="text-align:right;color:${x.s.out ? '#b91c1c' : ''}">${x.s.out || '-'}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function cpkPrint(){
+  const L = CPK.last; if (!L) return; const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
+  const f = x => x === null || !isFinite(x) ? '-' : (+(+x).toPrecision(4)).toString(), f2 = x => x === null || !isFinite(x) ? '-' : x.toFixed(2);
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>공정능력 보고서</title><style>@page{size:A4;margin:10mm}body{font-family:"Malgun Gothic",sans-serif;font-size:11px}h1{font-size:17px;text-align:center;margin:4px 0 8px}table{width:100%;border-collapse:collapse;margin-top:6px}th,td{border:1px solid #555;padding:3px 5px}th{background:#eef}.sg{float:right;width:220px}.sg td{height:38px;text-align:center;vertical-align:top}.k td{text-align:center}</style></head><body>
+    <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr><tr><td></td><td></td><td></td></tr></table><h1 style="clear:both">공정능력(Cpk) 보고서</h1>
+    <table><tr><th>품목</th><td>${hqE(L.sp.name || '')} (${hqE(L.sp.code)})</td><th>측정 항목</th><td>${hqE(L.sp.item || '')} · ${hqE(L.sp.param)}</td></tr><tr><th>규격</th><td>${hqE(L.sp.spec || '')} (LSL ${f(L.sp.lsl)} / USL ${f(L.sp.usl)})</td><th>기간</th><td>${hqE(CPK.from || '처음')} ~ ${hqE(CPK.to || qmToday())} · ${L.LS.length} LOT · ${L.P.n}개</td></tr></table>
+    <table class="k"><tr><th>Cp</th><th>Cpk</th><th>Pp</th><th>Ppk</th><th>평균</th><th>σ(LOT 내)</th><th>σ(전체)</th><th>규격 밖</th></tr><tr><td>${f2(L.cpW)}</td><td><b>${f2(L.cpkW)}</b></td><td>${f2(L.P.cp)}</td><td><b>${f2(L.P.cpk)}</b></td><td>${f(L.P.mu)}</td><td>${f(L.sw)}</td><td>${f(L.P.sd)}</td><td>${L.P.out}</td></tr></table>
+    <div style="margin:8px 0">${cpkHist(L.all, L.sp.lsl, L.sp.usl)}</div>
+    <table><tr><th>LOT</th><th>검사일</th><th>수량</th><th>평균</th><th>σ</th><th>최소</th><th>최대</th><th>Cp</th><th>Cpk</th><th>규격 밖</th></tr>${L.LS.map(x => `<tr><td>${hqE(x.lot)}</td><td>${hqE(String(x.t).slice(0, 10))}</td><td>${x.s.n}</td><td>${f(x.s.mu)}</td><td>${f(x.s.sd)}</td><td>${f(x.s.min)}</td><td>${f(x.s.max)}</td><td>${f2(x.s.cp)}</td><td><b>${f2(x.s.cpk)}</b></td><td>${x.s.out || '-'}</td></tr>`).join('')}</table>
+    <div style="margin-top:6px;color:#555">데이터: 특성검사기 전수 측정값 (ERP 출하검사 첨부 → MES test_results). Cpk = LOT 내 합동 표준편차, Ppk = 전체 표준편차 기준. 출력일 ${qmToday()}</div>
+    <script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
 }
 
 // ── 데이터 요약 ─────────────────────────────────────────────
