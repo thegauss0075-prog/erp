@@ -237,7 +237,8 @@ async function qmErpFetch(){
   const [g, k, d] = await Promise.race([Promise.all([erpCall('getHQStore', {store: 'qgauge'}), erpCall('getHQStore', {store: 'qskill'}), erpCall('getHQStore', {store: 'qdoc'})]), to.then(() => [null, null, null])]);
   // ✅ [2026-11-19] 작업표준서·검사기준서: ERP 문서관리에서 '유효'(현재 개정 승인됨)이고 적용 공정이 있는 것만
   if (d && d.ok) QME.d = (d.data || []).filter(x => !x.removed && x.status === '유효' && x.approvedAt && String(x.approvedRev || '') === String(x.rev || '') && String(x.process || '').trim())
-    .map(x => ({docNo: x.docNo, title: x.title, kind: x.kind, rev: x.rev, link: x.link || '', process: String(x.process).toUpperCase().split(/[\s,·/]+/).filter(Boolean), at: x.approvedAt}));
+    .map(x => { let pl = {}; try { pl = JSON.parse(x.pagesLinks || '{}') || {}; } catch (e) {}
+      return {docNo: x.docNo, title: x.title, kind: x.kind, rev: x.rev, link: x.link || '', pl, process: String(x.process).toUpperCase().split(/[\s,·]+/).filter(Boolean), at: x.approvedAt}; });
   if (g && g.ok) QME.g = (g.data || []).filter(x => !x.removed);
   if (k && k.ok) QME.k = (k.data || []).filter(x => !x.removed && +x.level);
   if ((g && g.ok) || (k && k.ok) || (d && d.ok)) { QME.at = Date.now(); try { localStorage.setItem('mes_qm_erp', JSON.stringify({g: QME.g, k: QME.k, d: QME.d})); } catch (e) {} }
@@ -738,8 +739,10 @@ const patVal = (c, key) => { const x = (c.results || []).find(r => String(r.item
 function wiBar(pc){
   if (!pc) return ''; const docs = (QME.d || []).filter(x => x.process.includes(String(pc).toUpperCase()));
   if (!docs.length) return `<div class="card" style="margin-bottom:12px;padding:8px 14px;border-color:#FDE68A;background:#FFFBEB;font-size:13px">📘 <b>작업표준서</b> <span class="vi">Hướng dẫn công việc</span> — <span style="color:#92400E">이 공정에 승인된 작업표준서가 없습니다. (ERP 문서관리에서 '적용 공정'에 ${E(pc)} 입력 + 승인)</span></div>`;
+  const P = String(pc).toUpperCase();
   return `<div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;border-color:#C7D2FE;background:#F5F7FF">
-    <b>📘 작업표준서 <span class="vi">Hướng dẫn công việc</span></b>${docs.map(x => x.link && /^https?:/i.test(x.link)
+    <b>📘 작업표준서 <span class="vi">Hướng dẫn công việc</span></b>${docs.map(x => (x.pl && x.pl[P]) ? `<a class="btn pri" href="${E(x.pl[P])}" target="_blank" rel="noopener" style="text-decoration:none" title="${E(x.title)} — 이 공정 페이지">📄 ${E(procName(pc))} 작업표준서 <span style="opacity:.8;font-weight:400">${E(x.docNo)} · ${E(x.rev)}</span></a>${x.link ? ` <a href="${E(x.link)}" target="_blank" rel="noopener" class="muted" style="font-size:12px">전체본</a>` : ''}`
+      : x.link && /^https?:/i.test(x.link)
       ? `<a class="btn" href="${E(x.link)}" target="_blank" rel="noopener" style="text-decoration:none" title="${E(x.kind)} · 승인 ${E(String(x.at).slice(0, 10))}">📄 ${E(x.title)} <span class="muted">${E(x.docNo)} · ${E(x.rev)}</span></a>`
       : `<span class="btn" style="opacity:.7" title="파일 링크가 없습니다">📄 ${E(x.title)} <span class="muted">${E(x.docNo)} · ${E(x.rev)} · 파일 없음</span></span>`).join('')}
     <span class="muted" style="font-size:12px">ERP 승인본 · 최신판</span></div>`;
