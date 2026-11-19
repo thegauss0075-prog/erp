@@ -18012,8 +18012,8 @@ const QM_DEF = {
     fields: [['kind','구분','sel',['치공구 (Test Fixture)','검사 지그','공구','검사설비 (교정 없음)','마스터 샘플 (OK)','마스터 샘플 (NG)','한도 샘플','기타']],['code','관리번호','text'],['name','명칭','text'],['model','모델 · 규격','text'],['location','사용 공정 · 위치','text'],['owner','관리자','text'],['spec','측정값 · 판정 (마스터 샘플)','text'],['calCycle','교정 주기 / 샘플 유효기간 (개월, 0=없음)','num'],['lastCal','최근 교정일 / 샘플 검증일','date'],['calOrg','교정 기관','sel',['외부 공인기관','사내 교정','제조사']],['status','상태','sel',['사용','수리 중','보관','폐기']],['note','비고','area']],
     cols: ['kind','code','name','location','calCycle','lastCal','nextCal','status'], def: () => ({kind: '치공구 (Test Fixture)', calCycle: 0, status: '사용', calOrg: '사내 교정'})},
   qedu: {title: '교육 기록', vi: 'Đào tạo', icon: '🎓',
-    fields: [['date','교육일','date'],['kind','구분','sel',['신입 교육','정기 교육','특별 교육','자격 인증','고객 요구 교육']],['course','과정명','text'],['trainer','강사','text'],['target','대상자 (이름 쉼표로)','area'],['hours','시간','num'],['result','결과','sel',['이수','미이수','자격 취득','재교육 필요']],['validUntil','자격 유효기한','date'],['note','비고','area']],
-    cols: ['date','kind','course','trainer','target','hours','result','validUntil'], def: () => ({date: qmToday(), kind: '정기 교육', result: '이수'})},
+    fields: [['date','교육일','date'],['kind','구분','sel',['신입 교육','정기 교육','특별 교육','자격 인증','고객 요구 교육']],['course','과정명','text'],['trainer','강사','text'],['target','대상자 (이름 쉼표로)','area'],['hours','시간','num'],['result','결과','sel',['이수','미이수','자격 취득','재교육 필요']],['validUntil','자격 유효기한','date'],['link','평가지·첨부 (서명본 스캔)','text'],['note','비고','area']],
+    cols: ['date','kind','course','trainer','target','hours','result','validUntil','link'], def: () => ({date: qmToday(), kind: '정기 교육', result: '이수'})},
   qdoc: {title: '품질 문서 관리', vi: 'Quản lý tài liệu', icon: '📁',
     fields: [['docNo','문서번호','text'],['title','문서명','text'],['kind','구분','sel',['품질매뉴얼','절차서','공정흐름도','PFMEA','관리계획서 (CP)','작업표준서','검사기준서','도면·사양서','고객 요구사항 (CSR·PPAP)','성적서·양식','외부 문서 (규격·법규)','기타']],['code','관련 품목','text'],['rev','개정 번호','text'],['revDate','개정일','date'],['owner','담당자','text'],['author','작성자','text'],['reviewer','검토자','text'],['status','상태','sel',['유효','개정 중','폐기']],['link','파일 (첨부·링크·NAS 경로)','text'],['note','개정 내용','area']],
     cols: ['docNo','kind','title','code','rev','revDate','status','approval','owner','link'], def: () => ({status: '유효', kind: '작업표준서', revDate: qmToday()})}
@@ -18258,7 +18258,9 @@ async function qmFileUpload(file){
   if (!file) return; const msg = document.getElementById('qm-file-msg'), box = document.getElementById('qm-link');
   if (file.size > 20 * 1024 * 1024) { alert('파일이 너무 큽니다 (최대 20MB).'); return; }
   const docNo = (document.querySelector('#qm-form [data-k="docNo"]') || {}).value || '', rev = (document.querySelector('#qm-form [data-k="rev"]') || {}).value || '';
-  const name = (docNo ? docNo.trim() + (rev ? '_' + rev.trim().replace(/\s+/g, '') : '') + '_' : '') + file.name;
+  const fv = k => ((document.querySelector('#qm-form [data-k="' + k + '"]') || {}).value || '').trim();
+  const pre = docNo ? docNo.trim() + (rev ? '_' + rev.trim().replace(/\s+/g, '') : '') : fv('date') ? '교육기록_' + fv('date') + (fv('course') ? '_' + fv('course') : '') : (QM.skFile || '');
+  const name = (pre ? pre.replace(/[\\/:*?"<>|]/g, '_') + '_' : '') + file.name;
   msg.textContent = '⏳ 올리는 중… ' + file.name;
   try {
     const b64 = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = no; r.readAsDataURL(file); });
@@ -18270,14 +18272,14 @@ async function qmFileUpload(file){
 function qmEdit(store, id, preset){
   const d = QM_DEF[store], r = id ? (HQS[store] || []).find(x => String(x.id) === String(id)) : null;
   const rec = r ? {...r} : {...d.def(), ...(preset || {})};
-  QM.ed = {store, rec, isNew: !r};
+  QM.skFile = ''; QM.ed = {store, rec, isNew: !r};
   const inp = f => { const [k, , t, opts] = f, v = rec[k] ?? '';
     if (t === 'area') return `<textarea data-k="${k}" rows="${k === 'items' ? 5 : 2}" style="${HQ_IN};resize:vertical">${hqE(v)}</textarea>`;
     if (t === 'sel') return `<select data-k="${k}" style="${HQ_IN}">${opts.map(o => `<option ${String(v) === o ? 'selected' : ''}>${hqE(o)}</option>`).join('')}</select>`;
     if (t === 'cust') return `<input data-k="${k}" list="qm-cust-dl" value="${hqE(v)}" style="${HQ_IN}"><datalist id="qm-cust-dl">${qmCusts().map(c => `<option value="${hqE(c)}">`).join('')}</datalist>`;
     return `<input data-k="${k}" type="${t === 'num' ? 'number' : t === 'date' ? 'date' : 'text'}" value="${hqE(v)}" style="${HQ_IN}">`; };
   qmModal(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><h3 style="margin:0">${d.icon} ${d.title} ${r ? '수정' : '추가'}</h3><span style="flex:1"></span><button onclick="qmClose()" style="border:0;background:none;font-size:20px;cursor:pointer">✕</button></div>
-    <div id="qm-form" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${d.fields.map(f => hqFld(f[1], '', store === 'qdoc' && f[0] === 'link' ? qmFileField(rec.link) : inp(f), f[2] === 'area')).join('')}</div>
+    <div id="qm-form" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${d.fields.map(f => hqFld(f[1], '', (store === 'qdoc' || store === 'qedu') && f[0] === 'link' ? qmFileField(rec.link) : inp(f), f[2] === 'area')).join('')}</div>
     ${store === 'qdoc' ? qmApprovalBox(rec) : ''}
     ${r && (r.updatedBy || r.updatedAt) ? `<div style="font-size:11.5px;color:#8A95A3;margin-top:8px">최근 수정: ${hqE(r.updatedBy || '')} ${hqE(String(r.updatedAt || '').slice(0, 16).replace('T', ' '))}</div>` : ''}
     <div style="display:flex;gap:8px;margin-top:14px">${r ? `<button onclick="qmDel()" style="padding:8px 14px;border-radius:7px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}<span style="flex:1"></span>${store === 'qdoc' && isMaster ? `<button onclick="qmSave(true)" style="padding:8px 14px;border-radius:7px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;font-weight:700;cursor:pointer" title="지금 내용(개정 번호)으로 승인 — 상태가 유효로 바뀝니다">✔ 저장 후 승인</button>` : ''}<button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button><button id="qm-save" onclick="qmSave()" style="padding:8px 18px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">💾 저장</button></div>`);
@@ -18469,7 +18471,7 @@ function qmMesSkillHtml(){
   const cell = (w, p) => { const k = ks.find(x => x.worker_code === w.c && x.process_code === p.c);
     if (!k) return `<td style="text-align:center;cursor:pointer" onclick="qmSkillDlg('${hqE(w.c)}','${hqE(p.c)}')"><span style="color:#CBD5E1">－</span></td>`;
     const c = QM_SKL[k.level] || QM_SKL[1], ex = k.valid_until && k.valid_until < t, sn = !ex && k.valid_until && k.valid_until <= soon;
-    return `<td style="text-align:center;cursor:pointer;padding:4px" onclick="qmSkillDlg('${hqE(w.c)}','${hqE(p.c)}')"><span title="${hqE(c[0])}${k.valid_until ? ' ~' + hqE(k.valid_until) : ''}" style="display:inline-block;min-width:30px;padding:3px 6px;border-radius:6px;background:${c[2]};color:${c[3]};font-weight:800;${ex ? 'outline:2px solid #b91c1c' : sn ? 'outline:2px solid #F59E0B' : ''}">${k.level}</span></td>`; };
+    return `<td style="text-align:center;cursor:pointer;padding:4px" onclick="qmSkillDlg('${hqE(w.c)}','${hqE(p.c)}')"><span title="${hqE(c[0])}${k.valid_until ? ' ~' + hqE(k.valid_until) : ''}" style="display:inline-block;min-width:30px;padding:3px 6px;border-radius:6px;background:${c[2]};color:${c[3]};font-weight:800;${ex ? 'outline:2px solid #b91c1c' : sn ? 'outline:2px solid #F59E0B' : ''}">${k.level}</span>${k.link ? '<sup title="평가지 첨부됨" style="font-size:9px">📎</sup>' : ''}</td>`; };
   const exN = ks.filter(k => k.valid_until && k.valid_until < t).length;
   return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0;font-size:16px">🪪 작업자 자격표 <span style="font-size:12px;color:#8A95A3;font-weight:400">${ks.length}건</span></h3>${exN ? qmBadge('유효기간 지남 ' + exN, 'r') : ''}<span style="flex:1"></span>
     ${!qmGauges().length && !ks.length ? `<button onclick="qmImportFromMES()" style="padding:7px 12px;border-radius:7px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-size:12.5px;cursor:pointer;font-weight:600">⬇ MES에 있던 계측기·자격 가져오기 (최초 1회)</button>` : ''}
@@ -18491,12 +18493,13 @@ async function qmSkillImport(file){
   const hi = rows.findIndex(r => r.some(c => /^사번/.test(String(c))) && r.some(c => /^레벨/.test(String(c)))); if (hi < 0) { alert('머리글(사번·레벨)을 찾지 못했습니다.'); return; }
   const H = rows[hi].map(c => String(c).split('\n')[0].trim()), col = k => H.findIndex(h => h.startsWith(k));
   const d = v => { if (!v) return ''; if (v instanceof Date) { const x = new Date(v.getTime() - v.getTimezoneOffset() * 60000); return x.toISOString().slice(0, 10); } if (typeof v === 'number') return new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10); return String(v).slice(0, 10); };
-  const ci = {wk: col('사번'), nm: col('성명'), pc: col('공정코드'), jd: col('판정'), lv: col('레벨'), c: col('인증일'), v: col('유효기간'), e: col('평가자'), n: col('비고')};
+  const ci = {wk: col('사번'), nm: col('성명'), pc: col('공정코드'), jd: col('판정'), lv: col('레벨'), c: col('인증일'), v: col('유효기간'), e: col('평가자'), n: col('비고'), f: col('평가지')};
+  const oldSk = Object.fromEntries((HQS.qskill || []).map(x => [x.id, x]));
   const recs = [], skip = [];
   rows.slice(hi + 1).forEach(r => { const wk = String(r[ci.wk] || '').trim(), pc = String(r[ci.pc] || '').trim().toUpperCase(), lv = +r[ci.lv];
     if (!wk || !pc) return;
     if (!(lv >= 1 && lv <= 4)) { skip.push(`${wk} ${r[ci.nm] || ''} — ${r[ci.jd] || '레벨 없음'}`); return; }
-    recs.push({id: wk + '|' + pc, worker_code: wk, process_code: pc, level: lv, certified_on: d(r[ci.c]), valid_until: d(r[ci.v]), evaluator: String(r[ci.e] || ''), note: [String(r[ci.jd] || ''), '엑셀: ' + file.name].filter(Boolean).join(' · '), _nm: String(r[ci.nm] || '')}); });
+    recs.push({id: wk + '|' + pc, worker_code: wk, process_code: pc, level: lv, certified_on: d(r[ci.c]), valid_until: d(r[ci.v]), evaluator: String(r[ci.e] || ''), note: [String(r[ci.jd] || ''), '엑셀: ' + file.name].filter(Boolean).join(' · '), link: (ci.f >= 0 && String(r[ci.f] || '').trim()) || (oldSk[wk + '|' + pc] || {}).link || '', _nm: String(r[ci.nm] || '')}); });
   if (!recs.length) { alert('등록할 줄이 없습니다.' + (skip.length ? '\n\n건너뜀:\n' + skip.join('\n') : '') + '\n\n엑셀에서 평가표를 입력하고 저장한 뒤 다시 가져오세요. (판정·레벨은 엑셀에서 저장해야 값이 생깁니다)'); return; }
   const ks = qmSkills(), newPc = [...new Set(recs.map(r => r.process_code))].filter(pc => !ks.some(k => k.process_code === pc));
   const lv1 = recs.filter(r => r.level === 1);
@@ -18510,12 +18513,13 @@ async function qmSkillImport(file){
 }
 function qmSkillDlg(wk, pc){
   const k = qmSkills().find(x => x.worker_code === wk && x.process_code === pc) || {}, t = qmToday();
-  QM.skLv = +k.level || 0;
+  QM.skLv = +k.level || 0; QM.skFile = '자격평가_' + wk + '_' + pc;
   qmModal(`<h3 style="margin:0 0 12px">🪪 ${hqE(qmWorkName(wk))} — ${hqE(qmProcName(pc))}</h3>
     <div id="qm-sk-lv" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px">${Object.entries(QM_SKL).map(([n, v]) => `<button data-l="${n}" onclick="QM.skLv=${n};document.querySelectorAll('#qm-sk-lv button').forEach(b=>b.style.outline=+b.dataset.l===QM.skLv?'3px solid #0f766e':'none')" style="padding:10px 6px;border-radius:8px;border:1px solid #DCE1E7;background:${v[2]};color:${v[3]};cursor:pointer;font-weight:700;${+k.level === +n ? 'outline:3px solid #0f766e' : ''}"><div style="font-size:18px">${n}</div>${v[0]}<div style="font-size:10.5px;font-weight:400">${v[1]}</div></button>`).join('')}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       ${hqFld('인증일', '', `<input id="qs-c" type="date" value="${hqE(k.certified_on || t)}" style="${HQ_IN}">`)}${hqFld('유효기간 (비우면 무기한)', '', `<input id="qs-v" type="date" value="${hqE(k.valid_until || qmAddMonths(t, 12))}" style="${HQ_IN}">`)}
       ${hqFld('평가자', '', `<input id="qs-e" value="${hqE(k.evaluator || '')}" style="${HQ_IN}">`)}${hqFld('비고 (평가 문서 번호 등)', '', `<input id="qs-n" value="${hqE(k.note || '')}" style="${HQ_IN}">`)}</div>
+    <div style="margin-top:10px">${hqFld('평가지 (서명본 스캔 — 📎 첨부하거나 교육 기록의 링크 붙여넣기)', '', qmFileField(k.link))}</div>
     <div style="display:flex;gap:8px;margin-top:14px">${k.level ? `<button onclick="qmSkillSave('${hqE(wk)}','${hqE(pc)}',true)" style="padding:8px 14px;border-radius:7px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">자격 삭제</button>` : ''}<span style="flex:1"></span><button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button><button onclick="qmSkillSave('${hqE(wk)}','${hqE(pc)}')" style="padding:8px 18px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">💾 저장</button></div>`);
 }
 async function qmSkillSave(wk, pc, del){
@@ -18523,7 +18527,7 @@ async function qmSkillSave(wk, pc, del){
   if (del && !confirm('이 자격 기록을 삭제할까요?')) return;
   if (!del && !QM.skLv) { alert('단계를 고르세요.'); return; }
   const v = k => document.getElementById(k).value.trim();
-  const rec = del ? {...old, id, removed: true, level: 0} : {id, worker_code: wk, process_code: pc, level: QM.skLv, certified_on: v('qs-c'), valid_until: v('qs-v'), evaluator: v('qs-e'), note: v('qs-n')};
+  const rec = del ? {...old, id, removed: true, level: 0} : {id, worker_code: wk, process_code: pc, level: QM.skLv, certified_on: v('qs-c'), valid_until: v('qs-v'), evaluator: v('qs-e'), note: v('qs-n'), link: v('qm-link')};
   if (await qmPut('qskill', rec)) { qmClose(); qmRender(); }
 }
 function qmSkillPrint(){
