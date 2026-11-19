@@ -18015,8 +18015,8 @@ const QM_DEF = {
     fields: [['date','교육일','date'],['kind','구분','sel',['신입 교육','정기 교육','특별 교육','자격 인증','고객 요구 교육']],['course','과정명','text'],['trainer','강사','text'],['target','대상자 (이름 쉼표로)','area'],['hours','시간','num'],['result','결과','sel',['이수','미이수','자격 취득','재교육 필요']],['validUntil','자격 유효기한','date'],['note','비고','area']],
     cols: ['date','kind','course','trainer','target','hours','result','validUntil'], def: () => ({date: qmToday(), kind: '정기 교육', result: '이수'})},
   qdoc: {title: '품질 문서 관리', vi: 'Quản lý tài liệu', icon: '📁',
-    fields: [['docNo','문서번호','text'],['title','문서명','text'],['kind','구분','sel',['품질매뉴얼','절차서','공정흐름도','PFMEA','관리계획서 (CP)','작업표준서','검사기준서','도면·사양서','고객 요구사항 (CSR·PPAP)','성적서·양식','외부 문서 (규격·법규)','기타']],['code','관련 품목','text'],['rev','개정 번호','text'],['revDate','개정일','date'],['owner','담당자','text'],['status','상태','sel',['유효','개정 중','폐기']],['link','파일 링크 (드라이브 등)','text'],['note','개정 내용','area']],
-    cols: ['docNo','kind','title','code','rev','revDate','status','owner'], def: () => ({status: '유효', kind: '작업표준서', revDate: qmToday()})}
+    fields: [['docNo','문서번호','text'],['title','문서명','text'],['kind','구분','sel',['품질매뉴얼','절차서','공정흐름도','PFMEA','관리계획서 (CP)','작업표준서','검사기준서','도면·사양서','고객 요구사항 (CSR·PPAP)','성적서·양식','외부 문서 (규격·법규)','기타']],['code','관련 품목','text'],['rev','개정 번호','text'],['revDate','개정일','date'],['owner','담당자','text'],['status','상태','sel',['유효','개정 중','폐기']],['link','파일 (첨부·링크·NAS 경로)','text'],['note','개정 내용','area']],
+    cols: ['docNo','kind','title','code','rev','revDate','status','owner','link'], def: () => ({status: '유효', kind: '작업표준서', revDate: qmToday()})}
 };
 const QM_LBL = k => { for (const d of Object.values(QM_DEF)) { const f = d.fields.find(x => x[0] === k); if (f) return f[1]; } return k === 'nextCal' ? '다음 교정일' : k; };
 
@@ -18166,6 +18166,7 @@ function qmStatView(){
 function qmCell(k, r){
   let v = k === 'nextCal' ? (r.nextCal || qmAddMonths(r.lastCal, r.calCycle)) : r[k];
   if (k === 'status' || k === 'result' || k === 'grade') { const s = String(v || ''); return qmBadge(s || '-', /완료|승인|이수|유효|사용|취득|^A$/.test(s) ? 'g' : /반려|폐기|미이수|^D$/.test(s) ? 'r' : /진행|접수|분석|수립|확인|개정|수리|^C$/.test(s) ? 'y' : 'b'); }
+  if (k === 'link') { const u = String(v || '').trim(); return !u ? '<span style="color:#CBD5E1">－</span>' : /^https?:\/\//i.test(u) ? `<a href="${hqE(u)}" target="_blank" onclick="event.stopPropagation()" title="${hqE(u)}" style="text-decoration:none">📎 열기</a>` : `<span title="${hqE(u)}" style="font-size:12px;color:#5D6977">📁 ${hqE(u.length > 28 ? '…' + u.slice(-26) : u)}</span>`; }
   if (k === 'nextCal') { const st = qmCalState(r); return v ? `<span style="font-weight:700;color:${st === 'over' ? '#b91c1c' : st === 'soon' ? '#b45309' : '#1F2A37'}">${hqE(v)}${st === 'over' ? ' (지남)' : st === 'soon' ? ' (임박)' : ''}</span>` : '-'; }
   if (k === 'dueDate' && r.status !== '완료') { const d = qmDays(v); return v ? `<span style="${d !== null && d < 0 ? 'color:#b91c1c;font-weight:700' : ''}">${hqE(v)}${d !== null && d < 0 ? ' (지남)' : ''}</span>` : '-'; }
   const s = String(v ?? ''); return s.length > 60 ? hqE(s.slice(0, 60)) + '…' : (hqE(s) || '-');
@@ -18238,6 +18239,26 @@ function qmModal(html){
   m.innerHTML = `<div style="background:#fff;border-radius:12px;width:min(760px,100%);max-height:94vh;overflow:auto;padding:18px 20px">${html}</div>`;
 }
 function qmClose(){ const m = document.getElementById('qm-modal'); if (m) m.remove(); }
+// ✅ [2026-11-19] 문서관리 파일 첨부 — 고른 파일을 ERP 서버의 Google Drive '품질문서' 폴더에 올리고 링크를 채운다
+//    (NAS 경로나 다른 링크를 직접 적어도 된다)
+function qmFileField(v){
+  return `<div style="display:flex;gap:6px;align-items:center"><input data-k="link" id="qm-link" value="${hqE(v || '')}" placeholder="📎 파일 첨부 또는 링크·NAS 경로 입력" style="${HQ_IN};flex:1">
+    <label style="padding:7px 10px;border-radius:7px;border:1px solid #0d9488;background:#fff;color:#0d9488;font-size:12.5px;cursor:pointer;white-space:nowrap;font-weight:600">📎 파일 첨부<input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg" style="display:none" onchange="qmFileUpload(this.files[0]);this.value=''"></label>
+    ${v ? `<a href="${hqE(v)}" target="_blank" style="font-size:12.5px;white-space:nowrap">열기</a>` : ''}</div><div id="qm-file-msg" style="font-size:11.5px;color:#8A95A3;margin-top:3px"></div>`;
+}
+async function qmFileUpload(file){
+  if (!file) return; const msg = document.getElementById('qm-file-msg'), box = document.getElementById('qm-link');
+  if (file.size > 20 * 1024 * 1024) { alert('파일이 너무 큽니다 (최대 20MB).'); return; }
+  const docNo = (document.querySelector('#qm-form [data-k="docNo"]') || {}).value || '', rev = (document.querySelector('#qm-form [data-k="rev"]') || {}).value || '';
+  const name = (docNo ? docNo.trim() + (rev ? '_' + rev.trim().replace(/\s+/g, '') : '') + '_' : '') + file.name;
+  msg.textContent = '⏳ 올리는 중… ' + file.name;
+  try {
+    const b64 = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = no; r.readAsDataURL(file); });
+    const res = await apiAuto('saveQMFile', {base64: b64, mime: file.type || 'application/octet-stream', name});
+    if (!res || !res.ok || !res.url) { msg.textContent = ''; alert('업로드 실패: ' + ((res && res.error) || '서버 응답 없음') + (/unknown|action/i.test(res && res.error || '') ? '\n서버(Code.gs)를 새 버전으로 배포해야 합니다.' : '')); return; }
+    box.value = res.url; msg.innerHTML = `✔ 올렸습니다: ${hqE(res.name)} — <b>저장</b>을 눌러야 문서에 반영됩니다`;
+  } catch (e) { msg.textContent = ''; alert('업로드 실패: ' + e.message); }
+}
 function qmEdit(store, id, preset){
   const d = QM_DEF[store], r = id ? (HQS[store] || []).find(x => String(x.id) === String(id)) : null;
   const rec = r ? {...r} : {...d.def(), ...(preset || {})};
@@ -18248,7 +18269,7 @@ function qmEdit(store, id, preset){
     if (t === 'cust') return `<input data-k="${k}" list="qm-cust-dl" value="${hqE(v)}" style="${HQ_IN}"><datalist id="qm-cust-dl">${qmCusts().map(c => `<option value="${hqE(c)}">`).join('')}</datalist>`;
     return `<input data-k="${k}" type="${t === 'num' ? 'number' : t === 'date' ? 'date' : 'text'}" value="${hqE(v)}" style="${HQ_IN}">`; };
   qmModal(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><h3 style="margin:0">${d.icon} ${d.title} ${r ? '수정' : '추가'}</h3><span style="flex:1"></span><button onclick="qmClose()" style="border:0;background:none;font-size:20px;cursor:pointer">✕</button></div>
-    <div id="qm-form" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${d.fields.map(f => hqFld(f[1], '', inp(f), f[2] === 'area')).join('')}</div>
+    <div id="qm-form" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${d.fields.map(f => hqFld(f[1], '', store === 'qdoc' && f[0] === 'link' ? qmFileField(rec.link) : inp(f), f[2] === 'area')).join('')}</div>
     ${r && (r.updatedBy || r.updatedAt) ? `<div style="font-size:11.5px;color:#8A95A3;margin-top:8px">최근 수정: ${hqE(r.updatedBy || '')} ${hqE(String(r.updatedAt || '').slice(0, 16).replace('T', ' '))}</div>` : ''}
     <div style="display:flex;gap:8px;margin-top:14px">${r ? `<button onclick="qmDel()" style="padding:8px 14px;border-radius:7px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}<span style="flex:1"></span><button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button><button id="qm-save" onclick="qmSave()" style="padding:8px 18px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">💾 저장</button></div>`);
 }
