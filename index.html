@@ -13806,6 +13806,9 @@ async function hqCPOSave(){
   const dup = HQ.cpo.find(x => x.id !== r.id && String(x.customer).trim() === String(r.customer).trim() && String(x.custPoNo).trim() === String(r.custPoNo).trim());
   if (dup && !confirm(`같은 고객사·PO No(${r.custPoNo})가 이미 있습니다 (${dup.cpoNo}). 그래도 저장할까요?`)) return;
   const old = HQ.cpo.find(x => String(x.id) === String(r.id));
+  // ✅ [2026-11-19] 출하 없이 '완료'로 저장하면 잔량·자재 소요에서 빠진다 → 한 번 확인
+  if (r.status === '완료' && (!old || old.status !== '완료')) { const al = hqCPOAlloc(), shp = old ? (old.lines||[]).reduce((a, l, i) => a + ((al[old.id]||{})[i] || 0), 0) : 0;
+    if (!shp && !confirm('아직 출하가 없는 PO를 "완료"로 저장하면 PO 잔량과 자재 소요 계산에서 빠집니다.\n\n새 PO는 보통 "확정"으로 저장합니다. 그래도 "완료"로 저장할까요?')) return; }
   if (!r.cpoNo) r.cpoNo = hqNextNo('CPO', HQ.cpo, 'cpoNo', r.recvDate);
   r.lines.forEach(l => { l.qty = +l.qty || 0; l.price = l.price === '' || l.price == null ? '' : +l.price; if (l.shipped === '') delete l.shipped; else if (l.shipped != null) l.shipped = +l.shipped || 0; });
   if (!old || old.status !== r.status) r.history = (r.history||[]).concat([{at: new Date().toISOString(), by: CURRENT_USER||'', status: r.status}]);
