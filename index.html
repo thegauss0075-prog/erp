@@ -18020,8 +18020,8 @@ const QM_DEF = {
     fields: [['date','교육일','date'],['kind','구분','sel',['신입 교육','정기 교육','특별 교육','자격 인증','고객 요구 교육']],['course','과정명','text'],['trainer','강사','text'],['target','대상자 (이름 쉼표로)','area'],['hours','시간','num'],['result','결과','sel',['이수','미이수','자격 취득','재교육 필요']],['validUntil','자격 유효기한','date'],['link','평가지·첨부 (서명본 스캔)','text'],['note','비고','area']],
     cols: ['date','kind','course','trainer','target','hours','result','validUntil','link'], def: () => ({date: qmToday(), kind: '정기 교육', result: '이수'})},
   qdoc: {title: '품질 문서 관리', vi: 'Quản lý tài liệu', icon: '📁',
-    fields: [['docNo','문서번호','text'],['title','문서명','text'],['kind','구분','sel',['품질매뉴얼','절차서','공정흐름도','PFMEA','관리계획서 (CP)','작업표준서','검사기준서','도면·사양서','고객 요구사항 (CSR·PPAP)','성적서·양식','외부 문서 (규격·법규)','기타']],['code','관련 품목','text'],['rev','개정 번호','text'],['revDate','개정일','date'],['owner','담당자','text'],['author','작성자','text'],['reviewer','검토자','text'],['status','상태','sel',['유효','개정 중','폐기']],['link','파일 (첨부·링크·NAS 경로)','text'],['note','개정 내용','area']],
-    cols: ['docNo','kind','title','code','rev','revDate','status','approval','owner','link'], def: () => ({status: '유효', kind: '작업표준서', revDate: qmToday()})}
+    fields: [['docNo','문서번호','text'],['title','문서명','text'],['kind','구분','sel',['품질매뉴얼','절차서','공정흐름도','PFMEA','관리계획서 (CP)','작업표준서','검사기준서','도면·사양서','고객 요구사항 (CSR·PPAP)','성적서·양식','외부 문서 (규격·법규)','기타']],['code','관련 품목','text'],['process','적용 공정 (MES 공정코드, 예: WIND · 여러 개는 쉼표) — 작업표준서·검사기준서는 MES 작업 화면에 표시','text'],['rev','개정 번호','text'],['revDate','개정일','date'],['owner','담당자','text'],['author','작성자','text'],['reviewer','검토자','text'],['status','상태','sel',['유효','개정 중','폐기']],['link','파일 (첨부·링크·NAS 경로)','text'],['note','개정 내용','area']],
+    cols: ['docNo','kind','title','code','process','rev','revDate','status','approval','owner','link'], def: () => ({status: '유효', kind: '작업표준서', revDate: qmToday()})}
 };
 const QM_LBL = k => { for (const d of Object.values(QM_DEF)) { const f = d.fields.find(x => x[0] === k); if (f) return f[1]; } return k === 'nextCal' ? '다음 교정일' : k === 'approval' ? '승인' : k; };
 

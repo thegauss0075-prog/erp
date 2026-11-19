@@ -230,14 +230,17 @@ async function loadMaster(){
 // ✅ [2026-11-16] 계측기·검교정 / 작업자 자격은 ERP(품질관리)가 원본 — MES는 받아서 읽기만 한다 (작업지시와 같은 방식)
 //    ERP 저장소: qgauge(계측기 + 교정 이력 cals) · qskill(작업자×공정 자격). ERP에 아직 자료가 없으면(옮기기 전) MES DB 값을 그대로 쓴다.
 //    ERP에 연결이 안 되면 마지막으로 받은 값(이 기기 저장) → 그것도 없으면 MES DB 값.
-const QME = {g: null, k: null, at: 0};
+const QME = {g: null, k: null, d: null, at: 0};
 try { const c = JSON.parse(localStorage.getItem('mes_qm_erp') || 'null'); if (c) Object.assign(QME, c, {at: 0}); } catch (e) {}
 async function qmErpFetch(){
   const to = new Promise(r => setTimeout(() => r(null), 8000));
-  const [g, k] = await Promise.race([Promise.all([erpCall('getHQStore', {store: 'qgauge'}), erpCall('getHQStore', {store: 'qskill'})]), to.then(() => [null, null])]);
+  const [g, k, d] = await Promise.race([Promise.all([erpCall('getHQStore', {store: 'qgauge'}), erpCall('getHQStore', {store: 'qskill'}), erpCall('getHQStore', {store: 'qdoc'})]), to.then(() => [null, null, null])]);
+  // ✅ [2026-11-19] 작업표준서·검사기준서: ERP 문서관리에서 '유효'(현재 개정 승인됨)이고 적용 공정이 있는 것만
+  if (d && d.ok) QME.d = (d.data || []).filter(x => !x.removed && x.status === '유효' && x.approvedAt && String(x.approvedRev || '') === String(x.rev || '') && String(x.process || '').trim())
+    .map(x => ({docNo: x.docNo, title: x.title, kind: x.kind, rev: x.rev, link: x.link || '', process: String(x.process).toUpperCase().split(/[\s,·/]+/).filter(Boolean), at: x.approvedAt}));
   if (g && g.ok) QME.g = (g.data || []).filter(x => !x.removed);
   if (k && k.ok) QME.k = (k.data || []).filter(x => !x.removed && +x.level);
-  if ((g && g.ok) || (k && k.ok)) { QME.at = Date.now(); try { localStorage.setItem('mes_qm_erp', JSON.stringify({g: QME.g, k: QME.k})); } catch (e) {} }
+  if ((g && g.ok) || (k && k.ok) || (d && d.ok)) { QME.at = Date.now(); try { localStorage.setItem('mes_qm_erp', JSON.stringify({g: QME.g, k: QME.k, d: QME.d})); } catch (e) {} }
 }
 async function qmErpApply(fetchNow){
   if (fetchNow || Date.now() - QME.at > 2 * 60000) await qmErpFetch().catch(() => {});
@@ -417,7 +420,7 @@ function floorView(){
       ${'BarcodeDetector' in window ? '<button class="btn" onclick="camScan()">📷 카메라</button>' : ''}
       <button class="btn" onclick="this.disabled=true;syncWO(false).then(render)" title="ERP에서 새로 발행한 작업지시 받기 (2분마다 자동으로도 받음)">🔄 작업지시 받기<span class="vi">Tải lệnh SX</span></button>
     </div>
-    ${patrolBar(S.proc)}
+    ${wiBar(S.proc)}${patrolBar(S.proc)}
     ${running.length ? `<div class="card" style="margin-bottom:12px;border-color:#86EFAC;background:#F0FDF4"><h2>⏱ 진행 중 <span class="vi">Đang làm</span></h2>${running.map(r => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #D1FAE5;flex-wrap:wrap">
         <div style="flex:1;min-width:200px"><b>${E(r.item_name||'')}</b> <span class="muted">${E(r.order_no||'')} · ${E(workName(r.worker_code))}${r.machine_code ? ' · ' + E(machName(r.machine_code)) : ''}</span><div class="muted">시작 ${hm(r.start_at)} · ${dur(Date.now() - new Date(r.start_at))} 경과${(p => p.n ? ` · <b style="color:var(--ok)">중간 저장 ${p.n}회 · 양품 ${N(p.g)}</b>` : '')(partOf(r.id))}</div></div>
         ${partOf(r.id).n ? '' : `<button class="btn" onclick="cancelRun(${r.id})" title="잘못 시작한 작업 취소">✕ 시작 취소</button>`}<button class="btn big" style="border-color:var(--ok);color:var(--ok)" onclick="finishDlg(${r.id}, true)" title="작업은 계속하고 지금까지 수량만 저장">📥 중간 저장<span class="vi">Lưu giữa ca</span></button><button class="btn ok big" onclick="finishDlg(${r.id})">■ 종료·실적 입력</button></div>`).join('')}</div>` : ''}
@@ -731,6 +734,16 @@ function valNum(v){ const m = String(v || '').replace(/,/g, '.').match(/-?\d+(?:
 const PAT_SLOTS = ['초','중','종'];
 const patItems = pc => (M.patItem || []).filter(i => i.active !== false && i.process_code === pc).sort((a, b) => (a.seq || 0) - (b.seq || 0));
 const patVal = (c, key) => { const x = (c.results || []).find(r => String(r.item).includes(key)); return x ? (x.value ?? '') : ''; };
+// ✅ [2026-11-19] 이 공정의 작업표준서·검사기준서 (ERP 문서관리 승인본만) — 작업자는 항상 최신판을 연다
+function wiBar(pc){
+  if (!pc) return ''; const docs = (QME.d || []).filter(x => x.process.includes(String(pc).toUpperCase()));
+  if (!docs.length) return `<div class="card" style="margin-bottom:12px;padding:8px 14px;border-color:#FDE68A;background:#FFFBEB;font-size:13px">📘 <b>작업표준서</b> <span class="vi">Hướng dẫn công việc</span> — <span style="color:#92400E">이 공정에 승인된 작업표준서가 없습니다. (ERP 문서관리에서 '적용 공정'에 ${E(pc)} 입력 + 승인)</span></div>`;
+  return `<div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;border-color:#C7D2FE;background:#F5F7FF">
+    <b>📘 작업표준서 <span class="vi">Hướng dẫn công việc</span></b>${docs.map(x => x.link && /^https?:/i.test(x.link)
+      ? `<a class="btn" href="${E(x.link)}" target="_blank" rel="noopener" style="text-decoration:none" title="${E(x.kind)} · 승인 ${E(String(x.at).slice(0, 10))}">📄 ${E(x.title)} <span class="muted">${E(x.docNo)} · ${E(x.rev)}</span></a>`
+      : `<span class="btn" style="opacity:.7" title="파일 링크가 없습니다">📄 ${E(x.title)} <span class="muted">${E(x.docNo)} · ${E(x.rev)} · 파일 없음</span></span>`).join('')}
+    <span class="muted" style="font-size:12px">ERP 승인본 · 최신판</span></div>`;
+}
 function patrolBar(pc){
   if (!pc || !patItems(pc).length) return '';
   const today = (M.pat || []).filter(c => c.process_code === pc);
