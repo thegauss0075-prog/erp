@@ -13742,7 +13742,7 @@ const HQ_IN = 'width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid
 function hqFld(lbl, vi, html, span){ return `<label style="display:block;${span ? 'grid-column:1/-1;' : ''}"><div style="font-size:12px;font-weight:600;color:#33404D;margin-bottom:3px">${lbl}</div>${html}</label>`; }
 function hqCPOEdit(id){
   const r = id ? HQ.cpo.find(x => String(x.id) === String(id)) : null;
-  HQ_EDIT = r ? JSON.parse(JSON.stringify(r)) : {id: String(Date.now()), recvDate: hqToday(), status: '접수', cur: 'USD', lines: [{code:'', name:'', qty:'', price:'', due:''}], history: []};
+  HQ_EDIT = r ? JSON.parse(JSON.stringify(r)) : {id: String(Date.now()), recvDate: hqToday(), status: '확정', cur: 'USD', lines: [{code:'', name:'', qty:'', price:'', due:''}], history: []}; // [2026-11-19] 확정된 PO만 접수 → 상태 선택 없음
   hqCPORender();
 }
 function hqCPORender(){
@@ -13762,7 +13762,6 @@ function hqCPORender(){
       ${hqFld('고객사 *','Khách hàng', `<input list="hq-custs" value="${hqE(r.customer||'')}" ${set('customer')} style="${HQ_IN}">`)}
       ${hqFld('고객 PO No *','Số PO KH', `<input value="${hqE(r.custPoNo||'')}" ${set('custPoNo')} style="${HQ_IN}">`)}
       ${hqFld('접수일 *','Ngày nhận', `<input type="date" value="${hqE(r.recvDate||'')}" ${set('recvDate')} style="${HQ_IN}">`)}
-      ${hqFld('상태','Trạng thái', `<select onchange="HQ_EDIT.status=this.value" style="${HQ_IN}">${HQ_CPO_ST.map(s => `<option value="${s}" ${r.status===s?'selected':''}>${s}</option>`).join('')}</select>`)}
       ${hqFld('통화','Tiền tệ', `<select onchange="HQ_EDIT.cur=this.value;hqCPORender()" style="${HQ_IN}">${['USD','KRW','VND'].map(c => `<option ${r.cur===c?'selected':''}>${c}</option>`).join('')}</select>`)}
       ${hqFld('인도조건','Incoterm', `<input value="${hqE(r.incoterm||'')}" placeholder="DDP / EXW / FOB…" ${set('incoterm')} style="${HQ_IN}">`)}
       ${hqFld('납품처','Nơi giao', `<input value="${hqE(r.shipTo||'')}" ${set('shipTo')} style="${HQ_IN}">`)}
@@ -13811,6 +13810,7 @@ async function hqCPOSave(){
     if (!shp && !confirm('아직 출하가 없는 PO를 "완료"로 저장하면 PO 잔량과 자재 소요 계산에서 빠집니다.\n\n새 PO는 보통 "확정"으로 저장합니다. 그래도 "완료"로 저장할까요?')) return; }
   if (!r.cpoNo) r.cpoNo = hqNextNo('CPO', HQ.cpo, 'cpoNo', r.recvDate);
   r.lines.forEach(l => { l.qty = +l.qty || 0; l.price = l.price === '' || l.price == null ? '' : +l.price; if (l.shipped === '') delete l.shipped; else if (l.shipped != null) l.shipped = +l.shipped || 0; });
+  if (!['확정','완료','취소'].includes(r.status)) r.status = '확정'; // 접수·회신 단계는 쓰지 않음 (출하중·완료는 출고로 자동 표시)
   if (!old || old.status !== r.status) r.history = (r.history||[]).concat([{at: new Date().toISOString(), by: CURRENT_USER||'', status: r.status}]);
   if (r.status === '회신' && !r.replyDate) r.replyDate = hqToday();
   r.updatedAt = new Date().toISOString(); r.updatedBy = CURRENT_USER||''; if (!old) { r.createdAt = r.updatedAt; r.createdBy = r.updatedBy; }
@@ -13847,7 +13847,7 @@ async function hqCPOSave(){
 }
 function hqItemOK(lines){ return lines.every(l => allRows().some(x => x.code === l.code)); }
 async function hqCPODelete(id){
-  const r = HQ.cpo.find(x => String(x.id) === String(id)); if (!r || !confirm(`${r.cpoNo} (${r.customer} ${r.custPoNo})를 삭제할까요?\n기록을 남기려면 삭제 대신 '취소' 상태로 바꾸세요.`)) return;
+  const r = HQ.cpo.find(x => String(x.id) === String(id)); if (!r || !confirm(`${r.cpoNo} (${r.customer} ${r.custPoNo})를 삭제할까요?\n삭제하면 되돌릴 수 없습니다.`)) return;
   const res = await retrySafe(() => api('deleteHQCPO', {id})); if (!res || !res.ok) { alert('삭제 실패: ' + ((res && res.error) || '')); return; }
   HQ.cpo = HQ.cpo.filter(x => String(x.id) !== String(id)); hqClose('hq-ed'); renderHQ();
 }
@@ -14568,7 +14568,7 @@ function hqQuotePrint(id){ const r = HQS.quote.find(x => String(x.id) === String
 // 견적 → 주문서(고객 PO) 전환: 주문서 창을 내용이 채워진 채로 연다. 저장하면 견적은 "수주"가 된다
 function hqQuoteToCPO(id){
   const q = HQS.quote.find(x => String(x.id) === String(id)); if (!q) return;
-  HQ_EDIT = {id: String(Date.now()), recvDate: hqToday(), status: '접수', cur: q.cur, customer: q.customer, incoterm: q.incoterm || '', quoteId: q.id, quoteNo: q.qNo, custPoNo: '',
+  HQ_EDIT = {id: String(Date.now()), recvDate: hqToday(), status: '확정', cur: q.cur, customer: q.customer, incoterm: q.incoterm || '', quoteId: q.id, quoteNo: q.qNo, custPoNo: '',
     lines: (q.lines||[]).map(l => ({code: l.code, name: l.name, cat: l.cat, unit: l.unit, qty: l.qty, price: l.price, due: l.due || ''})), history: [], note: `견적 ${q.qNo}에서 전환`};
   HQ.dept = 'sales'; HQ.tab = 'cpo'; renderHQ(); hqCPORender();
 }
