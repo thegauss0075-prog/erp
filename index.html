@@ -14575,7 +14575,7 @@ function hqQuoteToCPO(id){
 function hqUnsoldShip(){
   const used = new Set(HQS.sale.flatMap(s => (s.lines||[]).flatMap(l => l.txIds || [])).map(String));
   const since = Date.now() - 120 * 864e5;
-  return (txLog||[]).filter(t => t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && t.dest !== 'NG' && bdTime(t) > since && !used.has(String(t.id)))
+  return (txLog||[]).filter(t => t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && t.dest && t.dest !== 'NG' && !/작업지시|복구/.test(String(t.note||'')) && bdTime(t) > since && !used.has(String(t.id)))
     .sort((a,b) => bdTime(b) - bdTime(a));
 }
 function hqSaleView(){
