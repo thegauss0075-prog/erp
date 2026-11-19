@@ -802,6 +802,9 @@ function patPrint(){
 async function patDel(id){ const rs = prompt('삭제 사유를 입력하세요 (이력에 남습니다)'); if (!rs || !rs.trim()) return;
   await sb.from('patrol_checks').update({edit_reason: rs.trim()}).match({id});
   const r = await sb.from('patrol_checks').delete().match({id}); if (r.error) { alert(r.error.message); return; } toast('삭제했습니다 — 이전 내용은 이력에 남았습니다'); loadReport(); }
+const isMS = it => /master\s*sample/i.test(String(it && it.item || ''));
+function msParse(v){ const t = koToEn(String(v || '')).toUpperCase(), m = t.match(/MS:\s*([^:|]+?)\s*:\s*E(\d{8})/); if (!m) return null;
+  const exp = m[2].slice(0, 4) + '-' + m[2].slice(4, 6) + '-' + m[2].slice(6, 8); return {code: m[1].trim(), exp, over: exp < ymd(new Date())}; }
 function checkDlg(codes, opt){
   opt = opt || {};
   const ms = (Array.isArray(codes) ? codes : [codes]).map(c => M.mach.find(x => x.code === c)).filter(Boolean); if (!ms.length) return;
@@ -816,7 +819,7 @@ function checkDlg(codes, opt){
   const row = (it, i) => `<tr>
       <td><b>${E(it.item)}</b><div class="vi">${E(it.item_vi||'')}</div></td><td class="muted">${E(it.standard||'')}${rg[i] ? `<br><b style="color:var(--brand)">허용 ${rangeTxt(rg[i])}</b>` : ''}${it.method ? '<br>' + E(it.method) : ''}</td>
       <td><button class="btn ${st[i].ok === true ? 'ok' : ''}" style="padding:10px 14px" data-i="${i}" data-v="1">OK</button> <button class="btn" style="padding:10px 14px;${st[i].ok === false ? 'background:var(--bad);color:#fff' : ''}" data-i="${i}" data-v="0">NG</button></td>
-      <td><input data-val="${i}" value="${E(st[i].value)}" ${rg[i] ? 'inputmode="decimal" placeholder="필수"' : ''} style="width:100px;padding:8px;${rg[i] && st[i].value !== '' && st[i].ok === false ? 'border:2px solid var(--bad);color:var(--bad);font-weight:700' : rg[i] && st[i].value === '' ? 'border:2px solid #F59E0B' : ''}"></td></tr>`;
+      <td>${isMS(it) ? `<input data-ms="${i}" placeholder="📷 샘플 QR 스캔" style="width:150px;padding:8px;border:2px solid ${st[i].value ? (st[i].ok ? 'var(--ok)' : 'var(--bad)') : '#F59E0B'}"><div style="font-size:12px;margin-top:3px;${st[i].ok === false ? 'color:var(--bad);font-weight:700' : 'color:var(--ok)'}">${E(st[i].value || '')}</div>` : `<input data-val="${i}" value="${E(st[i].value)}" ${rg[i] ? 'inputmode="decimal" placeholder="필수"' : ''} style="width:100px;padding:8px;${rg[i] && st[i].value !== '' && st[i].ok === false ? 'border:2px solid var(--bad);color:var(--bad);font-weight:700' : rg[i] && st[i].value === '' ? 'border:2px solid #F59E0B' : ''}">`}</td></tr>`;
   const draw = () => { ov.innerHTML = `<div class="box" style="max-width:760px"><h2>📋 일상점검 <span class="vi">Kiểm tra hằng ngày</span>${[...new Set(ms.map(m => m.process_code))].some(isCTQ) ? ctqTag(ms.find(m => isCTQ(m.process_code)).process_code) : ''}</h2>${[...new Set(ms.map(m => m.process_code))].some(isCTQ) ? '<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:9px;padding:7px 10px;margin-bottom:8px;font-size:13.5px;color:#991B1B"><b>CTQ 중점관리 공정</b> — 측정값을 꼭 기록하고, 기준을 벗어나면 작업하지 말고 바로 관리자에게 알리세요.<br><span class="vi">Công đoạn quan trọng (CTQ): ghi giá trị đo; nếu ngoài tiêu chuẩn, dừng và báo quản lý ngay.</span></div>' : ''}<div class="muted" style="margin-bottom:10px">${ms.map(m => E(m.name)).join(' · ')} · ${ymd(new Date())} · ${E(workName(CW))}</div>
     <div style="max-height:56vh;overflow:auto"><table><thead><tr><th>항목</th><th>기준 / 방법</th><th style="width:170px">결과</th><th style="width:110px">측정값</th></tr></thead><tbody>${ms.map(m => {
       const rs = items.map((it, i) => [it, i]).filter(([it]) => it._m === m.code); if (!rs.length) return '';
@@ -831,14 +834,26 @@ function checkDlg(codes, opt){
   const paint = i => { const okB = ov.querySelector(`[data-i="${i}"][data-v="1"]`), ngB = ov.querySelector(`[data-i="${i}"][data-v="0"]`), inp = ov.querySelector(`[data-val="${i}"]`);
     if (okB) okB.classList.toggle('ok', st[i].ok === true); if (ngB) { ngB.style.background = st[i].ok === false ? 'var(--bad)' : ''; ngB.style.color = st[i].ok === false ? '#fff' : ''; }
     if (inp && rg[i]) { const bad = st[i].value !== '' && st[i].ok === false; inp.style.border = bad ? '2px solid var(--bad)' : st[i].value === '' ? '2px solid #F59E0B' : '1px solid var(--line)'; inp.style.color = bad ? 'var(--bad)' : ''; inp.style.fontWeight = bad ? '700' : ''; } };
+  // ✅ [2026-11-19] 마스터 샘플 유효기간 — QR(MS: 관리번호 : E유효기간) 스캔, 기한 지난 샘플은 NG 고정 → 그날 점검 NG라 작업 시작이 막힌다
+  ov.addEventListener('keydown', e => { const k = e.target.dataset && e.target.dataset.ms; if (k === undefined || e.key !== 'Enter') return; e.preventDefault();
+    const i = +k, r = msParse(e.target.value); e.target.value = '';
+    if (!r) { alert('마스터 샘플 QR 라벨이 아닙니다. ERP에서 인쇄한 샘플 라벨을 찍으세요.\nKhông phải nhãn mẫu chuẩn.'); return; }
+    const vals = String(st[i].value || '').split(', ').filter(Boolean).filter(x => !x.startsWith(r.code + ' '));
+    vals.push(`${r.code} ~${r.exp}${r.over ? ' 만료' : ''}`); st[i].value = vals.join(', ');
+    st[i].ok = !/만료/.test(st[i].value);
+    if (r.over) alert(`⛔ 마스터 샘플 ${r.code} 유효기간이 지났습니다 (${r.exp}).\n이 샘플로 검사할 수 없습니다 — 재검증 후 라벨을 다시 인쇄하세요.\nMẫu chuẩn đã hết hạn — không được làm việc.`);
+    redraw(); setTimeout(() => { const f = ov.querySelector(`[data-ms="${i}"]`); f && f.focus(); }, 30); });
   ov.addEventListener('input', e => { const v = e.target.dataset && e.target.dataset.val; if (v === undefined || !rg[+v]) return; if (isNaN(valNum(st[+v].value))) st[+v].ok = null; else judge(+v); paint(+v); });
   ov.onclick = async e => { const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.x) { ov.remove(); if (opt.onCancel) opt.onCancel(); return; }
     if (b.dataset.all) { st.forEach((x, i) => { x.ok = true; judge(i); }); redraw(); return; }
     if (b.dataset.mall) { items.forEach((it, i) => { if (it._m === b.dataset.mall) { st[i].ok = true; judge(i); } }); redraw(); return; }
+    if (b.dataset.i !== undefined && isMS(items[+b.dataset.i]) && b.dataset.v === '1' && (!st[+b.dataset.i].value || /만료/.test(st[+b.dataset.i].value))) { alert(st[+b.dataset.i].value ? '⛔ 유효기간이 지난 마스터 샘플이 있어 OK를 고를 수 없습니다.' : '마스터 샘플 QR 라벨을 먼저 스캔하세요.\nQuét nhãn QR mẫu chuẩn trước.'); return; }
+    if (b.dataset.all) { const ms = items.findIndex((it, i) => isMS(it) && (!st[i].value || /만료/.test(st[i].value))); if (ms >= 0) { st.forEach((x, i) => { if (!isMS(items[i])) { x.ok = true; judge(i); } }); redraw(); alert('마스터 샘플 QR은 따로 스캔해야 합니다.\nQuét nhãn mẫu chuẩn.'); return; } }
     if (b.dataset.i !== undefined) { const i = +b.dataset.i; st[i].ok = b.dataset.v === '1'; judge(i); if (rg[i] && b.dataset.v === '1' && st[i].ok === false) toast(`⛔ 측정값 ${st[i].value}이(가) 허용범위(${rangeTxt(rg[i])}) 밖이라 OK를 고를 수 없습니다`); redraw(); return; }
     if (b.dataset.go) {
       ov.querySelectorAll('[data-val]').forEach(inp => { st[+inp.dataset.val].value = inp.value; judge(+inp.dataset.val); });
+      const noMS = items.findIndex((it, i) => isMS(it) && !st[i].value); if (noMS >= 0) { redraw(); alert(`"${items[noMS].item}" — 마스터 샘플 QR 라벨을 스캔하세요.\nQuét nhãn QR mẫu chuẩn.`); return; }
       const noVal = items.findIndex((it, i) => rg[i] && isNaN(valNum(st[i].value)));
       if (noVal >= 0) { redraw(); alert(`${multi ? machName(items[noVal]._m) + ' — ' : ''}"${items[noVal].item}" 측정값을 입력하세요. (허용 ${rangeTxt(rg[noVal])})\nNhập giá trị đo.`); return; }
       const miss = st.findIndex(x => x.ok === null); if (miss >= 0) { alert(`${multi ? machName(items[miss]._m) + ' — ' : ''}"${items[miss].item}" 결과를 고르세요.`); return; }
