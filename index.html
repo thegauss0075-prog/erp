@@ -18015,10 +18015,10 @@ const QM_DEF = {
     fields: [['date','교육일','date'],['kind','구분','sel',['신입 교육','정기 교육','특별 교육','자격 인증','고객 요구 교육']],['course','과정명','text'],['trainer','강사','text'],['target','대상자 (이름 쉼표로)','area'],['hours','시간','num'],['result','결과','sel',['이수','미이수','자격 취득','재교육 필요']],['validUntil','자격 유효기한','date'],['note','비고','area']],
     cols: ['date','kind','course','trainer','target','hours','result','validUntil'], def: () => ({date: qmToday(), kind: '정기 교육', result: '이수'})},
   qdoc: {title: '품질 문서 관리', vi: 'Quản lý tài liệu', icon: '📁',
-    fields: [['docNo','문서번호','text'],['title','문서명','text'],['kind','구분','sel',['품질매뉴얼','절차서','공정흐름도','PFMEA','관리계획서 (CP)','작업표준서','검사기준서','도면·사양서','고객 요구사항 (CSR·PPAP)','성적서·양식','외부 문서 (규격·법규)','기타']],['code','관련 품목','text'],['rev','개정 번호','text'],['revDate','개정일','date'],['owner','담당자','text'],['status','상태','sel',['유효','개정 중','폐기']],['link','파일 (첨부·링크·NAS 경로)','text'],['note','개정 내용','area']],
-    cols: ['docNo','kind','title','code','rev','revDate','status','owner','link'], def: () => ({status: '유효', kind: '작업표준서', revDate: qmToday()})}
+    fields: [['docNo','문서번호','text'],['title','문서명','text'],['kind','구분','sel',['품질매뉴얼','절차서','공정흐름도','PFMEA','관리계획서 (CP)','작업표준서','검사기준서','도면·사양서','고객 요구사항 (CSR·PPAP)','성적서·양식','외부 문서 (규격·법규)','기타']],['code','관련 품목','text'],['rev','개정 번호','text'],['revDate','개정일','date'],['owner','담당자','text'],['author','작성자','text'],['reviewer','검토자','text'],['status','상태','sel',['유효','개정 중','폐기']],['link','파일 (첨부·링크·NAS 경로)','text'],['note','개정 내용','area']],
+    cols: ['docNo','kind','title','code','rev','revDate','status','approval','owner','link'], def: () => ({status: '유효', kind: '작업표준서', revDate: qmToday()})}
 };
-const QM_LBL = k => { for (const d of Object.values(QM_DEF)) { const f = d.fields.find(x => x[0] === k); if (f) return f[1]; } return k === 'nextCal' ? '다음 교정일' : k; };
+const QM_LBL = k => { for (const d of Object.values(QM_DEF)) { const f = d.fields.find(x => x[0] === k); if (f) return f[1]; } return k === 'nextCal' ? '다음 교정일' : k === 'approval' ? '승인' : k; };
 
 // ── 메뉴 ──────────────────────────────────────────────────
 const QM_NAV = [
@@ -18166,6 +18166,7 @@ function qmStatView(){
 function qmCell(k, r){
   let v = k === 'nextCal' ? (r.nextCal || qmAddMonths(r.lastCal, r.calCycle)) : r[k];
   if (k === 'status' || k === 'result' || k === 'grade') { const s = String(v || ''); return qmBadge(s || '-', /완료|승인|이수|유효|사용|취득|^A$/.test(s) ? 'g' : /반려|폐기|미이수|^D$/.test(s) ? 'r' : /진행|접수|분석|수립|확인|개정|수리|^C$/.test(s) ? 'y' : 'b'); }
+  if (k === 'approval') { const ok = r.approvedAt && String(r.approvedRev || '') === String(r.rev || ''); return ok ? `<span style="color:#166534;font-weight:700;font-size:12px" title="${hqE(r.approvedAt)}">✔ ${hqE(r.approvedBy || '')} ${hqE(String(r.approvedAt).slice(5, 10))}</span>` : '<span style="color:#B45309;font-size:12px;font-weight:700">미승인</span>'; }
   if (k === 'link') { const u = String(v || '').trim(); return !u ? '<span style="color:#CBD5E1">－</span>' : /^https?:\/\//i.test(u) ? `<a href="${hqE(u)}" target="_blank" onclick="event.stopPropagation()" title="${hqE(u)}" style="text-decoration:none">📎 열기</a>` : `<span title="${hqE(u)}" style="font-size:12px;color:#5D6977">📁 ${hqE(u.length > 28 ? '…' + u.slice(-26) : u)}</span>`; }
   if (k === 'nextCal') { const st = qmCalState(r); return v ? `<span style="font-weight:700;color:${st === 'over' ? '#b91c1c' : st === 'soon' ? '#b45309' : '#1F2A37'}">${hqE(v)}${st === 'over' ? ' (지남)' : st === 'soon' ? ' (임박)' : ''}</span>` : '-'; }
   if (k === 'dueDate' && r.status !== '완료') { const d = qmDays(v); return v ? `<span style="${d !== null && d < 0 ? 'color:#b91c1c;font-weight:700' : ''}">${hqE(v)}${d !== null && d < 0 ? ' (지남)' : ''}</span>` : '-'; }
@@ -18241,6 +18242,13 @@ function qmModal(html){
 function qmClose(){ const m = document.getElementById('qm-modal'); if (m) m.remove(); }
 // ✅ [2026-11-19] 문서관리 파일 첨부 — 고른 파일을 ERP 서버의 Google Drive '품질문서' 폴더에 올리고 링크를 채운다
 //    (NAS 경로나 다른 링크를 직접 적어도 된다)
+function qmApprovalBox(rec){
+  const ok = rec.approvedAt && String(rec.approvedRev || '') === String(rec.rev || ''), h = rec.approvals || [];
+  return `<div style="margin-top:12px;border:1px solid ${ok ? '#86EFAC' : '#FCD34D'};background:${ok ? '#F0FDF4' : '#FFFBEB'};border-radius:9px;padding:10px 12px;font-size:13px">
+    <b>🖋 전자 승인</b> ${ok ? `<span style="color:#166534;font-weight:700">✔ 승인 — ${hqE(rec.approvedBy)} · ${hqE(String(rec.approvedAt).slice(0, 16).replace('T', ' '))} · ${hqE(rec.approvedRev)}</span>` : `<span style="color:#92400E;font-weight:700">미승인 ${rec.rev ? '(' + hqE(rec.rev) + ')' : ''}</span>`}
+    <div style="color:#5D6977;margin-top:4px">작성 ${hqE(rec.author || '-')} · 검토 ${hqE(rec.reviewer || '-')} · 승인 ${hqE(ok ? rec.approvedBy : '-')} — 승인은 법인장(마스터)만, 승인 후 내용을 바꾸면 승인이 풀리고 "개정 중"이 됩니다.${isMaster ? '' : ' (승인하려면 마스터로 로그인)'}</div>
+    ${h.length ? `<div style="color:#5D6977;margin-top:4px">승인 이력: ${h.map(x => `${hqE(x.rev)} ${hqE(x.by)} ${hqE(String(x.at).slice(0, 10))}`).join(' · ')}</div>` : ''}</div>`;
+}
 function qmFileField(v){
   return `<div style="display:flex;gap:6px;align-items:center"><input data-k="link" id="qm-link" value="${hqE(v || '')}" placeholder="📎 파일 첨부 또는 링크·NAS 경로 입력" style="${HQ_IN};flex:1">
     <label style="padding:7px 10px;border-radius:7px;border:1px solid #0d9488;background:#fff;color:#0d9488;font-size:12.5px;cursor:pointer;white-space:nowrap;font-weight:600">📎 파일 첨부<input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg" style="display:none" onchange="qmFileUpload(this.files[0]);this.value=''"></label>
@@ -18270,10 +18278,11 @@ function qmEdit(store, id, preset){
     return `<input data-k="${k}" type="${t === 'num' ? 'number' : t === 'date' ? 'date' : 'text'}" value="${hqE(v)}" style="${HQ_IN}">`; };
   qmModal(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><h3 style="margin:0">${d.icon} ${d.title} ${r ? '수정' : '추가'}</h3><span style="flex:1"></span><button onclick="qmClose()" style="border:0;background:none;font-size:20px;cursor:pointer">✕</button></div>
     <div id="qm-form" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${d.fields.map(f => hqFld(f[1], '', store === 'qdoc' && f[0] === 'link' ? qmFileField(rec.link) : inp(f), f[2] === 'area')).join('')}</div>
+    ${store === 'qdoc' ? qmApprovalBox(rec) : ''}
     ${r && (r.updatedBy || r.updatedAt) ? `<div style="font-size:11.5px;color:#8A95A3;margin-top:8px">최근 수정: ${hqE(r.updatedBy || '')} ${hqE(String(r.updatedAt || '').slice(0, 16).replace('T', ' '))}</div>` : ''}
-    <div style="display:flex;gap:8px;margin-top:14px">${r ? `<button onclick="qmDel()" style="padding:8px 14px;border-radius:7px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}<span style="flex:1"></span><button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button><button id="qm-save" onclick="qmSave()" style="padding:8px 18px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">💾 저장</button></div>`);
+    <div style="display:flex;gap:8px;margin-top:14px">${r ? `<button onclick="qmDel()" style="padding:8px 14px;border-radius:7px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}<span style="flex:1"></span>${store === 'qdoc' && isMaster ? `<button onclick="qmSave(true)" style="padding:8px 14px;border-radius:7px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;font-weight:700;cursor:pointer" title="지금 내용(개정 번호)으로 승인 — 상태가 유효로 바뀝니다">✔ 저장 후 승인</button>` : ''}<button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button><button id="qm-save" onclick="qmSave()" style="padding:8px 18px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">💾 저장</button></div>`);
 }
-async function qmSave(){
+async function qmSave(approve){
   const e = QM.ed; if (!e) return; const d = QM_DEF[e.store], rec = {...e.rec};
   document.querySelectorAll('#qm-form [data-k]').forEach(el => { const k = el.dataset.k, f = d.fields.find(x => x[0] === k); rec[k] = f && f[2] === 'num' ? (el.value === '' ? '' : +el.value) : el.value.trim(); });
   const need = {qcrit: ['customer','item'], qfai: ['name'], qclaim: ['customer','defect'], qtool: ['name'], qedu: ['course'], qdoc: ['title']}[e.store] || [];
@@ -18282,6 +18291,14 @@ async function qmSave(){
   if (e.store === 'qclaim' && rec.status === '완료' && !rec.closeDate) rec.closeDate = qmToday();
   if (e.store === 'qfai' && /승인|반려/.test(rec.status) && !rec.approveDate) rec.approveDate = qmToday();
   if (!rec.id) rec.id = e.store + '-' + Date.now();
+  if (e.store === 'qdoc') { // ✅ [2026-11-19] 전자 승인: 내용이 바뀌면 승인 해제 · '유효'는 현재 개정이 승인된 경우만
+    const old = e.isNew ? {} : (HQS.qdoc || []).find(x => String(x.id) === String(rec.id)) || {};
+    const content = ['docNo','title','kind','code','rev','revDate','link'].some(k => String(rec[k] ?? '') !== String(old[k] ?? ''));
+    if (old.approvedAt && content && !approve) { rec.approvedBy = ''; rec.approvedAt = ''; rec.approvedRev = ''; if (rec.status !== '폐기') rec.status = '개정 중'; alert('문서 내용(번호·제목·개정·파일 등)이 바뀌어 승인이 해제되었습니다. 다시 승인을 받아야 "유효"가 됩니다.'); }
+    if (approve) { if (!isMaster) { alert('승인은 법인장(마스터)만 할 수 있습니다.'); return; } if (!String(rec.rev || '').trim()) { alert('개정 번호를 입력하세요.'); return; } if (!String(rec.link || '').trim() && !confirm('첨부 파일(링크)이 없습니다. 그래도 승인할까요?')) return;
+      const at = new Date().toISOString(); rec.approvedBy = CURRENT_USER || ''; rec.approvedAt = at; rec.approvedRev = rec.rev; rec.status = '유효'; rec.approvals = [...(old.approvals || rec.approvals || []), {rev: rec.rev, by: rec.approvedBy, at}]; }
+    else if (rec.status === '유효' && (!rec.approvedAt || String(rec.approvedRev || '') !== String(rec.rev || ''))) { rec.status = '개정 중'; alert('승인되지 않은 개정은 "유효"로 저장할 수 없습니다 → "개정 중"으로 저장합니다. 법인장 승인 후 유효가 됩니다.'); }
+  }
   rec.updatedBy = CURRENT_USER || ''; rec.updatedAt = new Date().toISOString();
   const b = document.getElementById('qm-save'); if (b) { b.disabled = true; b.textContent = '저장 중…'; }
   const res = await retrySafe(() => apiAuto('saveHQStore', {store: e.store, rec}));
