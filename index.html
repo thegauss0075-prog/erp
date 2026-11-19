@@ -18435,11 +18435,40 @@ function qmMesSkillHtml(){
   const exN = ks.filter(k => k.valid_until && k.valid_until < t).length;
   return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0;font-size:16px">🪪 작업자 자격표 <span style="font-size:12px;color:#8A95A3;font-weight:400">${ks.length}건</span></h3>${exN ? qmBadge('유효기간 지남 ' + exN, 'r') : ''}<span style="flex:1"></span>
     ${!qmGauges().length && !ks.length ? `<button onclick="qmImportFromMES()" style="padding:7px 12px;border-radius:7px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-size:12.5px;cursor:pointer;font-weight:600">⬇ MES에 있던 계측기·자격 가져오기 (최초 1회)</button>` : ''}
+    <label style="padding:7px 12px;border-radius:7px;border:1px solid #0d9488;background:#fff;color:#0d9488;font-size:12.5px;cursor:pointer;font-weight:600" title="자격인증 엑셀의 'ERP_자격등록' 시트(사번·공정코드·레벨·인증일·유효기간·평가자)를 읽어 등록">📥 엑셀 가져오기<input type="file" accept=".xlsx,.xls" style="display:none" onchange="qmSkillImport(this.files[0]);this.value=''"></label>
     <button onclick="qmSkillPrint()" style="padding:7px 12px;border-radius:7px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-size:12.5px;cursor:pointer">🖨 자격 인증 현황표</button></div>${qmSrcNote()}
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px;font-size:12px">${Object.entries(QM_SKL).map(([k, v]) => `<span><span style="display:inline-block;padding:1px 7px;border-radius:6px;background:${v[2]};color:${v[3]};font-weight:800">${k}</span> ${v[0]}${+k === 1 ? ' (작업 불가)' : ''}</span>`).join('')}<span style="color:#8A95A3">칸을 눌러 등록·수정 · 빨간 테두리 = 유효기간 지남</span></div>
   <div class="tw" id="qm-skill-mx" style="margin-bottom:18px"><table style="width:100%;font-size:12.5px"><thead><tr><th>작업자</th>${ps.map(p => `<th style="text-align:center;white-space:nowrap">${hqE(p.n)}${on(p.c) ? '' : '<div style="font-size:10.5px;color:#8A95A3;font-weight:400">관리 안 함</div>'}</th>`).join('')}</tr></thead>
   <tbody>${ws.map(w => `<tr><td style="white-space:nowrap"><b>${hqE(w.n)}</b> <span style="font-size:11px;color:#8A95A3">${hqE(w.c)}${w.t ? ' · ' + hqE(w.t) : ''}</span></td>${ps.map(p => cell(w, p)).join('')}</tr>`).join('') || `<tr><td colspan="${ps.length + 1}" class="empty">작업자 명단이 없습니다. 이 브라우저에서 MES에 한 번 로그인하면 명단을 받아옵니다.</td></tr>`}</tbody></table></div>
   <div style="font-size:11.5px;color:#8A95A3;margin:-10px 0 16px">공정에 자격이 하나라도 등록되면, MES에서 그 공정은 자격 없는 작업자가 작업을 시작할 수 없습니다. 작업자 입사·퇴사는 MES 작업자 명단에서 관리합니다.</div>`;
+}
+// ✅ [2026-11-19] 자격인증 엑셀 → ERP 자격 등록 ('ERP_자격등록' 시트: 사번 | … | 공정코드 | … | 판정 | 레벨 | 인증일 | 유효기간 | 평가자)
+//    판정이 '입력 필요'이거나 레벨이 빈 줄은 건너뜀. 레벨 1(불합격)을 처음 등록하면 그 공정은 MES에서 자격 관리가 켜진다 → 미리 경고
+async function qmSkillImport(file){
+  if (!file) return; if (typeof XLSX === 'undefined') { alert('엑셀 읽기 기능을 불러오지 못했습니다. 새로고침 후 다시 해주세요.'); return; }
+  let rows;
+  try { const wb = XLSX.read(await file.arrayBuffer(), {type: 'array'}); const sn = wb.SheetNames.find(n => /ERP_자격등록/.test(n));
+    if (!sn) { alert("'ERP_자격등록' 시트가 없습니다. ERP 등록용 자격인증 엑셀을 고르세요."); return; }
+    rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], {header: 1, defval: '', raw: true}); } catch (e) { alert('엑셀을 읽지 못했습니다: ' + e.message); return; }
+  const hi = rows.findIndex(r => r.some(c => /^사번/.test(String(c))) && r.some(c => /^레벨/.test(String(c)))); if (hi < 0) { alert('머리글(사번·레벨)을 찾지 못했습니다.'); return; }
+  const H = rows[hi].map(c => String(c).split('\n')[0].trim()), col = k => H.findIndex(h => h.startsWith(k));
+  const d = v => { if (!v) return ''; if (v instanceof Date) { const x = new Date(v.getTime() - v.getTimezoneOffset() * 60000); return x.toISOString().slice(0, 10); } if (typeof v === 'number') return new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10); return String(v).slice(0, 10); };
+  const ci = {wk: col('사번'), nm: col('성명'), pc: col('공정코드'), jd: col('판정'), lv: col('레벨'), c: col('인증일'), v: col('유효기간'), e: col('평가자'), n: col('비고')};
+  const recs = [], skip = [];
+  rows.slice(hi + 1).forEach(r => { const wk = String(r[ci.wk] || '').trim(), pc = String(r[ci.pc] || '').trim().toUpperCase(), lv = +r[ci.lv];
+    if (!wk || !pc) return;
+    if (!(lv >= 1 && lv <= 4)) { skip.push(`${wk} ${r[ci.nm] || ''} — ${r[ci.jd] || '레벨 없음'}`); return; }
+    recs.push({id: wk + '|' + pc, worker_code: wk, process_code: pc, level: lv, certified_on: d(r[ci.c]), valid_until: d(r[ci.v]), evaluator: String(r[ci.e] || ''), note: [String(r[ci.jd] || ''), '엑셀: ' + file.name].filter(Boolean).join(' · '), _nm: String(r[ci.nm] || '')}); });
+  if (!recs.length) { alert('등록할 줄이 없습니다.' + (skip.length ? '\n\n건너뜀:\n' + skip.join('\n') : '') + '\n\n엑셀에서 평가표를 입력하고 저장한 뒤 다시 가져오세요. (판정·레벨은 엑셀에서 저장해야 값이 생깁니다)'); return; }
+  const ks = qmSkills(), newPc = [...new Set(recs.map(r => r.process_code))].filter(pc => !ks.some(k => k.process_code === pc));
+  const lv1 = recs.filter(r => r.level === 1);
+  const msg = `자격 ${recs.length}건을 등록합니다.\n\n` + recs.map(r => `· ${r.worker_code} ${r._nm} — ${r.process_code} 레벨 ${r.level}${r.valid_until ? ' (~' + r.valid_until + ')' : ''}`).join('\n')
+    + (skip.length ? `\n\n건너뜀 ${skip.length}건:\n` + skip.join('\n') : '')
+    + (newPc.length ? `\n\n⚠ ${newPc.join(', ')} 공정은 지금 자격 기록이 없습니다. 등록하면 MES에서 이 공정은 자격 없는 작업자가 작업을 시작할 수 없게 됩니다.` : '')
+    + (lv1.length ? `\n⚠ 레벨 1(교육 중) ${lv1.length}명은 이 공정 작업이 막힙니다.` : '') + '\n\n계속할까요?';
+  if (!confirm(msg)) return;
+  let ok = 0; for (const r of recs) { delete r._nm; if (await qmPut('qskill', r)) ok++; else break; }
+  qmRender(); alert(`자격 ${ok}건을 등록했습니다.`);
 }
 function qmSkillDlg(wk, pc){
   const k = qmSkills().find(x => x.worker_code === wk && x.process_code === pc) || {}, t = qmToday();
