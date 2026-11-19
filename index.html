@@ -14607,7 +14607,9 @@ function hqSaleView(){
 function hqsSaleTotals(s){ const sup = hqsLineTot(s.lines), vat = Math.round(sup * (+s.vatRate||0)) / 100; return {sup, vat, total: sup + vat}; }
 function hqSaleEdit(id, preset){
   const r = id ? HQS.sale.find(x => String(x.id) === String(id)) : null;
-  HQS.ed = r ? JSON.parse(JSON.stringify(r)) : Object.assign({id: String(Date.now()), date: hqToday(), cur: 'USD', vatRate: '', lines: [{code:'', name:'', qty:'', price:''}]}, preset || {});
+  // ✅ [2026-11-19] 새 판매일 기본값 = 지금 보고 있는 월 (지난 달을 보고 있으면 그 달 말일)
+  const vm = HQS.sm, tm = hqToday().slice(0, 7), dDef = vm && vm !== 'all' && vm !== tm ? (vm < tm ? new Date(Date.UTC(+vm.slice(0, 4), +vm.slice(5, 7), 0)).toISOString().slice(0, 10) : vm + '-01') : hqToday();
+  HQS.ed = r ? JSON.parse(JSON.stringify(r)) : Object.assign({id: String(Date.now()), date: dDef, cur: 'USD', vatRate: '', lines: [{code:'', name:'', qty:'', price:''}]}, preset || {});
   _hqsRender = hqSaleRender; hqSaleRender();
 }
 function hqSaleRender(){
@@ -14640,7 +14642,7 @@ async function hqSaleSave(){
   r.vatRate = r.vatRate === '' || r.vatRate == null ? '' : +r.vatRate || 0;
   const t = hqsSaleTotals(r); r.supply = t.sup; r.vat = t.vat; r.total = t.total;
   hqsStamp(r, !HQS.sale.some(x => x.id === r.id));
-  if (await hqsSave('sale', r)) { hqClose('hq-s'); renderHQ(); }
+  if (await hqsSave('sale', r)) { hqClose('hq-s'); if (HQS.sm !== 'all') HQS.sm = String(r.date).slice(0, 7); renderHQ(); } // 저장한 판매의 월로 화면 이동
 }
 function hqSalePrint(id){ const r = HQS.sale.find(x => String(x.id) === String(id)); if (!r) return;
   hqsPrintDoc('거 래 명 세 서', 'STATEMENT OF TRANSACTION', r.sNo, r, [['공급받는자', r.customer], ['거래일', r.date], ['주문서', [r.cpoNo, (HQ.cpo.find(c => c.id === r.cpoId) || {}).custPoNo].filter(Boolean).join(' · ')], ['인보이스', r.invNo || ''], ['결제 예정일', r.dueDate || '']], r.note); }
