@@ -18258,7 +18258,7 @@ function qmCell(k, r){
 }
 function qmTable(store, list){
   const d = QM_DEF[store];
-  return `<div class="tw"><table style="width:100%"><thead><tr>${d.cols.map(c => `<th>${hqE(((d.fields.find(f => f[0] === c) || [])[1]) || QM_LBL(c))}</th>`).join('')}</tr></thead><tbody>
+  return `<div class="tw"><table style="width:100%"><thead><tr>${d.cols.map(c => `<th style="white-space:nowrap">${hqE(String(((d.fields.find(f => f[0] === c) || [])[1]) || QM_LBL(c)).split(' (')[0].split(' —')[0])}</th>`).join('')}</tr></thead><tbody>
   ${list.map(r => `<tr style="cursor:pointer" onclick="qmEdit('${store}','${hqE(r.id)}')">${d.cols.map(c => `<td style="font-size:12.5px">${qmCell(c, r)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${d.cols.length}" class="empty">아직 등록된 내용이 없습니다. ➕ 버튼으로 추가하세요.</td></tr>`}</tbody></table></div>`;
 }
 function qmListView(store){
