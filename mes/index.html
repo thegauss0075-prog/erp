@@ -223,7 +223,8 @@ function woAutoSync(){
 async function loadMaster(){
   const [p, m, w, r, o, rt, g, ci, sk, c4] = await Promise.all([sb.from('processes').select('*').order('seq'), sb.from('machines').select('*').order('code'), sb.from('workers').select('*').order('name'), sb.from('stop_reasons').select('*').order('seq'), sb.from('work_orders').select('*').order('order_no', {ascending: false}), sb.from('routings').select('*').order('seq'), sb.from('gauges').select('*').order('code'), sb.from('check_items').select('*').order('seq'), sb.from('worker_skills').select('*'), sb.from('changes_4m').select('*').order('created_at', {ascending: false}).limit(500)]);
   M.proc = p.data || []; M.mach = m.data || []; M.work = w.data || []; M.reasons = r.data || []; M.wo = o.data || []; M.route = rt.data || [];
-  M.gauge = g.data || []; M.chkItem = ci.data || []; M.skill = sk.data || []; M.c4 = c4.data || [];
+  M.gauge = g.data || []; M.chkItem = ci.data || [];
+  try { const pi = await sb.from('patrol_items').select('*').order('seq'); M.patItem = pi.error ? [] : (pi.data || []); } catch (e) { M.patItem = []; } M.skill = sk.data || []; M.c4 = c4.data || [];
   await qmErpApply(true);
 }
 // ✅ [2026-11-16] 계측기·검교정 / 작업자 자격은 ERP(품질관리)가 원본 — MES는 받아서 읽기만 한다 (작업지시와 같은 방식)
@@ -268,6 +269,7 @@ async function loadLive(fromIso){
   const map = {}; [...(a.data||[]), ...(b.data||[])].forEach(x => map[x.id] = x); M.rec = Object.values(map).sort((x,y) => String(y.created_at).localeCompare(String(x.created_at)));
   M.ev = c.data || [];
   const ck = await sb.from('machine_checks').select('*').eq('check_date', ymd(new Date())).order('created_at', {ascending: false}).limit(500); M.chk = ck.data || [];
+  try { const pc = await sb.from('patrol_checks').select('*').eq('check_date', ymd(new Date())).order('created_at').limit(500); M.pat = pc.error ? [] : (pc.data || []); } catch (e) { M.pat = []; }
   try { const q = await sb.from('ncr').select('id,status,qty').in('status', ['open','decided','approved']); M.ncrOpen = q.error ? [] : (q.data || []); } catch (e) { M.ncrOpen = []; }
   // 현황판(TV)은 알림 줄(4M 초품·교정·자격)도 실시간으로 — 작은 표라 매번 다시 읽는다 (2026-11-12)
   if (S.view === 'tv') { try { const [g, sk, c4] = await Promise.all([sb.from('gauges').select('*'), sb.from('worker_skills').select('*'), sb.from('changes_4m').select('*').order('created_at', {ascending: false}).limit(200)]);
@@ -415,6 +417,7 @@ function floorView(){
       ${'BarcodeDetector' in window ? '<button class="btn" onclick="camScan()">📷 카메라</button>' : ''}
       <button class="btn" onclick="this.disabled=true;syncWO(false).then(render)" title="ERP에서 새로 발행한 작업지시 받기 (2분마다 자동으로도 받음)">🔄 작업지시 받기<span class="vi">Tải lệnh SX</span></button>
     </div>
+    ${patrolBar(S.proc)}
     ${running.length ? `<div class="card" style="margin-bottom:12px;border-color:#86EFAC;background:#F0FDF4"><h2>⏱ 진행 중 <span class="vi">Đang làm</span></h2>${running.map(r => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #D1FAE5;flex-wrap:wrap">
         <div style="flex:1;min-width:200px"><b>${E(r.item_name||'')}</b> <span class="muted">${E(r.order_no||'')} · ${E(workName(r.worker_code))}${r.machine_code ? ' · ' + E(machName(r.machine_code)) : ''}</span><div class="muted">시작 ${hm(r.start_at)} · ${dur(Date.now() - new Date(r.start_at))} 경과${(p => p.n ? ` · <b style="color:var(--ok)">중간 저장 ${p.n}회 · 양품 ${N(p.g)}</b>` : '')(partOf(r.id))}</div></div>
         ${partOf(r.id).n ? '' : `<button class="btn" onclick="cancelRun(${r.id})" title="잘못 시작한 작업 취소">✕ 시작 취소</button>`}<button class="btn big" style="border-color:var(--ok);color:var(--ok)" onclick="finishDlg(${r.id}, true)" title="작업은 계속하고 지금까지 수량만 저장">📥 중간 저장<span class="vi">Lưu giữa ca</span></button><button class="btn ok big" onclick="finishDlg(${r.id})">■ 종료·실적 입력</button></div>`).join('')}</div>` : ''}
@@ -723,6 +726,82 @@ function stdRange(std){ const t = String(std || '').replace(/,/g, '').replace(/\
   return null; }
 function rangeTxt(r){ const f = x => +x.toFixed(4); return r.hi === Infinity ? `${f(r.lo)} 이상` : r.lo === -Infinity ? `${f(r.hi)} 이하` : `${f(r.lo)} ~ ${f(r.hi)}`; }
 function valNum(v){ const m = String(v || '').replace(/,/g, '.').match(/-?\d+(?:\.\d+)?/); return m ? +m[0] : NaN; }
+// ✅ [2026-11-19] 공정 패트롤 (초·중·종물, 하루 3회) — 권선 재단 와이어 핀홀 등 (영화테크·현대차 요청)
+//   항목: patrol_items(공정별) · 기록: patrol_checks (일자·초/중/종·작업지시·와이어 LOT·항목별 결과)
+const PAT_SLOTS = ['초','중','종'];
+const patItems = pc => (M.patItem || []).filter(i => i.active !== false && i.process_code === pc).sort((a, b) => (a.seq || 0) - (b.seq || 0));
+const patVal = (c, key) => { const x = (c.results || []).find(r => String(r.item).includes(key)); return x ? (x.value ?? '') : ''; };
+function patrolBar(pc){
+  if (!pc || !patItems(pc).length) return '';
+  const today = (M.pat || []).filter(c => c.process_code === pc);
+  const chip = sl => { const c = today.filter(x => x.slot === sl).slice(-1)[0];
+    return `<span style="display:inline-block;padding:5px 10px;border-radius:8px;font-weight:700;font-size:14px;${c ? (c.all_ok ? 'background:#DCFCE7;color:#166534' : 'background:#FEE2E2;color:#B91C1C') : 'background:#F1F5F9;color:#64748B'}">${sl}물 ${c ? (c.all_ok ? '✔ ' : '✕ ') + hm(c.created_at) : '—'}</span>`; };
+  return `<div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-color:#BFDBFE;background:#F8FBFF">
+    <b>🔍 공정 패트롤 <span class="vi">Tuần tra công đoạn</span></b><span class="muted">초·중·종 하루 3회</span>${PAT_SLOTS.map(chip).join('')}<span style="flex:1"></span>
+    <button class="btn pri" onclick="patrolDlg('${E(pc)}')">🔍 패트롤 기록 / Ghi tuần tra</button></div>`;
+}
+function patrolDlg(pc){
+  if (!S.worker) { alert('먼저 작업자(검사자)를 고르세요.\nChọn người kiểm tra trước.'); return; }
+  const items = patItems(pc); if (!items.length) { alert('패트롤 항목이 없습니다.'); return; }
+  const done = new Set((M.pat || []).filter(c => c.process_code === pc).map(c => c.slot));
+  const sel = woOf(S.wo);
+  const st = {slot: PAT_SLOTS.find(x => !done.has(x)) || '종', wo: sel ? sel.order_no : '', lot: '', r: items.map(() => ({ok: null, value: ''}))};
+  const needVal = it => /기록/.test(it.method || '') || /핀홀/.test(it.item);
+  const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+  const draw = () => { ov.innerHTML = `<div class="box" style="max-width:760px"><h2>🔍 공정 패트롤 — ${E(procName(pc))}${ctqTag(pc)} <span class="vi">Tuần tra công đoạn</span></h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">${PAT_SLOTS.map(sl => `<button class="btn ${st.slot === sl ? 'pri' : ''}" data-slot="${sl}">${sl}물${done.has(sl) ? ' ✔' : ''}<span class="vi">${{'초':'Đầu ca','중':'Giữa ca','종':'Cuối ca'}[sl]}</span></button>`).join('')}
+      <span class="muted">검사자 ${E(workName(S.worker))}</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px"><label>작업지시<input id="pt-wo" value="${E(st.wo)}" placeholder="작업지시 번호" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px"></label>
+      <label>와이어 LOT (라벨 스캔)<input id="pt-lot" value="${E(st.lot)}" placeholder="📷 와이어 LOT 스캔 / Quét LOT dây" style="width:100%;padding:10px;border:2px solid var(--brand);border-radius:9px"></label></div>
+    <table><thead><tr><th>항목</th><th>기준 / 방법 / 시료</th><th style="width:170px">결과</th><th style="width:110px">측정값</th></tr></thead><tbody>${items.map((it, i) => `<tr>
+      <td><b>${E(it.item)}</b><div class="vi">${E(it.item_vi || '')}</div></td><td class="muted">${E(it.standard || '')}${it.method ? '<br>' + E(it.method) : ''}${it.sample && it.sample !== '-' ? '<br>시료: ' + E(it.sample) : ''}</td>
+      <td><button class="btn ${st.r[i].ok === true ? 'ok' : ''}" style="padding:10px 14px" data-i="${i}" data-v="1">OK</button> <button class="btn" style="padding:10px 14px;${st.r[i].ok === false ? 'background:var(--bad);color:#fff' : ''}" data-i="${i}" data-v="0">NG</button></td>
+      <td>${needVal(it) ? `<input data-val="${i}" value="${E(st.r[i].value)}" inputmode="decimal" placeholder="${/핀홀/.test(it.item) ? '핀홀 수' : '값'}" style="width:100px;padding:8px;border:2px solid #F59E0B">` : '<span class="muted">-</span>'}</td></tr>`).join('')}</tbody></table>
+    <input id="pt-note" placeholder="특이사항·조치 / Ghi chú" style="width:100%;margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:9px">
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="btn big" data-x="1">취소</button><button class="btn ok big" data-go="1">✔ 저장 / Lưu</button></div></div>`; };
+  const keep = () => { st.wo = $('pt-wo').value.trim(); st.lot = $('pt-lot').value.trim(); ov.querySelectorAll('[data-val]').forEach(x => st.r[+x.dataset.val].value = x.value.trim()); return $('pt-note').value; };
+  const redraw = () => { const n = keep(); draw(); $('pt-note').value = n; };
+  ov.addEventListener('keydown', e => { if (e.target.id === 'pt-lot' && e.key === 'Enter') { e.preventDefault(); e.target.value = koToEn(e.target.value).trim(); } });
+  ov.onclick = async e => { const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.x) { ov.remove(); return; }
+    if (b.dataset.slot) { st.slot = b.dataset.slot; redraw(); return; }
+    if (b.dataset.i !== undefined) { st.r[+b.dataset.i].ok = b.dataset.v === '1'; redraw(); return; }
+    if (b.dataset.go) {
+      const note = keep().trim();
+      items.forEach((it, i) => { if (/핀홀/.test(it.item) && st.r[i].value !== '' && valNum(st.r[i].value) > 0) st.r[i].ok = false; });
+      if (!st.lot) { alert('와이어 LOT을 스캔하세요.\nQuét LOT dây.'); return; }
+      const nv = items.findIndex((it, i) => needVal(it) && st.r[i].value === ''); if (nv >= 0) { redraw(); alert(`"${items[nv].item}" 값을 입력하세요.`); return; }
+      const miss = st.r.findIndex(x => x.ok === null); if (miss >= 0) { redraw(); alert(`"${items[miss].item}" 결과(OK/NG)를 고르세요.`); return; }
+      const ok = st.r.every(x => x.ok);
+      if (!ok && !note) { redraw(); alert('NG 항목이 있으면 특이사항(조치 내용)을 적어주세요.'); return; }
+      if (done.has(st.slot) && !confirm(`오늘 ${st.slot}물 패트롤 기록이 이미 있습니다. 하나 더 남길까요?`)) return;
+      const row = {check_date: ymd(new Date()), slot: st.slot, process_code: pc, wo_no: st.wo || null, lot: st.lot, worker_code: S.worker, results: items.map((it, i) => ({item: it.item, standard: it.standard || '', ok: st.r[i].ok, value: st.r[i].value || ''})), all_ok: ok, note: note || null, device: S.device};
+      const r = await sb.from('patrol_checks').insert(row); if (r.error) { alert('저장 실패: ' + r.error.message); return; }
+      ov.remove(); await loadLive(); render();
+      toast(ok ? `🔍 ${st.slot}물 패트롤 — 이상 없음` : `⛔ ${st.slot}물 패트롤 NG — 해당 LOT 사용 중지, 관리자에게 알리세요`);
+    } };
+  draw();
+}
+function patMatrix(list){
+  const days = []; for (let d = new Date(RP.from + 'T00:00:00'); ymd(d) <= RP.to; d.setDate(d.getDate() + 1)) days.push(ymd(d));
+  const pcs = [...new Set([...(M.patItem || []).map(i => i.process_code), ...list.map(c => c.process_code)])];
+  const cell = c => c ? `<td style="${c.all_ok ? '' : 'color:#B91C1C;font-weight:700'}">${hm(c.created_at)}</td><td style="font-family:monospace;font-size:11px">${E(c.lot || '')}</td><td>${E(patVal(c, '핀홀'))}</td><td>${c.all_ok ? '✔' : '✕'}</td><td>${E(workName(c.worker_code))}</td>` : '<td colspan="5" style="color:#94A3B8">－</td>';
+  return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="margin:0">공정 패트롤 점검표 (초·중·종물)</h2><span style="flex:1"></span><button class="btn" onclick="patPrint()">🖨 점검표 인쇄</button></div>
+  <div id="pat-mx">${pcs.map(pc => { const it = patItems(pc);
+    return `<h3 style="margin:10px 0 4px">${E(procName(pc))}${ctqTag(pc)}</h3><div style="font-size:12px;color:#5D6977;margin-bottom:4px">점검 항목: ${it.map(x => E(x.item) + (x.standard ? ' (' + E(x.standard) + ')' : '')).join(' · ')}</div>
+    <div style="overflow:auto"><table><thead><tr><th rowspan="2">일자</th>${PAT_SLOTS.map(sl => `<th colspan="5">${sl}물</th>`).join('')}</tr><tr>${PAT_SLOTS.map(() => '<th>시각</th><th>와이어 LOT</th><th>핀홀</th><th>판정</th><th>검사자</th>').join('')}</tr></thead><tbody>
+    ${days.map(d => `<tr><td>${d.slice(5)}</td>${PAT_SLOTS.map(sl => cell(list.filter(c => c.process_code === pc && c.check_date === d && c.slot === sl).slice(-1)[0])).join('')}</tr>`).join('')}</tbody></table></div>`; }).join('')}</div>`;
+}
+function patPrint(){
+  const mx = $('pat-mx'); if (!mx) return; const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>공정 패트롤 점검표 ${RP.from.slice(0,7)}</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:"Malgun Gothic",sans-serif;font-size:10px}h1{font-size:17px;text-align:center}h3{font-size:13px;margin:8px 0 2px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #555;padding:3px 2px;text-align:center}.ctq{color:#C81E1E;font-weight:800;margin-left:4px}.sg{float:right;border-collapse:collapse;width:auto}.sg td{width:70px;height:40px}</style></head><body>
+    <table class="sg"><tr><th>작성</th><th>검토</th><th>승인</th></tr><tr><td></td><td></td><td></td></tr></table>
+    <h1 style="clear:both">공정 패트롤 점검표 — 초·중·종물 (${RP.from} ~ ${RP.to})</h1><div style="margin-bottom:6px">THE GAUSS VINA · 하루 3회 (초물: 작업 시작 · 중물: 작업 중간 · 종물: 작업 종료) · ✔ 이상 없음 / ✕ NG (조치 내용은 패트롤 기록 참조) / － 생산 없음 · 전자 기록(MES) 출력본</div>
+    ${mx.innerHTML}<script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close();
+}
+async function patDel(id){ const rs = prompt('삭제 사유를 입력하세요 (이력에 남습니다)'); if (!rs || !rs.trim()) return;
+  await sb.from('patrol_checks').update({edit_reason: rs.trim()}).match({id});
+  const r = await sb.from('patrol_checks').delete().match({id}); if (r.error) { alert(r.error.message); return; } toast('삭제했습니다 — 이전 내용은 이력에 남았습니다'); loadReport(); }
 function checkDlg(codes, opt){
   opt = opt || {};
   const ms = (Array.isArray(codes) ? codes : [codes]).map(c => M.mach.find(x => x.code === c)).filter(Boolean); if (!ms.length) return;
@@ -885,7 +964,7 @@ function tvView(){
 const RP = {from: '', to: '', tab: 'out', lot: ''};
 function reportView(){
   if (!RP.from) { RP.to = ymd(new Date()); RP.from = RP.to.slice(0,8) + '01'; }
-  const tabs = [['out','공정별 생산'],['worker','작업자별'],['down','비가동'],['chk','설비 점검'],['lot','LOT 추적'],['erp','ERP 반영']];
+  const tabs = [['out','공정별 생산'],['worker','작업자별'],['down','비가동'],['chk','설비 점검'],['pat','공정 패트롤'],['lot','LOT 추적'],['erp','ERP 반영']];
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">${tabs.map(([k,l]) => `<button class="btn ${RP.tab === k ? 'pri' : ''}" onclick="RP.tab='${k}';render()">${l}</button>`).join('')}
       <span style="flex:1"></span>${RP.tab !== 'lot' ? `<input type="date" value="${RP.from}" onchange="RP.from=this.value;loadReport()" class="btn" style="padding:8px"> ~ <input type="date" value="${RP.to}" onchange="RP.to=this.value;loadReport()" class="btn" style="padding:8px">` : `<input id="rp-lot" value="${E(RP.lot)}" placeholder="LOT 번호 (완제품·자재)" onkeydown="if(event.key==='Enter'){RP.lot=parseLot(this.value).lot;loadReport()}" class="btn" style="padding:8px;min-width:240px"><button class="btn pri" onclick="RP.lot=parseLot($('rp-lot').value).lot;loadReport()">조회</button>`}
       <button class="btn" onclick="rpCSV()">⬇ CSV</button></div><div id="rp-body" class="card">⏳ 불러오는 중…</div>`;
@@ -910,6 +989,15 @@ async function loadReport(){
     (r.data || []).forEach(e => { const s = Math.max(a, new Date(e.started_at).getTime()), t = Math.min(b, e.ended_at ? new Date(e.ended_at).getTime() : b); if (t <= s) return;
       const k = e.machine_code + '|' + e.state + '|' + (e.reason_code || ''); const o = g[k] = g[k] || [machName(e.machine_code), ({run:'가동',stop:'정지',setup:'셋업',idle:'대기'})[e.state], e.reason_code ? (M.reasons.find(x => x.code === e.reason_code) || {}).name || e.reason_code : '', 0, 0]; o[3]++; o[4] += t - s; });
     cols = ['설비','상태','사유','횟수','시간']; rows = Object.values(g).sort((x,y) => y[4] - x[4]).map(o => [o[0], o[1], o[2], o[3], dur(o[4])]);
+  } else if (RP.tab === 'pat') {
+    const r = await sb.from('patrol_checks').select('*').gte('check_date', RP.from).lte('check_date', RP.to).order('created_at').limit(20000);
+    if (r.error) { el.innerHTML = `<p class="muted">공정 패트롤 기록을 읽지 못했습니다: ${E(r.error.message)}</p>`; return; }
+    const list = RP._pat = r.data || [];
+    cols = ['일자','구분','공정','작업지시','와이어 LOT','핀홀 수','결과','NG 항목','검사자','특이사항','시각'];
+    rows = list.map(c => [c.check_date, c.slot + '물', procName(c.process_code), c.wo_no || '', c.lot || '', patVal(c, '핀홀'), c.all_ok ? 'OK' : 'NG', (c.results || []).filter(x => !x.ok).map(x => x.item).join(', '), workName(c.worker_code), c.note || '', hm(c.created_at)]);
+    RPD = {cols, rows};
+    el.innerHTML = patMatrix(list) + (rows.length ? `<h2 style="margin-top:16px">패트롤 기록 ${rows.length}건 <a href="#" style="font-size:13px;font-weight:400" onclick="event.preventDefault();auditView('patrol_checks')">수정 이력 보기</a></h2><div style="overflow:auto"><table><thead><tr>${cols.map(c => `<th>${E(c)}</th>`).join('')}${ME.role === 'admin' ? '<th></th>' : ''}</tr></thead><tbody>${rows.map((x, i) => `<tr style="${x[6] === 'NG' ? 'color:var(--bad)' : ''}">${x.map(v => `<td>${E(v)}</td>`).join('')}${ME.role === 'admin' ? `<td><button class="btn" style="padding:4px 8px;color:var(--bad)" onclick="patDel(${list[i].id})">삭제</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : '<p class="muted">이 기간 패트롤 기록이 없습니다.</p>');
+    return;
   } else if (RP.tab === 'chk') {
     const [r, u, ap] = await Promise.all([sb.from('machine_checks').select('*').gte('check_date', RP.from).lte('check_date', RP.to).order('created_at').limit(20000),
       sb.from('prod_records').select('machine_code,start_at,created_at,status').gte('created_at', RP.from + 'T00:00:00').lte('created_at', RP.to + 'T23:59:59').neq('status','void').limit(50000),
@@ -1167,7 +1255,7 @@ function adminView(){
 function adminTabs(){ return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn ${AD.t === 'wo' ? 'pri' : ''}" onclick="AD.t='wo';render()">작업지시</button><button class="btn ${AD.t === 'route' ? 'pri' : ''}" onclick="AD.t='route';render()">공정 순서(품목별)</button><button class="btn ${AD.t === 'chkitem' ? 'pri' : ''}" onclick="AD.t='chkitem';render()">점검 항목</button><button class="btn ${AD.t === 'skill' ? 'pri' : ''}" onclick="AD.t='skill';render()">작업자 자격</button><button class="btn ${AD.t === 'c4' ? 'pri' : ''}" onclick="AD.t='c4';render()">4M 변경</button>${Object.entries(AD_DEF).map(([k, v]) => `<button class="btn ${AD.t === k ? 'pri' : ''}" onclick="AD.t='${k}';render()">${v.l}</button>`).join('')}<span style="flex:1"></span>
       ${bkBtn()}<button class="btn ok" onclick="syncWO(false).then(()=>{AD.t='wo';render()})">🔄 ERP 작업지시 받기</button></div>`; }
 // ── 📥 전체 백업: 모든 테이블을 엑셀 파일 하나로 내려받기 (회사 드라이브 + 보조 사본에 보관)
-const BK_TABLES = [['prod_records','실적','id'],['ncr','부적합','id'],['machine_checks','설비점검','id'],['machine_events','설비이벤트','id'],['gauges','계측기','code'],['gauge_cals','교정이력','id'],
+const BK_TABLES = [['prod_records','실적','id'],['ncr','부적합','id'],['machine_checks','설비점검','id'],['patrol_checks','공정패트롤','id'],['machine_events','설비이벤트','id'],['gauges','계측기','code'],['gauge_cals','교정이력','id'],
   ['worker_skills','작업자자격','worker_code'],['changes_4m','4M변경','id'],['approvals','전자승인','id'],['audit_log','수정이력','id'],['work_orders','작업지시','wo_id'],['routings','공정순서','item_code'],
   ['processes','공정','code'],['machines','설비','code'],['workers','작업자','code'],['check_items','점검항목','id'],['stop_reasons','비가동사유','code'],['app_users','계정','email']];
 function bkLast(){ try { return LS.get('mes_backup_at', ''); } catch (e) { return ''; } }
