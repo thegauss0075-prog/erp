@@ -18577,6 +18577,9 @@ function qmKpiCell(r){
   return `<span style="display:inline-flex;gap:2px">${Array.from({length: 12}, (_, i) => { const v = o[i + 1]; if (v === undefined || v === '') return `<span style="width:16px;height:16px;border-radius:3px;background:#F1F5F9" title="${i + 1}월"></span>`;
     const ok = up ? +v >= t : +v <= t; return `<span style="width:16px;height:16px;border-radius:3px;background:${ok ? '#22c55e' : '#ef4444'}" title="${i + 1}월: ${v}${hqE(r.unit || '')} (목표 ${r.dir === '이상' ? '≥' : '≤'} ${t})"></span>`; }).join('')}</span>`;
 }
+// 지표를 고르면 단위·방향·추천 목표·계산 방법을 채운다 (고칠 수 있음)
+const QM_KPI_DEF = {'공정 불량률': ['%', '이하', 0.5, 'NG 이동 수량 ÷ (완제품 입고 + NG 이동) × 100'], '출하검사 불합격률': ['%', '이하', 0, '출하검사 불합격 LOT ÷ 출하검사 LOT × 100'], '고객 클레임 건수': ['건', '이하', 0, '그 달 접수된 고객 부적합(8D) 건수'],
+  '납기 준수율': ['%', '이상', 98, '납기 내 출하한 PO 라인 ÷ 그 달 납기 PO 라인 × 100'], '설비 고장 시간': ['시간', '이하', 4, 'MES 비가동(고장) 시간 합계 / 월'], '교육 계획 달성률': ['%', '이상', 100, '실시한 교육 ÷ 계획한 교육 × 100'], '기타': ['', '이하', '', '']};
 // 🎯 KPI 대시보드 — 지표마다 월별 막대(달성 초록·미달 빨강) + 목표선, 한 화면에 전부
 function qmKpiDash(){
   const all = HQS.qkpi || [], years = [...new Set(all.map(k => String(k.year || '')).filter(Boolean))].sort();
@@ -18695,6 +18698,7 @@ function qmEdit(store, id, preset){
     ${store === 'qdoc' ? qmApprovalBox(rec) : ''}
     ${r && (r.updatedBy || r.updatedAt) ? `<div style="font-size:11.5px;color:#8A95A3;margin-top:8px">최근 수정: ${hqE(r.updatedBy || '')} ${hqE(String(r.updatedAt || '').slice(0, 16).replace('T', ' '))}</div>` : ''}
     <div style="display:flex;gap:8px;margin-top:14px">${r ? `<button onclick="qmDel()" style="padding:8px 14px;border-radius:7px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}<span style="flex:1"></span>${store === 'qdoc' && isMaster ? `<button onclick="qmSave(true)" style="padding:8px 14px;border-radius:7px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;font-weight:700;cursor:pointer" title="지금 내용(개정 번호)으로 승인 — 상태가 유효로 바뀝니다">✔ 저장 후 승인</button>` : ''}<button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button><button id="qm-save" onclick="qmSave()" style="padding:8px 18px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">💾 저장</button></div>`);
+  if (store === 'qkpi') { const k = document.querySelector('#qm-form [data-k="kpi"]'); if (k) k.addEventListener('change', () => { const d = QM_KPI_DEF[k.value]; if (!d) return; const set = (f, v) => { const el = document.querySelector('#qm-form [data-k="' + f + '"]'); if (el) el.value = v; }; set('unit', d[0]); set('dir', d[1]); set('target', d[2]); set('calc', d[3]); }); }
 }
 async function qmSave(approve){
   const e = QM.ed; if (!e) return; const d = QM_DEF[e.store], rec = {...e.rec};
