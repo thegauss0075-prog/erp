@@ -14082,10 +14082,10 @@ function hqCPORender(){
     <datalist id="hq-custs">${custs.map(c => `<option value="${hqE(c)}">`).join('')}</datalist>
     <datalist id="hq-items">${items.map(x => `<option value="${hqE(x.code)} — ${hqE(x.name)}">`).join('')}</datalist>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
-      ${hqFld('고객사 *','Khách hàng', `<input list="hq-custs" value="${hqE(r.customer||'')}" ${set('customer')} style="${HQ_IN}">`)}
+      ${hqFld('고객사 *','Khách hàng', `<input list="hq-custs" value="${hqE(r.customer||'')}" ${set('customer')} onchange="HQ_EDIT.customer=this.value;hqCPOFillPrices();hqCPORender()" style="${HQ_IN}">`)}
       ${hqFld('고객 PO No *','Số PO KH', `<input value="${hqE(r.custPoNo||'')}" ${set('custPoNo')} style="${HQ_IN}">`)}
       ${hqFld('접수일 *','Ngày nhận', `<input type="date" value="${hqE(r.recvDate||'')}" ${set('recvDate')} style="${HQ_IN}">`)}
-      ${hqFld('통화','Tiền tệ', `<select onchange="HQ_EDIT.cur=this.value;hqCPORender()" style="${HQ_IN}">${['USD','KRW','VND'].map(c => `<option ${r.cur===c?'selected':''}>${c}</option>`).join('')}</select>`)}
+      ${hqFld('통화','Tiền tệ', `<select onchange="HQ_EDIT.cur=this.value;hqCPOFillPrices();hqCPORender()" style="${HQ_IN}">${['USD','KRW','VND'].map(c => `<option ${r.cur===c?'selected':''}>${c}</option>`).join('')}</select>`)}
       ${hqFld('인도조건','Incoterm', `<input value="${hqE(r.incoterm||'')}" placeholder="DDP / EXW / FOB…" ${set('incoterm')} style="${HQ_IN}">`)}
       ${hqFld('납품처','Nơi giao', `<input value="${hqE(r.shipTo||'')}" ${set('shipTo')} style="${HQ_IN}">`)}
       ${hqFld('회신일','Ngày phản hồi', `<input type="date" value="${hqE(r.replyDate||'')}" ${set('replyDate')} style="${HQ_IN}">`)}
@@ -14096,7 +14096,7 @@ function hqCPORender(){
       (r.lines||[]).map((l, i) => `<tr>
         <td><input list="hq-items" value="${hqE(l.code ? l.code + (l.name ? ' — ' + l.name : '') : '')}" onchange="hqCPOLine(${i},'item',this.value)" style="${HQ_IN}"></td>
         <td><input type="number" value="${hqE(l.qty)}" oninput="hqCPOLine(${i},'qty',this.value)" style="${HQ_IN};width:90px"></td>
-        <td><input type="number" step="0.0001" value="${hqE(l.price)}" oninput="hqCPOLine(${i},'price',this.value)" style="${HQ_IN};width:90px"></td>
+        <td style="white-space:nowrap"><input type="number" step="0.0001" value="${hqE(l.price)}" oninput="hqCPOLine(${i},'price',this.value);this.style.background='';this.nextElementSibling&&(this.nextElementSibling.textContent='')" style="${HQ_IN};width:100px;${l.priceAuto ? 'background:#F0FDF4' : ''}">${l.priceAuto ? `<div style="font-size:10.5px;color:#0f766e" title="자동 입력 — 직접 고치면 그 값으로 저장">${hqE(l.priceSrc || '자동')}</div>` : (l.code && (l.price === '' || l.price == null) ? '<div style="font-size:10.5px;color:#b91c1c">단가 기록 없음</div>' : '<div></div>')}</td>
         <td><input type="date" value="${hqE(l.due||'')}" oninput="hqCPOLine(${i},'due',this.value)" style="${HQ_IN}"></td>
         <td><input type="date" value="${hqE(l.replyDue||'')}" oninput="hqCPOLine(${i},'replyDue',this.value)" style="${HQ_IN}"></td>
         <td><input type="number" value="${hqE(l.shipped ?? '')}" placeholder="${isNew ? '' : hqN(al[i]||0)}" title="비워 두면 출고 기록에서 자동 계산" oninput="hqCPOLine(${i},'shipped',this.value)" style="${HQ_IN};width:80px"></td>
@@ -14113,10 +14113,31 @@ function hqCPORender(){
       <div style="display:flex;gap:6px"><button onclick="hqClose('hq-ed')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
       <button id="hq-save" onclick="hqCPOSave()" style="padding:7px 18px;border-radius:8px;border:1px solid #5b21b6;background:#5b21b6;color:#fff;font-weight:600;cursor:pointer">💾 저장</button></div></div>`, 1000);
 }
+// 💲 [2026-11-20] 고객 PO 단가 자동 입력: 같은 고객·같은 통화의 최근 단가 (판매 → 다른 고객 PO → 견적) → 없으면 제조원가 탭 판매가
+function hqCPOAutoPrice(cust, code, cur, selfId){
+  if (!code) return null;
+  const c = String(cust || '').trim(), same = x => (!c || String(x.customer || '').trim() === c) && (x.cur || 'USD') === cur;
+  const srcs = [['판매', HQS.sale || []], ['이전 PO', (HQ.cpo || []).filter(x => String(x.id) !== String(selfId))], ['견적', HQS.quote || []]];
+  for (const [nm, arr] of srcs) {
+    const hit = arr.filter(same).sort((a, b) => String(b.date || b.recvDate || '').localeCompare(String(a.date || a.recvDate || '')))
+      .flatMap(x => (x.lines || []).filter(y => y.code === code && y.price !== '' && y.price != null && +y.price > 0).map(y => ({p: +y.price, no: x.cpoNo || x.qNo || x.saleNo || '', d: x.date || x.recvDate || ''})))[0];
+    if (hit) return {price: hit.p, src: `${nm} ${String(hit.d).slice(0, 10)}${hit.no ? ' · ' + hit.no : ''}`};
+  }
+  const v = hqsCostSale(code, cur); return v !== '' && +v > 0 ? {price: +v, src: '제조원가 판매가'} : null;
+}
+function hqCPOFillPrices(force){
+  const r = HQ_EDIT; if (!r) return;
+  (r.lines || []).forEach(l => { if (!l.code || (!force && !l.priceAuto && l.price !== '' && l.price != null)) return;
+    const m = hqCPOAutoPrice(r.customer, l.code, r.cur || 'USD', r.id);
+    if (m) { l.price = m.price; l.priceAuto = true; l.priceSrc = m.src; } else if (l.priceAuto) { l.price = ''; l.priceAuto = false; l.priceSrc = ''; } });
+}
 function hqCPOLine(i, k, v){
   const l = HQ_EDIT.lines[i]; if (!l) return;
   if (k === 'item') { const code = String(v).split(' — ')[0].trim(), it = allRows().find(x => x.code === code && (x.cat === 'TP' || x.cat === 'BTP'));
-    if (it) { l.code = it.code; l.name = it.name; l.cat = it.cat; l.unit = it.unit; } else { l.code = code; l.name = ''; } setTimeout(hqCPORender, 0); return; }
+    if (it) { l.code = it.code; l.name = it.name; l.cat = it.cat; l.unit = it.unit; } else { l.code = code; l.name = ''; }
+    if (l.priceAuto || l.price === '' || l.price == null) { l.price = ''; l.priceAuto = false; hqCPOFillPrices(); }
+    setTimeout(hqCPORender, 0); return; }
+  if (k === 'price') { l.priceAuto = false; l.priceSrc = ''; }
   l[k] = v;
 }
 async function hqCPOSave(){
@@ -14132,7 +14153,7 @@ async function hqCPOSave(){
   if (r.status === '완료' && (!old || old.status !== '완료')) { const al = hqCPOAlloc(), shp = old ? (old.lines||[]).reduce((a, l, i) => a + ((al[old.id]||{})[i] || 0), 0) : 0;
     if (!shp && !confirm('아직 출하가 없는 PO를 "완료"로 저장하면 PO 잔량과 자재 소요 계산에서 빠집니다.\n\n새 PO는 보통 "확정"으로 저장합니다. 그래도 "완료"로 저장할까요?')) return; }
   if (!r.cpoNo) r.cpoNo = hqNextNo('CPO', HQ.cpo, 'cpoNo', r.recvDate);
-  r.lines.forEach(l => { l.qty = +l.qty || 0; l.price = l.price === '' || l.price == null ? '' : +l.price; if (l.shipped === '') delete l.shipped; else if (l.shipped != null) l.shipped = +l.shipped || 0; });
+  r.lines.forEach(l => { delete l.priceAuto; delete l.priceSrc; l.qty = +l.qty || 0; l.price = l.price === '' || l.price == null ? '' : +l.price; if (l.shipped === '') delete l.shipped; else if (l.shipped != null) l.shipped = +l.shipped || 0; });
   if (!['확정','완료','취소'].includes(r.status)) r.status = '확정'; // 접수·회신 단계는 쓰지 않음 (출하중·완료는 출고로 자동 표시)
   if (!old || old.status !== r.status) r.history = (r.history||[]).concat([{at: new Date().toISOString(), by: CURRENT_USER||'', status: r.status}]);
   if (r.status === '회신' && !r.replyDate) r.replyDate = hqToday();
