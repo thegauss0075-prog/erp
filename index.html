@@ -19315,6 +19315,9 @@ async function vpLoad(){
 }
 async function vpSave(rec){ rec.updatedBy = CURRENT_USER || ''; rec.updatedAt = new Date().toISOString(); return qmPut('vpur', rec); }
 function vpHist(r, act){ r.history = (r.history || []).concat([{at: new Date().toISOString(), by: CURRENT_USER || '', act}]); }
+// 업체명 통일: 짧은 이름(name) · 법인명(fullName) · 다른 표기(aliases) 중 무엇으로 들어와도 짧은 이름으로 바꾼다
+const vpNorm = t => String(t || '').normalize('NFC').replace(/\s+/g, ' ').trim().toUpperCase();
+function vpSupCanon(n){ const k = vpNorm(n); if (!k) return ''; const s = (HQS.vsup || []).find(x => [x.name, x.fullName, ...(x.aliases || [])].some(a => vpNorm(a) === k)); return s ? s.name : String(n).replace(/\s+/g, ' ').trim(); }
 function vpSupNames(){ const s = new Set((HQS.vsup || []).map(x => x.name)); (HQS.vpur || []).forEach(d => { (d.qsups || []).forEach(x => s.add(x)); (d.lines || []).forEach(l => l.sup && s.add(l.sup)); }); return [...s].filter(Boolean).sort(); }
 function vpItems(){ return allRows().filter(x => x.cat === 'VTTH'); }   // 법인 구매는 소모품(VTTH)만 ERP 품목과 연결
 // 구매 대장 = 발주된 구매 건의 품목 줄
@@ -19393,7 +19396,7 @@ function vpEdRender(){
       <td><input ${ro} value="${vpE(l.qty)}" inputmode="decimal" onchange="VP.ed.lines[${i}].qty=this.value;vpEdRender()" style="width:70px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right"></td>
       <td><input ${ro} value="${vpE(l.unit)}" onchange="VP.ed.lines[${i}].unit=this.value" style="width:56px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"></td>
       ${S.map(s => qcell(l, i, s)).join('')}
-      <td style="vertical-align:top"><input ${ro} list="vp-sups" value="${vpE(l.sup)}" placeholder="업체" onchange="VP.ed.lines[${i}].sup=this.value" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"><br><input ${ro} value="${vpE(l.price)}" placeholder="단가" inputmode="decimal" onchange="VP.ed.lines[${i}].price=this.value;vpEdRender()" style="width:100px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right;margin-top:2px"></td>
+      <td style="vertical-align:top"><input ${ro} list="vp-sups" value="${vpE(l.sup)}" placeholder="업체" onchange="VP.ed.lines[${i}].sup=vpSupCanon(this.value)" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"><br><input ${ro} value="${vpE(l.price)}" placeholder="단가" inputmode="decimal" onchange="VP.ed.lines[${i}].price=this.value;vpEdRender()" style="width:100px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right;margin-top:2px"></td>
       <td class="num">${vpN(vpAmt(l)) || '–'}</td>
       <td><input ${ro} value="${vpE(l.why)}" placeholder="최저가 / 품질 등" onchange="VP.ed.lines[${i}].why=this.value" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"></td>
       <td>${!lock ? `<button class="pl-btn" style="padding:2px 8px;color:#B91C1C" onclick="VP.ed.lines.splice(${i},1);vpEdRender()">✕</button>` : ''}</td></tr>`).join('')}</tbody>
@@ -19420,7 +19423,7 @@ function vpQ(i, s, k, v){ const l = VP.ed.lines[i]; l.q = l.q || {}; const q = l
 function vpPick(i, s){ const l = VP.ed.lines[i], q = (l.q || {})[s] || {}; if (q.noInv && !confirm(`${s} 견적은 세금계산서가 없습니다. 그래도 선정할까요?`)) return;
   l.sup = s; l.price = +q.p || l.price; l.supManual = true; const low = vpLowest(l, VP.ed.qsups); l.why = low && low.s === s ? '최저가' : (l.why && l.why !== '최저가' ? l.why : ''); vpEdRender();
   if (!l.why) setTimeout(() => alert('최저가가 아닌 업체를 선정했습니다. "선정 사유"에 이유를 적어 주세요 (예: 품질, 납기).'), 50); }
-function vpAddSup(){ const v = (document.getElementById('vp-addsup') || {}).value || ''; const s = v.trim(); if (!s) return; if (!(VP.ed.qsups || []).includes(s)) VP.ed.qsups = (VP.ed.qsups || []).concat([s]); vpEdRender(); }
+function vpAddSup(){ const v = (document.getElementById('vp-addsup') || {}).value || ''; const s = vpSupCanon(v.trim()); if (!s) return; if (!(VP.ed.qsups || []).includes(s)) VP.ed.qsups = (VP.ed.qsups || []).concat([s]); vpEdRender(); }
 function vpDelSup(k){ const s = VP.ed.qsups[k]; if (!confirm(`${s} 견적 열을 지울까요?`)) return; VP.ed.qsups.splice(k, 1); VP.ed.lines.forEach(l => { if (l.q) delete l.q[s]; if (l.sup === s && !l.supManual) { l.sup = ''; l.price = ''; } }); vpEdRender(); }
 function vpLink(i, v){ const code = String(v).split(' — ')[0].trim(), it = vpItems().find(x => x.code === code); const l = VP.ed.lines[i];
   if (!v) { l.code = ''; return; } if (!it) { alert('목록에서 ERP 소모품(VTTH) 품목을 골라 주세요.'); vpEdRender(); return; }
@@ -19460,7 +19463,7 @@ function vpPrint(){
     return `<div class="pg"><table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr><tr><td></td><td></td><td>${r.approvedBy ? vpE(r.approvedBy) + '<br><small>' + vpE(String(r.approvedAt || '').slice(0, 10)) + '</small>' : ''}</td></tr></table>
       <h1>발 주 서 · ĐƠN ĐẶT HÀNG</h1>
       <table class="hd"><tr><th>발주번호</th><td>${vpE(r.no)}</td><th>발주일</th><td>${vpE(r.orderDate || vpToday())}</td></tr>
-        <tr><th>수신 (공급업체)</th><td>${vpE(s)}${sup.tax ? '<br>MST ' + vpE(sup.tax) : ''}</td><th>발신</th><td>THE GAUSS VINA CO., LTD<br>${vpE(VP_DEPT[r.dept] || r.dept)}</td></tr>
+        <tr><th>수신 (공급업체)</th><td>${vpE(sup.fullName || s)}${sup.tax ? '<br>MST ' + vpE(sup.tax) : ''}${sup.addr ? '<br>' + vpE(sup.addr) : ''}</td><th>발신</th><td>THE GAUSS VINA CO., LTD<br>${vpE(VP_DEPT[r.dept] || r.dept)}</td></tr>
         <tr><th>담당 / 연락처</th><td>${vpE(sup.contact || '')} ${vpE(sup.phone || '')}</td><th>요청자</th><td>${vpE(r.reqBy || '')}</td></tr></table>
       <table class="ln"><thead><tr><th>No</th><th>품명 / Tên hàng</th><th>규격 / Quy cách</th><th>수량 / SL</th><th>단위 / ĐVT</th><th>단가 / Đơn giá</th><th>금액 / Thành tiền</th></tr></thead><tbody>
       ${L.map((l, i) => `<tr><td class="c">${i + 1}</td><td>${vpE(l.name)}</td><td>${vpE(l.spec || '')}</td><td class="r">${vpN(l.qty)}</td><td class="c">${vpE(l.unit || '')}</td><td class="r">${vpN(l.price)}</td><td class="r">${vpN(vpAmt(l))}</td></tr>`).join('')}
@@ -19561,19 +19564,19 @@ function vpSupHtml(){
   return `<div class="pl-head"><div><div class="pl-title">현지 공급업체</div><div class="pl-period">발주서에 들어갈 세금코드(MST)·담당자·연락처</div></div><span style="flex:1"></span>${vpCanEdit() ? '<button class="pl-act" style="padding:8px 14px;font-size:13px" onclick="vpSupEdit(\'\')">＋ 업체</button>' : ''}</div>
     <div class="pl-tw"><table class="pl-t vp-t"><thead><tr><th style="text-align:left">업체명</th><th>MST</th><th>담당자</th><th>연락처</th><th style="text-align:left">취급 품목</th><th class="num">구매 건</th><th class="num">구매액</th><th>최근 구매</th><th></th></tr></thead><tbody>
     ${names.map(n => { const s = (HQS.vsup || []).find(x => x.name === n) || {}, my = L.filter(x => x.l.sup === n);
-      return `<tr><td><b>${vpE(n)}</b></td><td>${vpE(s.tax || '')}</td><td>${vpE(s.contact || '')}</td><td>${vpE(s.phone || '')}</td><td class="wrap">${vpE(s.items || '')}</td><td class="num">${my.length}</td><td class="num">${vpN(Math.round(my.reduce((a, x) => a + x.amt, 0)))}</td><td>${vpE(my.map(x => x.od).sort().pop() || '')}</td><td>${vpCanEdit() ? `<button class="pl-btn" style="padding:3px 10px" onclick="vpSupEdit('${vpE(n)}')">수정</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">업체가 없습니다.</td></tr>'}</tbody></table></div>`;
+      return `<tr><td><b>${vpE(n)}</b>${s.fullName ? `<div class="pl-sub" style="white-space:normal;max-width:280px">${vpE(s.fullName)}</div>` : ''}</td><td>${vpE(s.tax || '')}</td><td>${vpE(s.contact || '')}</td><td>${vpE(s.phone || '')}</td><td class="wrap">${vpE(s.items || '')}</td><td class="num">${my.length}</td><td class="num">${vpN(Math.round(my.reduce((a, x) => a + x.amt, 0)))}</td><td>${vpE(my.map(x => x.od).sort().pop() || '')}</td><td>${vpCanEdit() ? `<button class="pl-btn" style="padding:3px 10px" onclick="vpSupEdit('${vpE(n)}')">수정</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">업체가 없습니다.</td></tr>'}</tbody></table></div>`;
 }
 function vpSupEdit(name){
   const s = (HQS.vsup || []).find(x => x.name === name) || {id: 'vs' + Date.now(), name: name || ''};
   vpModal(`<h3 style="margin:0 0 12px">공급업체 ${name ? vpE(name) : '추가'}</h3><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-    ${hqFld('업체명 *', '', `<input id="vs-name" value="${vpE(s.name)}" style="${HQ_IN}">`)}${hqFld('세금코드 MST', '', `<input id="vs-tax" value="${vpE(s.tax || '')}" style="${HQ_IN}">`)}
+    ${hqFld('업체명 (짧은 이름) *', '', `<input id="vs-name" value="${vpE(s.name)}" style="${HQ_IN}">`)}${hqFld('법인명 (발주서·세금계산서)', '', `<input id="vs-fullName" value="${vpE(s.fullName || '')}" style="${HQ_IN}">`, true)}${hqFld('다른 표기 (쉼표로 구분 — 엑셀 가져오기 때 같은 업체로 봄)', '', `<input id="vs-aliases" value="${vpE((s.aliases || []).join(', '))}" style="${HQ_IN}">`, true)}${hqFld('세금코드 MST', '', `<input id="vs-tax" value="${vpE(s.tax || '')}" style="${HQ_IN}">`)}
     ${hqFld('담당자', '', `<input id="vs-contact" value="${vpE(s.contact || '')}" style="${HQ_IN}">`)}${hqFld('연락처', '', `<input id="vs-phone" value="${vpE(s.phone || '')}" style="${HQ_IN}">`)}
     ${hqFld('주소', '', `<input id="vs-addr" value="${vpE(s.addr || '')}" style="${HQ_IN}">`, true)}${hqFld('취급 품목', '', `<input id="vs-items" value="${vpE(s.items || '')}" style="${HQ_IN}">`, true)}</div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="pl-btn" onclick="vpClose()">닫기</button><button class="pl-act" style="padding:8px 16px" onclick="vpSupSave('${vpE(s.id)}','${vpE(name)}')">저장</button></div>`, 620);
 }
 async function vpSupSave(id, oldName){
   const g = k => (document.getElementById('vs-' + k) || {}).value || ''; const name = g('name').trim(); if (!name) { alert('업체명을 넣어 주세요.'); return; }
-  const cur = (HQS.vsup || []).find(x => x.id === id) || {}, rec = {...cur, id, name, tax: g('tax').trim(), contact: g('contact').trim(), phone: g('phone').trim(), addr: g('addr').trim(), items: g('items').trim(), updatedAt: new Date().toISOString(), updatedBy: CURRENT_USER || ''};
+  const cur = (HQS.vsup || []).find(x => x.id === id) || {}, rec = {...cur, id, name, fullName: g('fullName').trim(), aliases: g('aliases').split(',').map(x => x.trim()).filter(Boolean), tax: g('tax').trim(), contact: g('contact').trim(), phone: g('phone').trim(), addr: g('addr').trim(), items: g('items').trim(), updatedAt: new Date().toISOString(), updatedBy: CURRENT_USER || ''};
   if (await qmPut('vsup', rec)) { vpClose(); renderVP({local: true}); }
 }
 // ── 엑셀 가져오기 ──────────────────────────────────────
@@ -19595,7 +19598,7 @@ function vpImportQuote(wb){
   const ws = wb.Sheets[wb.SheetNames[0]], A = XLSX.utils.sheet_to_json(ws, {header: 1, defval: ''});
   const hi = A.findIndex(r => r.some(c => /공급업체|nhà cung cấp/i.test(String(c)))); if (hi < 0) { alert('"공급업체명" 행을 찾지 못했습니다.'); return; }
   const H = A[hi], first = H.findIndex(c => /공급업체|nhà cung cấp/i.test(String(c))), sups = [], cols = [];
-  H.forEach((c, j) => { if (j > first && String(c).trim()) { sups.push(String(c).trim()); cols.push(j); } });
+  H.forEach((c, j) => { if (j > first && String(c).trim()) { sups.push(vpSupCanon(String(c).trim())); cols.push(j); } });
   const sub = A[hi + 1] || [], noteCol = sub.findIndex(c => /note|비고|ghi chú/i.test(String(c)));
   const nameCol = sub.findIndex(c => /제품명|품명|sản phẩm/i.test(String(c))), qtyCol = sub.findIndex(c => /수량|số lượng/i.test(String(c))), unitCol = sub.findIndex(c => /단위|đvt/i.test(String(c)));
   const lines = [];
@@ -19618,7 +19621,7 @@ async function vpImportReport(wb){
     for (let i = hi + 1; i < A.length; i++) { const r = A[i], od = vpYmd(r[c.od]), name = String(r[c.name] || '').trim(), qty = vpNum(r[c.qty]); if (!od || !name || !(qty > 0)) continue;
       const dept = /OFF/i.test(String(r[c.dept])) ? 'OFFICE' : 'PD', key = `imp|${dept}|${od}`, rd = c.rd >= 0 ? vpYmd(r[c.rd]) : '', rq = c.rq >= 0 && String(r[c.rq]).trim() !== '' ? vpNum(r[c.rq]) : (rd ? qty : 0);
       const g = groups[key] = groups[key] || {id: key, no: `PR-${od.replace(/-/g, '').slice(2)}-${dept === 'PD' ? 'P' : 'O'}`, src: 'import', status: '완료', dept, reqDate: od, orderDate: od, reqBy: '', title: `${od} ${dept === 'PD' ? '생산' : '사무실'} 구매 (엑셀)`, qsups: [], lines: [], history: [{at: new Date().toISOString(), by: CURRENT_USER || '', act: '구매 보고서 엑셀에서 가져옴'}]};
-      g.lines.push({id: 'l' + i + sn.length, cat: vpCatOf(r[c.cat]), code: '', name: name.replace(/\s*\n\s*/g, ' / '), spec: c.spec >= 0 ? String(r[c.spec] || '').trim() : '', qty, unit: String(r[c.unit] || '').trim(), q: {}, sup: String(r[c.sup] || '').trim(), price: vpNum(r[c.price]) || 0, why: '', orderDate: od, recvDate: rd, recvQty: rq || 0, note: c.note >= 0 ? String(r[c.note] || '').trim() : ''});
+      g.lines.push({id: 'l' + i + sn.length, cat: vpCatOf(r[c.cat]), code: '', name: name.replace(/\s*\n\s*/g, ' / '), spec: c.spec >= 0 ? String(r[c.spec] || '').trim() : '', qty, unit: String(r[c.unit] || '').trim(), q: {}, sup: vpSupCanon(String(r[c.sup] || '').trim()), price: vpNum(r[c.price]) || 0, why: '', orderDate: od, recvDate: rd, recvQty: rq || 0, note: c.note >= 0 ? String(r[c.note] || '').trim() : ''});
       rows++; } });
   const recs = Object.values(groups); recs.forEach(g => { if (g.lines.some(l => (+l.recvQty || 0) < (+l.qty || 0))) g.status = '입고중'; });
   if (!recs.length) { alert('가져올 구매 기록이 없습니다.'); return; }
