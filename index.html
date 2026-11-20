@@ -18567,14 +18567,15 @@ function qmAudSet(k, f, v){ const h = document.getElementById('qm-aud-ck'); let 
 function qmKpiMonths(rec){
   let o = {}; try { o = JSON.parse(rec.months || '{}') || {}; } catch (e) {}
   return `<input type="hidden" data-k="months" id="qm-kpi-m" value="${hqE(JSON.stringify(o))}"><div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px">${Array.from({length: 12}, (_, i) => `<label style="font-size:11.5px;color:#5D6977">${i + 1}월<input id="qm-kpi-${i + 1}" type="number" step="any" value="${hqE(o[i + 1] ?? '')}" oninput="qmKpiSet(${i + 1},this.value)" style="width:100%;padding:5px;border:1px solid #CBD5E1;border-radius:5px"></label>`).join('')}</div>
-    <button type="button" onclick="qmKpiAuto()" style="margin-top:6px;padding:6px 12px;border-radius:7px;border:1px solid #0d9488;background:#fff;color:#0d9488;font-size:12.5px;cursor:pointer">⚙ ERP 기록으로 자동 계산 (공정 불량률 · 출하검사 불합격률 · 납기 준수율)</button><div id="qm-kpi-detail"></div>
+    <button type="button" onclick="qmKpiAuto()" style="margin-top:6px;padding:6px 12px;border-radius:7px;border:1px solid #0d9488;background:#fff;color:#0d9488;font-size:12.5px;cursor:pointer">⚙ 기록으로 자동 계산 (불량률 · 불합격률 · 납기 준수율 · MES 일상점검·패트롤·예방보전 실시율)</button><div id="qm-kpi-detail"></div>
     <div style="font-size:11px;color:#5D6977;margin-top:3px">공정 불량률 = NG 이동 ÷ (완제품 입고 + NG 이동) · 출하검사 불합격률 = 불합격 건 ÷ 출하검사 건</div>`;
 }
 function qmKpiSet(m, v){ const h = document.getElementById('qm-kpi-m'); let o = {}; try { o = JSON.parse(h.value || '{}') || {}; } catch (e) {} if (v === '') delete o[m]; else o[m] = +v; h.value = JSON.stringify(o); }
 async function qmKpiAuto(){
   const fv = k => ((document.querySelector('#qm-form [data-k="' + k + '"]') || {}).value || '').trim(), y = fv('year') || qmToday().slice(0, 4), kpi = fv('kpi');
   if (kpi === '납기 준수율') return qmKpiOtd(y);
-  if (!/불량률|불합격률/.test(kpi)) { alert('자동 계산은 "공정 불량률", "출하검사 불합격률", "납기 준수율"만 됩니다. 나머지는 직접 입력하세요.'); return; }
+  if (kpi === '기타' && /일상점검|패트롤|예방보전/.test(fv('name'))) return qmKpiMes(y, fv('name'));
+  if (!/불량률|불합격률/.test(kpi)) { alert('자동 계산은 공정 불량률·출하검사 불합격률·납기 준수율과 MES 지표(일상점검·패트롤·예방보전 실시율)만 됩니다. 나머지는 직접 입력하세요.'); return; }
   if (/불합격률/.test(kpi)) { try { await loadQC(); } catch (e) {} }
   const mon = d => { const x = new Date(d); return isNaN(x) || String(x.getFullYear()) !== y ? 0 : x.getMonth() + 1; }, cur = +qmToday().slice(5, 7), lastM = y === qmToday().slice(0, 4) ? cur : 12;
   for (let m = 1; m <= lastM; m++) { let v = '';
@@ -18604,6 +18605,38 @@ async function qmKpiOtd(y){
   const u = document.querySelector('#qm-form [data-k="unit"]'); if (u && !u.value) u.value = '%';
   const c = document.querySelector('#qm-form [data-k="calc"]'); if (c) c.value = '출고 예정 기준일(처음 등록한 예정일, 고객 요청 변경만 인정)까지 출고 완료한 건 ÷ 판정 가능 건 × 100 (ERP 출고 예정)';
   if (!Object.keys(mon).length) alert(`${y}년에 판정할 수 있는 출고 예정이 없습니다.`);
+}
+// 🏭 [2026-11-20] MES 지표 자동 계산 (이 브라우저에서 MES 로그인 필요)
+//   일상점검 실시율 = 점검한 (설비·날짜) ÷ 생산 실적이 있는 (설비·날짜)
+//   패트롤 실시율   = 실시한 (날짜·초/중/종) ÷ 권선(WIND) 작업일 × 3
+//   예방보전 실시율 = 그 달 계획 항목(주기 월) 중 그 달 실시 기록이 있는 항목 ÷ 계획 항목
+async function qmKpiMes(y, name){
+  const sb = await qmSbLive(); if (!sb) { alert('MES 지표는 이 브라우저에서 MES에 한 번 로그인해야 계산됩니다.'); return; }
+  const from = y + '-01-01', to = y + '-12-31', loc = v => { const x = new Date(v); return isNaN(x) ? '' : `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+  const all = async (q) => { const out = []; for (let i = 0; i < 50; i++) { const r = await q().range(i * 1000, i * 1000 + 999); if (r.error) throw r.error; out.push(...(r.data || [])); if (!r.data || r.data.length < 1000) break; } return out; };
+  const mon = {}; let basis = '';
+  try {
+    if (/일상점검|패트롤/.test(name)) {
+      const pr = await all(() => sb.from('prod_records').select('machine_code,process_code,start_at,created_at,status').neq('status', 'void').gte('created_at', from + 'T00:00:00+07:00').lte('created_at', to + 'T23:59:59+07:00'));
+      if (/일상점검/.test(name)) {
+        const used = new Set(pr.filter(x => x.machine_code).map(x => x.machine_code + '|' + loc(x.start_at || x.created_at)));
+        const ck = await all(() => sb.from('machine_checks').select('machine_code,check_date').gte('check_date', from).lte('check_date', to)); const done = new Set(ck.map(c => c.machine_code + '|' + c.check_date));
+        used.forEach(k => { const m = +k.split('|')[1].slice(5, 7); const o = mon[m] = mon[m] || [0, 0]; o[1]++; if (done.has(k)) o[0]++; }); basis = `생산한 설비·일 ${used.size}개 중 점검 ${[...used].filter(k => done.has(k)).length}개`;
+      } else {
+        const days = new Set(pr.filter(x => x.process_code === 'WIND').map(x => loc(x.start_at || x.created_at)));
+        const pc = await all(() => sb.from('patrol_checks').select('check_date,slot,process_code').eq('process_code', 'WIND').gte('check_date', from).lte('check_date', to)); const done = new Set(pc.map(c => c.check_date + '|' + c.slot));
+        days.forEach(d => { const m = +d.slice(5, 7); const o = mon[m] = mon[m] || [0, 0]; ['초','중','종'].forEach(sl => { o[1]++; if (done.has(d + '|' + sl)) o[0]++; }); }); basis = `권선 작업일 ${days.size}일 × 3회`;
+      }
+    } else {
+      const [it, rc] = await Promise.all([sb.from('pm_items').select('id,cycle,active,created_at'), all(() => sb.from('pm_records').select('pm_item_id,done_on').gte('done_on', from).lte('done_on', to))]);
+      if (it.error) throw it.error; const P = {'월': [1,2,3,4,5,6,7,8,9,10,11,12], '분기': [3,6,9,12], '반기': [6,12], '연': [12]}, done = new Set(rc.map(r => r.pm_item_id + '|' + (+String(r.done_on).slice(5, 7))));
+      const now = qmToday(), lastM = now.slice(0, 4) === String(y) ? +now.slice(5, 7) : (String(y) < now.slice(0, 4) ? 12 : 0);
+      (it.data || []).filter(x => x.active !== false).forEach(x => { const st = loc(x.created_at); (P[x.cycle] || []).forEach(m => { if (m > lastM || (st && `${y}-${String(m).padStart(2, '0')}` < st.slice(0, 7))) return; const o = mon[m] = mon[m] || [0, 0]; o[1]++; if (done.has(x.id + '|' + m)) o[0]++; }); }); basis = '예방보전 계획 항목 기준 (항목 등록 이후 달부터)';
+    }
+  } catch (e) { alert('MES 기록을 읽지 못했습니다: ' + (e.message || e)); return; }
+  Object.entries(mon).forEach(([m, [a, n]]) => { if (!n) return; const v = +(a / n * 100).toFixed(1), el = document.getElementById('qm-kpi-' + m); if (el) { el.value = v; qmKpiSet(+m, v); } });
+  const det = document.getElementById('qm-kpi-detail'); if (det) det.innerHTML = `<div style="font-size:12px;color:#5D6977;margin-top:6px">근거: MES ${hqE(basis)} · 월별 ${Object.entries(mon).map(([m, [a, n]]) => `${m}월 ${a}/${n}`).join(', ') || '없음'}</div>`;
+  if (!Object.keys(mon).length) alert(`${y}년에 계산할 MES 기록이 없습니다.`);
 }
 function qmKpiCell(r){
   let o = {}; try { o = JSON.parse(r.months || '{}') || {}; } catch (e) {} const t = +r.target, up = r.dir === '이상';
