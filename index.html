@@ -14120,7 +14120,7 @@ function hqCPOAutoPrice(cust, code, cur, selfId){
   const srcs = [['판매', HQS.sale || []], ['이전 PO', (HQ.cpo || []).filter(x => String(x.id) !== String(selfId))], ['견적', HQS.quote || []]];
   for (const [nm, arr] of srcs) {
     const hit = arr.filter(same).sort((a, b) => String(b.date || b.recvDate || '').localeCompare(String(a.date || a.recvDate || '')))
-      .flatMap(x => (x.lines || []).filter(y => y.code === code && y.price !== '' && y.price != null && +y.price > 0).map(y => ({p: +y.price, no: x.cpoNo || x.qNo || x.saleNo || '', d: x.date || x.recvDate || ''})))[0];
+      .flatMap(x => (x.lines || []).filter(y => y.code === code && y.price !== '' && y.price != null && +y.price > 0).map(y => ({p: +y.price, no: (nm === '판매' ? x.sNo : nm === '견적' ? x.qNo : x.cpoNo) || '', d: x.date || x.recvDate || ''})))[0];
     if (hit) return {price: hit.p, src: `${nm} ${String(hit.d).slice(0, 10)}${hit.no ? ' · ' + hit.no : ''}`};
   }
   const v = hqsCostSale(code, cur); return v !== '' && +v > 0 ? {price: +v, src: '제조원가 판매가'} : null;
