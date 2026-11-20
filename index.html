@@ -17919,7 +17919,6 @@ function renderShipPlans(){
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
         <select id="spl-dest">${Object.entries(SPL_DEST).map(([k,v]) => `<option value="${k}" ${SPL_FORM.dest===k?'selected':''}>${v}</option>`).join('')}</select>
         <label style="font-size:12.5px;color:#5D6977">출고 예정일 / Ngày dự kiến <input type="date" id="spl-date" value="${SPL_FORM.date || bdToday()}"></label>
-        <label style="font-size:12.5px;color:#5D6977" title="고객(솔루엠)이 승인한 출고·납품일 — 납기 준수율의 기준. 비우면 출고 예정일을 기준으로 봅니다">고객 승인 출고일 / Ngày KH duyệt <input type="date" id="spl-appr" value="${SPL_FORM.appr || ''}"></label>
         <input id="spl-note" placeholder="비고 / Ghi chú (예: 항공편 대기)" value="${String(SPL_FORM.note||'').replace(/"/g,'&quot;')}" style="flex:1;min-width:180px;padding:7px 9px;border:1px solid var(--line,#DCE1E7);border-radius:8px">
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
@@ -17989,12 +17988,22 @@ async function splSave(){
   const pals = SPL_PAL.map(p => ({rows: p.rows.filter(r => r.code && r.lot && splRowQty(r) > 0).map(r => ({code: r.code, lot: splBase(r.lot), qty: splRowQty(r)}))})).filter(p => p.rows.length);
   if (pals.length) { const bad = splPalCheck().filter(c => Math.abs(c.need - c.got) > 0.0005);
     if (bad.length && !confirm(`팔레트 박스 합계가 LOT 지정 수량과 다릅니다:\n${bad.map(c => `${c.code} ${splLotName(c.lot)}: 박스 ${c.got.toLocaleString()} / 지정 ${c.need.toLocaleString()}`).join('\n')}\n\n그래도 저장할까요?`)) return; }
-  const date = document.getElementById('spl-date').value || bdToday(), appr = (document.getElementById('spl-appr') || {}).value || '';
+  const date = document.getElementById('spl-date').value || bdToday();
+  // ✅ [2026-11-20] 납기 준수율 근거: 처음 등록한 출고 예정일을 남기고, 예정일을 바꾸면 사유를 받는다
+  //    고객 요청으로 바뀐 날짜만 기준일이 된다 (우리 사정으로 미루면 기준일은 그대로 → 지연으로 계산)
+  let dchg = null; { const o0 = SPL_EDIT ? SPL.find(x => x.id === SPL_EDIT) : null;
+    if (o0 && String(o0.date) !== String(date) && o0.status !== 'done') { const ans = prompt(`출고 예정일을 ${o0.date} → ${date}로 바꿉니다.\n\n변경 사유를 고르세요:\n1 = 고객 요청·고객 승인 (기준일도 바뀜)\n2 = 우리 사정 (생산·자재·검사 지연 — 기준일은 그대로)`, '1');
+      if (ans === null) return; if (!['1','2'].includes(String(ans).trim())) { alert('1 또는 2를 입력하세요.'); return; }
+      const why = (prompt('변경 내용을 간단히 적어 주세요 (예: 솔루엠 요청으로 11/16 출고 / 자재 입고 지연)', '') || '').trim();
+      dchg = {from: o0.date, to: date, by: CURRENT_USER || '', at: new Date().toISOString(), cust: String(ans).trim() === '1', why}; } }
   const old = SPL_EDIT ? SPL.find(x => x.id === SPL_EDIT) : null;
   const rec = old ? {...old, date, dest: document.getElementById('spl-dest').value, lines: SPL_DRAFT.map(l => JSON.parse(JSON.stringify(l))), note: document.getElementById('spl-note').value.trim(), editedBy: CURRENT_USER||'', editedAt: new Date().toISOString()}
     : {id:'P'+Date.now(), no: splNextNo(date), date, dest: document.getElementById('spl-dest').value, lines: SPL_DRAFT.map(l => JSON.parse(JSON.stringify(l))),
     note: document.getElementById('spl-note').value.trim(), status:'wait', createdBy: CURRENT_USER||'', createdAt: new Date().toISOString()};
-  rec.pallets = pals; rec.apprDate = appr;
+  rec.pallets = pals;
+  if (!rec.date0) rec.date0 = old ? (old.date0 || old.date) : date;          // 처음 등록한 예정일
+  if (!rec.baseDate) rec.baseDate = old ? (old.baseDate || old.date0 || old.date) : date;   // 납기 기준일
+  if (dchg) { rec.dateLog = [...(old && old.dateLog || []), dchg]; if (dchg.cust) rec.baseDate = date; }
   const guard = withButtonGuard('#spl-save', '⏳'); if (guard === null) return;
   let r; try { r = await apiAuto('saveShipPlan', {rec}); } finally { guard.release(); }
   if (!r || !r.ok) { alert('저장 실패: ' + (r && r.error || '서버 응답 없음') + (r && /unknown action/i.test(r.error||'') ? '\n서버(Code.gs)를 새 버전으로 배포해야 합니다.' : '')); return; }
@@ -18016,8 +18025,8 @@ function splMismatch(p){
 function splEdit(id){
   const p = SPL.find(x => x.id === id); if (!p) return;
   SPL_EDIT = id; SPL_DRAFT = JSON.parse(JSON.stringify(p.lines||[])); SPL_PAL = JSON.parse(JSON.stringify(p.pallets||[])); SPL_PICK = null;
-  Object.assign(SPL_FORM, {dest:p.dest, date:p.date, note:p.note||'', appr:p.apprDate||''});
-  const d = document.getElementById('spl-dest'); if (d) d.value = p.dest; const t = document.getElementById('spl-date'); if (t) t.value = p.date; const ap = document.getElementById('spl-appr'); if (ap) ap.value = p.apprDate || ''; const nn = document.getElementById('spl-note'); if (nn) nn.value = p.note||'';
+  Object.assign(SPL_FORM, {dest:p.dest, date:p.date, note:p.note||''});
+  const d = document.getElementById('spl-dest'); if (d) d.value = p.dest; const t = document.getElementById('spl-date'); if (t) t.value = p.date; const nn = document.getElementById('spl-note'); if (nn) nn.value = p.note||'';
   renderShipPlans();
   document.getElementById('spl-panel').scrollIntoView({behavior:'smooth', block:'start'});
 }
@@ -18581,18 +18590,19 @@ async function qmKpiOtd(y){
   //   월 값 = 그 달이 기준일인 출고 예정 중 준수 ÷ 판정 가능 건(완료됐거나 기준일이 지난 것) × 100
   try { await loadShipPlans(); } catch (e) {}
   const today = qmToday(), loc = v => { const x = new Date(v); return isNaN(x) ? '' : `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
-  const L = (SPL || []).filter(p => p.status !== 'cancel').map(p => { const due = String(p.apprDate || p.date || '').slice(0, 10), done = p.status === 'done' ? loc(p.doneAt) || String(p.date || '').slice(0, 10) : '';
-    return {no: p.no || p.id, dest: p.dest, due, base: p.apprDate ? '고객 승인' : '예정일', done, ok: !!done && done <= due, judged: !!done || due < today, qty: (p.lines || []).reduce((a, l) => a + (+l.qty || (l.lots || []).reduce((s, x) => s + (+x.qty || 0), 0)), 0)}; })
+  const L = (SPL || []).filter(p => p.status !== 'cancel').map(p => { const due = String(p.baseDate || p.date0 || p.date || '').slice(0, 10), done = p.status === 'done' ? loc(p.doneAt) || String(p.date || '').slice(0, 10) : '', reg = loc(p.createdAt);
+    const chg = (p.dateLog || []).map(c => `${String(c.from).slice(5)}→${String(c.to).slice(5)} ${c.cust ? '고객' : '자체'}${c.why ? ' (' + c.why + ')' : ''}`).join(', ');
+    return {no: p.no || p.id, dest: p.dest, due, reg, late: reg && reg >= due, chg, done, ok: !!done && done <= due, judged: !!done || due < today}; })
     .filter(x => x.due.slice(0, 4) === String(y)).sort((a, b) => a.due.localeCompare(b.due));
   const mon = {}; L.filter(x => x.judged).forEach(x => { const m = +x.due.slice(5, 7); const o = mon[m] = mon[m] || [0, 0]; o[1]++; if (x.ok) o[0]++; });
   for (let m = 1; m <= 12; m++) { const el = document.getElementById('qm-kpi-' + m); if (mon[m] && el) { const v = +(mon[m][0] / mon[m][1] * 100).toFixed(1); el.value = v; qmKpiSet(m, v); } }
   const det = document.getElementById('qm-kpi-detail');
   if (det) det.innerHTML = `<details open style="margin-top:6px;font-size:12px"><summary style="cursor:pointer;font-weight:700">근거: ${y}년 출고 예정 ${L.length}건 (취소 제외)</summary>
-    <table style="width:100%;border-collapse:collapse;margin-top:4px"><tr>${['출고 예정','출고처','기준일','기준','출고 완료','판정'].map(h => `<th style="border-bottom:1px solid #CBD5E1;text-align:left;padding:2px 4px">${h}</th>`).join('')}</tr>
-    ${L.map(x => `<tr><td style="padding:2px 4px">${hqE(x.no)}</td><td>${hqE(x.dest || '')}</td><td>${x.due}</td><td style="color:${x.base === '고객 승인' ? '#166534' : '#b45309'}">${x.base}</td><td>${x.done || '-'}</td><td style="font-weight:700;color:${!x.judged ? '#64748B' : x.ok ? '#166534' : '#b91c1c'}">${!x.judged ? '예정' : x.ok ? '준수' : '지연'}</td></tr>`).join('') || '<tr><td colspan="6" style="color:#64748B;padding:4px">해당 출고 예정이 없습니다</td></tr>'}</table>
-    <div style="color:#5D6977;margin-top:3px">출고 → 출고 예정에서 <b>고객 승인 출고일</b>을 넣으면 그 날짜가 기준입니다 (비우면 출고 예정일). 출고 예정 기능은 2026년 11월부터 사용해서 그 전 달은 계산되지 않습니다.</div></details>`;
+    <table style="width:100%;border-collapse:collapse;margin-top:4px"><tr>${['출고 예정','출고처','등록일','기준일','변경 이력','출고 완료','판정'].map(h => `<th style="border-bottom:1px solid #CBD5E1;text-align:left;padding:2px 4px">${h}</th>`).join('')}</tr>
+    ${L.map(x => `<tr><td style="padding:2px 4px">${hqE(x.no)}</td><td>${hqE(x.dest || '')}</td><td style="${x.late ? 'color:#b45309;font-weight:700' : ''}" title="${x.late ? '출고 예정일 당일·이후에 등록 — 미리 등록해야 근거가 됩니다' : ''}">${x.reg || '-'}${x.late ? ' ⚠사후' : ''}</td><td>${x.due}</td><td style="font-size:11px">${hqE(x.chg || '-')}</td><td>${x.done || '-'}</td><td style="font-weight:700;color:${!x.judged ? '#64748B' : x.ok ? '#166534' : '#b91c1c'}">${!x.judged ? '예정' : x.ok ? '준수' : '지연'}</td></tr>`).join('') || '<tr><td colspan="6" style="color:#64748B;padding:4px">해당 출고 예정이 없습니다</td></tr>'}</table>
+    <div style="color:#5D6977;margin-top:3px">기준일 = 처음 등록한 출고 예정일 (고객 요청으로 바꾼 경우만 바뀐 날짜). 우리 사정으로 예정일을 미루면 기준일은 그대로라 지연으로 계산됩니다. 출고 예정은 <b>출고 전에 미리</b> 등록해야 근거가 됩니다 (⚠사후 = 당일·이후 등록).</div></details>`;
   const u = document.querySelector('#qm-form [data-k="unit"]'); if (u && !u.value) u.value = '%';
-  const c = document.querySelector('#qm-form [data-k="calc"]'); if (c) c.value = '고객 승인 출고일(없으면 출고 예정일)까지 출고 완료한 출고 예정 건 ÷ 판정 가능한 출고 예정 건 × 100 (ERP 출고 예정 기준)';
+  const c = document.querySelector('#qm-form [data-k="calc"]'); if (c) c.value = '출고 예정 기준일(처음 등록한 예정일, 고객 요청 변경만 인정)까지 출고 완료한 건 ÷ 판정 가능 건 × 100 (ERP 출고 예정)';
   if (!Object.keys(mon).length) alert(`${y}년에 판정할 수 있는 출고 예정이 없습니다.`);
 }
 function qmKpiCell(r){
@@ -18602,7 +18612,7 @@ function qmKpiCell(r){
 }
 // 지표를 고르면 단위·방향·추천 목표·계산 방법을 채운다 (고칠 수 있음)
 const QM_KPI_DEF = {'공정 불량률': ['%', '이하', 0.5, 'NG 이동 수량 ÷ (완제품 입고 + NG 이동) × 100', '생산·생산관리'], '출하검사 불합격률': ['%', '이하', 0, '출하검사 불합격 LOT ÷ 출하검사 LOT × 100', '품질'], '고객 클레임 건수': ['건', '이하', 0, '그 달 접수된 고객 부적합(8D) 건수', '품질'],
-  '납기 준수율': ['%', '이상', 98, '고객 승인 출고일(없으면 출고 예정일)까지 출고 완료한 출고 예정 건 ÷ 판정 가능 건 × 100', '생산·생산관리'], '설비 고장 시간': ['시간', '이하', 4, 'MES 비가동(고장) 시간 합계 / 월', '생산·생산관리'], '교육 계획 달성률': ['%', '이상', 100, '실시한 교육 ÷ 계획한 교육 × 100', '인사총무'], '기타': ['', '이하', '', '', '']};
+  '납기 준수율': ['%', '이상', 98, '출고 예정 기준일(처음 등록한 예정일, 고객 요청 변경만 인정)까지 출고 완료한 건 ÷ 판정 가능 건 × 100', '생산·생산관리'], '설비 고장 시간': ['시간', '이하', 4, 'MES 비가동(고장) 시간 합계 / 월', '생산·생산관리'], '교육 계획 달성률': ['%', '이상', 100, '실시한 교육 ÷ 계획한 교육 × 100', '인사총무'], '기타': ['', '이하', '', '', '']};
 // 🎯 KPI 대시보드 — 지표마다 월별 막대(달성 초록·미달 빨강) + 목표선, 한 화면에 전부
 function qmKpiDash(){
   const all = HQS.qkpi || [], years = [...new Set(all.map(k => String(k.year || '')).filter(Boolean))].sort();
