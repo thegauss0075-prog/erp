@@ -2847,6 +2847,12 @@ function exportShipHistExcel() {
 //  발주(PO) 관리 — SOLUM 발주 이메일을 읽어서 검토 후 등록
 // ══════════════════════════════════════════════════════════
 let PO = [];
+// 📅 [2026-11-20] 고객 PO No가 날짜처럼 생기면(예: 2026-11-18) 시트가 날짜로 바꿔 저장해 '2026-11-17T17:00:00.000Z'로 돌아온다
+//    → 베트남 날짜(yyyy-mm-dd)로 되돌려 쓴다. (이 차이 때문에 본사 PO 연동이 같은 PO를 매번 새로 등록해 중복이 생겼음)
+function poNoNorm(v){ const t = String(v ?? '').trim(); if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(t)) { const x = new Date(t); if (!isNaN(x)) return new Date(x.getTime() + 7 * 3600e3).toISOString().slice(0, 10); } return t; }
+function poNormAll(arr){ (arr || []).forEach(r => { if (r) r.poNumber = poNoNorm(r.poNumber); }); return arr || []; }
+// 시트가 날짜·숫자로 바꾸지 않게 글자로 보낸다 (앞의 ' 는 시트에 저장되지 않음)
+const poNoText = v => { const t = String(v ?? '').trim(); return /^[\d.\-\/: ]+$/.test(t) ? "'" + t : t; };
 let poReviewData = []; // 엑셀 업로드로 방금 읽어온, 아직 등록 안 한 항목들
 
 // ✅ [2026-10 성능 개선] 화면별 "마지막으로 서버에서 받아온 시각". 탭을 열 때마다/검색창에
@@ -2865,7 +2871,7 @@ function _isFresh(keys, ms) {
 async function loadPO() {
   if (!(API_URL || IS_GAS)) return;
   const res = await api('getPOLog', {});
-  if (res && res.ok) { PO = res.data || []; _loadedAt.po = Date.now(); }
+  if (res && res.ok) { PO = poNormAll(res.data || []); _loadedAt.po = Date.now(); }
 }
 
 async function renderPO(opts) {
@@ -2900,6 +2906,7 @@ function cpoToPOItems(){   // 발주관리와 다른 것만 (추가·변경·취
 let _cpoSyncing = false;
 async function cpoPOPush(items, quiet){
   if (!items.length || !ADMIN_TOKEN) return null;
+  items = items.map(x => ({...x, poNumber: poNoText(x.poNumber)}));
   let r = await apiAuto('syncCPOPOItems', {items, token: ADMIN_TOKEN, user: (CURRENT_USER || '') + ' (본사 PO 연동)'});
   if (r && !r.ok && /unknown action/i.test(r.error || '')) {   // 서버(Code.gs)가 옛 버전 → 추가만 가능
     const add = items.filter(x => !x.cancel); r = add.length ? await apiAuto('addPOItems', {items: add, token: ADMIN_TOKEN, user: (CURRENT_USER || '') + ' (본사 PO 연동)'}) : {ok: true, added: 0};
@@ -3365,7 +3372,7 @@ async function refreshPOShortageCard() {
     if (res && res.ok && res.unchanged) {
       _poShortageLastFetch = Date.now();
     } else if (res && res.ok) {
-      PO = res.po || [];
+      PO = poNormAll(res.po || []);
       BOM = res.bom || [];
       WO = res.wo || [];
       WO_MAT = res.womat || [];
@@ -10163,7 +10170,7 @@ async function syncNow(force) {
     //    잠시 후 initDashboard()가 호출될 때 refreshPOShortageCard()가 "방금 막
     //    받아온 값"임을 알아채고 또 따로 조회하지 않도록(_poShortageLastFetch 참고).
     if (bundle && bundle.ok) {
-      PO = bundle.po || []; BOM = bundle.bom || []; WO = bundle.wo || []; WO_MAT = bundle.womat || [];
+      PO = poNormAll(bundle.po || []); BOM = bundle.bom || []; WO = bundle.wo || []; WO_MAT = bundle.womat || [];
       _poShortageLastFetch = Date.now();
       _loadedAt.po = _loadedAt.wo = Date.now();
     }
