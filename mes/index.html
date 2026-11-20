@@ -736,14 +736,26 @@ const PAT_SLOTS = ['초','중','종'];
 const patItems = pc => (M.patItem || []).filter(i => i.active !== false && i.process_code === pc).sort((a, b) => (a.seq || 0) - (b.seq || 0));
 const patVal = (c, key) => { const x = (c.results || []).find(r => String(r.item).includes(key)); return x ? (x.value ?? '') : ''; };
 // ✅ [2026-11-19] 이 공정의 작업표준서·검사기준서 (ERP 문서관리 승인본만) — 작업자는 항상 최신판을 연다
+// ✅ [2026-11-20] 태블릿에 Google 계정이 없으면 Drive 링크가 Drive 앱으로 넘어가 "Google 계정을 찾을 수 없습니다"로 꺼진다
+//    → MES 화면 안에서 미리보기(/preview, 링크 공유 파일은 로그인 없이 열림)로 연다.
+function wiOpen(url, title){
+  const m = String(url).match(/\/file\/d\/([\w-]+)/) || String(url).match(/[?&]id=([\w-]+)/);
+  const src = m ? 'https://drive.google.com/file/d/' + m[1] + '/preview' : url;
+  const o = document.createElement('div'); o.id = 'wi-ov';
+  o.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.85);display:flex;flex-direction:column;padding:10px';
+  o.innerHTML = `<div style="display:flex;align-items:center;gap:10px;color:#fff;padding:4px 6px 10px"><b style="font-size:18px">📘 ${E(title)}</b><span style="flex:1"></span>
+    <button class="btn" style="font-size:18px;padding:10px 20px" onclick="document.getElementById('wi-ov').remove()">✕ 닫기 / Đóng</button></div>
+    <iframe src="${E(src)}" style="flex:1;width:100%;border:0;border-radius:10px;background:#fff" allow="autoplay"></iframe>`;
+  document.body.appendChild(o);
+}
 function wiBar(pc){
   if (!pc) return ''; const docs = (QME.d || []).filter(x => x.process.includes(String(pc).toUpperCase()));
   if (!docs.length) return `<div class="card" style="margin-bottom:12px;padding:8px 14px;border-color:#FDE68A;background:#FFFBEB;font-size:13px">📘 <b>작업표준서</b> <span class="vi">Hướng dẫn công việc</span> — <span style="color:#92400E">이 공정에 승인된 작업표준서가 없습니다. (ERP 문서관리에서 '적용 공정'에 ${E(pc)} 입력 + 승인)</span></div>`;
   const P = String(pc).toUpperCase();
   return `<div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;border-color:#C7D2FE;background:#F5F7FF">
-    <b>📘 작업표준서 <span class="vi">Hướng dẫn công việc</span></b>${docs.map(x => (x.pl && x.pl[P]) ? `<a class="btn pri" href="${E(x.pl[P])}" target="_blank" rel="noopener" style="text-decoration:none" title="${E(x.title)} — 이 공정 페이지">📄 ${E(procName(pc))} 작업표준서 <span style="opacity:.8;font-weight:400">${E(x.docNo)} · ${E(x.rev)}</span></a>${x.link ? ` <a href="${E(x.link)}" target="_blank" rel="noopener" class="muted" style="font-size:12px">전체본</a>` : ''}`
+    <b>📘 작업표준서 <span class="vi">Hướng dẫn công việc</span></b>${docs.map(x => (x.pl && x.pl[P]) ? `<a class="btn pri" href="#" onclick="wiOpen('${E(x.pl[P])}','${E(procName(pc))} 작업표준서');return false" style="text-decoration:none" title="${E(x.title)} — 이 공정 페이지">📄 ${E(procName(pc))} 작업표준서 <span style="opacity:.8;font-weight:400">${E(x.docNo)} · ${E(x.rev)}</span></a>${x.link ? ` <a href="#" onclick="wiOpen('${E(x.link)}','${E(x.title)} (전체본)');return false" class="muted" style="font-size:12px">전체본</a>` : ''}`
       : x.link && /^https?:/i.test(x.link)
-      ? `<a class="btn" href="${E(x.link)}" target="_blank" rel="noopener" style="text-decoration:none" title="${E(x.kind)} · 승인 ${E(String(x.at).slice(0, 10))}">📄 ${E(x.title)} <span class="muted">${E(x.docNo)} · ${E(x.rev)}</span></a>`
+      ? `<a class="btn" href="#" onclick="wiOpen('${E(x.link)}','${E(x.title)}');return false" style="text-decoration:none" title="${E(x.kind)} · 승인 ${E(String(x.at).slice(0, 10))}">📄 ${E(x.title)} <span class="muted">${E(x.docNo)} · ${E(x.rev)}</span></a>`
       : `<span class="btn" style="opacity:.7" title="파일 링크가 없습니다">📄 ${E(x.title)} <span class="muted">${E(x.docNo)} · ${E(x.rev)} · 파일 없음</span></span>`).join('')}
     <span class="muted" style="font-size:12px">ERP 승인본 · 최신판</span></div>`;
 }
