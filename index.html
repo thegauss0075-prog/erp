@@ -14807,7 +14807,7 @@ function hqsCheckLines(r, err){
   if (!String(r.customer||'').trim()) { err.textContent = '거래처를 넣어주세요.'; return false; }
   if (!r.lines.length || r.lines.some(l => !l.code || !(+l.qty > 0))) { err.textContent = '품목과 수량을 확인해주세요.'; return false; }
   if (!hqItemOK(r.lines)) { err.textContent = '목록에 없는 품목 코드가 있습니다. 목록에서 골라주세요.'; return false; }
-  r.lines.forEach(l => { l.qty = +l.qty || 0; l.price = l.price === '' || l.price == null ? '' : +l.price; });
+  r.lines.forEach(l => { delete l.supAuto; l.qty = +l.qty || 0; l.price = l.price === '' || l.price == null ? '' : +l.price; });
   return true;
 }
 function hqsStamp(r, isNew){ r.updatedAt = new Date().toISOString(); r.updatedBy = CURRENT_USER||''; if (isNew) { r.createdAt = r.updatedAt; r.createdBy = r.updatedBy; } }
@@ -19314,7 +19314,7 @@ const VP_VI = {'구매요청·견적':'Yêu cầu mua · Báo giá','구매 대�
  '발주서 인쇄':'In đơn đặt hàng','발주 처리':'Đặt hàng','입고 등록':'Nhận hàng','이 업체 선정':'Chọn NCC này','✓ 선정됨':'Đã chọn','✓ 선정':'Đã chọn','세금계산서 없음':'Không có HĐ VAT','견적 없음':'Không báo giá','법인장 승인 대기 중':'Chờ Giám đốc duyệt',
  '주문일':'Ngày đặt','품명':'Tên hàng','단가':'Đơn giá','입고일':'Ngày nhận','미입고':'Chưa nhận','엑셀':'Xuất Excel','인쇄':'In','합계':'Tổng','변동':'Biến động','비중':'Tỷ trọng',
  '① 월별 구매 비용 (종류별)':'Chi phí mua theo tháng (theo loại)','② 품목별 월 구매 비용 (금액 큰 순)':'Chi phí theo mặt hàng','④ 공급업체별 구매액':'Giá trị mua theo NCC',
- '현지 공급업체':'Nhà cung cấp trong nước','업체명':'Tên NCC','담당자':'Người liên hệ','연락처':'Điện thoại','취급 품목':'Mặt hàng cung cấp','구매 건':'Số lần mua','구매액':'Giá trị mua','최근 구매':'Mua gần nhất','수정':'Sửa',
+ '현지 공급업체':'Nhà cung cấp trong nước','업체명':'Tên NCC','담당자':'Người liên hệ','연락처':'Điện thoại','취급 품목':'Mặt hàng cung cấp','구매 건':'Số lần mua','구매액':'Giá trị mua','최근 구매':'Mua gần nhất','최근 구매 자동':'Tự động: lần mua gần nhất','수정':'Sửa',
  '품목':'Hàng hóa','입고 누계':'Đã nhận','이번 입고':'Nhận lần này','재고 연동':'Liên kết tồn kho','입고 저장':'Lưu nhận hàng','기록만':'Chỉ ghi nhận','업체명 (짧은 이름) *':'Tên NCC (tên ngắn)','법인명 (발주서·세금계산서)':'Tên pháp nhân (đơn hàng · HĐ VAT)',
  '세금코드 MST':'Mã số thuế','주소':'Địa chỉ','공급업체 추가':'Thêm nhà cung cấp','구매 대장 ':'Sổ mua hàng'};
 function vpBi(root){
@@ -19347,7 +19347,7 @@ function vpHist(r, act){ r.history = (r.history || []).concat([{at: new Date().t
 const vpNorm = t => String(t || '').normalize('NFC').replace(/\s+/g, ' ').trim().toUpperCase();
 function vpSupCanon(n){ const k = vpNorm(n); if (!k) return ''; const s = (HQS.vsup || []).find(x => [x.name, x.fullName, ...(x.aliases || [])].some(a => vpNorm(a) === k)); return s ? s.name : String(n).replace(/\s+/g, ' ').trim(); }
 function vpSupNames(){ const s = new Set((HQS.vsup || []).map(x => x.name)); (HQS.vpur || []).forEach(d => { (d.qsups || []).forEach(x => s.add(x)); (d.lines || []).forEach(l => l.sup && s.add(l.sup)); }); return [...s].filter(Boolean).sort(); }
-function vpItems(){ return allRows().filter(x => x.cat === 'VTTH'); }   // 법인 구매는 소모품(VTTH)만 ERP 품목과 연결
+function vpItems(){ return allRows().filter(x => x.cat === 'VTTH' || x.cat === 'VN'); }   // 법인 구매: 소모품(VTTH)·원자재 VN만 ERP 품목과 연결
 // 구매 대장 = 발주된 구매 건의 품목 줄
 function vpLedger(){
   const out = []; (HQS.vpur || []).filter(d => ['발주', '입고중', '완료'].includes(d.status)).forEach(d => (d.lines || []).forEach((l, i) => {
@@ -19418,14 +19418,14 @@ function vpEdRender(){
       ${S.map((s, k) => `<th style="text-align:center">${vpE(s)}${!lock ? ` <a href="#" onclick="vpDelSup(${k});return false" style="color:#B91C1C;text-decoration:none">✕</a>` : ''}</th>`).join('')}<th>선정 업체 / 단가</th><th class="num">금액</th><th>선정 사유</th><th></th></tr></thead><tbody>
     ${(r.lines || []).map((l, i) => `<tr><td>${i + 1}</td>
       <td><select ${ro} onchange="VP.ed.lines[${i}].cat=this.value" style="padding:4px;border:1px solid #D1D5DB;border-radius:5px">${Object.keys(VP_CAT).map(c => `<option ${l.cat === c ? 'selected' : ''}>${c}</option>`).join('')}</select></td>
-      <td class="wrap"><input ${ro} value="${vpE(l.name)}" placeholder="품명" onchange="VP.ed.lines[${i}].name=this.value" style="width:100%;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px">
+      <td class="wrap"><input ${ro} value="${vpE(l.name)}" placeholder="품명" onchange="vpName(${i},this.value)" style="width:100%;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px">
         <input ${ro} value="${vpE(l.memo || '')}" placeholder="요청 메모 (예: 품질 좋은 제품 요청)" onchange="VP.ed.lines[${i}].memo=this.value" style="width:100%;padding:3px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:11px;margin-top:2px;color:#B45309">
-        <input ${ro} list="vp-items" value="${vpE(l.code ? l.code + ' — ' + ((allRows().find(x => x.code === l.code) || {}).name || '') : '')}" placeholder="ERP 소모품(VTTH) 연결 — 재고 입고용, 선택" onchange="vpLink(${i},this.value)" style="width:100%;padding:3px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:11px;margin-top:2px"></td>
+        <input ${ro} list="vp-items" value="${vpE(l.code ? l.code + ' — ' + ((allRows().find(x => x.code === l.code) || {}).name || '') : '')}" placeholder="ERP 품목 연결 (소모품 VTTH·원자재 VN) — 최근 업체·단가 자동" onchange="vpLink(${i},this.value)" style="width:100%;padding:3px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:11px;margin-top:2px"></td>
       <td><input ${ro} value="${vpE(l.spec)}" onchange="VP.ed.lines[${i}].spec=this.value" style="width:110px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"></td>
       <td><input ${ro} value="${vpE(l.qty)}" inputmode="decimal" onchange="VP.ed.lines[${i}].qty=this.value;vpEdRender()" style="width:70px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right"></td>
       <td><input ${ro} value="${vpE(l.unit)}" onchange="VP.ed.lines[${i}].unit=this.value" style="width:56px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"></td>
       ${S.map(s => qcell(l, i, s)).join('')}
-      <td style="vertical-align:top"><input ${ro} list="vp-sups" value="${vpE(l.sup)}" placeholder="업체" onchange="VP.ed.lines[${i}].sup=vpSupCanon(this.value)" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"><br><input ${ro} value="${vpE(l.price)}" placeholder="단가" inputmode="decimal" onchange="VP.ed.lines[${i}].price=this.value;vpEdRender()" style="width:100px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right;margin-top:2px"></td>
+      <td style="vertical-align:top"><input ${ro} list="vp-sups" value="${vpE(l.sup)}" placeholder="업체" onchange="VP.ed.lines[${i}].sup=vpSupCanon(this.value);VP.ed.lines[${i}].supAuto=false" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"><br><input ${ro} value="${vpE(l.price)}" placeholder="단가" inputmode="decimal" onchange="VP.ed.lines[${i}].price=this.value;VP.ed.lines[${i}].supAuto=false;vpEdRender()" style="width:100px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right;margin-top:2px;${l.supAuto ? 'background:#F0FDF4' : ''}">${l.supAuto ? '<div style="font-size:10.5px;color:#0f766e">최근 구매 자동</div>' : ''}</td>
       <td class="num">${vpN(vpAmt(l)) || '–'}</td>
       <td><input ${ro} value="${vpE(l.why)}" placeholder="최저가 / 품질 등" onchange="VP.ed.lines[${i}].why=this.value" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"></td>
       <td>${!lock ? `<button class="pl-btn" style="padding:2px 8px;color:#B91C1C" onclick="VP.ed.lines.splice(${i},1);vpEdRender()">✕</button>` : ''}</td></tr>`).join('')}</tbody>
@@ -19447,16 +19447,31 @@ function vpActions(r){
   return A.join('');
 }
 function vpQ(i, s, k, v){ const l = VP.ed.lines[i]; l.q = l.q || {}; const q = l.q[s] = l.q[s] || {}; q[k] = k === 'p' ? String(v).replace(/[^0-9.]/g, '') : v;
-  if (!l.supManual) { const low = vpLowest(l, VP.ed.qsups); if (low) { l.sup = low.s; l.price = low.p; if (!l.why) l.why = '최저가'; } }
+  if (!l.supManual) { const low = vpLowest(l, VP.ed.qsups); if (low) { l.sup = low.s; l.price = low.p; l.supAuto = false; if (!l.why || /^최근 구매/.test(l.why)) l.why = '최저가'; } }
   vpEdRender(); }
 function vpPick(i, s){ const l = VP.ed.lines[i], q = (l.q || {})[s] || {}; if (q.noInv && !confirm(`${s} 견적은 세금계산서가 없습니다. 그래도 선정할까요?`)) return;
-  l.sup = s; l.price = +q.p || l.price; l.supManual = true; const low = vpLowest(l, VP.ed.qsups); l.why = low && low.s === s ? '최저가' : (l.why && l.why !== '최저가' ? l.why : ''); vpEdRender();
+  l.sup = s; l.price = +q.p || l.price; l.supManual = true; l.supAuto = false; const low = vpLowest(l, VP.ed.qsups); l.why = low && low.s === s ? '최저가' : (l.why && l.why !== '최저가' ? l.why : ''); vpEdRender();
   if (!l.why) setTimeout(() => alert('최저가가 아닌 업체를 선정했습니다. "선정 사유"에 이유를 적어 주세요 (예: 품질, 납기).'), 50); }
 function vpAddSup(){ const v = (document.getElementById('vp-addsup') || {}).value || ''; const s = vpSupCanon(v.trim()); if (!s) return; if (!(VP.ed.qsups || []).includes(s)) VP.ed.qsups = (VP.ed.qsups || []).concat([s]); vpEdRender(); }
 function vpDelSup(k){ const s = VP.ed.qsups[k]; if (!confirm(`${s} 견적 열을 지울까요?`)) return; VP.ed.qsups.splice(k, 1); VP.ed.lines.forEach(l => { if (l.q) delete l.q[s]; if (l.sup === s && !l.supManual) { l.sup = ''; l.price = ''; } }); vpEdRender(); }
+// 최근 구매 찾기: 같은 ERP 품목(코드) → 없으면 같은 품명. 발주된 구매(발주·입고중·완료) 중 가장 최근 주문일
+function vpLastBuy(code, name, selfId){
+  const nm = vpNorm(name), hits = [];
+  (HQS.vpur || []).forEach(d => { if (d.id === selfId || !['발주', '입고중', '완료'].includes(d.status)) return;
+    (d.lines || []).forEach(l => { if (!l.sup || !(+l.price > 0)) return; const byCode = code && l.code === code, byName = nm && vpNorm(l.name) === nm; if (byCode || byName) hits.push({l, od: l.orderDate || d.orderDate || d.reqDate || '', no: d.no, w: byCode ? 1 : 0}); }); });
+  hits.sort((x, y) => (y.w - x.w) || String(y.od).localeCompare(String(x.od))); return hits[0] || null;
+}
+function vpAutoFill(l, force){
+  if (!force && l.sup && !l.supAuto) return;   // 직접 고른 업체는 그대로
+  const h = vpLastBuy(l.code, l.name, VP.ed && VP.ed.id); if (!h) return false;
+  l.sup = vpSupCanon(h.l.sup); l.price = +h.l.price; l.supAuto = true; if (!l.unit) l.unit = h.l.unit || ''; if (!l.spec && h.l.spec) l.spec = h.l.spec; if (!l.cat || l.cat === 'VTTH') l.cat = h.l.cat || l.cat;
+  l.why = `최근 구매 ${String(h.od).slice(0, 10)} (${h.no})`; return true;
+}
 function vpLink(i, v){ const code = String(v).split(' — ')[0].trim(), it = vpItems().find(x => x.code === code); const l = VP.ed.lines[i];
-  if (!v) { l.code = ''; return; } if (!it) { alert('목록에서 ERP 소모품(VTTH) 품목을 골라 주세요.'); vpEdRender(); return; }
-  l.code = it.code; if (!l.name) l.name = it.name; if (!l.unit) l.unit = it.unit || ''; if (it.cat === 'VTTH') l.cat = 'VTTH'; vpEdRender(); }
+  if (!v) { l.code = ''; return; } if (!it) { alert('목록에서 ERP 소모품(VTTH)·원자재 VN 품목을 골라 주세요.'); vpEdRender(); return; }
+  l.code = it.code; if (!l.name) l.name = it.name; if (!l.unit) l.unit = it.unit || ''; l.cat = it.cat === 'VN' ? 'NPL' : 'VTTH';
+  vpAutoFill(l); vpEdRender(); }
+function vpName(i, v){ const l = VP.ed.lines[i]; l.name = v; if (vpAutoFill(l)) vpEdRender(); }
 function vpCheck(r, strict){
   r.lines = (r.lines || []).filter(l => String(l.name || '').trim() || l.code);
   if (!r.lines.length) return '품목을 1개 이상 넣어 주세요.';
