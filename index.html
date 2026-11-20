@@ -526,6 +526,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <button class="tb" onclick="go('hist')">📋 이력<span class="vi">Lịch sử</span></button>
   <button class="tb" onclick="go('ng')">⚠️ 불량(NG)<span class="vi">Hàng lỗi (NG)</span></button>
   <button class="tb" onclick="go('po')">📧 발주관리<span class="vi">Quản lý đặt hàng</span></button>
+  <button class="tb" id="tb-vbuy" onclick="go('vbuy')">🛒 구매<span class="vi">Mua hàng</span></button>
   <button class="tb" id="tb-ship" onclick="go('ship')">🚚 출고<span class="vi">Xuất hàng</span></button>
   <button class="tb" id="tb-shipstat" onclick="go('shipstat')">📊 출고 실적<span class="vi">Kết quả xuất</span></button>
   <button class="tb" id="tb-cost" onclick="go('cost')" style="display:none">💰 제조원가<span class="vi">Giá thành SX</span></button>
@@ -1002,6 +1003,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 
 <!-- 📅 생산계획 (2026-11-20) -->
 <div id="tab-plan" class="sec"><div id="plan-body"></div></div>
+<div id="tab-vbuy" class="sec"><div id="vp-body"></div></div>
 
 <!-- WORK ORDERS (작업지시) -->
 <div id="tab-wo" class="sec">
@@ -2515,6 +2517,7 @@ function go(id){
   if(id==='io') renderIOTable();
   if(id==='wo') renderWO({soft:true});
   if(id==='plan') renderPlan();
+  if(id==='vbuy') renderVP();
   if(id==='qc') { renderQC({soft:true}); qmShow(); }
   if(id==='hist') renderHist();
   if(id==='ng'){renderNG();renderNGLog();initNGLogModel();}
@@ -19281,6 +19284,351 @@ async function qcLotDocs(id){
     <div style="font-size:11.5px;color:#8A95A3;margin-top:8px">파일을 누르면 엑셀·CSV는 ERP 보기 창, PDF는 드라이브로 열립니다. 빨간 줄은 성적서·기록이 빠진 곳입니다.</div>
     <div style="text-align:right;margin-top:10px"><button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button></div>`);
   const box = document.querySelector('#qm-modal > div'); if (box) box.style.width = 'min(1000px,100%)';
+}
+
+</script>
+<script>
+// ════════════════════════════════════════════════════════════════════
+// 🛒 [2026-11-20] 법인 구매 (현지 구매: 소모품 VTTH · 원부자재 NPL · 공구·비품 CCDC)
+//   구매요청 → 견적 비교(업체별 단가) → 법인장 승인 → 업체별 발주서 → 입고(소모품은 재고 입고) → 구매 대장·보고서
+//   저장소: HQ 저장소 'vpur'(구매 건) · 'vsup'(현지 공급업체)   ※ 서버 Code.gs에 vpur·vsup·saveHQStoreBulk 필요
+// ════════════════════════════════════════════════════════════════════
+const VP = {loaded: false, err: '', view: 'list', st: '', q: '', year: '', dept: '', cat: '', sup: '', ed: null};
+const VP_ST = {'작성': ['#475569', '#F1F5F9'], '승인요청': ['#B45309', '#FFFBEB'], '승인': ['#4338CA', '#EEF2FF'], '발주': ['#185FA5', '#EFF6FF'], '입고중': ['#0F766E', '#F0FDFA'], '완료': ['#15803D', '#F0FDF4'], '반려': ['#B91C1C', '#FEF2F2'], '취소': ['#6B7280', '#F3F4F6']};
+const VP_CAT = {VTTH: '소모품 VTTH', NPL: '원부자재 NPL', CCDC: '공구·비품 CCDC'};
+const VP_DEPT = {PD: '생산 PD', OFFICE: '사무실 OFFICE'};
+const vpE = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const vpN = v => (v === '' || v == null || isNaN(+v)) ? '' : (+v).toLocaleString('en-US', {maximumFractionDigits: 2});
+const vpCanEdit = () => !!(isMaster || isAdmin || USER_ROLE === 'admin' || USER_ROLE === 'user');
+const vpCanApprove = () => !!isMaster;   // 법인장(마스터) 승인
+const vpToday = () => plYmd(new Date());
+const vpAmt = l => (+l.qty || 0) * (+l.price || 0);
+function vpModal(html, w){
+  let m = document.getElementById('vp-ov'); if (!m) { m = document.createElement('div'); m.id = 'vp-ov'; m.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9992;display:flex;align-items:center;justify-content:center;padding:14px'; document.body.appendChild(m); }
+  m.innerHTML = `<div style="background:#fff;border-radius:12px;width:min(${w || 1100}px,100%);max-height:94vh;overflow:auto;padding:18px 20px">${html}</div>`;
+}
+function vpClose(){ const m = document.getElementById('vp-ov'); if (m) m.remove(); VP.ed = null; }
+async function vpLoad(){
+  const [a, b] = await Promise.all([api('getHQStore', {store: 'vpur'}), api('getHQStore', {store: 'vsup'})]);
+  if (a && a.ok) { HQS.vpur = a.data || []; VP.err = ''; VP.loaded = true; } else VP.err = /bad store/i.test(a && a.error || '') ? '서버(Code.gs)를 새 버전으로 배포해야 법인 구매를 저장할 수 있습니다. (vpur·vsup 저장소 추가됨)' : '구매 자료를 불러오지 못했습니다: ' + ((a && a.error) || '서버 응답 없음');
+  if (b && b.ok) HQS.vsup = b.data || [];
+}
+async function vpSave(rec){ rec.updatedBy = CURRENT_USER || ''; rec.updatedAt = new Date().toISOString(); return qmPut('vpur', rec); }
+function vpHist(r, act){ r.history = (r.history || []).concat([{at: new Date().toISOString(), by: CURRENT_USER || '', act}]); }
+function vpSupNames(){ const s = new Set((HQS.vsup || []).map(x => x.name)); (HQS.vpur || []).forEach(d => { (d.qsups || []).forEach(x => s.add(x)); (d.lines || []).forEach(l => l.sup && s.add(l.sup)); }); return [...s].filter(Boolean).sort(); }
+function vpItems(){ return allRows().filter(x => ['VTTH', 'VN', 'KR'].includes(x.cat)); }
+// 구매 대장 = 발주된 구매 건의 품목 줄
+function vpLedger(){
+  const out = []; (HQS.vpur || []).filter(d => ['발주', '입고중', '완료'].includes(d.status)).forEach(d => (d.lines || []).forEach((l, i) => {
+    if (!l.sup || !(+l.qty > 0)) return; const od = l.orderDate || d.orderDate || d.reqDate || '';
+    out.push({d, l, i, od, ym: String(od).slice(0, 7), y: String(od).slice(0, 4), m: +String(od).slice(5, 7), amt: vpAmt(l), miss: Math.max(0, (+l.qty || 0) - (+l.recvQty || 0))}); }));
+  return out;
+}
+// ── 화면 ───────────────────────────────────────────────
+async function renderVP(opts){
+  opts = opts || {}; const el = document.getElementById('vp-body'); if (!el) return;
+  if (!opts.local) { if (!VP.loaded) el.innerHTML = '<div class="empty">⏳ 불러오는 중…</div>'; await vpLoad().catch(e => { VP.err = String(e.message || e); }); }
+  if (!VP.year) VP.year = String(new Date().getFullYear());
+  const tab = (k, t) => `<button class="${VP.view === k ? 'on' : ''}" onclick="VP.view='${k}';renderVP({local:true})">${t}</button>`;
+  let body = '';
+  if (VP.view === 'list') body = vpListHtml(); else if (VP.view === 'ledger') body = vpLedgerHtml(); else if (VP.view === 'report') body = vpReportHtml(); else body = vpSupHtml();
+  el.innerHTML = `<div class="pl">${plCss()}<style>.vp-t td,.vp-t th{white-space:nowrap}.vp-t td.wrap{white-space:normal;min-width:180px}.vp-low{background:#DCFCE7!important;font-weight:700}.vp-sel{outline:2px solid #4338CA;outline-offset:-2px}</style>
+    <div class="pl-tabs">${tab('list', '구매요청·견적')}${tab('ledger', '구매 대장')}${tab('report', '구매 보고서')}${tab('sup', '공급업체')}</div>
+    ${VP.err ? `<div class="pl-err">${vpE(VP.err)}</div>` : ''}${body}</div>`;
+}
+function vpListHtml(){
+  const q = VP.q.toLowerCase(), docs = (HQS.vpur || []).filter(d => (!VP.st || d.status === VP.st) && (!VP.dept || d.dept === VP.dept) && (!q || [d.no, d.title, d.reqBy, ...(d.lines || []).map(l => l.name + ' ' + (l.sup || ''))].join(' ').toLowerCase().includes(q)))
+    .sort((a, b) => String(b.reqDate || '').localeCompare(String(a.reqDate || '')) || String(b.no).localeCompare(String(a.no)));
+  const cnt = s => (HQS.vpur || []).filter(d => d.status === s).length;
+  const chips = ['', '작성', '승인요청', '승인', '발주', '입고중', '완료', '반려'].map(s => `<button class="pl-btn" style="${VP.st === s ? 'background:#EEF2FF;border-color:#4338CA;color:#4338CA;font-weight:700' : ''}" onclick="VP.st='${s}';renderVP({local:true})">${s || '전체'}${s ? ' ' + cnt(s) : ''}</button>`).join('');
+  return `<div class="pl-head"><div><div class="pl-title">구매요청 · 견적 비교</div><div class="pl-period">요청 → 업체별 견적 → 법인장 승인 → 발주 → 입고</div></div><span style="flex:1"></span>
+      ${vpCanEdit() ? `<button class="pl-btn" onclick="vpImportPick('quote')">견적 비교표 엑셀 가져오기</button><button class="pl-btn" onclick="vpImportPick('report')">구매 보고서 엑셀 가져오기</button><button class="pl-act" style="padding:8px 14px;font-size:13px" onclick="vpEdit(null)">＋ 구매요청</button>` : ''}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}<span style="flex:1"></span>
+      <select class="pl-btn" onchange="VP.dept=this.value;renderVP({local:true})"><option value="">전체 부서</option>${Object.entries(VP_DEPT).map(([k, v]) => `<option value="${k}" ${VP.dept === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+      <input class="pl-btn" placeholder="번호·품명·업체 검색" value="${vpE(VP.q)}" onchange="VP.q=this.value;renderVP({local:true})" style="width:200px"></div>
+    <div class="pl-tw"><table class="pl-t vp-t" style="min-width:900px"><thead><tr><th style="text-align:left">번호</th><th>요청일</th><th>부서</th><th style="text-align:left">제목 / 품목</th><th class="num">품목 수</th><th class="num">금액 (VND)</th><th style="text-align:left">업체</th><th>상태</th><th></th></tr></thead><tbody>
+    ${docs.map(d => { const L = d.lines || [], amt = L.reduce((a, l) => a + vpAmt(l), 0), sups = [...new Set(L.map(l => l.sup).filter(Boolean))];
+      return `<tr style="cursor:pointer" onclick="vpEdit('${vpE(d.id)}')"><td style="font-family:ui-monospace,monospace">${vpE(d.no)}${d.src === 'import' ? ' <span class="pl-sub">가져옴</span>' : ''}</td><td>${vpE(d.reqDate || '')}</td><td>${vpE(d.dept || '')}</td>
+        <td class="wrap"><b>${vpE(d.title || '')}</b><div class="pl-sub">${vpE(L.slice(0, 3).map(l => l.name).join(', '))}${L.length > 3 ? ' 외 ' + (L.length - 3) : ''}</div></td>
+        <td class="num">${L.length}</td><td class="num">${vpN(amt) || '–'}</td><td class="wrap" style="min-width:120px">${vpE(sups.join(', '))}</td><td>${hqPill(d.status, VP_ST[d.status])}</td>
+        <td>${d.status === '발주' || d.status === '입고중' ? `<button class="pl-act" onclick="event.stopPropagation();vpRecv('${vpE(d.id)}')">입고</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">구매요청이 없습니다. "＋ 구매요청" 또는 엑셀 가져오기로 시작하세요.</td></tr>'}</tbody></table></div>`;
+}
+// ── 구매요청 편집 (견적 비교 포함) ──────────────────────
+function vpBlankLine(){ return {id: 'l' + Date.now() + Math.floor(Math.random() * 999), cat: 'VTTH', code: '', name: '', spec: '', qty: '', unit: '', q: {}, sup: '', price: '', why: ''}; }
+function vpEdit(id){
+  const r = id ? (HQS.vpur || []).find(x => String(x.id) === String(id)) : null;
+  VP.ed = r ? JSON.parse(JSON.stringify(r)) : {id: 'vp' + Date.now(), no: '', status: '작성', dept: 'PD', reqDate: vpToday(), reqBy: CURRENT_USER || '', title: '', qsups: [], lines: [vpBlankLine()], history: []};
+  vpEdRender();
+}
+function vpLowest(l, sups){ let best = null; (sups || []).forEach(s => { const q = (l.q || {})[s]; if (!q || q.na || q.noInv || !(+q.p > 0)) return; if (!best || +q.p < best.p) best = {s, p: +q.p}; }); return best; }
+function vpEdRender(){
+  const r = VP.ed; if (!r) return; const lock = !['작성', '반려'].includes(r.status) || !vpCanEdit(), ro = lock ? 'disabled' : '';
+  const S = r.qsups || [], items = vpItems(), supList = vpSupNames();
+  const tot = (r.lines || []).reduce((a, l) => a + vpAmt(l), 0);
+  const set = k => `onchange="VP.ed.${k}=this.value"`;
+  const qcell = (l, i, s) => { const q = (l.q || {})[s] || {}, low = vpLowest(l, S), isLow = low && low.s === s, isSel = l.sup === s;
+    return `<td class="${isLow ? 'vp-low' : ''} ${isSel ? 'vp-sel' : ''}" style="min-width:120px;vertical-align:top">
+      <input ${ro} value="${vpE(q.p ?? '')}" placeholder="단가" inputmode="decimal" onchange="vpQ(${i},'${vpE(s)}','p',this.value)" style="width:96px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right">
+      <label style="display:block;font-size:10.5px;color:#B91C1C;margin-top:2px"><input type="checkbox" ${ro} ${q.noInv ? 'checked' : ''} onchange="vpQ(${i},'${vpE(s)}','noInv',this.checked)"> 세금계산서 없음</label>
+      <label style="display:block;font-size:10.5px;color:#6B7280"><input type="checkbox" ${ro} ${q.na ? 'checked' : ''} onchange="vpQ(${i},'${vpE(s)}','na',this.checked)"> 견적 없음</label>
+      <input ${ro} value="${vpE(q.note || '')}" placeholder="규격·메모" onchange="vpQ(${i},'${vpE(s)}','note',this.value)" style="width:110px;padding:3px 5px;border:1px solid #E5E7EB;border-radius:5px;font-size:11px;margin-top:2px">
+      ${!lock ? `<div><button class="pl-btn" style="padding:2px 8px;font-size:11px;margin-top:3px" onclick="vpPick(${i},'${vpE(s)}')">${isSel ? '✓ 선정됨' : '이 업체 선정'}</button></div>` : (isSel ? '<div style="font-size:11px;color:#4338CA;font-weight:700">✓ 선정</div>' : '')}</td>`; };
+  vpModal(`<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><h3 style="margin:0;font-size:17px">${r.no ? vpE(r.no) : '새 구매요청'}</h3>${hqPill(r.status, VP_ST[r.status])}<span style="flex:1"></span><button class="pl-btn" onclick="vpClose()">닫기</button></div>
+    <datalist id="vp-items">${items.map(x => `<option value="${vpE(x.code)} — ${vpE(x.name)}">`).join('')}</datalist><datalist id="vp-sups">${supList.map(x => `<option value="${vpE(x)}">`).join('')}</datalist>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px">
+      ${hqFld('제목', '', `<input ${ro} value="${vpE(r.title)}" ${set('title')} placeholder="예: 11월 소모품 구매" style="${HQ_IN}">`)}
+      ${hqFld('부서', '', `<select ${ro} ${set('dept')} style="${HQ_IN}">${Object.entries(VP_DEPT).map(([k, v]) => `<option value="${k}" ${r.dept === k ? 'selected' : ''}>${v}</option>`).join('')}</select>`)}
+      ${hqFld('요청일', '', `<input type="date" ${ro} value="${vpE(r.reqDate)}" ${set('reqDate')} style="${HQ_IN}">`)}
+      ${hqFld('요청자', '', `<input ${ro} value="${vpE(r.reqBy)}" ${set('reqBy')} style="${HQ_IN}">`)}</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:14px">품목 · 업체별 견적</b><span class="pl-sub">초록 = 세금계산서 있는 최저가 · 테두리 = 선정 업체</span><span style="flex:1"></span>
+      ${!lock ? `<input id="vp-addsup" list="vp-sups" placeholder="견적 업체 추가" style="${HQ_IN};width:180px"><button class="pl-btn" onclick="vpAddSup()">＋ 업체</button>` : ''}</div>
+    <div class="pl-tw"><table class="pl-t vp-t" style="min-width:${760 + S.length * 130}px"><thead><tr><th>#</th><th>종류</th><th style="text-align:left">품목 (ERP 연결)</th><th>규격</th><th class="num">수량</th><th>단위</th>
+      ${S.map((s, k) => `<th style="text-align:center">${vpE(s)}${!lock ? ` <a href="#" onclick="vpDelSup(${k});return false" style="color:#B91C1C;text-decoration:none">✕</a>` : ''}</th>`).join('')}<th>선정 업체 / 단가</th><th class="num">금액</th><th>선정 사유</th><th></th></tr></thead><tbody>
+    ${(r.lines || []).map((l, i) => `<tr><td>${i + 1}</td>
+      <td><select ${ro} onchange="VP.ed.lines[${i}].cat=this.value" style="padding:4px;border:1px solid #D1D5DB;border-radius:5px">${Object.keys(VP_CAT).map(c => `<option ${l.cat === c ? 'selected' : ''}>${c}</option>`).join('')}</select></td>
+      <td class="wrap"><input ${ro} value="${vpE(l.name)}" placeholder="품명" onchange="VP.ed.lines[${i}].name=this.value" style="width:100%;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px">
+        <input ${ro} value="${vpE(l.memo || '')}" placeholder="요청 메모 (예: 품질 좋은 제품 요청)" onchange="VP.ed.lines[${i}].memo=this.value" style="width:100%;padding:3px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:11px;margin-top:2px;color:#B45309">
+        <input ${ro} list="vp-items" value="${vpE(l.code ? l.code + ' — ' + ((allRows().find(x => x.code === l.code) || {}).name || '') : '')}" placeholder="ERP 품목 연결 (재고 입고용, 선택)" onchange="vpLink(${i},this.value)" style="width:100%;padding:3px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:11px;margin-top:2px"></td>
+      <td><input ${ro} value="${vpE(l.spec)}" onchange="VP.ed.lines[${i}].spec=this.value" style="width:110px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"></td>
+      <td><input ${ro} value="${vpE(l.qty)}" inputmode="decimal" onchange="VP.ed.lines[${i}].qty=this.value;vpEdRender()" style="width:70px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right"></td>
+      <td><input ${ro} value="${vpE(l.unit)}" onchange="VP.ed.lines[${i}].unit=this.value" style="width:56px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"></td>
+      ${S.map(s => qcell(l, i, s)).join('')}
+      <td style="vertical-align:top"><input ${ro} list="vp-sups" value="${vpE(l.sup)}" placeholder="업체" onchange="VP.ed.lines[${i}].sup=this.value" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"><br><input ${ro} value="${vpE(l.price)}" placeholder="단가" inputmode="decimal" onchange="VP.ed.lines[${i}].price=this.value;vpEdRender()" style="width:100px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right;margin-top:2px"></td>
+      <td class="num">${vpN(vpAmt(l)) || '–'}</td>
+      <td><input ${ro} value="${vpE(l.why)}" placeholder="최저가 / 품질 등" onchange="VP.ed.lines[${i}].why=this.value" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"></td>
+      <td>${!lock ? `<button class="pl-btn" style="padding:2px 8px;color:#B91C1C" onclick="VP.ed.lines.splice(${i},1);vpEdRender()">✕</button>` : ''}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td colspan="${7 + S.length}">${!lock ? '<button class="pl-btn" onclick="VP.ed.lines.push(vpBlankLine());vpEdRender()">＋ 품목 추가</button>' : ''}</td><td class="num">${vpN(tot)}</td><td colspan="2">VND</td></tr></tfoot></table></div>
+    ${hqFld('비고', '', `<textarea ${ro} rows="2" onchange="VP.ed.note=this.value" style="${HQ_IN};font-family:inherit">${vpE(r.note || '')}</textarea>`, true)}
+    ${r.rejectNote ? `<div class="pl-err" style="margin-top:8px">반려 사유: ${vpE(r.rejectNote)}</div>` : ''}
+    ${(r.history || []).length ? `<div class="pl-sub" style="margin-top:8px">이력: ${(r.history || []).map(h => `${vpE(String(h.at || '').slice(0, 10))} ${vpE(h.by || '')} ${vpE(h.act || '')}`).join(' → ')}</div>` : ''}
+    <div id="vp-err" style="color:#B91C1C;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:12px">${vpActions(r)}</div>`, 1280);
+}
+function vpActions(r){
+  const b = (t, f, pri) => `<button class="${pri ? 'pl-act' : 'pl-btn'}" style="padding:8px 14px;font-size:13px" onclick="${f}">${t}</button>`, A = [];
+  const isNew = !(HQS.vpur || []).some(x => x.id === r.id);
+  if (vpCanEdit() && ['작성', '반려'].includes(r.status)) { if (!isNew && r.status === '작성') A.push(b('삭제', 'vpDel()')); A.push(b('저장', "vpAct('save')")); A.push(b('승인 요청', "vpAct('submit')", 1)); }
+  if (r.status === '승인요청') { if (vpCanApprove()) { A.push(b('반려', "vpAct('reject')")); A.push(b('승인', "vpAct('approve')", 1)); } else A.push('<span class="pl-sub" style="align-self:center">법인장 승인 대기 중</span>'); if (vpCanEdit()) A.push(b('요청 회수', "vpAct('recall')")); }
+  if (r.status === '승인' && vpCanEdit()) { A.push(b('발주서 인쇄', "vpPrint()")); A.push(b('발주 처리', "vpAct('order')", 1)); }
+  if (['발주', '입고중', '완료'].includes(r.status)) { A.push(b('발주서 인쇄', "vpPrint()")); if (r.status !== '완료' && vpCanEdit()) A.push(b('입고 등록', `vpRecv('${vpE(r.id)}')`, 1)); }
+  if (['승인', '발주'].includes(r.status) && vpCanApprove()) A.push(b('취소', "vpAct('cancel')"));
+  return A.join('');
+}
+function vpQ(i, s, k, v){ const l = VP.ed.lines[i]; l.q = l.q || {}; const q = l.q[s] = l.q[s] || {}; q[k] = k === 'p' ? String(v).replace(/[^0-9.]/g, '') : v;
+  if (!l.supManual) { const low = vpLowest(l, VP.ed.qsups); if (low) { l.sup = low.s; l.price = low.p; if (!l.why) l.why = '최저가'; } }
+  vpEdRender(); }
+function vpPick(i, s){ const l = VP.ed.lines[i], q = (l.q || {})[s] || {}; if (q.noInv && !confirm(`${s} 견적은 세금계산서가 없습니다. 그래도 선정할까요?`)) return;
+  l.sup = s; l.price = +q.p || l.price; l.supManual = true; const low = vpLowest(l, VP.ed.qsups); l.why = low && low.s === s ? '최저가' : (l.why && l.why !== '최저가' ? l.why : ''); vpEdRender();
+  if (!l.why) setTimeout(() => alert('최저가가 아닌 업체를 선정했습니다. "선정 사유"에 이유를 적어 주세요 (예: 품질, 납기).'), 50); }
+function vpAddSup(){ const v = (document.getElementById('vp-addsup') || {}).value || ''; const s = v.trim(); if (!s) return; if (!(VP.ed.qsups || []).includes(s)) VP.ed.qsups = (VP.ed.qsups || []).concat([s]); vpEdRender(); }
+function vpDelSup(k){ const s = VP.ed.qsups[k]; if (!confirm(`${s} 견적 열을 지울까요?`)) return; VP.ed.qsups.splice(k, 1); VP.ed.lines.forEach(l => { if (l.q) delete l.q[s]; if (l.sup === s && !l.supManual) { l.sup = ''; l.price = ''; } }); vpEdRender(); }
+function vpLink(i, v){ const code = String(v).split(' — ')[0].trim(), it = allRows().find(x => x.code === code); const l = VP.ed.lines[i];
+  if (!v) { l.code = ''; return; } if (!it) { alert('목록에서 ERP 품목을 골라 주세요.'); vpEdRender(); return; }
+  l.code = it.code; if (!l.name) l.name = it.name; if (!l.unit) l.unit = it.unit || ''; if (it.cat === 'VTTH') l.cat = 'VTTH'; vpEdRender(); }
+function vpCheck(r, strict){
+  r.lines = (r.lines || []).filter(l => String(l.name || '').trim() || l.code);
+  if (!r.lines.length) return '품목을 1개 이상 넣어 주세요.';
+  if (r.lines.some(l => !(+l.qty > 0))) return '수량을 확인해 주세요.';
+  if (strict) { const bad = r.lines.filter(l => !l.sup || !(+l.price > 0)); if (bad.length) return `업체·단가가 정해지지 않은 품목: ${bad.map(l => l.name).join(', ')}`;
+    const why = r.lines.filter(l => { const low = vpLowest(l, r.qsups); return low && low.s !== l.sup && !String(l.why || '').trim(); }); if (why.length) return `최저가가 아닌 업체를 고른 품목은 선정 사유를 적어 주세요: ${why.map(l => l.name).join(', ')}`; }
+  return '';
+}
+async function vpAct(act){
+  const r = VP.ed, err = document.getElementById('vp-err'); if (!r) return; const prev = r.status;
+  if (act === 'save' || act === 'submit') { const e = vpCheck(r, act === 'submit'); if (e) { err.textContent = e; return; }
+    if (!r.no) r.no = hqNextNo('PR', HQS.vpur || [], 'no', r.reqDate);
+    if (act === 'submit') { r.status = '승인요청'; r.rejectNote = ''; vpHist(r, '승인 요청'); } else if (!(r.history || []).length) vpHist(r, '작성'); }
+  else if (act === 'approve') { if (!vpCanApprove()) return; r.status = '승인'; r.approvedBy = CURRENT_USER || '법인장'; r.approvedAt = new Date().toISOString(); vpHist(r, '승인'); }
+  else if (act === 'reject') { const why = prompt('반려 사유'); if (why === null) return; r.status = '반려'; r.rejectNote = why; vpHist(r, '반려: ' + why); }
+  else if (act === 'recall') { r.status = '작성'; vpHist(r, '요청 회수'); }
+  else if (act === 'order') { const od = prompt('발주일 (YYYY-MM-DD)', vpToday()); if (!od) return; r.orderDate = od; r.lines.forEach(l => { if (!l.orderDate) l.orderDate = od; }); r.status = '발주'; vpHist(r, '발주 ' + od); }
+  else if (act === 'cancel') { if (!confirm('이 구매 건을 취소할까요?')) return; r.status = '취소'; vpHist(r, '취소'); }
+  r.lines.forEach(l => { l.qty = +l.qty || 0; l.price = l.price === '' || l.price == null ? '' : +l.price; });
+  if (await vpSave(r)) { VP.ed = JSON.parse(JSON.stringify(r)); vpEdRender(); renderVP({local: true}); } else r.status = prev;
+}
+async function vpDel(){
+  const r = VP.ed; if (!r || r.status !== '작성') return;
+  if (!confirm(`${r.no || '이 구매요청'}을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return;
+  const res = await apiAuto('deleteHQStore', {store: 'vpur', id: r.id}); if (!res || !res.ok) { alert('삭제 실패: ' + ((res && res.error) || '')); return; }
+  HQS.vpur = (HQS.vpur || []).filter(x => x.id !== r.id); vpClose(); renderVP({local: true});
+}
+// ── 발주서 (업체별) ─────────────────────────────────────
+function vpPrint(){
+  const r = VP.ed; if (!r) return; const by = {}; (r.lines || []).forEach(l => { if (l.sup) (by[l.sup] = by[l.sup] || []).push(l); });
+  const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해 주세요.'); return; }
+  const pages = Object.entries(by).map(([s, L]) => { const sup = (HQS.vsup || []).find(x => x.name === s) || {}, tot = L.reduce((a, l) => a + vpAmt(l), 0);
+    return `<div class="pg"><table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr><tr><td></td><td></td><td>${r.approvedBy ? vpE(r.approvedBy) + '<br><small>' + vpE(String(r.approvedAt || '').slice(0, 10)) + '</small>' : ''}</td></tr></table>
+      <h1>발 주 서 · ĐƠN ĐẶT HÀNG</h1>
+      <table class="hd"><tr><th>발주번호</th><td>${vpE(r.no)}</td><th>발주일</th><td>${vpE(r.orderDate || vpToday())}</td></tr>
+        <tr><th>수신 (공급업체)</th><td>${vpE(s)}${sup.tax ? '<br>MST ' + vpE(sup.tax) : ''}</td><th>발신</th><td>THE GAUSS VINA CO., LTD<br>${vpE(VP_DEPT[r.dept] || r.dept)}</td></tr>
+        <tr><th>담당 / 연락처</th><td>${vpE(sup.contact || '')} ${vpE(sup.phone || '')}</td><th>요청자</th><td>${vpE(r.reqBy || '')}</td></tr></table>
+      <table class="ln"><thead><tr><th>No</th><th>품명 / Tên hàng</th><th>규격 / Quy cách</th><th>수량 / SL</th><th>단위 / ĐVT</th><th>단가 / Đơn giá</th><th>금액 / Thành tiền</th></tr></thead><tbody>
+      ${L.map((l, i) => `<tr><td class="c">${i + 1}</td><td>${vpE(l.name)}</td><td>${vpE(l.spec || '')}</td><td class="r">${vpN(l.qty)}</td><td class="c">${vpE(l.unit || '')}</td><td class="r">${vpN(l.price)}</td><td class="r">${vpN(vpAmt(l))}</td></tr>`).join('')}
+      <tr><td colspan="6" class="r"><b>합계 (VAT 별도) / Tổng (chưa VAT)</b></td><td class="r"><b>${vpN(tot)}</b></td></tr></tbody></table>
+      <p style="font-size:11px">※ 세금계산서(Hóa đơn VAT)를 함께 발행해 주십시오. / Vui lòng xuất hóa đơn VAT kèm theo.</p>${r.note ? `<p style="font-size:11px">비고: ${vpE(r.note)}</p>` : ''}</div>`; }).join('');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>발주서 ${vpE(r.no)}</title><style>@page{size:A4;margin:12mm}body{font-family:"Malgun Gothic",Arial,sans-serif;font-size:12px}.pg{page-break-after:always}h1{text-align:center;font-size:20px;letter-spacing:4px;clear:both;margin:8px 0 14px}table{border-collapse:collapse;width:100%}.hd th,.hd td,.ln th,.ln td{border:1px solid #666;padding:5px 6px}.hd th,.ln th{background:#EEF2F7;width:15%}.ln{margin-top:12px}.r{text-align:right}.c{text-align:center}.sg{float:right;width:220px;margin-bottom:6px}.sg td{border:1px solid #555;height:38px;text-align:center;vertical-align:top;font-size:11px}</style></head><body>${pages || '<p>선정된 업체가 없습니다.</p>'}<script>setTimeout(()=>print(),300)<\/script></body></html>`);
+  w.document.close();
+}
+// ── 입고 (부분 입고 가능 · 소모품 VTTH로 연결된 품목은 재고 입고) ─────────
+function vpRecv(id){
+  const r = (HQS.vpur || []).find(x => String(x.id) === String(id)); if (!r) return; VP.ed = JSON.parse(JSON.stringify(r));
+  vpModal(`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><h3 style="margin:0;font-size:17px">입고 등록 · ${vpE(r.no)}</h3>${hqPill(r.status, VP_ST[r.status])}<span style="flex:1"></span><button class="pl-btn" onclick="vpClose()">닫기</button></div>
+    <div class="pl-sub" style="margin-bottom:8px">이번에 들어온 수량을 넣으세요. ERP 소모품(VTTH)과 연결된 품목은 재고에도 입고됩니다. 원자재(VN·KR)는 수입검사 합격 시 입고되므로 여기서는 기록만 합니다.</div>
+    <div style="margin-bottom:8px">입고일 <input type="date" id="vp-rd" value="${vpToday()}" style="padding:5px 8px;border:1px solid #D1D5DB;border-radius:6px"></div>
+    <div class="pl-tw"><table class="pl-t vp-t" style="min-width:760px"><thead><tr><th style="text-align:left">품목</th><th>업체</th><th class="num">발주</th><th class="num">입고 누계</th><th class="num">미입고</th><th class="num">이번 입고</th><th>재고 연동</th></tr></thead><tbody>
+    ${(r.lines || []).map((l, i) => { const miss = Math.max(0, (+l.qty || 0) - (+l.recvQty || 0)), it = l.code ? allRows().find(x => x.code === l.code) : null;
+      return `<tr><td class="wrap"><b>${vpE(l.name)}</b><div class="pl-sub">${vpE(l.spec || '')}</div></td><td>${vpE(l.sup || '')}</td><td class="num">${vpN(l.qty)} ${vpE(l.unit || '')}</td><td class="num">${vpN(l.recvQty || 0)}</td><td class="num" style="color:${miss ? '#B45309' : '#15803D'}">${vpN(miss)}</td>
+        <td class="num"><input id="vp-rq${i}" value="${miss || ''}" ${miss ? '' : 'disabled'} inputmode="decimal" style="width:80px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right"></td>
+        <td>${it ? (it.cat === 'VTTH' ? `<span class="ok">재고 입고 (${vpE(it.code)})</span>` : `<span class="part">수입검사로 입고 (${vpE(it.code)})</span>`) : '<span class="pl-sub">기록만</span>'}</td></tr>`; }).join('')}</tbody></table></div>
+    <div id="vp-err" style="color:#B91C1C;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="pl-btn" onclick="vpClose()">닫기</button><button class="pl-act" style="padding:8px 16px;font-size:13px" id="vp-rbtn" onclick="vpRecvSave()">입고 저장</button></div>`, 980);
+}
+async function vpRecvSave(){
+  const r = VP.ed, rd = (document.getElementById('vp-rd') || {}).value || vpToday(), btn = document.getElementById('vp-rbtn'), err = document.getElementById('vp-err');
+  const recs = []; (r.lines || []).forEach((l, i) => { const el = document.getElementById('vp-rq' + i), v = el && !el.disabled ? +String(el.value).replace(/[^0-9.]/g, '') : 0; if (v > 0) recs.push({l, v}); });
+  if (!recs.length) { err.textContent = '입고 수량을 넣어 주세요.'; return; }
+  const over = recs.filter(x => (+x.l.recvQty || 0) + x.v > (+x.l.qty || 0)); if (over.length && !confirm(`발주보다 많이 입고되는 품목이 있습니다: ${over.map(x => x.l.name).join(', ')}\n그대로 저장할까요?`)) return;
+  btn.disabled = true; btn.textContent = '저장 중…';
+  const stockErr = [];
+  for (const {l, v} of recs) {
+    const it = l.code ? allRows().find(x => x.code === l.code) : null;
+    if (it && it.cat === 'VTTH') {   // 소모품 재고 입고
+      const tx = {id: Date.now() + Math.floor(Math.random() * 999), type: 'in', code: it.code, name: it.name, cat: 'VTTH', unit: it.unit || l.unit || '', qty: v, note: `[법인 구매 입고] ${r.no} · ${l.sup || ''}`, lot: r.no, dt: rd.replace(/-/g, '.') + ' 00:00', dest: ''};
+      try { tx.dt = vnDt(); } catch (e) {}
+      const res = await api('addTx', {...tx, token: ADMIN_TOKEN, user: CURRENT_USER || ''});
+      if (res && res.ok) { try { applyInboundTxLocally(tx); } catch (e) {} l.inTx = (l.inTx || []).concat([tx.id]); } else { stockErr.push(l.name); continue; }
+    }
+    l.recvQty = (+l.recvQty || 0) + v; l.recvDate = rd; l.recvLog = (l.recvLog || []).concat([{date: rd, qty: v, by: CURRENT_USER || ''}]);
+  }
+  const all = r.lines.every(l => (+l.recvQty || 0) >= (+l.qty || 0)); r.status = all ? '완료' : '입고중'; vpHist(r, `입고 ${rd} (${recs.length}품목)`);
+  const ok = await vpSave(r); btn.disabled = false; btn.textContent = '입고 저장';
+  if (!ok) return; if (stockErr.length) alert('재고 입고에 실패한 품목이 있습니다 (구매 기록에는 반영 안 됨): ' + stockErr.join(', '));
+  vpClose(); renderVP({local: true});
+}
+// ── 구매 대장 ──────────────────────────────────────────
+function vpFilters(){
+  const L = vpLedger(), years = [...new Set(L.map(x => x.y).filter(Boolean))].sort().reverse(); if (!years.includes(VP.year)) years.unshift(VP.year);
+  return `<select class="pl-btn" onchange="VP.year=this.value;renderVP({local:true})">${years.map(y => `<option ${VP.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
+    <select class="pl-btn" onchange="VP.dept=this.value;renderVP({local:true})"><option value="">전체 부서</option>${Object.entries(VP_DEPT).map(([k, v]) => `<option value="${k}" ${VP.dept === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+    <select class="pl-btn" onchange="VP.cat=this.value;renderVP({local:true})"><option value="">전체 종류</option>${Object.entries(VP_CAT).map(([k, v]) => `<option value="${k}" ${VP.cat === k ? 'selected' : ''}>${v}</option>`).join('')}</select>`;
+}
+function vpLedgerRows(){ const q = VP.q.toLowerCase(); return vpLedger().filter(x => x.y === VP.year && (!VP.dept || x.d.dept === VP.dept) && (!VP.cat || x.l.cat === VP.cat) && (!VP.sup || x.l.sup === VP.sup) && (!q || [x.l.name, x.l.spec, x.l.sup, x.d.no].join(' ').toLowerCase().includes(q))); }
+function vpLedgerHtml(){
+  const R = vpLedgerRows().sort((a, b) => String(b.od).localeCompare(String(a.od))), tot = R.reduce((a, x) => a + x.amt, 0), miss = R.filter(x => x.miss > 0);
+  return `<div class="pl-head"><div><div class="pl-title">구매 대장</div><div class="pl-period">발주된 품목 전체 · ${R.length}건 · ${vpN(tot)} VND${miss.length ? ` · <b class="part">미입고 ${miss.length}건</b>` : ''}</div></div><span style="flex:1"></span>${vpFilters()}
+      <input class="pl-btn" placeholder="품명·업체·번호" value="${vpE(VP.q)}" onchange="VP.q=this.value;renderVP({local:true})" style="width:170px"><button class="pl-btn" onclick="vpLedgerXlsx()">엑셀</button></div>
+    <div class="pl-tw"><table class="pl-t vp-t" style="min-width:1150px"><thead><tr><th>주문일</th><th>종류</th><th>부서</th><th style="text-align:left">공급업체</th><th style="text-align:left">품명</th><th>규격</th><th class="num">수량</th><th>단위</th><th class="num">단가</th><th class="num">금액</th><th>입고일</th><th class="num">입고</th><th class="num">미입고</th><th>번호</th></tr></thead><tbody>
+    ${R.map(x => `<tr style="cursor:pointer" onclick="vpEdit('${vpE(x.d.id)}')"><td>${vpE(x.od)}</td><td>${vpE(x.l.cat)}</td><td>${vpE(x.d.dept)}</td><td class="wrap" style="min-width:150px">${vpE(x.l.sup)}</td><td class="wrap"><b>${vpE(x.l.name)}</b>${x.l.code ? `<div class="pl-sub">${vpE(x.l.code)}</div>` : ''}</td><td>${vpE(x.l.spec || '')}</td>
+      <td class="num">${vpN(x.l.qty)}</td><td>${vpE(x.l.unit || '')}</td><td class="num">${vpN(x.l.price)}</td><td class="num"><b>${vpN(x.amt)}</b></td><td>${vpE(x.l.recvDate || '')}</td><td class="num">${vpN(x.l.recvQty || 0)}</td><td class="num ${x.miss ? 'part' : ''}">${x.miss ? vpN(x.miss) : ''}</td><td style="font-family:ui-monospace,monospace;font-size:11px">${vpE(x.d.no)}</td></tr>`).join('') || '<tr><td colspan="14" class="empty">조건에 맞는 구매 기록이 없습니다.</td></tr>'}</tbody></table></div>`;
+}
+function vpLedgerXlsx(){
+  const rows = vpLedgerRows().map(x => ({'주문일': x.od, '월': x.m, '종류': VP_CAT[x.l.cat] || x.l.cat, '부서': x.d.dept, '공급업체': x.l.sup, '품명': x.l.name, 'ERP 품목': x.l.code || '', '규격': x.l.spec || '', '수량': +x.l.qty || 0, '단위': x.l.unit || '', '단가': +x.l.price || 0, '금액': x.amt, '입고일': x.l.recvDate || '', '입고 수량': +x.l.recvQty || 0, '미입고': x.miss, '구매번호': x.d.no}));
+  const ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '구매대장'); XLSX.writeFile(wb, `법인구매대장_${VP.year}.xlsx`);
+}
+// ── 구매 보고서 (엑셀 피벗 대체) ─────────────────────────
+function vpReportHtml(){
+  const R = vpLedgerRows(), M = [...Array(12)].map((_, i) => i + 1), sum = f => R.filter(f).reduce((a, x) => a + x.amt, 0);
+  const cm = Object.keys(VP_CAT).map(c => ({c, v: M.map(m => sum(x => x.l.cat === c && x.m === m))})).filter(r => r.v.some(Boolean));
+  const tm = M.map(m => sum(x => x.m === m)), all = tm.reduce((a, b) => a + b, 0);
+  const nk = l => (l.code || String(l.name || '').replace(/\s+/g, ' ').trim().toLowerCase()) + '|' + String(l.unit || '').toLowerCase();
+  const items = {}; R.forEach(x => { const k = nk(x.l), o = items[k] = items[k] || {name: x.l.name, unit: x.l.unit, cat: x.l.cat, amt: 0, p: {}}; o.amt += x.amt; const pp = +x.l.price || 0; if (pp > 0) o.p[x.m] = o.p[x.m] ? Math.min(o.p[x.m], pp) : pp; });
+  const top = Object.values(items).sort((a, b) => b.amt - a.amt);
+  const rises = top.map(o => { const ms = Object.keys(o.p).map(Number).sort((a, b) => a - b); if (ms.length < 2) return null; const f = o.p[ms[0]], l = o.p[ms[ms.length - 1]]; return l > f ? {...o, f, l, pct: Math.round((l / f - 1) * 100)} : null; }).filter(Boolean).sort((a, b) => b.pct - a.pct);
+  const sups = {}; R.forEach(x => { sups[x.l.sup] = (sups[x.l.sup] || 0) + x.amt; }); const supR = Object.entries(sups).sort((a, b) => b[1] - a[1]);
+  const mh = M.map(m => `<th class="num">${m}월</th>`).join('');
+  const cell = v => `<td class="num">${v ? vpN(Math.round(v)) : ''}</td>`;
+  return `<div class="pl-head"><div><div class="pl-title">구매 보고서 ${vpE(VP.year)}</div><div class="pl-period">구매 대장(발주 기준)에서 자동 집계 · 총 ${vpN(Math.round(all))} VND</div></div><span style="flex:1"></span>${vpFilters()}<button class="pl-btn" onclick="vpReportPrint()">인쇄</button></div>
+    <div id="vp-rep">
+    <h4 style="margin:6px 0">① 월별 구매 비용 (종류별)</h4>
+    <div class="pl-tw"><table class="pl-t vp-t"><thead><tr><th style="text-align:left">종류</th>${mh}<th class="num">합계</th></tr></thead><tbody>
+      ${cm.map(r => `<tr><td>${vpE(VP_CAT[r.c])}</td>${r.v.map(cell).join('')}<td class="num"><b>${vpN(Math.round(r.v.reduce((a, b) => a + b, 0)))}</b></td></tr>`).join('') || `<tr><td colspan="14" class="empty">자료 없음</td></tr>`}</tbody>
+      <tfoot><tr><td>합계</td>${tm.map(cell).join('')}<td class="num">${vpN(Math.round(all))}</td></tr></tfoot></table></div>
+    <h4 style="margin:16px 0 6px">② 품목별 월 구매 비용 (금액 큰 순)</h4>
+    <div class="pl-tw" style="max-height:420px"><table class="pl-t vp-t"><thead><tr><th style="text-align:left">품명</th><th>종류</th>${mh}<th class="num">합계</th></tr></thead><tbody>
+      ${top.map(o => `<tr><td class="wrap">${vpE(o.name)} <span class="pl-sub">${vpE(o.unit || '')}</span></td><td>${vpE(o.cat)}</td>${M.map(m => cell(R.filter(x => nk(x.l) === nk(o) && x.m === m).reduce((a, x) => a + x.amt, 0))).join('')}<td class="num"><b>${vpN(Math.round(o.amt))}</b></td></tr>`).join('')}</tbody></table></div>
+    <h4 style="margin:16px 0 6px">③ 단가 추이 (월 최저 단가) ${rises.length ? `<span class="pl-pill bad">단가 인상 ${rises.length}품목</span>` : ''}</h4>
+    <div class="pl-tw" style="max-height:420px"><table class="pl-t vp-t"><thead><tr><th style="text-align:left">품명</th><th>단위</th>${mh}<th class="num">변동</th></tr></thead><tbody>
+      ${top.filter(o => Object.keys(o.p).length).map(o => { const r = rises.find(z => z === o || (z.name === o.name && z.unit === o.unit)); return `<tr><td class="wrap">${vpE(o.name)}</td><td>${vpE(o.unit || '')}</td>${M.map(m => `<td class="num">${o.p[m] ? vpN(o.p[m]) : ''}</td>`).join('')}<td class="num">${r ? `<span class="miss">▲ ${r.pct}%</span>` : ''}</td></tr>`; }).join('')}</tbody></table></div>
+    <h4 style="margin:16px 0 6px">④ 공급업체별 구매액</h4>
+    <div class="pl-tw"><table class="pl-t vp-t"><thead><tr><th style="text-align:left">공급업체</th><th class="num">금액</th><th class="num">비중</th></tr></thead><tbody>
+      ${supR.map(([s, v]) => `<tr><td>${vpE(s)}</td><td class="num">${vpN(Math.round(v))}</td><td class="num">${all ? (v / all * 100).toFixed(1) + '%' : ''}</td></tr>`).join('')}</tbody></table></div></div>`;
+}
+function vpReportPrint(){ const d = document.getElementById('vp-rep'); if (!d) return; const w = window.open('', '_blank'); if (!w) return;
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>구매 보고서 ${VP.year}</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:"Malgun Gothic",sans-serif;font-size:10px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #999;padding:2px 4px}th{background:#EEF2F7}.num{text-align:right}.pl-tw{max-height:none!important}h1{text-align:center;font-size:16px}</style></head><body><h1>구매 보고서 ${VP.year} · BÁO CÁO MUA HÀNG · THE GAUSS VINA</h1>${d.innerHTML}<script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close(); }
+// ── 공급업체 ───────────────────────────────────────────
+function vpSupHtml(){
+  const L = vpLedger(), names = vpSupNames();
+  return `<div class="pl-head"><div><div class="pl-title">현지 공급업체</div><div class="pl-period">발주서에 들어갈 세금코드(MST)·담당자·연락처</div></div><span style="flex:1"></span>${vpCanEdit() ? '<button class="pl-act" style="padding:8px 14px;font-size:13px" onclick="vpSupEdit(\'\')">＋ 업체</button>' : ''}</div>
+    <div class="pl-tw"><table class="pl-t vp-t"><thead><tr><th style="text-align:left">업체명</th><th>MST</th><th>담당자</th><th>연락처</th><th style="text-align:left">취급 품목</th><th class="num">구매 건</th><th class="num">구매액</th><th>최근 구매</th><th></th></tr></thead><tbody>
+    ${names.map(n => { const s = (HQS.vsup || []).find(x => x.name === n) || {}, my = L.filter(x => x.l.sup === n);
+      return `<tr><td><b>${vpE(n)}</b></td><td>${vpE(s.tax || '')}</td><td>${vpE(s.contact || '')}</td><td>${vpE(s.phone || '')}</td><td class="wrap">${vpE(s.items || '')}</td><td class="num">${my.length}</td><td class="num">${vpN(Math.round(my.reduce((a, x) => a + x.amt, 0)))}</td><td>${vpE(my.map(x => x.od).sort().pop() || '')}</td><td>${vpCanEdit() ? `<button class="pl-btn" style="padding:3px 10px" onclick="vpSupEdit('${vpE(n)}')">수정</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">업체가 없습니다.</td></tr>'}</tbody></table></div>`;
+}
+function vpSupEdit(name){
+  const s = (HQS.vsup || []).find(x => x.name === name) || {id: 'vs' + Date.now(), name: name || ''};
+  vpModal(`<h3 style="margin:0 0 12px">공급업체 ${name ? vpE(name) : '추가'}</h3><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    ${hqFld('업체명 *', '', `<input id="vs-name" value="${vpE(s.name)}" style="${HQ_IN}">`)}${hqFld('세금코드 MST', '', `<input id="vs-tax" value="${vpE(s.tax || '')}" style="${HQ_IN}">`)}
+    ${hqFld('담당자', '', `<input id="vs-contact" value="${vpE(s.contact || '')}" style="${HQ_IN}">`)}${hqFld('연락처', '', `<input id="vs-phone" value="${vpE(s.phone || '')}" style="${HQ_IN}">`)}
+    ${hqFld('주소', '', `<input id="vs-addr" value="${vpE(s.addr || '')}" style="${HQ_IN}">`, true)}${hqFld('취급 품목', '', `<input id="vs-items" value="${vpE(s.items || '')}" style="${HQ_IN}">`, true)}</div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="pl-btn" onclick="vpClose()">닫기</button><button class="pl-act" style="padding:8px 16px" onclick="vpSupSave('${vpE(s.id)}','${vpE(name)}')">저장</button></div>`, 620);
+}
+async function vpSupSave(id, oldName){
+  const g = k => (document.getElementById('vs-' + k) || {}).value || ''; const name = g('name').trim(); if (!name) { alert('업체명을 넣어 주세요.'); return; }
+  const cur = (HQS.vsup || []).find(x => x.id === id) || {}, rec = {...cur, id, name, tax: g('tax').trim(), contact: g('contact').trim(), phone: g('phone').trim(), addr: g('addr').trim(), items: g('items').trim(), updatedAt: new Date().toISOString(), updatedBy: CURRENT_USER || ''};
+  if (await qmPut('vsup', rec)) { vpClose(); renderVP({local: true}); }
+}
+// ── 엑셀 가져오기 ──────────────────────────────────────
+//   'quote'  : 견적 비교표 (공급업체명 행 + 제품명·수량·단위·업체별 단가) → 새 구매요청(작성)
+//   'report' : 구매 보고서 (구매 관리 내역 Data 시트) → 과거 구매 기록(완료)으로 등록
+function vpImportPick(kind){ const f = document.createElement('input'); f.type = 'file'; f.accept = '.xlsx,.xls'; f.onchange = () => f.files[0] && vpImport(kind, f.files[0]); f.click(); }
+function vpNum(v){ if (typeof v === 'number') return v; const t = String(v ?? '').split('\n')[0].replace(/\s/g, ''); const m = t.match(/[\d.,]+/); if (!m) return null; const s = m[0];
+  const n = /^\d{1,3}(\.\d{3})+$/.test(s) ? s.replace(/\./g, '') : /^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s) ? s.replace(/,/g, '') : s.replace(/,/g, '.'); return +n || null; }
+const vpYmd = v => { if (v instanceof Date && !isNaN(v)) return plYmd(v); if (typeof v === 'number' && v > 30000) { const d = new Date(Math.round((v - 25569) * 864e5)); return d.toISOString().slice(0, 10); } const t = String(v || '').trim(); const m = t.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/); return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : ''; };
+const vpCatOf = v => /NPL/i.test(v) ? 'NPL' : /CCDC/i.test(v) ? 'CCDC' : 'VTTH';
+async function vpImport(kind, file){
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), {type: 'array', cellDates: true});
+    if (kind === 'quote') return vpImportQuote(wb);
+    return await vpImportReport(wb);
+  } catch (e) { alert('엑셀을 읽지 못했습니다: ' + (e.message || e)); }
+}
+function vpImportQuote(wb){
+  const ws = wb.Sheets[wb.SheetNames[0]], A = XLSX.utils.sheet_to_json(ws, {header: 1, defval: ''});
+  const hi = A.findIndex(r => r.some(c => /공급업체|nhà cung cấp/i.test(String(c)))); if (hi < 0) { alert('"공급업체명" 행을 찾지 못했습니다.'); return; }
+  const H = A[hi], first = H.findIndex(c => /공급업체|nhà cung cấp/i.test(String(c))), sups = [], cols = [];
+  H.forEach((c, j) => { if (j > first && String(c).trim()) { sups.push(String(c).trim()); cols.push(j); } });
+  const sub = A[hi + 1] || [], noteCol = sub.findIndex(c => /note|비고|ghi chú/i.test(String(c)));
+  const nameCol = sub.findIndex(c => /제품명|품명|sản phẩm/i.test(String(c))), qtyCol = sub.findIndex(c => /수량|số lượng/i.test(String(c))), unitCol = sub.findIndex(c => /단위|đvt/i.test(String(c)));
+  const lines = [];
+  for (let i = hi + 2; i < A.length; i++) { const r = A[i], name = String(r[nameCol >= 0 ? nameCol : first] || '').trim(); if (!name || !(vpNum(r[qtyCol]) > 0)) continue;
+    const l = {...vpBlankLine(), name: name.replace(/\s*\n\s*/g, ' / '), qty: vpNum(r[qtyCol]), unit: String(r[unitCol] || '').trim(), q: {}, why: '', memo: noteCol >= 0 ? String(r[noteCol] || '').replace(/\n/g, ' ').trim() : ''};
+    sups.forEach((s, k) => { const raw = r[cols[k]], t = String(raw ?? '').trim(); if (!t) return; const q = {note: t.replace(/\n/g, ' ')};
+      if (/세금계산서\s*없|không.*hóa đơn/i.test(t)) q.noInv = true; else if (/없습니다|không có/i.test(t)) q.na = true; const p = vpNum(raw); if (p) q.p = p; l.q[s] = q; });
+    const low = vpLowest(l, sups); if (low) { l.sup = low.s; l.price = low.p; if (!l.why) l.why = '최저가'; } lines.push(l); }
+  if (!lines.length) { alert('품목을 찾지 못했습니다.'); return; }
+  VP.ed = {id: 'vp' + Date.now(), no: '', status: '작성', dept: 'PD', reqDate: vpToday(), reqBy: CURRENT_USER || '', title: '견적 비교 ' + vpToday(), qsups: sups, lines, history: [], note: '엑셀 견적 비교표에서 가져옴'};
+  vpEdRender(); setTimeout(() => alert(`품목 ${lines.length}개 · 업체 ${sups.length}곳을 가져왔습니다.\n세금계산서 있는 최저가를 자동 선정했습니다. 확인·수정 후 "저장" 또는 "승인 요청"을 누르세요.\n※ 단가 칸에 범위(예: 3.200 ~ 5.000)가 있으면 앞 숫자를 넣었습니다.`), 60);
+}
+async function vpImportReport(wb){
+  const sheets = wb.SheetNames.filter(n => /내역|data/i.test(n)); if (!sheets.length) { alert('"구매 관리 내역(Data)" 시트를 찾지 못했습니다.'); return; }
+  const groups = {}; let rows = 0;
+  sheets.forEach(sn => { const A = XLSX.utils.sheet_to_json(wb.Sheets[sn], {header: 1, defval: '', raw: true});
+    const hi = A.findIndex(r => r.some(c => /주문 날짜|NGÀY ĐẶT/i.test(String(c)))); if (hi < 0) return;
+    const H = A[hi].map(c => String(c)), ix = re => H.findIndex(c => re.test(c));
+    const c = {od: ix(/주문 날짜|NGÀY ĐẶT/i), cat: ix(/종류|PHÂN LOẠI/i), dept: ix(/부서|BỘ PHẬN/i), sup: ix(/공급|cung cấp/i), name: ix(/품명|SẢN PHẨM/i), spec: ix(/규격|Quy cách/i), qty: ix(/^SL\b|수량/i), unit: ix(/단위|ĐƠN VỊ/i), price: ix(/단가|ĐƠN GIÁ/i), rd: ix(/입고 날짜|NGÀY NHẬN/i), rq: ix(/입고 수량|SL NHẬN/i), note: ix(/비고|GHI CHÚ/i)};
+    for (let i = hi + 1; i < A.length; i++) { const r = A[i], od = vpYmd(r[c.od]), name = String(r[c.name] || '').trim(), qty = vpNum(r[c.qty]); if (!od || !name || !(qty > 0)) continue;
+      const dept = /OFF/i.test(String(r[c.dept])) ? 'OFFICE' : 'PD', key = `imp|${dept}|${od}`, rd = c.rd >= 0 ? vpYmd(r[c.rd]) : '', rq = c.rq >= 0 && String(r[c.rq]).trim() !== '' ? vpNum(r[c.rq]) : (rd ? qty : 0);
+      const g = groups[key] = groups[key] || {id: key, no: `PR-${od.replace(/-/g, '').slice(2)}-${dept === 'PD' ? 'P' : 'O'}`, src: 'import', status: '완료', dept, reqDate: od, orderDate: od, reqBy: '', title: `${od} ${dept === 'PD' ? '생산' : '사무실'} 구매 (엑셀)`, qsups: [], lines: [], history: [{at: new Date().toISOString(), by: CURRENT_USER || '', act: '구매 보고서 엑셀에서 가져옴'}]};
+      g.lines.push({id: 'l' + i + sn.length, cat: vpCatOf(r[c.cat]), code: '', name: name.replace(/\s*\n\s*/g, ' / '), spec: c.spec >= 0 ? String(r[c.spec] || '').trim() : '', qty, unit: String(r[c.unit] || '').trim(), q: {}, sup: String(r[c.sup] || '').trim(), price: vpNum(r[c.price]) || 0, why: '', orderDate: od, recvDate: rd, recvQty: rq || 0, note: c.note >= 0 ? String(r[c.note] || '').trim() : ''});
+      rows++; } });
+  const recs = Object.values(groups); recs.forEach(g => { if (g.lines.some(l => (+l.recvQty || 0) < (+l.qty || 0))) g.status = '입고중'; });
+  if (!recs.length) { alert('가져올 구매 기록이 없습니다.'); return; }
+  const have = new Set((HQS.vpur || []).map(x => x.id)), dup = recs.filter(g => have.has(g.id)).length;
+  const amt = recs.reduce((a, g) => a + g.lines.reduce((s, l) => s + vpAmt(l), 0), 0);
+  if (!confirm(`구매 기록 ${rows}줄을 ${recs.length}건(주문일·부서별)으로 등록합니다. 합계 ${vpN(Math.round(amt))} VND\n${dup ? `이미 가져온 ${dup}건은 이 파일 내용으로 바뀝니다.\n` : ''}재고는 바뀌지 않습니다 (과거 기록). 진행할까요?`)) return;
+  let res = await apiAuto('saveHQStoreBulk', {store: 'vpur', recs, user: CURRENT_USER || ''});
+  if (!res || !res.ok) { if (/unknown action|bad store/i.test((res && res.error) || '')) { alert('서버(Code.gs)를 새 버전으로 배포해야 엑셀 가져오기를 할 수 있습니다.'); return; } alert('저장 실패: ' + ((res && res.error) || '서버 응답 없음')); return; }
+  await vpLoad(); VP.view = 'ledger'; VP.year = recs[0].reqDate.slice(0, 4); renderVP({local: true});
+  alert(`가져오기 완료: 새로 ${res.added || 0}건 · 갱신 ${res.updated || 0}건`);
 }
 
 </script>
