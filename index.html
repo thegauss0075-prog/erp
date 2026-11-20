@@ -18557,13 +18557,14 @@ function qmAudSet(k, f, v){ const h = document.getElementById('qm-aud-ck'); let 
 function qmKpiMonths(rec){
   let o = {}; try { o = JSON.parse(rec.months || '{}') || {}; } catch (e) {}
   return `<input type="hidden" data-k="months" id="qm-kpi-m" value="${hqE(JSON.stringify(o))}"><div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px">${Array.from({length: 12}, (_, i) => `<label style="font-size:11.5px;color:#5D6977">${i + 1}월<input id="qm-kpi-${i + 1}" type="number" step="any" value="${hqE(o[i + 1] ?? '')}" oninput="qmKpiSet(${i + 1},this.value)" style="width:100%;padding:5px;border:1px solid #CBD5E1;border-radius:5px"></label>`).join('')}</div>
-    <button type="button" onclick="qmKpiAuto()" style="margin-top:6px;padding:6px 12px;border-radius:7px;border:1px solid #0d9488;background:#fff;color:#0d9488;font-size:12.5px;cursor:pointer">⚙ ERP 기록으로 자동 계산 (공정 불량률 · 출하검사 불합격률)</button>
+    <button type="button" onclick="qmKpiAuto()" style="margin-top:6px;padding:6px 12px;border-radius:7px;border:1px solid #0d9488;background:#fff;color:#0d9488;font-size:12.5px;cursor:pointer">⚙ ERP 기록으로 자동 계산 (공정 불량률 · 출하검사 불합격률 · 납기 준수율)</button><div id="qm-kpi-detail"></div>
     <div style="font-size:11px;color:#5D6977;margin-top:3px">공정 불량률 = NG 이동 ÷ (완제품 입고 + NG 이동) · 출하검사 불합격률 = 불합격 건 ÷ 출하검사 건</div>`;
 }
 function qmKpiSet(m, v){ const h = document.getElementById('qm-kpi-m'); let o = {}; try { o = JSON.parse(h.value || '{}') || {}; } catch (e) {} if (v === '') delete o[m]; else o[m] = +v; h.value = JSON.stringify(o); }
 async function qmKpiAuto(){
   const fv = k => ((document.querySelector('#qm-form [data-k="' + k + '"]') || {}).value || '').trim(), y = fv('year') || qmToday().slice(0, 4), kpi = fv('kpi');
-  if (!/불량률|불합격률/.test(kpi)) { alert('자동 계산은 "공정 불량률", "출하검사 불합격률"만 됩니다. 나머지는 직접 입력하세요.'); return; }
+  if (kpi === '납기 준수율') return qmKpiOtd(y);
+  if (!/불량률|불합격률/.test(kpi)) { alert('자동 계산은 "공정 불량률", "출하검사 불합격률", "납기 준수율"만 됩니다. 나머지는 직접 입력하세요.'); return; }
   if (/불합격률/.test(kpi)) { try { await loadQC(); } catch (e) {} }
   const mon = d => { const x = new Date(d); return isNaN(x) || String(x.getFullYear()) !== y ? 0 : x.getMonth() + 1; }, cur = +qmToday().slice(5, 7), lastM = y === qmToday().slice(0, 4) ? cur : 12;
   for (let m = 1; m <= lastM; m++) { let v = '';
@@ -18571,6 +18572,32 @@ async function qmKpiAuto(){
     else { const q = (QC || []).filter(x => x.inspType === '출하검사' && mon(x.inspDate) === m); if (q.length) v = +(q.filter(x => x.result === '불합격').length / q.length * 100).toFixed(2); }
     const el = document.getElementById('qm-kpi-' + m); if (el && v !== '') { el.value = v; qmKpiSet(m, v); } }
   const u = document.querySelector('#qm-form [data-k="unit"]'); if (u && !u.value) u.value = '%';
+}
+// 🚚 [2026-11-20] 납기 준수율 자동 계산
+//   대상: 2026-08-01 이후 접수한 고객 PO 라인 (7/31 일괄 등록한 예전 PO는 납기가 등록 전이라 제외)
+//   납기 = 회신 납기(있으면) → 고객 요청 납기. 출고 = 출고처 있는 완제품 출고(작업지시·복구 기록 제외)
+//   품목마다 PO를 접수 순서대로 놓고, 8월 이후 출고를 날짜순으로 채워 라인이 다 채워진 날 = 완료일. 완료일 ≤ 납기면 준수.
+//   월 값 = 그 달 납기 라인 중 준수 ÷ 그 달 납기 라인 × 100 (납기가 아직 안 온 달은 계산하지 않음)
+const OTD_FROM = '2026-08-01';
+async function qmKpiOtd(y){
+  try { await loadVNCPO(true); } catch (e) {}
+  let rows = []; try { rows = hqCPORows(); } catch (e) {}
+  const today = qmToday(), d10 = v => String(v || '').slice(0, 10);
+  const lines = []; rows.filter(r => r.st !== '취소' && d10(r.recvDate) >= OTD_FROM).forEach(r => (r.ls || []).forEach((l, i) => { const due = d10(l.replyDue || l.due); if (due && +l.qty > 0) lines.push({po: r.custPoNo || r.cpoNo, cpo: r.cpoNo, recv: d10(r.recvDate), code: l.code, name: l.name || l.code, qty: +l.qty, due, i}); }));
+  const ships = (txLog || []).filter(t => t.type === 'otp' && t.dest && t.dest !== 'NG' && !/작업지시|복구/.test(String(t.note || ''))).map(t => ({code: t.code, qty: +t.qty || 0, d: (() => { const x = new Date(t.dt); return isNaN(x) ? '' : `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; })()})).filter(t => t.d >= OTD_FROM).sort((a, b) => a.d.localeCompare(b.d));
+  const byCode = {}; lines.forEach(l => (byCode[l.code] = byCode[l.code] || []).push(l));
+  Object.values(byCode).forEach(L => { L.sort((a, b) => a.recv.localeCompare(b.recv) || a.due.localeCompare(b.due)); let cum = 0, si = 0, got = 0; const S = ships.filter(t => t.code === L[0].code);
+    L.forEach(l => { cum += l.qty; while (got < cum && si < S.length) { got += S[si].qty; l._last = S[si].d; si++; } l.done = got >= cum ? (l._last || S[si - 1] && S[si - 1].d) : ''; }); });
+  lines.forEach(l => { l.ok = l.done ? l.done <= l.due : false; l.judged = l.done || l.due < today; });
+  const mon = {}; lines.filter(l => l.due.slice(0, 4) === String(y) && l.judged).forEach(l => { const m = +l.due.slice(5, 7); const o = mon[m] = mon[m] || [0, 0]; o[1]++; if (l.ok) o[0]++; });
+  Object.entries(mon).forEach(([m, [a, n]]) => { const v = +(a / n * 100).toFixed(1), el = document.getElementById('qm-kpi-' + m); if (el) { el.value = v; qmKpiSet(+m, v); } });
+  const det = document.getElementById('qm-kpi-detail'), L = lines.filter(l => l.due.slice(0, 4) === String(y)).sort((a, b) => a.due.localeCompare(b.due));
+  if (det) det.innerHTML = `<details open style="margin-top:6px;font-size:12px"><summary style="cursor:pointer;font-weight:700">근거: ${y}년 납기 PO 라인 ${L.length}개 (${OTD_FROM} 이후 접수분)</summary>
+    <table style="width:100%;border-collapse:collapse;margin-top:4px">${'<tr>' + ['PO','품목','수량','납기','완료일','판정'].map(h => `<th style="border-bottom:1px solid #CBD5E1;text-align:left;padding:2px 4px">${h}</th>`).join('') + '</tr>'}
+    ${L.map(l => `<tr><td style="padding:2px 4px">${hqE(l.po)}</td><td>${hqE(l.name)}</td><td style="text-align:right">${(+l.qty).toLocaleString()}</td><td>${l.due}</td><td>${l.done || '-'}</td><td style="font-weight:700;color:${!l.judged ? '#64748B' : l.ok ? '#166534' : '#b91c1c'}">${!l.judged ? '납기 전' : l.ok ? '준수' : '지연'}</td></tr>`).join('') || '<tr><td colspan="6" style="color:#64748B;padding:4px">해당 라인 없음</td></tr>'}</table>
+    <div style="color:#5D6977;margin-top:3px">출고를 PO 접수 순서대로 채워 완료일을 계산합니다 (출고와 PO가 직접 연결돼 있지 않아 추정). 고객과 납기를 바꿨다면 PO의 <b>회신 납기</b>를 고쳐야 정확합니다.</div></details>`;
+  const u = document.querySelector('#qm-form [data-k="unit"]'); if (u && !u.value) u.value = '%';
+  if (!Object.keys(mon).length) alert(`${y}년에 판정할 수 있는 납기 라인이 없습니다 (${OTD_FROM} 이후 접수 PO 중 납기가 지난 것 또는 완료된 것).`);
 }
 function qmKpiCell(r){
   let o = {}; try { o = JSON.parse(r.months || '{}') || {}; } catch (e) {} const t = +r.target, up = r.dir === '이상';
