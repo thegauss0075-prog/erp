@@ -18623,9 +18623,12 @@ async function qmKpiMes(y, name){
         const ck = await all(() => sb.from('machine_checks').select('machine_code,check_date').gte('check_date', from).lte('check_date', to)); const done = new Set(ck.map(c => c.machine_code + '|' + c.check_date));
         used.forEach(k => { const m = +k.split('|')[1].slice(5, 7); const o = mon[m] = mon[m] || [0, 0]; o[1]++; if (done.has(k)) o[0]++; }); basis = `생산한 설비·일 ${used.size}개 중 점검 ${[...used].filter(k => done.has(k)).length}개`;
       } else {
-        const days = new Set(pr.filter(x => x.process_code === 'WIND').map(x => loc(x.start_at || x.created_at)));
-        const pc = await all(() => sb.from('patrol_checks').select('check_date,slot,process_code').eq('process_code', 'WIND').gte('check_date', from).lte('check_date', to)); const done = new Set(pc.map(c => c.check_date + '|' + c.slot));
-        days.forEach(d => { const m = +d.slice(5, 7); const o = mon[m] = mon[m] || [0, 0]; ['초','중','종'].forEach(sl => { o[1]++; if (done.has(d + '|' + sl)) o[0]++; }); }); basis = `권선 작업일 ${days.size}일 × 3회`;
+        // 패트롤 항목이 있는 공정 모두 (2026-11-20: 권선 → 디핑·솔더링·중간검사·몰딩·커버·특성검사로 확대)
+        const pi = await sb.from('patrol_items').select('process_code,active'); const pcs = [...new Set((pi.data || []).filter(x => x.active !== false).map(x => x.process_code))];
+        const pc = await all(() => sb.from('patrol_checks').select('check_date,slot,process_code').gte('check_date', from).lte('check_date', to)); const done = new Set(pc.map(c => c.process_code + '|' + c.check_date + '|' + c.slot));
+        let nd = 0; pcs.forEach(code => { const days = new Set(pr.filter(x => x.process_code === code).map(x => loc(x.start_at || x.created_at))); nd += days.size;
+          days.forEach(d => { const m = +d.slice(5, 7); const o = mon[m] = mon[m] || [0, 0]; ['초','중','종'].forEach(sl => { o[1]++; if (done.has(code + '|' + d + '|' + sl)) o[0]++; }); }); });
+        basis = `패트롤 공정 ${pcs.length}개 · 공정 작업일 ${nd}일 × 3회`;
       }
     } else {
       const [it, rc] = await Promise.all([sb.from('pm_items').select('id,cycle,active,created_at'), all(() => sb.from('pm_records').select('pm_item_id,done_on').gte('done_on', from).lte('done_on', to))]);
