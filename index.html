@@ -17919,6 +17919,7 @@ function renderShipPlans(){
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
         <select id="spl-dest">${Object.entries(SPL_DEST).map(([k,v]) => `<option value="${k}" ${SPL_FORM.dest===k?'selected':''}>${v}</option>`).join('')}</select>
         <label style="font-size:12.5px;color:#5D6977">출고 예정일 / Ngày dự kiến <input type="date" id="spl-date" value="${SPL_FORM.date || bdToday()}"></label>
+        <label style="font-size:12.5px;color:#5D6977" title="고객(솔루엠)이 승인한 출고·납품일 — 납기 준수율의 기준. 비우면 출고 예정일을 기준으로 봅니다">고객 승인 출고일 / Ngày KH duyệt <input type="date" id="spl-appr" value="${SPL_FORM.appr || ''}"></label>
         <input id="spl-note" placeholder="비고 / Ghi chú (예: 항공편 대기)" value="${String(SPL_FORM.note||'').replace(/"/g,'&quot;')}" style="flex:1;min-width:180px;padding:7px 9px;border:1px solid var(--line,#DCE1E7);border-radius:8px">
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
@@ -17988,12 +17989,12 @@ async function splSave(){
   const pals = SPL_PAL.map(p => ({rows: p.rows.filter(r => r.code && r.lot && splRowQty(r) > 0).map(r => ({code: r.code, lot: splBase(r.lot), qty: splRowQty(r)}))})).filter(p => p.rows.length);
   if (pals.length) { const bad = splPalCheck().filter(c => Math.abs(c.need - c.got) > 0.0005);
     if (bad.length && !confirm(`팔레트 박스 합계가 LOT 지정 수량과 다릅니다:\n${bad.map(c => `${c.code} ${splLotName(c.lot)}: 박스 ${c.got.toLocaleString()} / 지정 ${c.need.toLocaleString()}`).join('\n')}\n\n그래도 저장할까요?`)) return; }
-  const date = document.getElementById('spl-date').value || bdToday();
+  const date = document.getElementById('spl-date').value || bdToday(), appr = (document.getElementById('spl-appr') || {}).value || '';
   const old = SPL_EDIT ? SPL.find(x => x.id === SPL_EDIT) : null;
   const rec = old ? {...old, date, dest: document.getElementById('spl-dest').value, lines: SPL_DRAFT.map(l => JSON.parse(JSON.stringify(l))), note: document.getElementById('spl-note').value.trim(), editedBy: CURRENT_USER||'', editedAt: new Date().toISOString()}
     : {id:'P'+Date.now(), no: splNextNo(date), date, dest: document.getElementById('spl-dest').value, lines: SPL_DRAFT.map(l => JSON.parse(JSON.stringify(l))),
     note: document.getElementById('spl-note').value.trim(), status:'wait', createdBy: CURRENT_USER||'', createdAt: new Date().toISOString()};
-  rec.pallets = pals;
+  rec.pallets = pals; rec.apprDate = appr;
   const guard = withButtonGuard('#spl-save', '⏳'); if (guard === null) return;
   let r; try { r = await apiAuto('saveShipPlan', {rec}); } finally { guard.release(); }
   if (!r || !r.ok) { alert('저장 실패: ' + (r && r.error || '서버 응답 없음') + (r && /unknown action/i.test(r.error||'') ? '\n서버(Code.gs)를 새 버전으로 배포해야 합니다.' : '')); return; }
@@ -18015,8 +18016,8 @@ function splMismatch(p){
 function splEdit(id){
   const p = SPL.find(x => x.id === id); if (!p) return;
   SPL_EDIT = id; SPL_DRAFT = JSON.parse(JSON.stringify(p.lines||[])); SPL_PAL = JSON.parse(JSON.stringify(p.pallets||[])); SPL_PICK = null;
-  Object.assign(SPL_FORM, {dest:p.dest, date:p.date, note:p.note||''});
-  const d = document.getElementById('spl-dest'); if (d) d.value = p.dest; const t = document.getElementById('spl-date'); if (t) t.value = p.date; const nn = document.getElementById('spl-note'); if (nn) nn.value = p.note||'';
+  Object.assign(SPL_FORM, {dest:p.dest, date:p.date, note:p.note||'', appr:p.apprDate||''});
+  const d = document.getElementById('spl-dest'); if (d) d.value = p.dest; const t = document.getElementById('spl-date'); if (t) t.value = p.date; const ap = document.getElementById('spl-appr'); if (ap) ap.value = p.apprDate || ''; const nn = document.getElementById('spl-note'); if (nn) nn.value = p.note||'';
   renderShipPlans();
   document.getElementById('spl-panel').scrollIntoView({behavior:'smooth', block:'start'});
 }
@@ -18573,33 +18574,26 @@ async function qmKpiAuto(){
     const el = document.getElementById('qm-kpi-' + m); if (el && v !== '') { el.value = v; qmKpiSet(m, v); } }
   const u = document.querySelector('#qm-form [data-k="unit"]'); if (u && !u.value) u.value = '%';
 }
-// 🚚 [2026-11-20] 납기 준수율 자동 계산
-//   대상: 2026-08-01 이후 접수한 고객 PO 라인 (7/31 일괄 등록한 예전 PO는 납기가 등록 전이라 제외)
-//   납기 = 회신 납기(있으면) → 고객 요청 납기. 출고 = 출고처 있는 완제품 출고(작업지시·복구 기록 제외)
-//   품목마다 PO를 접수 순서대로 놓고, 8월 이후 출고를 날짜순으로 채워 라인이 다 채워진 날 = 완료일. 완료일 ≤ 납기면 준수.
-//   월 값 = 그 달 납기 라인 중 준수 ÷ 그 달 납기 라인 × 100 (납기가 아직 안 온 달은 계산하지 않음)
-const OTD_FROM = '2026-08-01';
+// 🚚 [2026-11-20] 납기 준수율 자동 계산 — 출고 예정(SP)의 고객 승인 출고일 기준 (아래 함수 설명 참고)
 async function qmKpiOtd(y){
-  try { await loadVNCPO(true); } catch (e) {}
-  let rows = []; try { rows = hqCPORows(); } catch (e) {}
-  const today = qmToday(), d10 = v => String(v || '').slice(0, 10);
-  const lines = []; rows.filter(r => r.st !== '취소' && d10(r.recvDate) >= OTD_FROM).forEach(r => (r.ls || []).forEach((l, i) => { const due = d10(l.replyDue || l.due); if (due && +l.qty > 0) lines.push({po: r.custPoNo || r.cpoNo, cpo: r.cpoNo, recv: d10(r.recvDate), code: l.code, name: l.name || l.code, qty: +l.qty, due, i, rem: +l.rem || 0}); }));
-  const ships = (txLog || []).filter(t => t.type === 'otp' && t.dest && t.dest !== 'NG' && !/작업지시|복구/.test(String(t.note || ''))).map(t => ({code: t.code, qty: +t.qty || 0, d: (() => { const x = new Date(t.dt); return isNaN(x) ? '' : `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; })()})).filter(t => t.d >= OTD_FROM).sort((a, b) => a.d.localeCompare(b.d));
-  const byCode = {}; lines.forEach(l => (byCode[l.code] = byCode[l.code] || []).push(l));
-  // 출고는 그 PO를 받은 날 이후 것만 채울 수 있다. 완료 여부는 ERP 영업 화면의 출하 계산(잔량 0)을 그대로 따른다.
-  Object.values(byCode).forEach(L => { L.sort((a, b) => a.recv.localeCompare(b.recv) || a.due.localeCompare(b.due)); L.forEach(l => l._need = l.qty);
-    ships.filter(t => t.code === L[0].code).forEach(t => { let q = t.qty; for (const l of L) { if (q <= 0) break; if (l._need <= 0 || l.recv > t.d) continue; const u = Math.min(q, l._need); l._need -= u; q -= u; if (l._need <= 0) l._fill = t.d; } });
-    L.forEach(l => { l.done = l.rem <= 0 ? (l._fill || '') : ''; if (l.rem <= 0 && !l.done) l.done = '(완료·날짜 미상)'; }); });
-  lines.forEach(l => { l.ok = l.done ? (l.done.startsWith('(') ? true : l.done <= l.due) : false; l.judged = !!l.done || l.due < today; });
-  const mon = {}; lines.filter(l => l.due.slice(0, 4) === String(y) && l.judged).forEach(l => { const m = +l.due.slice(5, 7); const o = mon[m] = mon[m] || [0, 0]; o[1]++; if (l.ok) o[0]++; });
-  Object.entries(mon).forEach(([m, [a, n]]) => { const v = +(a / n * 100).toFixed(1), el = document.getElementById('qm-kpi-' + m); if (el) { el.value = v; qmKpiSet(+m, v); } });
-  const det = document.getElementById('qm-kpi-detail'), L = lines.filter(l => l.due.slice(0, 4) === String(y)).sort((a, b) => a.due.localeCompare(b.due));
-  if (det) det.innerHTML = `<details open style="margin-top:6px;font-size:12px"><summary style="cursor:pointer;font-weight:700">근거: ${y}년 납기 PO 라인 ${L.length}개 (${OTD_FROM} 이후 접수분)</summary>
-    <table style="width:100%;border-collapse:collapse;margin-top:4px">${'<tr>' + ['PO','품목','수량','납기','완료일','판정'].map(h => `<th style="border-bottom:1px solid #CBD5E1;text-align:left;padding:2px 4px">${h}</th>`).join('') + '</tr>'}
-    ${L.map(l => `<tr><td style="padding:2px 4px">${hqE(l.po)}</td><td>${hqE(l.name)}</td><td style="text-align:right">${(+l.qty).toLocaleString()}</td><td>${l.due}</td><td>${l.done || '-'}</td><td style="font-weight:700;color:${!l.judged ? '#64748B' : l.ok ? '#166534' : '#b91c1c'}">${!l.judged ? '납기 전' : l.ok ? '준수' : '지연'}</td></tr>`).join('') || '<tr><td colspan="6" style="color:#64748B;padding:4px">해당 라인 없음</td></tr>'}</table>
-    <div style="color:#5D6977;margin-top:3px">완료 여부는 영업 화면의 출하 계산(잔량 0)을 따르고, 완료일은 PO 접수 이후 출고를 접수 순서대로 채워 추정합니다. 고객과 납기를 바꿨다면 PO의 <b>회신 납기</b>를 고쳐야 정확합니다.</div></details>`;
+  // ✅ [2026-11-20] 솔루엠은 출고 전에 고객 승인을 받고 출고한다 → PO 납기가 아니라 "출고 예정(SP)"의 고객 승인 출고일 기준
+  //   기준일 = 고객 승인 출고일(없으면 출고 예정일) · 실제 = 출고 완료 처리일 · 기준일 이내 완료면 준수 · 취소 제외
+  //   월 값 = 그 달이 기준일인 출고 예정 중 준수 ÷ 판정 가능 건(완료됐거나 기준일이 지난 것) × 100
+  try { await loadShipPlans(); } catch (e) {}
+  const today = qmToday(), loc = v => { const x = new Date(v); return isNaN(x) ? '' : `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; };
+  const L = (SPL || []).filter(p => p.status !== 'cancel').map(p => { const due = String(p.apprDate || p.date || '').slice(0, 10), done = p.status === 'done' ? loc(p.doneAt) || String(p.date || '').slice(0, 10) : '';
+    return {no: p.no || p.id, dest: p.dest, due, base: p.apprDate ? '고객 승인' : '예정일', done, ok: !!done && done <= due, judged: !!done || due < today, qty: (p.lines || []).reduce((a, l) => a + (+l.qty || (l.lots || []).reduce((s, x) => s + (+x.qty || 0), 0)), 0)}; })
+    .filter(x => x.due.slice(0, 4) === String(y)).sort((a, b) => a.due.localeCompare(b.due));
+  const mon = {}; L.filter(x => x.judged).forEach(x => { const m = +x.due.slice(5, 7); const o = mon[m] = mon[m] || [0, 0]; o[1]++; if (x.ok) o[0]++; });
+  for (let m = 1; m <= 12; m++) { const el = document.getElementById('qm-kpi-' + m); if (mon[m] && el) { const v = +(mon[m][0] / mon[m][1] * 100).toFixed(1); el.value = v; qmKpiSet(m, v); } }
+  const det = document.getElementById('qm-kpi-detail');
+  if (det) det.innerHTML = `<details open style="margin-top:6px;font-size:12px"><summary style="cursor:pointer;font-weight:700">근거: ${y}년 출고 예정 ${L.length}건 (취소 제외)</summary>
+    <table style="width:100%;border-collapse:collapse;margin-top:4px"><tr>${['출고 예정','출고처','기준일','기준','출고 완료','판정'].map(h => `<th style="border-bottom:1px solid #CBD5E1;text-align:left;padding:2px 4px">${h}</th>`).join('')}</tr>
+    ${L.map(x => `<tr><td style="padding:2px 4px">${hqE(x.no)}</td><td>${hqE(x.dest || '')}</td><td>${x.due}</td><td style="color:${x.base === '고객 승인' ? '#166534' : '#b45309'}">${x.base}</td><td>${x.done || '-'}</td><td style="font-weight:700;color:${!x.judged ? '#64748B' : x.ok ? '#166534' : '#b91c1c'}">${!x.judged ? '예정' : x.ok ? '준수' : '지연'}</td></tr>`).join('') || '<tr><td colspan="6" style="color:#64748B;padding:4px">해당 출고 예정이 없습니다</td></tr>'}</table>
+    <div style="color:#5D6977;margin-top:3px">출고 → 출고 예정에서 <b>고객 승인 출고일</b>을 넣으면 그 날짜가 기준입니다 (비우면 출고 예정일). 출고 예정 기능은 2026년 11월부터 사용해서 그 전 달은 계산되지 않습니다.</div></details>`;
   const u = document.querySelector('#qm-form [data-k="unit"]'); if (u && !u.value) u.value = '%';
-  if (!Object.keys(mon).length) alert(`${y}년에 판정할 수 있는 납기 라인이 없습니다 (${OTD_FROM} 이후 접수 PO 중 납기가 지난 것 또는 완료된 것).`);
+  const c = document.querySelector('#qm-form [data-k="calc"]'); if (c) c.value = '고객 승인 출고일(없으면 출고 예정일)까지 출고 완료한 출고 예정 건 ÷ 판정 가능한 출고 예정 건 × 100 (ERP 출고 예정 기준)';
+  if (!Object.keys(mon).length) alert(`${y}년에 판정할 수 있는 출고 예정이 없습니다.`);
 }
 function qmKpiCell(r){
   let o = {}; try { o = JSON.parse(r.months || '{}') || {}; } catch (e) {} const t = +r.target, up = r.dir === '이상';
@@ -18608,7 +18602,7 @@ function qmKpiCell(r){
 }
 // 지표를 고르면 단위·방향·추천 목표·계산 방법을 채운다 (고칠 수 있음)
 const QM_KPI_DEF = {'공정 불량률': ['%', '이하', 0.5, 'NG 이동 수량 ÷ (완제품 입고 + NG 이동) × 100', '생산·생산관리'], '출하검사 불합격률': ['%', '이하', 0, '출하검사 불합격 LOT ÷ 출하검사 LOT × 100', '품질'], '고객 클레임 건수': ['건', '이하', 0, '그 달 접수된 고객 부적합(8D) 건수', '품질'],
-  '납기 준수율': ['%', '이상', 98, '납기 내 출하한 PO 라인 ÷ 그 달 납기 PO 라인 × 100', '생산·생산관리'], '설비 고장 시간': ['시간', '이하', 4, 'MES 비가동(고장) 시간 합계 / 월', '생산·생산관리'], '교육 계획 달성률': ['%', '이상', 100, '실시한 교육 ÷ 계획한 교육 × 100', '인사총무'], '기타': ['', '이하', '', '', '']};
+  '납기 준수율': ['%', '이상', 98, '고객 승인 출고일(없으면 출고 예정일)까지 출고 완료한 출고 예정 건 ÷ 판정 가능 건 × 100', '생산·생산관리'], '설비 고장 시간': ['시간', '이하', 4, 'MES 비가동(고장) 시간 합계 / 월', '생산·생산관리'], '교육 계획 달성률': ['%', '이상', 100, '실시한 교육 ÷ 계획한 교육 × 100', '인사총무'], '기타': ['', '이하', '', '', '']};
 // 🎯 KPI 대시보드 — 지표마다 월별 막대(달성 초록·미달 빨강) + 목표선, 한 화면에 전부
 function qmKpiDash(){
   const all = HQS.qkpi || [], years = [...new Set(all.map(k => String(k.year || '')).filter(Boolean))].sort();
