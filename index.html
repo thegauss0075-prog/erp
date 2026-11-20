@@ -3969,7 +3969,7 @@ const DR = {mesDay: '', mes: null, mesErr: ''}, PAT_SLOTS_DR = ['초', '중', '�
 async function drMes(day){
   if (DR.mesDay === day && DR.mes) return; DR.mes = null; DR.mesErr = ''; DR.x = null;
   try { const sb = await qmSbLive(); if (!sb) { DR.mesErr = '이 브라우저에서 MES에 로그인하면 PCDU 공정 실적·비가동·점검·부적합도 함께 나옵니다.'; return; }
-    const d0 = day + 'T00:00:00+07:00', d1 = day + 'T23:59:59+07:00';
+    const d0 = new Date(day + 'T00:00:00+07:00').toISOString(), d1 = new Date(day + 'T23:59:59+07:00').toISOString();
     const [pr, ev, mc, mk, ci, pc, pi, nc, sr] = await Promise.all([
       sb.from('prod_records').select('item_name,process_code,machine_code,worker_code,good_qty,ng_qty,ng_reason,start_at,end_at,lot_out,status').gte('start_at', d0).lte('start_at', d1).order('start_at'),
       sb.from('machine_events').select('machine_code,state,reason_code,note,started_at,ended_at').lte('started_at', d1).or('ended_at.is.null,ended_at.gte.' + d0),
@@ -4010,7 +4010,9 @@ async function drHtml(){
   // ── 월 누적 · 내일 계획 (생산계획 기준)
   const mon = day.slice(0, 7), tmr = (() => { const d = new Date(day + 'T00:00:00'); d.setDate(d.getDate() + 1); return plYmd(d); })();
   const PP = (HQS.pplan || []).filter(p => +p.qty > 0 && p.code && String(p.date).slice(0, 7) === mon || (+p.qty > 0 && p.date === tmr));
-  const monAct = {}; (txLog || []).forEach(t => { if (t.type !== 'tp-in' || /복구/.test(String(t.note || ''))) return; const dd = plTxDay(t); if (dd.slice(0, 7) === mon && dd <= day) monAct[t.code] = (monAct[t.code] || 0) + (+t.qty || 0); });
+  // 누적 실적은 그 품목의 이번 달 첫 계획일부터 센다 (계획 시작 전 생산까지 넣으면 달성률이 부풀었다)
+  const pStart = {}; PP.forEach(p => { if (String(p.date).slice(0, 7) === mon && (!pStart[p.code] || p.date < pStart[p.code])) pStart[p.code] = p.date; });
+  const monAct = {}; (txLog || []).forEach(t => { if (t.type !== 'tp-in' || /복구/.test(String(t.note || ''))) return; const dd = plTxDay(t); if (pStart[t.code] && dd >= pStart[t.code] && dd <= day) monAct[t.code] = (monAct[t.code] || 0) + (+t.qty || 0); });
   const mCodes = [...new Set(PP.map(p => p.code))], mName = c => ((PP.find(p => p.code === c && p.name) || {}).name) || ((allRows().find(x => x.code === c) || {}).name) || c;
   const mRows = mCodes.map(c => { const ps = PP.filter(p => p.code === c && String(p.date).slice(0, 7) === mon); return {c, name: mName(c), full: ps.reduce((a, p) => a + +p.qty, 0), toDay: ps.filter(p => p.date <= day).reduce((a, p) => a + +p.qty, 0), act: monAct[c] || 0, tmr: +((PP.find(p => p.code === c && p.date === tmr) || {}).qty || 0)}; });
   const mT = k => mRows.reduce((a, r) => a + r[k], 0);
@@ -4049,7 +4051,7 @@ async function drHtml(){
       <td style="text-align:right;color:${r.g ? '#b91c1c' : ''}">${n(r.g)}</td><td style="text-align:right">${r.a + r.g && r.g ? (r.g / (r.a + r.g) * 100).toFixed(2) + '%' : '-'}</td>
       <td style="text-align:right;color:#185FA5">${n(r.sh)}</td><td style="font-size:11.5px;font-family:monospace">${E(r.lots.join(', '))}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">이날 생산·불량·출하 기록이 없습니다.</td></tr>'}</tbody></table></div>
     ${SN('월 누적 실적 · 내일 계획 <span style="font-weight:400;font-size:12px;color:#5D6977">(' + mon.replace('-', '.') + ' · 생산계획 기준)</span>')}
-    <div class="tw"><table><thead><tr><th>품목</th><th style="text-align:right">월 계획</th><th style="text-align:right">누적 계획 (~${day.slice(5).replace('-', '/')})</th><th style="text-align:right">누적 실적</th><th style="text-align:right">달성률</th><th style="text-align:right">월 진척률</th><th style="text-align:right">내일 계획 (${tmr.slice(5).replace('-', '/')})</th></tr></thead><tbody>
+    <div class="tw"><table><thead><tr><th>품목</th><th style="text-align:right">월 계획</th><th style="text-align:right">누적 계획 (~${day.slice(5).replace('-', '/')})</th><th style="text-align:right">누적 실적<div style="font-weight:400;font-size:11px">계획 시작일부터</div></th><th style="text-align:right">달성률</th><th style="text-align:right">월 진척률</th><th style="text-align:right">내일 계획 (${tmr.slice(5).replace('-', '/')})</th></tr></thead><tbody>
     ${mRows.map(r => `<tr><td><b>${E(r.name)}</b><div style="font-size:11px;color:#8A95A3;font-family:monospace">${E(r.c)}</div></td><td style="text-align:right">${n(r.full)}</td><td style="text-align:right;color:#5b21b6">${n(r.toDay)}</td><td style="text-align:right;font-weight:800">${n(r.act)}</td><td style="text-align:right;color:${r.toDay && r.act < r.toDay * 0.95 ? '#b45309' : '#166534'}">${r.toDay ? Math.round(r.act / r.toDay * 100) + '%' : '-'}</td><td style="text-align:right">${r.full ? Math.round(r.act / r.full * 100) + '%' : '-'}</td><td style="text-align:right;font-weight:700;color:#5b21b6">${n(r.tmr)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">이번 달 생산계획이 없습니다.</td></tr>'}
     ${mRows.length ? `<tr style="background:#F8FAFC;font-weight:700"><td>합계</td><td style="text-align:right">${n(mT('full'))}</td><td style="text-align:right">${n(mT('toDay'))}</td><td style="text-align:right">${n(mT('act'))}</td><td style="text-align:right">${mT('toDay') ? Math.round(mT('act') / mT('toDay') * 100) + '%' : '-'}</td><td style="text-align:right">${mT('full') ? Math.round(mT('act') / mT('full') * 100) + '%' : '-'}</td><td style="text-align:right">${n(mT('tmr'))}</td></tr>` : ''}</tbody></table></div>
     ${ng.length ? SN('불량 내용 (NG 이동)') + `<div class="tw"><table><thead><tr><th>품목</th><th style="text-align:right">수량</th><th>사유</th><th>LOT</th><th>입력</th></tr></thead><tbody>${ng.map(t => `<tr><td>${E(t.name)}</td><td style="text-align:right;color:#b91c1c">${n(t.qty)}</td><td>${E(String(t.note || '').replace('[NG이동]', '').trim())}</td><td style="font-family:monospace">${E(t.lot || '')}</td><td>${E(t.user || '')}</td></tr>`).join('')}</tbody></table></div>` : ''}
