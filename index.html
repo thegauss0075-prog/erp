@@ -19303,9 +19303,37 @@ const vpCanEdit = () => !!(isMaster || isAdmin || USER_ROLE === 'admin' || USER_
 const vpCanApprove = () => !!isMaster;   // 법인장(마스터) 승인
 const vpToday = () => plYmd(new Date());
 const vpAmt = l => (+l.qty || 0) * (+l.price || 0);
+
+// 🇻🇳 한국어·베트남어 동시 표시: 그린 뒤 화면의 한국어 글자에 베트남어를 붙인다 (문구 사전)
+const VP_VI = {'구매요청·견적':'Yêu cầu mua · Báo giá','구매 대장':'Sổ mua hàng','구매 보고서':'Báo cáo mua hàng','공급업체':'Nhà cung cấp','구매요청 · 견적 비교':'Yêu cầu mua · So sánh báo giá',
+ '견적 비교표 엑셀 가져오기':'Nhập Excel so sánh báo giá','구매 보고서 엑셀 가져오기':'Nhập Excel báo cáo mua hàng','＋ 구매요청':'Tạo yêu cầu mua','전체':'Tất cả','작성':'Đang soạn','승인요청':'Chờ duyệt','승인':'Duyệt','발주':'Đặt hàng','입고중':'Đang nhận','완료':'Hoàn thành','반려':'Từ chối','취소':'Hủy',
+ '전체 부서':'Tất cả bộ phận','생산 PD':'Sản xuất','사무실 OFFICE':'Văn phòng','전체 종류':'Tất cả loại','소모품 VTTH':'Vật tư tiêu hao','원부자재 NPL':'Nguyên phụ liệu','공구·비품 CCDC':'Công cụ dụng cụ',
+ '번호':'Số','요청일':'Ngày yêu cầu','부서':'Bộ phận','제목 / 품목':'Tiêu đề / Hàng hóa','품목 수':'Số mặt hàng','금액 (VND)':'Thành tiền (VND)','업체':'Nhà cung cấp','상태':'Trạng thái','입고':'Nhận hàng',
+ '새 구매요청':'Yêu cầu mua mới','닫기':'Đóng','제목':'Tiêu đề','요청자':'Người yêu cầu','품목 · 업체별 견적':'Hàng hóa · Báo giá theo NCC','종류':'Loại','품목 (ERP 연결)':'Hàng hóa (liên kết ERP)','규격':'Quy cách','수량':'Số lượng','단위':'ĐVT',
+ '선정 업체 / 단가':'NCC được chọn / Đơn giá','금액':'Thành tiền','선정 사유':'Lý do chọn','＋ 품목 추가':'Thêm hàng','＋ 업체':'Thêm NCC','비고':'Ghi chú','저장':'Lưu','승인 요청':'Gửi duyệt','삭제':'Xóa','요청 회수':'Rút yêu cầu',
+ '발주서 인쇄':'In đơn đặt hàng','발주 처리':'Đặt hàng','입고 등록':'Nhận hàng','이 업체 선정':'Chọn NCC này','✓ 선정됨':'Đã chọn','✓ 선정':'Đã chọn','세금계산서 없음':'Không có HĐ VAT','견적 없음':'Không báo giá','법인장 승인 대기 중':'Chờ Giám đốc duyệt',
+ '주문일':'Ngày đặt','품명':'Tên hàng','단가':'Đơn giá','입고일':'Ngày nhận','미입고':'Chưa nhận','엑셀':'Xuất Excel','인쇄':'In','합계':'Tổng','변동':'Biến động','비중':'Tỷ trọng',
+ '① 월별 구매 비용 (종류별)':'Chi phí mua theo tháng (theo loại)','② 품목별 월 구매 비용 (금액 큰 순)':'Chi phí theo mặt hàng','④ 공급업체별 구매액':'Giá trị mua theo NCC',
+ '현지 공급업체':'Nhà cung cấp trong nước','업체명':'Tên NCC','담당자':'Người liên hệ','연락처':'Điện thoại','취급 품목':'Mặt hàng cung cấp','구매 건':'Số lần mua','구매액':'Giá trị mua','최근 구매':'Mua gần nhất','수정':'Sửa',
+ '품목':'Hàng hóa','입고 누계':'Đã nhận','이번 입고':'Nhận lần này','재고 연동':'Liên kết tồn kho','입고 저장':'Lưu nhận hàng','기록만':'Chỉ ghi nhận','업체명 (짧은 이름) *':'Tên NCC (tên ngắn)','법인명 (발주서·세금계산서)':'Tên pháp nhân (đơn hàng · HĐ VAT)',
+ '세금코드 MST':'Mã số thuế','주소':'Địa chỉ','공급업체 추가':'Thêm nhà cung cấp','구매 대장 ':'Sổ mua hàng'};
+function vpBi(root){
+  if (!root) return;
+  root.querySelectorAll('th,td,button,option,h3,h4,b,span,div,label,a').forEach(el => {
+    if (el.dataset.vi || el.closest('input,textarea,select:not(option)') && el.tagName !== 'OPTION') return;
+    if (el.tagName !== 'OPTION' && [...el.childNodes].some(n => n.nodeType === 1 && !/^(BR|SPAN)$/.test(n.tagName) || (n.nodeType === 1 && n.classList && n.classList.contains('vpvi')))) return;
+    const raw = (el.tagName === 'OPTION' ? el.textContent : [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('')).replace(/\s+/g, ' ').trim(); if (!raw) return;
+    let m = raw.match(/^(.+?)\s+(\d[\d,]*)$/), key = VP_VI[raw] ? raw : (m && VP_VI[m[1]] ? m[1] : ''), mo = raw.match(/^(\d{1,2})월$/);
+    const vi = key ? VP_VI[key] : mo ? 'Tháng ' + mo[1] : ''; if (!vi) return;
+    el.dataset.vi = '1';
+    if (el.tagName === 'OPTION') { el.textContent = raw + ' / ' + vi; return; }
+    const sp = document.createElement('span'); sp.className = 'vpvi'; sp.textContent = vi; el.appendChild(sp);
+  });
+}
 function vpModal(html, w){
   let m = document.getElementById('vp-ov'); if (!m) { m = document.createElement('div'); m.id = 'vp-ov'; m.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9992;display:flex;align-items:center;justify-content:center;padding:14px'; document.body.appendChild(m); }
   m.innerHTML = `<div style="background:#fff;border-radius:12px;width:min(${w || 1100}px,100%);max-height:94vh;overflow:auto;padding:18px 20px">${html}</div>`;
+  vpBi(m);
 }
 function vpClose(){ const m = document.getElementById('vp-ov'); if (m) m.remove(); VP.ed = null; }
 async function vpLoad(){
@@ -19335,9 +19363,10 @@ async function renderVP(opts){
   const tab = (k, t) => `<button class="${VP.view === k ? 'on' : ''}" onclick="VP.view='${k}';renderVP({local:true})">${t}</button>`;
   let body = '';
   if (VP.view === 'list') body = vpListHtml(); else if (VP.view === 'ledger') body = vpLedgerHtml(); else if (VP.view === 'report') body = vpReportHtml(); else body = vpSupHtml();
-  el.innerHTML = `<div class="pl">${plCss()}<style>.vp-t td,.vp-t th{white-space:nowrap}.vp-t td.wrap{white-space:normal;min-width:180px}.vp-low{background:#DCFCE7!important;font-weight:700}.vp-sel{outline:2px solid #4338CA;outline-offset:-2px}</style>
+  el.innerHTML = `<div class="pl">${plCss()}<style>.vp-t td,.vp-t th{white-space:nowrap}.vp-t td.wrap{white-space:normal;min-width:180px}.vp-low{background:#DCFCE7!important;font-weight:700}.vp-sel{outline:2px solid #4338CA;outline-offset:-2px}.vpvi{display:block;font-size:10.5px;font-weight:400;color:#6B7280;line-height:1.2;white-space:normal}button .vpvi{font-size:10px}.pl-tabs .vpvi{font-size:11px}.pl-pill .vpvi,span[style*="border-radius:999px"] .vpvi{display:inline;margin-left:4px}</style>
     <div class="pl-tabs">${tab('list', '구매요청·견적')}${tab('ledger', '구매 대장')}${tab('report', '구매 보고서')}${tab('sup', '공급업체')}</div>
     ${VP.err ? `<div class="pl-err">${vpE(VP.err)}</div>` : ''}${body}</div>`;
+  vpBi(el);
 }
 function vpListHtml(){
   const q = VP.q.toLowerCase(), docs = (HQS.vpur || []).filter(d => (!VP.st || d.status === VP.st) && (!VP.dept || d.dept === VP.dept) && (!q || [d.no, d.title, d.reqBy, ...(d.lines || []).map(l => l.name + ' ' + (l.sup || ''))].join(' ').toLowerCase().includes(q)))
