@@ -18583,19 +18583,21 @@ async function qmKpiOtd(y){
   try { await loadVNCPO(true); } catch (e) {}
   let rows = []; try { rows = hqCPORows(); } catch (e) {}
   const today = qmToday(), d10 = v => String(v || '').slice(0, 10);
-  const lines = []; rows.filter(r => r.st !== '취소' && d10(r.recvDate) >= OTD_FROM).forEach(r => (r.ls || []).forEach((l, i) => { const due = d10(l.replyDue || l.due); if (due && +l.qty > 0) lines.push({po: r.custPoNo || r.cpoNo, cpo: r.cpoNo, recv: d10(r.recvDate), code: l.code, name: l.name || l.code, qty: +l.qty, due, i}); }));
+  const lines = []; rows.filter(r => r.st !== '취소' && d10(r.recvDate) >= OTD_FROM).forEach(r => (r.ls || []).forEach((l, i) => { const due = d10(l.replyDue || l.due); if (due && +l.qty > 0) lines.push({po: r.custPoNo || r.cpoNo, cpo: r.cpoNo, recv: d10(r.recvDate), code: l.code, name: l.name || l.code, qty: +l.qty, due, i, rem: +l.rem || 0}); }));
   const ships = (txLog || []).filter(t => t.type === 'otp' && t.dest && t.dest !== 'NG' && !/작업지시|복구/.test(String(t.note || ''))).map(t => ({code: t.code, qty: +t.qty || 0, d: (() => { const x = new Date(t.dt); return isNaN(x) ? '' : `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`; })()})).filter(t => t.d >= OTD_FROM).sort((a, b) => a.d.localeCompare(b.d));
   const byCode = {}; lines.forEach(l => (byCode[l.code] = byCode[l.code] || []).push(l));
-  Object.values(byCode).forEach(L => { L.sort((a, b) => a.recv.localeCompare(b.recv) || a.due.localeCompare(b.due)); let cum = 0, si = 0, got = 0; const S = ships.filter(t => t.code === L[0].code);
-    L.forEach(l => { cum += l.qty; while (got < cum && si < S.length) { got += S[si].qty; l._last = S[si].d; si++; } l.done = got >= cum ? (l._last || S[si - 1] && S[si - 1].d) : ''; }); });
-  lines.forEach(l => { l.ok = l.done ? l.done <= l.due : false; l.judged = l.done || l.due < today; });
+  // 출고는 그 PO를 받은 날 이후 것만 채울 수 있다. 완료 여부는 ERP 영업 화면의 출하 계산(잔량 0)을 그대로 따른다.
+  Object.values(byCode).forEach(L => { L.sort((a, b) => a.recv.localeCompare(b.recv) || a.due.localeCompare(b.due)); L.forEach(l => l._need = l.qty);
+    ships.filter(t => t.code === L[0].code).forEach(t => { let q = t.qty; for (const l of L) { if (q <= 0) break; if (l._need <= 0 || l.recv > t.d) continue; const u = Math.min(q, l._need); l._need -= u; q -= u; if (l._need <= 0) l._fill = t.d; } });
+    L.forEach(l => { l.done = l.rem <= 0 ? (l._fill || '') : ''; if (l.rem <= 0 && !l.done) l.done = '(완료·날짜 미상)'; }); });
+  lines.forEach(l => { l.ok = l.done ? (l.done.startsWith('(') ? true : l.done <= l.due) : false; l.judged = !!l.done || l.due < today; });
   const mon = {}; lines.filter(l => l.due.slice(0, 4) === String(y) && l.judged).forEach(l => { const m = +l.due.slice(5, 7); const o = mon[m] = mon[m] || [0, 0]; o[1]++; if (l.ok) o[0]++; });
   Object.entries(mon).forEach(([m, [a, n]]) => { const v = +(a / n * 100).toFixed(1), el = document.getElementById('qm-kpi-' + m); if (el) { el.value = v; qmKpiSet(+m, v); } });
   const det = document.getElementById('qm-kpi-detail'), L = lines.filter(l => l.due.slice(0, 4) === String(y)).sort((a, b) => a.due.localeCompare(b.due));
   if (det) det.innerHTML = `<details open style="margin-top:6px;font-size:12px"><summary style="cursor:pointer;font-weight:700">근거: ${y}년 납기 PO 라인 ${L.length}개 (${OTD_FROM} 이후 접수분)</summary>
     <table style="width:100%;border-collapse:collapse;margin-top:4px">${'<tr>' + ['PO','품목','수량','납기','완료일','판정'].map(h => `<th style="border-bottom:1px solid #CBD5E1;text-align:left;padding:2px 4px">${h}</th>`).join('') + '</tr>'}
     ${L.map(l => `<tr><td style="padding:2px 4px">${hqE(l.po)}</td><td>${hqE(l.name)}</td><td style="text-align:right">${(+l.qty).toLocaleString()}</td><td>${l.due}</td><td>${l.done || '-'}</td><td style="font-weight:700;color:${!l.judged ? '#64748B' : l.ok ? '#166534' : '#b91c1c'}">${!l.judged ? '납기 전' : l.ok ? '준수' : '지연'}</td></tr>`).join('') || '<tr><td colspan="6" style="color:#64748B;padding:4px">해당 라인 없음</td></tr>'}</table>
-    <div style="color:#5D6977;margin-top:3px">출고를 PO 접수 순서대로 채워 완료일을 계산합니다 (출고와 PO가 직접 연결돼 있지 않아 추정). 고객과 납기를 바꿨다면 PO의 <b>회신 납기</b>를 고쳐야 정확합니다.</div></details>`;
+    <div style="color:#5D6977;margin-top:3px">완료 여부는 영업 화면의 출하 계산(잔량 0)을 따르고, 완료일은 PO 접수 이후 출고를 접수 순서대로 채워 추정합니다. 고객과 납기를 바꿨다면 PO의 <b>회신 납기</b>를 고쳐야 정확합니다.</div></details>`;
   const u = document.querySelector('#qm-form [data-k="unit"]'); if (u && !u.value) u.value = '%';
   if (!Object.keys(mon).length) alert(`${y}년에 판정할 수 있는 납기 라인이 없습니다 (${OTD_FROM} 이후 접수 PO 중 납기가 지난 것 또는 완료된 것).`);
 }
