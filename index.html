@@ -3844,9 +3844,11 @@ async function plLoad(){
 }
 async function renderPlan(opts){
   opts = opts || {}; const el = document.getElementById('plan-body'); if (!el) return;
+  const tok = PL.tok = (PL.tok || 0) + 1;
   if (!opts.local) { if (!PL.loaded) el.innerHTML = '<div class="empty">⏳ 불러오는 중…</div>';
     await Promise.all([loadWO().catch(() => {}), loadVNCPO(true).catch(() => {}), PL.mode === 'daily' ? loadQC().catch(() => {}) : null, plLoad().catch(e => { PL.err = String(e.message || e); })]); }
-  if (PL.mode === 'daily') { el.innerHTML = '<div class="pl">' + plCss() + plTabs() + await drHtml() + '</div>'; return; }
+  if (tok !== PL.tok) return;   // 더 늦게 시작한 그리기가 있으면 이 결과는 버린다
+  if (PL.mode === 'daily') { const h = await drHtml(); if (tok !== PL.tok) return; el.innerHTML = '<div class="pl">' + plCss() + plTabs() + h + '</div>'; return; }
   if (!PL.wk) PL.wk = plMonday(new Date());
   const today = plYmd(new Date()), days = []; for (let i = 0; i < 14; i++) { const d = new Date(PL.wk); d.setDate(d.getDate() + i); days.push(plYmd(d)); }
   const plans = (HQS.pplan || []).filter(p => +p.qty > 0), planOf = (c, d) => +((plans.find(p => p.code === c && p.date === d) || {}).qty || 0);
@@ -3866,11 +3868,12 @@ async function renderPlan(opts){
   const dl = ['월','화','수','목','금','토','일'], md = d => d.slice(5).replace('-', '/');
   const cls = (d, i) => [i % 7 >= 5 ? 'we' : '', d === today ? 'today' : '', i === 7 ? 'wk' : ''].join(' ');
   const head = days.map((d, i) => `<th class="${cls(d, i)}" style="min-width:64px;text-align:center">${md(d)}<div class="pl-sub" style="font-weight:400">${dl[i % 7]}</div></th>`).join('');
-  const cell = (r, d, i) => { const p = planOf(r.c, d), a = actOf(r.c, d), past = d < today;
+  const pCell = (r, d, i) => { const p = planOf(r.c, d);
+    const inp = plCan() ? `<input class="pl-in${p ? ' has' : ''}" type="text" inputmode="numeric" autocomplete="off" data-c="${hqE(r.c)}" data-d="${d}" value="${p || ''}" onfocus="this.select()" onkeydown="plKey(event,this)" onchange="plSet(this)">` : `<span class="pl-in${p ? ' has' : ''}" style="display:inline-block;line-height:26px">${n(p)}</span>`;
+    return `<td class="${cls(d, i)}" style="text-align:center">${inp}</td>`; };
+  const aCell = (r, d, i) => { const p = planOf(r.c, d), a = actOf(r.c, d), past = d < today;
     const st = !p ? (a ? 'ok' : '') : a >= p ? 'ok' : a ? 'part' : past ? 'miss' : '';
-    const ac = a ? `<span class="pl-a ${st}">실적 ${n(a)}</span>` : (p && past ? '<span class="pl-a miss">실적 0</span>' : '');
-    const inp = plCan() ? `<input class="pl-in${p ? ' has' : ''}" type="number" min="0" value="${p || ''}" onchange="plSet('${hqE(r.c)}','${d}',this.value)">` : `<span class="pl-in${p ? ' has' : ''}" style="display:inline-block;line-height:26px">${n(p)}</span>`;
-    return `<td class="${cls(d, i)}"><div class="pl-c">${inp}${ac}</div></td>`; };
+    return `<td class="${cls(d, i)} pl-act-c" style="text-align:center"><span class="${st}">${a ? n(a) : (p && past ? '0' : '')}</span></td>`; };
   const totP = d => rows.reduce((a, r) => a + planOf(r.c, d), 0), totA = d => rows.reduce((s, r) => s + actOf(r.c, d), 0);
   const sP = rows.reduce((a, r) => a + r.pDone, 0), sA = rows.reduce((a, r) => a + r.aDone, 0), rate = sP ? Math.round(sA / sP * 100) : null;
   const short = rows.filter(r => r.need), pr2 = rows.reduce((a, r) => a + r.pr, 0);
@@ -3887,20 +3890,22 @@ async function renderPlan(opts){
       ${kpi('누적 실적 (오늘까지)', n(sA) || '0', '완제품 입고 기준', '')}
       ${kpi('계획 달성률', rate == null ? '–' : rate + '%', rate == null ? '오늘까지 계획 없음' : '목표 95% 이상', rc, rate)}
       ${kpi('미계획 품목', short.length + '개', short.length ? '미계획 수량 ' + n(short.reduce((a, r) => a + r.need, 0)) : '모든 PO 잔량 계획 완료', short.length ? '#B91C1C' : '#15803D')}</div>
-    <div class="pl-legend"><span><i style="background:#EEF2FF;border:1px solid #C7D2FE"></i>계획 수량 (칸에 입력 시 자동 저장${plCan() ? '' : ' · 입력은 관리자 로그인 필요'})</span><span><b class="ok">실적</b> 계획 달성</span><span><b class="part">실적</b> 일부 달성</span><span><b class="miss">실적 0</b> 미달성</span><span title="PO 잔량 − 재고 − max(오늘 이후 계획, 진행 중 작업지시)">미계획 = PO 잔량 − 재고 − 계획·작업지시</span></div>
+    <div class="pl-legend"><span><i style="background:#EEF2FF;border:1px solid #C7D2FE"></i>계획 칸에 수량 입력 → Enter 또는 다른 칸 클릭 시 저장${plCan() ? '' : ' (입력은 관리자 로그인 필요)'}</span><span>실적: <b class="ok">계획 달성</b> · <b class="part">일부 달성</b> · <b class="miss">0 미달성</b></span><span title="PO 잔량 − 재고 − max(오늘 이후 계획, 진행 중 작업지시)">미계획 = PO 잔량 − 재고 − 계획·작업지시</span></div>
     <div class="pl-tw"><table class="pl-t"><thead>
-      <tr class="grp"><th class="stk" colspan="1" style="text-align:left">품목</th><th colspan="3" style="text-align:center">주문·재고 현황</th><th colspan="7" style="text-align:center">1주차 · ${wk(0)}</th><th colspan="7" class="wk" style="text-align:center">2주차 · ${wk(1)}</th><th colspan="2" style="text-align:center">기간 합계</th></tr>
-      <tr><th class="stk" style="min-width:180px;text-align:left">품명 / 품목코드</th><th class="num">PO 잔량</th><th class="num">재고<div class="pl-sub" style="font-weight:400">진행 지시</div></th><th style="text-align:center">미계획</th>${head}<th class="num">계획<div class="pl-sub" style="font-weight:400">실적 / 계획(오늘까지)</div></th><th></th></tr></thead><tbody>
-    ${rows.map(r => `<tr><td class="stk"><div style="font-weight:600;color:var(--ink)">${hqE(r.name)}</div><div class="pl-sub" style="font-family:ui-monospace,monospace">${hqE(r.c)}</div></td>
-      <td class="num">${n(r.rem) || '–'}</td>
-      <td class="num">${n(r.stock) || '–'}${r.ow ? `<div class="pl-sub" style="color:var(--acc)">지시 ${n(r.ow)}</div>` : ''}</td>
-      <td style="text-align:center">${r.need ? `<span class="pl-pill bad">${n(r.need)}</span>` : '<span class="pl-pill good">충족</span>'}</td>
-      ${days.map((d, i) => cell(r, d, i)).join('')}
-      <td class="num"><b style="color:var(--acc)">${n(r.pr) || '–'}</b><div class="pl-sub ${r.pDone ? (r.aDone >= r.pDone ? 'ok' : 'part') : ''}">${r.pDone ? n(r.aDone) + ' / ' + n(r.pDone) : ''}</div></td>
-      <td>${plCan() && r.fut > r.ow ? `<button class="pl-act" onclick="plWO('${hqE(r.c)}')" title="오늘 이후 계획 중 작업지시가 없는 수량으로 작업지시를 발행합니다">작업지시 발행</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="${days.length + 6}" class="empty">고객 PO 잔량과 생산계획이 없습니다.</td></tr>`}
+      <tr class="grp"><th class="stk" colspan="1" style="text-align:left">품목</th><th colspan="4" style="text-align:center">주문·재고 현황</th><th colspan="7" style="text-align:center">1주차 · ${wk(0)}</th><th colspan="7" class="wk" style="text-align:center">2주차 · ${wk(1)}</th><th colspan="2" style="text-align:center">기간 합계</th></tr>
+      <tr><th class="stk" style="min-width:180px;text-align:left">품명 / 품목코드</th><th class="num">PO 잔량</th><th class="num">재고<div class="pl-sub" style="font-weight:400">진행 지시</div></th><th style="text-align:center">미계획</th><th style="text-align:center">구분</th>${head}<th class="num">기간 합계</th><th></th></tr></thead><tbody>
+    ${rows.map(r => `<tr class="pl-pr"><td class="stk" rowspan="2"><div style="font-weight:600;color:var(--ink)">${hqE(r.name)}</div><div class="pl-sub" style="font-family:ui-monospace,monospace">${hqE(r.c)}</div></td>
+      <td class="num" rowspan="2">${n(r.rem) || '–'}</td>
+      <td class="num" rowspan="2">${n(r.stock) || '–'}${r.ow ? `<div class="pl-sub" style="color:var(--acc)">지시 ${n(r.ow)}</div>` : ''}</td>
+      <td style="text-align:center" rowspan="2">${r.need ? `<span class="pl-pill bad">${n(r.need)}</span>` : '<span class="pl-pill good">충족</span>'}</td>
+      <td class="pl-lab">계획</td>${days.map((d, i) => pCell(r, d, i)).join('')}
+      <td class="num" style="color:var(--acc);font-weight:700">${n(r.pr) || '–'}</td>
+      <td rowspan="2">${plCan() && r.fut > r.ow ? `<button class="pl-act" onclick="plWO('${hqE(r.c)}')" title="오늘 이후 계획 중 작업지시가 없는 수량으로 작업지시를 발행합니다">작업지시 발행</button>` : ''}</td></tr>
+      <tr class="pl-ar"><td class="pl-lab">실적</td>${days.map((d, i) => aCell(r, d, i)).join('')}
+      <td class="num"><span class="${r.pDone ? (r.aDone >= r.pDone ? 'ok' : 'part') : ''}">${n(r.aDone) || '–'}</span>${r.pDone ? `<div class="pl-sub">계획 ${n(r.pDone)} 중</div>` : ''}</td></tr>`).join('') || `<tr><td colspan="${days.length + 7}" class="empty">고객 PO 잔량과 생산계획이 없습니다.</td></tr>`}
     </tbody><tfoot>
-      <tr><td class="stk">계획 합계</td><td></td><td></td><td></td>${days.map((d, i) => `<td class="${cls(d, i)}" style="text-align:center;color:var(--acc)">${n(totP(d))}</td>`).join('')}<td class="num" style="color:var(--acc)">${n(pr2)}</td><td></td></tr>
-      <tr><td class="stk">실적 합계</td><td></td><td></td><td></td>${days.map((d, i) => { const p = totP(d), a = totA(d); return `<td class="${cls(d, i)}" style="text-align:center"><span class="${a ? (a >= p ? 'ok' : 'part') : ''}">${n(a)}</span></td>`; }).join('')}<td class="num">${n(sA)}</td><td></td></tr>
+      <tr><td class="stk">합계</td><td></td><td></td><td></td><td class="pl-lab">계획</td>${days.map((d, i) => `<td class="${cls(d, i)}" style="text-align:center;color:var(--acc)">${n(totP(d))}</td>`).join('')}<td class="num" style="color:var(--acc)">${n(pr2)}</td><td></td></tr>
+      <tr><td class="stk"></td><td></td><td></td><td></td><td class="pl-lab">실적</td>${days.map((d, i) => { const p = totP(d), a = totA(d); return `<td class="${cls(d, i)}" style="text-align:center"><span class="${a ? (a >= p ? 'ok' : 'part') : ''}">${n(a)}</span></td>`; }).join('')}<td class="num">${n(sA)}</td><td></td></tr>
     </tfoot></table></div></div>`;
 }
 function plCss(){
@@ -3941,13 +3946,17 @@ function plCss(){
   .pl-in.has{background:#EEF2FF;color:var(--acc);font-weight:600}
   .pl-in::-webkit-inner-spin-button{opacity:0}
   .pl-a{font-size:11px;font-weight:600;line-height:1.1}
+  .pl-t td.pl-lab{font-size:11.5px;color:var(--mut);text-align:center;white-space:nowrap;font-weight:600}
+  .pl-t tr.pl-pr td{border-bottom:1px dashed #EEF0F3;padding-bottom:3px}.pl-t tr.pl-ar td{padding-top:3px}
+  .pl-t td.pl-act-c{font-weight:600;height:24px}
+  .pl-in.saving{background:#FEF9C3}.pl-in.saved{background:#DCFCE7;color:#166534}.pl-in.err{background:#FEE2E2;color:#B91C1C}
   .pl-sub{font-size:11px;color:var(--mut);margin-top:1px}
   .pl-pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600}.pl-pill.bad{background:#FEF2F2;color:#B91C1C}.pl-pill.good{background:#F0FDF4;color:#15803D}
   .pl-act{padding:5px 10px;border:1px solid #C7D2FE;border-radius:6px;background:#EEF2FF;color:var(--acc);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}.pl-act:hover{background:#E0E7FF}
   </style>`;
 }
 function plTabs(){
-  const b = (m, t) => `<button class="${(PL.mode || 'plan') === m ? 'on' : ''}" onclick="PL.mode='${m}';renderPlan(${m === 'daily' ? '' : '{local:true}'})">${t}</button>`;
+  const b = (m, t) => `<button class="${(PL.mode || 'plan') === m ? 'on' : ''}" onclick="plMode('${m}')">${t}</button>`;
   return `<div class="pl-tabs">${b('plan', '생산계획')}${b('daily', '생산일보')}</div>`;
 }
 // ════════════════════════════════════════════════════════════════════
@@ -4032,11 +4041,47 @@ function drPrint(){
   w.document.close();
 }
 function plMove(dd){ if (!PL.wk) PL.wk = plMonday(new Date()); const d = new Date(PL.wk); d.setDate(d.getDate() + dd); PL.wk = d; renderPlan({local: true}); }
-async function plSet(code, date, v){
+// 계획 입력: 화면을 다시 그리지 않고 그 칸만 저장한다 (다시 그리면 입력 중인 칸·클릭이 사라졌음).
+//   합계·지표는 입력 칸에서 포커스가 빠지고 저장이 다 끝난 뒤 한 번만 다시 그린다.
+async function plSet(inp){
   if (!plCan()) { alert('관리자 로그인이 필요합니다.'); return; }
-  const qty = Math.max(0, Math.round(+v || 0)), id = 'pp|' + code + '|' + date, it = allRows().find(x => x.code === code) || {};
-  const cur = (HQS.pplan || []).find(p => p.id === id); if (!cur && !qty) return;
-  if (await qmPut('pplan', {...(cur || {}), id, code, name: it.name || (cur && cur.name) || '', date, qty})) renderPlan({local: true});
+  const code = inp.dataset.c, date = inp.dataset.d, raw = String(inp.value).replace(/[^0-9]/g, '');
+  const qty = Math.max(0, Math.round(+raw || 0)), id = 'pp|' + code + '|' + date, it = allRows().find(x => x.code === code) || {};
+  const cur = (HQS.pplan || []).find(p => p.id === id); if (!cur && !qty) { inp.value = ''; return; }
+  if (cur && +cur.qty === qty) return;
+  inp.value = qty || ''; inp.classList.toggle('has', !!qty); inp.classList.remove('saved', 'err'); inp.classList.add('saving');
+  PL.pending = (PL.pending || 0) + 1;
+  const ok = await qmPut('pplan', {...(cur || {}), id, code, name: it.name || (cur && cur.name) || '', date, qty}).catch(() => false);
+  PL.pending--; inp.classList.remove('saving'); inp.classList.add(ok ? 'saved' : 'err');
+  if (ok) PL.dirty = true; plIdleRender();
+}
+function plKey(e, inp){
+  const k = e.key, L = String(inp.value).length, all = sel => sel === 0 && inp.selectionEnd === L;
+  let dir = 0;
+  if (k === 'Enter' || k === 'Tab') dir = e.shiftKey ? -1 : 1;
+  else if (k === 'ArrowRight' && (inp.selectionStart === L || all(inp.selectionStart))) dir = 1;
+  else if (k === 'ArrowLeft' && (inp.selectionEnd === 0 || all(inp.selectionStart))) dir = -1;
+  if (!dir) return; e.preventDefault();
+  const list = [...document.querySelectorAll('.pl-t input.pl-in')], nx = list[list.indexOf(inp) + dir];
+  if (nx) nx.focus(); else inp.blur();
+}
+// 입력·클릭이 끝난 뒤에만 다시 그린다 (입력 칸에 포커스가 있거나 마우스를 누르고 있으면 미룬다)
+function plIdleRender(){
+  clearTimeout(PL.idleT);
+  PL.idleT = setTimeout(() => {
+    const ae = document.activeElement;
+    if (PL.pending || PL.mouse || (ae && ae.classList && ae.classList.contains('pl-in'))) { if (!(ae && ae.classList && ae.classList.contains('pl-in'))) plIdleRender(); return; }
+    if (PL.dirty && (PL.mode || 'plan') === 'plan') { PL.dirty = false; renderPlan({local: true}); }
+  }, 400);
+}
+document.addEventListener('mousedown', () => { PL.mouse = true; }, true);
+document.addEventListener('mouseup', () => { PL.mouse = false; }, true);
+document.addEventListener('focusout', e => { if (e.target && e.target.classList && e.target.classList.contains('pl-in') && PL.dirty) plIdleRender(); }, true);
+function plMode(m){
+  if ((PL.mode || 'plan') === m) return;
+  PL.mode = m; PL.dirty = false;
+  renderPlan({local: true});                                   // 가진 데이터로 바로 전환
+  if (m === 'daily' && !_loadedAt.qc) loadQC().then(() => { if (PL.mode === 'daily') renderPlan({local: true}); }).catch(() => {});
 }
 function plWO(code){
   const today = plYmd(new Date()), fut = (HQS.pplan || []).filter(p => p.code === code && p.date >= today && +p.qty > 0).sort((a, b) => a.date.localeCompare(b.date));
