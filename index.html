@@ -18167,7 +18167,7 @@ async function splLinkInvoice(rec){
 //   저장: 서버 JSON 저장소(HQ 저장소 방식) — qcrit · qfai · qclaim · qtool · qedu · qdoc
 // ════════════════════════════════════════════════════════════
 const QM = {view: 'home', loaded: false, q: {}, f: {}};
-const QM_STORES = ['qcrit','qfai','qclaim','qtool','qedu','qdoc','qmes','qgauge','qskill','qecn'];
+const QM_STORES = ['qcrit','qfai','qclaim','qtool','qedu','qdoc','qmes','qgauge','qskill','qecn','qaudit','qmr','qkpi'];
 const QM_CUSTS0 = ['솔루엠', '영화테크'];
 function qmCustOf(code, name){ return /PCDU/i.test(String(code || '') + ' ' + String(name || '')) ? '영화테크' : '솔루엠'; }
 function qmCusts(){ return [...new Set([...QM_CUSTS0, ...(HQS.qcrit || []).map(x => x.customer), ...(HQS.qclaim || []).map(x => x.customer), ...(HQS.qfai || []).map(x => x.customer)].filter(Boolean))]; }
@@ -18191,6 +18191,16 @@ const QM_DEF = {
   qecn: {title: '설계변경 (ECN)', vi: 'Thay đổi thiết kế', icon: '📐',
     fields: [['ecnNo','변경 번호','text'],['date','접수일','date'],['customer','고객사','cust'],['code','품목코드','text'],['name','품명','text'],['source','변경 요청','sel',['고객 요청','본사 설계','공정 개선','공급사 변경','기타']],['custDoc','근거 문서 (승인원 Rev·고객 문서번호)','text'],['title','변경 내용 (요약)','text'],['before','변경 전','area'],['after','변경 후','area'],['reason','변경 이유','area'],['effDate','적용 예정일','date'],['firstLot','적용 첫 LOT','text'],['oldStock','구 자재·재공·완제품 처리','sel',['해당 없음','소진 후 적용','즉시 적용 (구품 격리)','재작업','폐기']],['checks','반영 체크리스트','text'],['owner','담당자','text'],['status','상태','sel',['접수','검토','고객 승인 대기','적용','완료','반려']],['closeDate','완료일','date'],['link','파일 (첨부·링크)','text'],['note','비고','area']],
     cols: ['ecnNo','date','name','title','custDoc','status','checks','effDate','firstLot','owner'], def: () => ({ecnNo: qmEcnNo(), date: qmToday(), status: '접수', source: '고객 요청', oldStock: '해당 없음'})},
+  // ✅ [2026-11-20] 내부 품질감사 · 품질목표(KPI) · 경영검토 — SQ 품질경영체제 대비
+  qaudit: {title: '내부 품질감사', vi: 'Đánh giá nội bộ', icon: '🔍',
+    fields: [['auditNo','감사 번호','text'],['date','감사일','date'],['type','구분','sel',['정기 감사','특별 감사','공정 감사','제품 감사']],['area','대상 부서·공정','text'],['auditor','감사원 (대상 부서 아닌 사람)','text'],['auditee','피감사자','text'],['checks','감사 체크리스트 (SQ 5개 분야)','text'],['findings','지적 사항 (부적합·관찰)','area'],['actions','시정조치 (담당·기한)','area'],['dueDate','조치 기한','date'],['status','상태','sel',['계획','실시','조치 중','완료']],['closeDate','완료일','date'],['link','보고서·증빙 (첨부)','text']],
+    cols: ['auditNo','date','type','area','auditor','checks','status','dueDate'], def: () => ({auditNo: qmSeqNo('qaudit', 'auditNo', 'IA'), date: qmToday(), type: '정기 감사', status: '계획'})},
+  qkpi: {title: '품질목표 · KPI', vi: 'Mục tiêu chất lượng', icon: '🎯',
+    fields: [['year','연도','text'],['kpi','지표','sel',['공정 불량률','출하검사 불합격률','고객 클레임 건수','납기 준수율','설비 고장 시간','교육 계획 달성률','기타']],['name','지표 이름 (기타일 때)','text'],['unit','단위','text'],['dir','목표 방향','sel',['이하','이상']],['target','목표값','num'],['months','월별 실적','text'],['owner','담당 부서','text'],['calc','계산 방법','area']],
+    cols: ['year','kpi','name','target','months','owner'], def: () => ({year: qmToday().slice(0, 4), kpi: '공정 불량률', unit: '%', dir: '이하'})},
+  qmr: {title: '경영검토', vi: 'Xem xét lãnh đạo', icon: '🧭',
+    fields: [['date','검토일','date'],['period','검토 기간','text'],['attendees','참석자','text'],['inputs','검토 입력 (품질목표·감사·고객 불만·부적합·설비·교육·변경)','area'],['decisions','검토 결과·결정 사항','area'],['actions','후속 조치 (담당·기한)','area'],['resources','필요 자원 (인력·설비·예산)','area'],['approver','승인 (법인장)','text'],['status','상태','sel',['작성 중','승인','조치 완료']],['link','회의록·자료 (첨부)','text']],
+    cols: ['date','period','attendees','approver','status'], def: () => ({date: qmToday(), period: qmToday().slice(0, 4) + '년', status: '작성 중', inputs: qmMrInputs()})},
   qclaim: {title: '고객사 부적합 (8D)', vi: 'Khiếu nại khách hàng', icon: '📮',
     fields: [['recvDate','접수일','date'],['customer','고객사','cust'],['claimNo','고객 관리번호','text'],['code','품목코드','text'],['name','품명','text'],['lot','LOT','text'],['qty','불량 수량','num'],['severity','등급','sel',['Major','Minor','Critical']],['defect','불량 내용','area'],['cause','원인 (D4)','area'],['action','대책 (D5~D6)','area'],['owner','담당자','text'],['dueDate','회신 기한','date'],['status','진행 단계','sel',['접수','원인 분석','대책 수립','효과 확인','완료']],['closeDate','완료일','date']],
     cols: ['recvDate','customer','name','lot','qty','defect','status','dueDate','owner'], def: () => ({recvDate: qmToday(), status: '접수', severity: 'Major', dueDate: qmAddMonths(qmToday(), 0)})},
@@ -18210,7 +18220,7 @@ const QM_LBL = k => { if (k === 'process') return '적용 공정'; for (const d 
 const QM_NAV = [
   ['home','🏠 홈','Trang chủ'], ['insp','🔬 검사 및 결과','Kết quả kiểm tra'], ['cust','🏢 고객사별 검사','Theo khách hàng'], ['qfai','🧪 FAI 관리','FAI'], ['qecn','📐 설계변경 (ECN)','Thay đổi thiết kế'],
   ['ng','🚫 불량 관리','Quản lý NG'], ['qclaim','📮 고객사 부적합','Khiếu nại KH'],
-  ['-','품질관리'], ['qtool','🛠 검사설비·치공구·검교정','Thiết bị · Hiệu chuẩn'], ['qedu','🎓 교육훈련·자격인증','Đào tạo'], ['qdoc','📁 문서 관리','Tài liệu'],
+  ['-','품질관리'], ['qtool','🛠 검사설비·치공구·검교정','Thiết bị · Hiệu chuẩn'], ['qedu','🎓 교육훈련·자격인증','Đào tạo'], ['qdoc','📁 문서 관리','Tài liệu'], ['qaudit','🔍 내부 품질감사','Đánh giá nội bộ'], ['qkpi','🎯 품질목표·KPI','Mục tiêu chất lượng'], ['qmr','🧭 경영검토','Xem xét lãnh đạo'],
   ['-','품질관리현황'], ['cpk','📈 공정능력 (Cpk)','Năng lực quá trình'], ['week','📰 주간 보고','Báo cáo tuần'], ['stat','📊 통계 및 분석','Thống kê']];
 async function qmLoad(force){
   if (QM.loaded && !force) return;
@@ -18429,6 +18439,9 @@ function qmStatView(){
 
 // ── 공통 목록 · 입력 ────────────────────────────────────────
 function qmCell(k, r){
+  if (k === 'checks' && r.auditNo !== undefined) { let o = {}; try { o = JSON.parse(r.checks || '{}') || {}; } catch (e) {} const c = t => AUD_CHK.filter(x => (o[x[0]] || {}).r === t).length, done = AUD_CHK.filter(x => (o[x[0]] || {}).r).length;
+    return `<span style="font-size:12px">${done}/${AUD_CHK.length}${c('부적합') ? ` · <b style="color:#b91c1c">부적합 ${c('부적합')}</b>` : ''}${c('관찰') ? ` · <span style="color:#b45309">관찰 ${c('관찰')}</span>` : ''}</span>`; }
+  if (k === 'months') return qmKpiCell(r);
   if (k === 'checks') { let o = {}; try { o = JSON.parse(r.checks || '{}') || {}; } catch (e) {} const n = ECN_CHK.length, d = ECN_CHK.filter(c => o[c[0]]).length; return `<span style="font-weight:700;color:${d === n ? '#166534' : '#b45309'}">${d}/${n}</span>`; }
   let v = k === 'nextCal' ? (r.nextCal || qmAddMonths(r.lastCal, r.calCycle)) : r[k];
   if (k === 'status' || k === 'result' || k === 'grade') { const s = String(v || ''); return qmBadge(s || '-', /완료|승인|이수|유효|사용|취득|^A$/.test(s) ? 'g' : /반려|폐기|미이수|^D$/.test(s) ? 'r' : /진행|접수|분석|수립|확인|개정|수리|^C$/.test(s) ? 'y' : 'b'); }
@@ -18522,6 +18535,59 @@ function qmFileField(v){
 }
 // ✅ [2026-11-19] 작업표준서 공정별 분할 — 승인할 PDF를 고르면 '공정코드=쪽' 표대로 쪽을 나눠 공정마다 파일로 올린다.
 //    MES는 그 공정의 파일만 연다. (나눈 파일이 바뀌면 승인이 풀리고 다시 승인해야 유효)
+// 🔍 내부 품질감사 체크리스트 — SQ 평가 5개 분야 기준 (적합 / 부적합 / 관찰 / 해당 없음 + 확인 근거)
+const AUD_CHK = [
+ ['q1','품질경영','품질방침·목표가 정해져 있고 KPI 실적을 월별로 관리하는가'],['q2','품질경영','문서가 ERP에서 승인된 최신판이고 현장 관리본과 같은가'],['q3','품질경영','기록이 빠짐없이 남고 수정 이력이 남는가 (MES·ERP)'],['q4','품질경영','교육 계획·실시 기록이 있고 작업자 자격이 유효한가'],['q5','품질경영','고객 불만·부적합에 8D 시정조치를 하고 효과를 확인했는가'],
+ ['p1','생산조건','작업표준서가 공정마다 있고 작업자가 그대로 작업하는가'],['p2','생산조건','CTQ 공정 조건(온도·시간·토크·턴수)을 기록하고 규격 안인가'],['p3','생산조건','초·중·종 패트롤을 하루 3회 실시하고 NG 조치가 있는가'],['p4','생산조건','4M 변경 시 신고·승인·초품 확인을 했는가'],['p5','생산조건','작업자 배치가 자격과 맞는가 (배치표·자격표)'],
+ ['i1','검사시험','수입검사 기준이 있고 입고마다 검사·합격 후 사용하는가'],['i2','검사시험','중간·특성·출하검사 기준과 기록이 있고 불합격품이 격리되는가'],['i3','검사시험','계측기 검교정이 유효하고 MSA(GR&R)를 실시했는가'],['i4','검사시험','마스터 샘플(OK/NG) 유효기간을 관리하는가'],['i5','검사시험','부적합품 식별·격리·처리(재작업·폐기) 기록이 있는가'],
+ ['e1','설비관리','설비 일상점검을 매일 하고 NG면 작업을 멈추는가'],['e2','설비관리','예방보전 계획대로 실시하는가 (실시율)'],['e3','설비관리','치공구·지그를 관리하고 예비품이 있는가'],
+ ['m1','자재관리','자재 LOT를 식별하고 선입선출·유효기간(몰딩액·솔더)을 지키는가'],['m2','자재관리','보관 조건(온습도)과 구역 표시(양품·부적합)를 지키는가'],['m3','자재관리','완제품 → 공정 → 자재 LOT 역추적이 되는가 (모의 추적)']];
+function qmSeqNo(store, key, pre){ const y = qmToday().slice(2, 4), n = (HQS[store] || []).filter(x => String(x[key] || '').startsWith(`${pre}-${y}`)).length + 1; return `${pre}-${y}-${String(n).padStart(2, '0')}`; }
+function qmAudChecks(rec){
+  let o = {}; try { o = JSON.parse(rec.checks || '{}') || {}; } catch (e) {}
+  const opts = [['적합', '#166534'], ['관찰', '#b45309'], ['부적합', '#b91c1c'], ['해당없음', '#64748B']];
+  return `<input type="hidden" data-k="checks" id="qm-aud-ck" value="${hqE(JSON.stringify(o))}"><div style="border:1px solid #E3E8EE;border-radius:8px;overflow:hidden">${AUD_CHK.map(([k, g, q], i) => { const v = o[k] || {};
+    return `<div style="padding:6px 10px;border-bottom:1px solid #F1F5F9;font-size:12.5px;${i && AUD_CHK[i - 1][1] !== g ? 'border-top:2px solid #CBD5E1;' : ''}"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:11px;color:#64748B;width:58px">${g}</span><span style="flex:1;min-width:220px">${hqE(q)}</span>
+      ${opts.map(([t, c]) => `<label style="white-space:nowrap;cursor:pointer;color:${c}"><input type="radio" name="aud-${k}" ${v.r === t ? 'checked' : ''} onchange="qmAudSet('${k}','r','${t}')"> ${t}</label>`).join('')}</div>
+      <input placeholder="확인 근거 (본 기록·화면·문서번호)" value="${hqE(v.e || '')}" oninput="qmAudSet('${k}','e',this.value)" style="width:100%;margin-top:3px;padding:4px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:12px"></div>`; }).join('')}</div>`;
+}
+function qmAudSet(k, f, v){ const h = document.getElementById('qm-aud-ck'); let o = {}; try { o = JSON.parse(h.value || '{}') || {}; } catch (e) {} o[k] = o[k] || {}; o[k][f] = v; h.value = JSON.stringify(o); }
+// 🎯 KPI 월별 실적 — 12칸. 공정 불량률·출하검사 불합격률은 ERP 기록으로 자동 계산 버튼
+function qmKpiMonths(rec){
+  let o = {}; try { o = JSON.parse(rec.months || '{}') || {}; } catch (e) {}
+  return `<input type="hidden" data-k="months" id="qm-kpi-m" value="${hqE(JSON.stringify(o))}"><div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px">${Array.from({length: 12}, (_, i) => `<label style="font-size:11.5px;color:#5D6977">${i + 1}월<input id="qm-kpi-${i + 1}" type="number" step="any" value="${hqE(o[i + 1] ?? '')}" oninput="qmKpiSet(${i + 1},this.value)" style="width:100%;padding:5px;border:1px solid #CBD5E1;border-radius:5px"></label>`).join('')}</div>
+    <button type="button" onclick="qmKpiAuto()" style="margin-top:6px;padding:6px 12px;border-radius:7px;border:1px solid #0d9488;background:#fff;color:#0d9488;font-size:12.5px;cursor:pointer">⚙ ERP 기록으로 자동 계산 (공정 불량률 · 출하검사 불합격률)</button>
+    <div style="font-size:11px;color:#5D6977;margin-top:3px">공정 불량률 = NG 이동 ÷ (완제품 입고 + NG 이동) · 출하검사 불합격률 = 불합격 건 ÷ 출하검사 건</div>`;
+}
+function qmKpiSet(m, v){ const h = document.getElementById('qm-kpi-m'); let o = {}; try { o = JSON.parse(h.value || '{}') || {}; } catch (e) {} if (v === '') delete o[m]; else o[m] = +v; h.value = JSON.stringify(o); }
+async function qmKpiAuto(){
+  const fv = k => ((document.querySelector('#qm-form [data-k="' + k + '"]') || {}).value || '').trim(), y = fv('year') || qmToday().slice(0, 4), kpi = fv('kpi');
+  if (!/불량률|불합격률/.test(kpi)) { alert('자동 계산은 "공정 불량률", "출하검사 불합격률"만 됩니다. 나머지는 직접 입력하세요.'); return; }
+  if (/불합격률/.test(kpi)) { try { await loadQC(); } catch (e) {} }
+  const mon = d => { const x = new Date(d); return isNaN(x) || String(x.getFullYear()) !== y ? 0 : x.getMonth() + 1; }, cur = +qmToday().slice(5, 7), lastM = y === qmToday().slice(0, 4) ? cur : 12;
+  for (let m = 1; m <= lastM; m++) { let v = '';
+    if (/불량률/.test(kpi)) { const tx = (txLog || []).filter(t => mon(t.dt) === m), ng = tx.filter(t => t.type === 'otp' && t.dest === 'NG').reduce((a, t) => a + (+t.qty || 0), 0), ok = tx.filter(t => t.type === 'tp-in' && !/복구/.test(String(t.note || ''))).reduce((a, t) => a + (+t.qty || 0), 0); if (ok + ng) v = +(ng / (ok + ng) * 100).toFixed(3); }
+    else { const q = (QC || []).filter(x => x.inspType === '출하검사' && mon(x.inspDate) === m); if (q.length) v = +(q.filter(x => x.result === '불합격').length / q.length * 100).toFixed(2); }
+    const el = document.getElementById('qm-kpi-' + m); if (el && v !== '') { el.value = v; qmKpiSet(m, v); } }
+  const u = document.querySelector('#qm-form [data-k="unit"]'); if (u && !u.value) u.value = '%';
+}
+function qmKpiCell(r){
+  let o = {}; try { o = JSON.parse(r.months || '{}') || {}; } catch (e) {} const t = +r.target, up = r.dir === '이상';
+  return `<span style="display:inline-flex;gap:2px">${Array.from({length: 12}, (_, i) => { const v = o[i + 1]; if (v === undefined || v === '') return `<span style="width:16px;height:16px;border-radius:3px;background:#F1F5F9" title="${i + 1}월"></span>`;
+    const ok = up ? +v >= t : +v <= t; return `<span style="width:16px;height:16px;border-radius:3px;background:${ok ? '#22c55e' : '#ef4444'}" title="${i + 1}월: ${v}${hqE(r.unit || '')} (목표 ${r.dir === '이상' ? '≥' : '≤'} ${t})"></span>`; }).join('')}</span>`;
+}
+// 🧭 경영검토 입력 자동 요약 — 지금 ERP·품질 기록에서 숫자를 모아 초안으로 넣는다 (내용은 검토자가 고친다)
+function qmMrInputs(){
+  const y = qmToday().slice(0, 4), inY = d => String(d || '').slice(0, 4) === y, H = k => HQS[k] || [];
+  const kpi = H('qkpi').filter(k => k.year === y).map(k => { let o = {}; try { o = JSON.parse(k.months || '{}') || {}; } catch (e) {} const vs = Object.entries(o), t = +k.target, up = k.dir === '이상', hit = vs.filter(([, v]) => up ? +v >= t : +v <= t).length;
+    return `- ${k.kpi === '기타' ? k.name : k.kpi}: 목표 ${up ? '≥' : '≤'} ${t}${k.unit || ''} · 달성 ${hit}/${vs.length}개월`; });
+  const au = H('qaudit').filter(a => inY(a.date)), cl = H('qclaim').filter(c => inY(c.recvDate)), ec = H('qecn').filter(c => inY(c.date)), ed = H('qedu').filter(c => inY(c.date));
+  return [`1. 품질목표 실적 (${y})`, ...(kpi.length ? kpi : ['- 등록된 품질목표 없음']),
+    `2. 내부 품질감사: ${au.length}회 · 미완료 ${au.filter(a => a.status !== '완료').length}건`,
+    `3. 고객 불만(8D): ${cl.length}건 · 진행 중 ${cl.filter(c => c.status !== '완료').length}건`,
+    `4. 설계변경(ECN): ${ec.length}건 · 교육 실시: ${ed.length}건`,
+    '5. 공정 부적합·4M 변경·설비 고장: MES 보고서 참조 (건수 기입)', '6. 이전 경영검토 후속 조치 결과:', '7. 개선 기회 · 위험 (공급사·인력·설비):'].join('\n');
+}
 // 📐 설계변경 체크리스트 — 항목마다 완료 / 해당 없음 / 미완료
 const ECN_CHK = [['cust','고객 승인 (승인원·변경 승인서 회신)'],['spec','승인원·도면 개정본 ERP 문서관리 등록'],['bom','BOM 수정 (ERP)'],['pfmea','PFMEA 검토·개정'],['cp','관리계획서(CP) 개정'],['wi','작업표준서 개정·현장 배포 (MES 승인본)'],['is','검사기준·고객사별 검사 기준 (Cpk 규격 포함) 수정'],['mes','MES 관리기준·일상점검·패트롤 항목 수정'],['jig','치공구·지그·검사 프로그램 수정'],['stock','구 자재·재공·완제품 처리 (식별·격리)'],['train','작업자 교육 (교육 기록)'],['m4','4M 변경 신고 (MES)'],['fai','초도품 검사 (FAI) 승인']];
 function qmEcnNo(){ const d = qmToday().replace(/-/g, '').slice(2), n = (HQS.qecn || []).filter(x => String(x.ecnNo || '').startsWith('ECN-' + d)).length + 1; return `ECN-${d}-${String(n).padStart(2, '0')}`; }
@@ -18594,7 +18660,7 @@ function qmEdit(store, id, preset){
     if (t === 'cust') return `<input data-k="${k}" list="qm-cust-dl" value="${hqE(v)}" style="${HQ_IN}"><datalist id="qm-cust-dl">${qmCusts().map(c => `<option value="${hqE(c)}">`).join('')}</datalist>`;
     return `<input data-k="${k}" type="${t === 'num' ? 'number' : t === 'date' ? 'date' : 'text'}" value="${hqE(v)}" style="${HQ_IN}">`; };
   qmModal(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><h3 style="margin:0">${d.icon} ${d.title} ${r ? '수정' : '추가'}</h3><span style="flex:1"></span><button onclick="qmClose()" style="border:0;background:none;font-size:20px;cursor:pointer">✕</button></div>
-    <div id="qm-form" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${d.fields.map(f => hqFld(f[1], '', (store === 'qdoc' || store === 'qedu' || store === 'qecn') && f[0] === 'link' ? qmFileField(rec.link) : store === 'qecn' && f[0] === 'checks' ? qmEcnChecks(rec) : store === 'qdoc' && f[0] === 'pages' ? qmPagesField(rec) : store === 'qdoc' && f[0] === 'pagesLinks' ? qmPagesLinks(rec) : inp(f), f[2] === 'area' || (store === 'qdoc' && f[0] === 'pagesLinks') || (store === 'qecn' && f[0] === 'checks'))).join('')}</div>
+    <div id="qm-form" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${d.fields.map(f => hqFld(f[1], '', ['qdoc','qedu','qecn','qaudit','qmr'].includes(store) && f[0] === 'link' ? qmFileField(rec.link) : store === 'qecn' && f[0] === 'checks' ? qmEcnChecks(rec) : store === 'qaudit' && f[0] === 'checks' ? qmAudChecks(rec) : store === 'qkpi' && f[0] === 'months' ? qmKpiMonths(rec) : store === 'qdoc' && f[0] === 'pages' ? qmPagesField(rec) : store === 'qdoc' && f[0] === 'pagesLinks' ? qmPagesLinks(rec) : inp(f), f[2] === 'area' || (store === 'qdoc' && f[0] === 'pagesLinks') || (['qecn','qaudit'].includes(store) && f[0] === 'checks') || (store === 'qkpi' && f[0] === 'months'))).join('')}</div>
     ${store === 'qdoc' ? qmApprovalBox(rec) : ''}
     ${r && (r.updatedBy || r.updatedAt) ? `<div style="font-size:11.5px;color:#8A95A3;margin-top:8px">최근 수정: ${hqE(r.updatedBy || '')} ${hqE(String(r.updatedAt || '').slice(0, 16).replace('T', ' '))}</div>` : ''}
     <div style="display:flex;gap:8px;margin-top:14px">${r ? `<button onclick="qmDel()" style="padding:8px 14px;border-radius:7px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;cursor:pointer">🗑 삭제</button>` : ''}<span style="flex:1"></span>${store === 'qdoc' && isMaster ? `<button onclick="qmSave(true)" style="padding:8px 14px;border-radius:7px;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;font-weight:700;cursor:pointer" title="지금 내용(개정 번호)으로 승인 — 상태가 유효로 바뀝니다">✔ 저장 후 승인</button>` : ''}<button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button><button id="qm-save" onclick="qmSave()" style="padding:8px 18px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">💾 저장</button></div>`);
@@ -18602,10 +18668,15 @@ function qmEdit(store, id, preset){
 async function qmSave(approve){
   const e = QM.ed; if (!e) return; const d = QM_DEF[e.store], rec = {...e.rec};
   document.querySelectorAll('#qm-form [data-k]').forEach(el => { const k = el.dataset.k, f = d.fields.find(x => x[0] === k); rec[k] = f && f[2] === 'num' ? (el.value === '' ? '' : +el.value) : el.value.trim(); });
-  const need = {qecn: ['code','title'], qcrit: ['customer','item'], qfai: ['name'], qclaim: ['customer','defect'], qtool: ['name'], qedu: ['course'], qdoc: ['title']}[e.store] || [];
+  const need = {qaudit: ['area','auditor'], qkpi: ['target'], qmr: ['decisions'], qecn: ['code','title'], qcrit: ['customer','item'], qfai: ['name'], qclaim: ['customer','defect'], qtool: ['name'], qedu: ['course'], qdoc: ['title']}[e.store] || [];
   const miss = need.filter(k => !String(rec[k] ?? '').trim()); if (miss.length) { alert(miss.map(QM_LBL).join(', ') + '을(를) 입력해 주세요.'); return; }
   if (e.store === 'qtool') rec.nextCal = (+rec.calCycle && rec.lastCal) ? qmAddMonths(rec.lastCal, rec.calCycle) : '';
   if (e.store === 'qclaim' && rec.status === '완료' && !rec.closeDate) rec.closeDate = qmToday();
+  if (e.store === 'qaudit') { let o = {}; try { o = JSON.parse(rec.checks || '{}') || {}; } catch (x) {} const nc = AUD_CHK.filter(c => (o[c[0]] || {}).r === '부적합').length, un = AUD_CHK.filter(c => !(o[c[0]] || {}).r).length;
+    if (rec.status === '완료' && (un || (nc && !String(rec.actions || '').trim()))) { alert(un ? `체크리스트 ${un}개 항목이 비어 있어 완료할 수 없습니다.` : '부적합이 있으면 시정조치를 적어야 완료할 수 있습니다.'); return; }
+    if (rec.status === '완료' && !rec.closeDate) rec.closeDate = qmToday(); }
+  if (e.store === 'qmr' && rec.status !== '작성 중' && !isMaster) { alert('경영검토 승인은 법인장(마스터 ON)만 할 수 있습니다.'); return; }
+  if (e.store === 'qmr' && rec.status !== '작성 중' && !String(rec.approver || '').trim()) rec.approver = CURRENT_USER || '';
   if (e.store === 'qecn') { const left = qmEcnLeft(rec.checks); if (rec.status === '완료' && left.length) { alert('체크리스트가 끝나지 않아 완료할 수 없습니다:\n- ' + left.join('\n- ') + '\n\n해당 없는 항목은 "해당 없음"을 고르세요.'); return; }
     if (rec.status === '적용' && !String(rec.firstLot || '').trim()) { alert('적용 상태로 바꾸려면 적용 첫 LOT를 적어야 합니다 (추적성).'); return; }
     if (rec.status === '완료' && !rec.closeDate) rec.closeDate = qmToday(); }
