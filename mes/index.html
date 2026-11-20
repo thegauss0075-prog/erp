@@ -963,7 +963,7 @@ function patrolDlg(pc){
 }
 function patMatrix(list){
   const days = []; for (let d = new Date(RP.from + 'T00:00:00'); ymd(d) <= RP.to; d.setDate(d.getDate() + 1)) days.push(ymd(d));
-  const pcs = [...new Set([...(M.patItem || []).map(i => i.process_code), ...list.map(c => c.process_code)])];
+  const pcs = [...new Set([...(M.patItem || []).filter(i => i.active !== false).map(i => i.process_code), ...list.map(c => c.process_code)])];
   const cell = c => c ? `<td style="${c.all_ok ? '' : 'color:#B91C1C;font-weight:700'}">${hm(c.created_at)}</td><td style="font-family:monospace;font-size:11px">${E(c.lot || '')}</td><td>${E(patVal(c, '핀홀'))}</td><td>${c.all_ok ? '✔' : '✕'}</td><td>${E(workName(c.worker_code))}</td>` : '<td colspan="5" style="color:#94A3B8">－</td>';
   return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><h2 style="margin:0">공정 패트롤 점검표 (초·중·종물)</h2><span style="flex:1"></span><button class="btn" onclick="patPrint()">🖨 점검표 인쇄</button></div>
   <div id="pat-mx">${pcs.map(pc => { const it = patItems(pc);
