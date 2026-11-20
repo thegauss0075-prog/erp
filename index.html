@@ -18464,6 +18464,7 @@ function qmListView(store){
   let extra = '';
   if (store === 'qtool') { const over = (HQS.qtool || []).filter(r => qmCalState(r) === 'over'), soon = (HQS.qtool || []).filter(r => qmCalState(r) === 'soon');
     extra = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${qmBadge('검교정 기한 지남 ' + over.length, over.length ? 'r' : 'g')}${qmBadge('30일 내 교정 ' + soon.length, soon.length ? 'y' : 'g')}${qmBadge('관리 대상 ' + (HQS.qtool || []).filter(r => r.status !== '폐기').length)}</div>`; }
+  if (store === 'qkpi') extra = qmKpiDash();
   if (store === 'qclaim') { const op = (HQS.qclaim || []).filter(x => x.status !== '완료'); extra = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">${['접수','원인 분석','대책 수립','효과 확인'].map(s => qmBadge(s + ' ' + op.filter(x => x.status === s).length, 'y')).join('')}${qmBadge('기한 지남 ' + op.filter(x => (qmDays(x.dueDate) ?? 1) < 0).length, 'r')}</div>`; }
   const mesPart = store === 'qtool' ? qmMesGaugeHtml() + qmSampleHtml() : store === 'qedu' ? qmMesSkillHtml() : '';
   if (store === 'qtool') list = list.filter(r => !qmIsSample(r));
@@ -18576,6 +18577,36 @@ function qmKpiCell(r){
   return `<span style="display:inline-flex;gap:2px">${Array.from({length: 12}, (_, i) => { const v = o[i + 1]; if (v === undefined || v === '') return `<span style="width:16px;height:16px;border-radius:3px;background:#F1F5F9" title="${i + 1}월"></span>`;
     const ok = up ? +v >= t : +v <= t; return `<span style="width:16px;height:16px;border-radius:3px;background:${ok ? '#22c55e' : '#ef4444'}" title="${i + 1}월: ${v}${hqE(r.unit || '')} (목표 ${r.dir === '이상' ? '≥' : '≤'} ${t})"></span>`; }).join('')}</span>`;
 }
+// 🎯 KPI 대시보드 — 지표마다 월별 막대(달성 초록·미달 빨강) + 목표선, 한 화면에 전부
+function qmKpiDash(){
+  const all = HQS.qkpi || [], years = [...new Set(all.map(k => String(k.year || '')).filter(Boolean))].sort();
+  const y = QM.kpiY && years.includes(QM.kpiY) ? QM.kpiY : (years.includes(qmToday().slice(0, 4)) ? qmToday().slice(0, 4) : years[years.length - 1]);
+  const list = all.filter(k => String(k.year) === String(y));
+  if (!list.length) return `<div style="background:#F8FAFC;border:1px dashed #CBD5E1;border-radius:10px;padding:14px;margin-bottom:10px;font-size:13px;color:#5D6977">품질목표를 ➕ 추가하면 여기에 지표별 그래프가 나옵니다.</div>`;
+  const W = 300, H = 130, L = 34, B = 18, T = 14;
+  const chart = k => { let o = {}; try { o = JSON.parse(k.months || '{}') || {}; } catch (e) {}
+    const t = +k.target || 0, up = k.dir === '이상', vals = Array.from({length: 12}, (_, i) => o[i + 1] === undefined || o[i + 1] === '' ? null : +o[i + 1]);
+    const mx = Math.max(t * 1.3, ...vals.filter(v => v !== null), up ? 0 : 0.0001) || 1, Y = v => T + (H - T - B) * (1 - v / mx), bw = (W - L - 6) / 12;
+    const nice = v => +(+v).toPrecision(3), hit = vals.filter(v => v !== null && (up ? v >= t : v <= t)).length, n = vals.filter(v => v !== null).length, last = [...vals].reverse().find(v => v !== null);
+    const bars = vals.map((v, i) => { const x = L + i * bw + 2; if (v === null) return `<rect x="${x}" y="${H - B - 2}" width="${bw - 4}" height="2" fill="#E2E8F0"/>`;
+      const ok = up ? v >= t : v <= t, yy = Y(Math.max(v, 0)); return `<rect x="${x}" y="${yy}" width="${bw - 4}" height="${Math.max(1, H - B - yy)}" rx="2" fill="${ok ? '#22c55e' : '#ef4444'}"><title>${i + 1}월: ${nice(v)}${hqE(k.unit || '')}</title></rect>`; }).join('');
+    const ty = Y(t);
+    return `<div onclick="qmEdit('qkpi','${hqE(k.id)}')" style="cursor:pointer;background:#fff;border:1px solid #E3E8EE;border-radius:12px;padding:10px 12px">
+      <div style="display:flex;align-items:baseline;gap:6px"><b style="font-size:14px">${hqE(k.kpi === '기타' ? (k.name || '기타') : k.kpi)}</b><span style="flex:1"></span><span style="font-size:12px;color:#5D6977">목표 ${up ? '≥' : '≤'} <b>${nice(t)}</b>${hqE(k.unit || '')}</span></div>
+      <div style="display:flex;gap:10px;font-size:12px;color:#5D6977;margin:2px 0 4px"><span>최근 <b style="font-size:16px;color:${last === undefined ? '#94A3B8' : (up ? last >= t : last <= t) ? '#166534' : '#b91c1c'}">${last === undefined ? '-' : nice(last)}</b>${hqE(k.unit || '')}</span><span>달성 <b>${hit}/${n}</b>개월</span>${k.owner ? `<span>${hqE(k.owner)}</span>` : ''}</div>
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
+        <text x="${L - 4}" y="${T + 4}" font-size="9" text-anchor="end" fill="#94A3B8">${nice(mx)}</text><text x="${L - 4}" y="${H - B}" font-size="9" text-anchor="end" fill="#94A3B8">0</text>
+        <line x1="${L}" y1="${H - B}" x2="${W - 4}" y2="${H - B}" stroke="#CBD5E1"/>${bars}
+        <line x1="${L}" y1="${ty}" x2="${W - 4}" y2="${ty}" stroke="#1F2A37" stroke-width="1.5" stroke-dasharray="5 3"/><text x="${W - 4}" y="${ty - 3}" font-size="9" text-anchor="end" fill="#1F2A37">목표 ${nice(t)}</text>
+        ${Array.from({length: 12}, (_, i) => `<text x="${L + i * bw + bw / 2}" y="${H - 5}" font-size="9" text-anchor="middle" fill="#64748B">${i + 1}</text>`).join('')}</svg></div>`; };
+  const ok = list.filter(k => { let o = {}; try { o = JSON.parse(k.months || '{}') || {}; } catch (e) {} const v = Object.keys(o).sort((a, b) => a - b).map(m => o[m]).pop(); return v !== undefined && (k.dir === '이상' ? +v >= +k.target : +v <= +k.target); }).length;
+  return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap"><b>📊 ${hqE(y)}년 품질목표</b><span style="font-size:12.5px;color:#5D6977">최근 달 기준 달성 <b style="color:${ok === list.length ? '#166534' : '#b91c1c'}">${ok}/${list.length}</b> 지표 · 초록 = 달성, 빨강 = 미달, 점선 = 목표</span><span style="flex:1"></span>
+      ${years.length > 1 ? `<select onchange="QM.kpiY=this.value;qmRender()" style="padding:5px 8px;border:1px solid #CBD5E1;border-radius:7px">${years.map(v => `<option ${v === y ? 'selected' : ''}>${v}</option>`).join('')}</select>` : ''}
+      <button onclick="qmKpiPrint()" style="padding:6px 12px;border-radius:7px;border:1px solid #CBD5E1;background:#fff;cursor:pointer">🖨️ 인쇄</button></div>
+    <div id="qm-kpi-dash" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px;margin-bottom:14px">${list.map(chart).join('')}</div>`;
+}
+function qmKpiPrint(){ const d = document.getElementById('qm-kpi-dash'); if (!d) return; const w = window.open('', '_blank'); if (!w) return;
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>품질목표 실적</title><style>@page{size:A4 landscape;margin:8mm}body{font-family:"Malgun Gothic",sans-serif}#g{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}#g>div{border:1px solid #999;border-radius:8px;padding:6px 8px;break-inside:avoid}.sg{float:right;width:210px;border-collapse:collapse}.sg td{border:1px solid #555;height:34px;text-align:center;vertical-align:top;font-size:11px}h1{font-size:17px;text-align:center;clear:both}</style></head><body><table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr><tr><td></td><td></td><td></td></tr></table><h1>품질목표 · KPI 실적</h1><div id="g">${d.innerHTML}</div><script>setTimeout(()=>print(),400)<\/script></body></html>`); w.document.close(); }
 // 🧭 경영검토 입력 자동 요약 — 지금 ERP·품질 기록에서 숫자를 모아 초안으로 넣는다 (내용은 검토자가 고친다)
 function qmMrInputs(){
   const y = qmToday().slice(0, 4), inY = d => String(d || '').slice(0, 4) === y, H = k => HQS[k] || [];
