@@ -3845,7 +3845,8 @@ async function plLoad(){
 async function renderPlan(opts){
   opts = opts || {}; const el = document.getElementById('plan-body'); if (!el) return;
   if (!opts.local) { if (!PL.loaded) el.innerHTML = '<div class="empty">⏳ 불러오는 중…</div>';
-    await Promise.all([loadWO().catch(() => {}), loadVNCPO(true).catch(() => {}), plLoad().catch(e => { PL.err = String(e.message || e); })]); }
+    await Promise.all([loadWO().catch(() => {}), loadVNCPO(true).catch(() => {}), PL.mode === 'daily' ? loadQC().catch(() => {}) : null, plLoad().catch(e => { PL.err = String(e.message || e); })]); }
+  if (PL.mode === 'daily') { el.innerHTML = plTabs() + await drHtml(); return; }
   if (!PL.wk) PL.wk = plMonday(new Date());
   const today = plYmd(new Date()), days = []; for (let i = 0; i < 14; i++) { const d = new Date(PL.wk); d.setDate(d.getDate() + i); days.push(plYmd(d)); }
   const plans = (HQS.pplan || []).filter(p => +p.qty > 0), planOf = (c, d) => +((plans.find(p => p.code === c && p.date === d) || {}).qty || 0);
@@ -3872,7 +3873,7 @@ async function renderPlan(opts){
     return `<td style="text-align:center;font-size:12px;${i === 7 ? 'border-left:2px solid #94A3B8;' : ''}"><b style="color:#5b21b6">${n(p)}</b>${a ? `<div style="color:#166534">${n(a)}</div>` : ''}</td>`; }).join('');
   const sP = rows.reduce((a, r) => a + r.pDone, 0), sA = rows.reduce((a, r) => a + r.aDone, 0);
   const btn = 'padding:7px 14px;border-radius:7px;border:1px solid #CBD5E1;background:#fff;font-size:13px;cursor:pointer;font-weight:600';
-  el.innerHTML = `<div class="toolbar" style="flex-wrap:wrap;gap:8px">
+  el.innerHTML = plTabs() + `<div class="toolbar" style="flex-wrap:wrap;gap:8px">
       <button onclick="plMove(-14)" style="${btn}">◀ 이전 2주</button><button onclick="PL.wk=null;renderPlan({local:true})" style="${btn}">이번 주</button><button onclick="plMove(14)" style="${btn}">다음 2주 ▶</button>
       <b style="font-size:15px;margin-left:6px">${days[0].replace(/-/g, '.')} ~ ${days[13].slice(5).replace('-', '.')}</b><span style="flex:1"></span>
       <button onclick="renderPlan()" style="${btn};color:#185FA5;border-color:#185FA5">🔄 새로고침</button></div>
@@ -3890,6 +3891,89 @@ async function renderPlan(opts){
       <td style="text-align:right"><b style="color:#5b21b6">${n(r.pr) || '-'}</b><div style="font-size:11px;color:${r.pDone && r.aDone < r.pDone ? '#b45309' : '#166534'}">${r.pDone ? n(r.aDone) + ' / ' + n(r.pDone) : ''}</div></td>
       <td>${plCan() && r.fut > r.ow ? `<button class="edit-btn" style="white-space:nowrap" onclick="plWO('${hqE(r.c)}')" title="오늘 이후 계획 중 아직 작업지시가 없는 수량으로 작업지시를 만듭니다">➕ 작업지시</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="${days.length + 6}" class="empty">고객 PO 잔량도, 계획도 없습니다.</td></tr>`}
     </tbody><tfoot><tr style="background:#F8FAFC"><td style="position:sticky;left:0;background:#F8FAFC"><b>합계</b> <span style="font-size:11px;color:#5D6977">계획 / 실적</span></td><td></td><td></td><td></td>${tot}<td></td><td></td></tr></tfoot></table></div>`;
+}
+function plTabs(){
+  const b = (m, t) => `<button onclick="PL.mode='${m}';renderPlan(${m === 'daily' ? '' : '{local:true}'})" style="padding:8px 18px;border:0;border-bottom:3px solid ${(PL.mode || 'plan') === m ? '#7c3aed' : 'transparent'};background:none;font-size:15px;font-weight:${(PL.mode || 'plan') === m ? 800 : 500};color:${(PL.mode || 'plan') === m ? '#5b21b6' : '#64748B'};cursor:pointer">${t}</button>`;
+  return `<div style="display:flex;gap:4px;border-bottom:1px solid #E5E7EB;margin-bottom:12px">${b('plan', '📅 생산계획')}${b('daily', '📰 생산일보')}</div>`;
+}
+// ════════════════════════════════════════════════════════════════════
+// 📰 [2026-11-20] 생산일보 — 하루치를 자동으로 모은다 (손으로 쓰는 일보 대체)
+//   생산 = 완제품·반제품 입고(tp-in, '복구' 제외) · 불량 = NG 이동(otp → NG) · 출하 = 출고처 있는 완제품 출고
+//   계획 = 생산계획(pplan) · 검사 = 수입·출하검사(inspDate) · 작업지시 = 그날 발행 / 진행 중
+//   PCDU = MES 공정 실적(prod_records, 이 브라우저에 MES 로그인 시) · 특이사항 메모는 pplan 저장소에 'memo|날짜'
+// ════════════════════════════════════════════════════════════════════
+const DR = {mesDay: '', mes: null, mesErr: ''};
+async function drMes(day){
+  if (DR.mesDay === day && DR.mes) return; DR.mes = null; DR.mesErr = '';
+  try { const sb = await qmSbLive(); if (!sb) { DR.mesErr = '이 브라우저에서 MES에 로그인하면 PCDU 공정 실적도 함께 나옵니다.'; return; }
+    const r = await sb.from('prod_records').select('item_name,process_code,worker_code,good_qty,ng_qty,ng_reason,start_at,end_at,lot_out,status').gte('start_at', day + 'T00:00:00+07:00').lte('start_at', day + 'T23:59:59+07:00').order('start_at');
+    if (r.error) throw r.error; DR.mes = r.data || []; DR.mesDay = day;
+  } catch (e) { DR.mesErr = 'MES 실적을 불러오지 못했습니다: ' + (e.message || e); }
+}
+async function drHtml(){
+  const day = PL.day || (PL.day = plYmd(new Date())); await drMes(day);
+  const n = v => v ? (+v).toLocaleString() : '-', E = hqE;
+  const onDay = t => plTxDay(t) === day, tx = (txLog || []).filter(onDay);
+  const prod = tx.filter(t => t.type === 'tp-in' && !/복구/.test(String(t.note || ''))), ng = tx.filter(t => t.type === 'otp' && t.dest === 'NG'), ship = tx.filter(t => t.type === 'otp' && t.dest && t.dest !== 'NG' && !/작업지시|복구/.test(String(t.note || '')));
+  const plan = (HQS.pplan || []).filter(p => p.date === day && +p.qty > 0);
+  const codes = [...new Set([...prod, ...ng, ...ship].map(t => t.code).concat(plan.map(p => p.code)))];
+  const nm = c => ((prod.concat(ng, ship).find(t => t.code === c) || {}).name) || ((plan.find(p => p.code === c) || {}).name) || c;
+  const sum = (a, c) => a.filter(t => t.code === c).reduce((s, t) => s + (+t.qty || 0), 0);
+  const rows = codes.map(c => { const p = (plan.find(x => x.code === c) || {}).qty || 0, a = sum(prod, c), g = sum(ng, c), sh = sum(ship, c), cat = ((prod.concat(ng, ship).find(t => t.code === c)) || {}).cat || '';
+    return {c, name: nm(c), cat, p: +p, a, g, sh, lots: [...new Set(prod.filter(t => t.code === c).map(t => t.lot).filter(Boolean))]}; }).sort((x, y) => (y.cat === 'TP') - (x.cat === 'TP') || x.name.localeCompare(y.name));
+  const T = k => rows.reduce((s, r) => s + r[k], 0), tP = T('p'), tA = rows.filter(r => r.cat !== 'BTP').reduce((s, r) => s + r.a, 0), tG = T('g'), tS = T('sh');
+  const woNew = (WO || []).filter(w => plYmd(new Date(w.createdAt || 0)) === day), woOpen = (WO || []).filter(w => !['완료','취소'].includes(w.status));
+  const qc = (QC || []).filter(q => String(q.inspDate || '').slice(0, 10) === day || plTxDay({dt: q.inspDate}) === day);
+  const memo = ((HQS.pplan || []).find(p => p.id === 'memo|' + day) || {}).memo || '';
+  const mes = DR.mes || [], mesBy = {}; mes.forEach(r => { const k = r.process_code; const o = mesBy[k] = mesBy[k] || {ok: 0, ng: 0, w: new Set(), n: 0}; o.ok += +r.good_qty || 0; o.ng += +r.ng_qty || 0; o.n++; if (r.worker_code) o.w.add(r.worker_code); });
+  const card = (l, v, c, sub) => `<div style="flex:1;min-width:120px;background:#F6F8FA;border:1px solid #E6EAEF;border-radius:10px;padding:8px 12px"><div style="font-size:12px;color:#5D6977">${l}</div><div style="font-size:21px;font-weight:800;color:${c || '#1F2A37'}">${v}</div><div style="font-size:11px;color:#8A95A3">${sub || ''}</div></div>`;
+  const sec = t => `<h4 style="margin:16px 0 6px;font-size:14px">${t}</h4>`;
+  const btn = 'padding:7px 14px;border-radius:7px;border:1px solid #CBD5E1;background:#fff;font-size:13px;cursor:pointer;font-weight:600';
+  const dl = ['일','월','화','수','목','금','토'][new Date(day + 'T00:00:00').getDay()];
+  return `<div class="toolbar" style="flex-wrap:wrap;gap:8px">
+      <button onclick="drMove(-1)" style="${btn}">◀ 전날</button><input type="date" value="${day}" onchange="PL.day=this.value;renderPlan({local:true})" style="padding:6px 8px;border:1px solid #CBD5E1;border-radius:7px;font-size:14px"><button onclick="drMove(1)" style="${btn}">다음날 ▶</button>
+      <button onclick="PL.day='';renderPlan({local:true})" style="${btn}">오늘</button><b style="font-size:15px;margin-left:6px">${day.replace(/-/g, '.')} (${dl})</b><span style="flex:1"></span>
+      <button onclick="drPrint()" style="${btn}">🖨️ 인쇄</button><button onclick="DR.mesDay='';renderPlan()" style="${btn};color:#185FA5;border-color:#185FA5">🔄 새로고침</button></div>
+    <div id="dr-doc">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      ${card('완제품 생산 (입고)', n(tA), '#166534', '계획 ' + n(tP) + (tP ? ' · 달성 ' + Math.round(tA / tP * 100) + '%' : ''))}
+      ${card('불량 (NG 이동)', n(tG), tG ? '#b91c1c' : '#166534', tA + tG ? '불량률 ' + (tG / (tA + tG) * 100).toFixed(2) + '%' : '')}
+      ${card('출하', n(tS), '#185FA5', [...new Set(ship.map(t => t.dest))].join(', '))}
+      ${card('작업지시', woNew.length + '건 발행', '', '진행 중 ' + woOpen.length + '건')}
+      ${card('검사', qc.length + '건', qc.some(q => q.result === '불합격') ? '#b91c1c' : '', '불합격 ' + qc.filter(q => q.result === '불합격').length + '건')}</div>
+    ${sec('① 품목별 생산·불량·출하')}
+    <div class="tw"><table><thead><tr><th>품목</th><th>구분</th><th style="text-align:right">계획</th><th style="text-align:right">생산(입고)</th><th style="text-align:right">달성률</th><th style="text-align:right">불량</th><th style="text-align:right">불량률</th><th style="text-align:right">출하</th><th>입고 LOT</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td><b>${E(r.name)}</b><div style="font-size:11px;color:#8A95A3;font-family:monospace">${E(r.c)}</div></td><td>${r.cat === 'BTP' ? '반제품' : r.cat === 'TP' ? '완제품' : E(r.cat)}</td>
+      <td style="text-align:right;color:#5b21b6">${n(r.p)}</td><td style="text-align:right;font-weight:800">${n(r.a)}</td>
+      <td style="text-align:right;color:${r.p && r.a < r.p ? '#b45309' : '#166534'}">${r.p ? Math.round(r.a / r.p * 100) + '%' : '-'}</td>
+      <td style="text-align:right;color:${r.g ? '#b91c1c' : ''}">${n(r.g)}</td><td style="text-align:right">${r.a + r.g && r.g ? (r.g / (r.a + r.g) * 100).toFixed(2) + '%' : '-'}</td>
+      <td style="text-align:right;color:#185FA5">${n(r.sh)}</td><td style="font-size:11.5px;font-family:monospace">${E(r.lots.join(', '))}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">이날 생산·불량·출하 기록이 없습니다.</td></tr>'}</tbody></table></div>
+    ${ng.length ? sec('② 불량 내용') + `<div class="tw"><table><thead><tr><th>품목</th><th style="text-align:right">수량</th><th>사유</th><th>LOT</th><th>입력</th></tr></thead><tbody>${ng.map(t => `<tr><td>${E(t.name)}</td><td style="text-align:right;color:#b91c1c">${n(t.qty)}</td><td>${E(String(t.note || '').replace('[NG이동]', '').trim())}</td><td style="font-family:monospace">${E(t.lot || '')}</td><td>${E(t.user || '')}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${sec('③ PCDU 공정 실적 (MES)')}
+    ${DR.mesErr ? `<div style="font-size:12.5px;color:#5D6977">${E(DR.mesErr)}</div>` : Object.keys(mesBy).length ? `<div class="tw"><table><thead><tr><th>공정</th><th style="text-align:right">실적 건</th><th style="text-align:right">양품</th><th style="text-align:right">불량</th><th>작업자</th></tr></thead><tbody>${Object.entries(mesBy).map(([k, o]) => `<tr><td>${E(k)}</td><td style="text-align:right">${o.n}</td><td style="text-align:right;font-weight:700">${n(o.ok)}</td><td style="text-align:right;color:${o.ng ? '#b91c1c' : ''}">${n(o.ng)}</td><td style="font-size:12px">${E([...o.w].join(', '))}</td></tr>`).join('')}</tbody></table></div>` : '<div style="font-size:12.5px;color:#5D6977">이날 MES 실적이 없습니다.</div>'}
+    ${sec('④ 작업지시')}
+    <div class="tw"><table><thead><tr><th>구분</th><th>지시번호</th><th>품목</th><th style="text-align:right">지시</th><th style="text-align:right">생산</th><th>LOT</th><th>납기</th></tr></thead><tbody>
+    ${woNew.map(w => `<tr><td style="color:#7c3aed;font-weight:700">발행</td><td style="font-family:monospace">${E(w.orderNo)}</td><td>${E(w.name)}</td><td style="text-align:right">${n(w.planQty)}</td><td style="text-align:right">${n(w.producedQty)}</td><td style="font-family:monospace">${E(w.lot || '')}</td><td>${E(plYmd(new Date(w.dueDate || 0)))}</td></tr>`).join('')}
+    ${woOpen.filter(w => !woNew.includes(w)).map(w => `<tr><td style="color:#5D6977">진행 중</td><td style="font-family:monospace">${E(w.orderNo)}</td><td>${E(w.name)}</td><td style="text-align:right">${n(w.planQty)}</td><td style="text-align:right">${n(w.producedQty)}</td><td style="font-family:monospace">${E(w.lot || '')}</td><td style="color:${plYmd(new Date(w.dueDate || 0)) < day ? '#b91c1c' : ''}">${E(plYmd(new Date(w.dueDate || 0)))}</td></tr>`).join('') || (woNew.length ? '' : '<tr><td colspan="7" class="empty">없음</td></tr>')}</tbody></table></div>
+    ${qc.length ? sec('⑤ 검사') + `<div class="tw"><table><thead><tr><th>검사</th><th>품목</th><th>LOT</th><th style="text-align:right">수량</th><th>결과</th><th>검사자</th></tr></thead><tbody>${qc.map(q => `<tr><td>${E(q.inspType)}</td><td>${E(q.name)}</td><td style="font-family:monospace">${E(q.lot || '')}</td><td style="text-align:right">${n(q.totalQty || q.sampleQty)}</td><td style="font-weight:700;color:${q.result === '불합격' ? '#b91c1c' : '#166534'}">${E(q.result)}</td><td>${E(q.inspector || '')}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${sec('⑥ 특이사항')}
+    <textarea id="dr-memo" rows="3" placeholder="설비 고장, 자재 부족, 인원 변동, 고객 요청 등" style="width:100%;padding:8px;border:1px solid #CBD5E1;border-radius:7px;font-size:13px" ${plCan() ? '' : 'readonly'}>${E(memo)}</textarea>
+    ${plCan() ? `<button onclick="drSaveMemo()" style="${btn};margin-top:6px;color:#7c3aed;border-color:#7c3aed">💾 특이사항 저장</button>` : ''}
+    </div>`;
+}
+function drMove(dd){ const d = new Date((PL.day || plYmd(new Date())) + 'T00:00:00'); d.setDate(d.getDate() + dd); PL.day = plYmd(d); renderPlan({local: true}); }
+async function drSaveMemo(){
+  const day = PL.day || plYmd(new Date()), v = (document.getElementById('dr-memo') || {}).value || '';
+  const cur = (HQS.pplan || []).find(p => p.id === 'memo|' + day);
+  if (await qmPut('pplan', {...(cur || {}), id: 'memo|' + day, date: day, memo: v})) alert('특이사항을 저장했습니다.');
+}
+function drPrint(){
+  const doc = document.getElementById('dr-doc'); if (!doc) return; const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해주세요.'); return; }
+  const memo = (document.getElementById('dr-memo') || {}).value || '', day = PL.day || plYmd(new Date());
+  const html = doc.innerHTML.replace(/<textarea[\s\S]*?<\/textarea>/, `<div style="border:1px solid #999;min-height:50px;padding:6px;white-space:pre-wrap">${hqE(memo)}</div>`).replace(/<button[\s\S]*?<\/button>/g, '');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>생산일보 ${day}</title><style>@page{size:A4;margin:10mm}body{font-family:"Malgun Gothic",sans-serif;font-size:11px}table{width:100%;border-collapse:collapse;margin-top:4px}th,td{border:1px solid #888;padding:3px 5px}th{background:#eef}h1{font-size:18px;text-align:center;margin:4px 0}h4{margin:10px 0 2px}.sg{float:right;width:210px;border-collapse:collapse}.sg td{border:1px solid #555;height:36px;text-align:center;vertical-align:top}.tw{overflow:visible}</style></head><body>
+    <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr><tr><td></td><td></td><td></td></tr></table><h1 style="clear:both">생산일보 · Báo cáo sản xuất ngày</h1><div style="text-align:center;margin-bottom:6px">${day} · THE GAUSS VINA</div>${html}<script>setTimeout(()=>print(),300)<\/script></body></html>`);
+  w.document.close();
 }
 function plMove(dd){ if (!PL.wk) PL.wk = plMonday(new Date()); const d = new Date(PL.wk); d.setDate(d.getDate() + dd); PL.wk = d; renderPlan({local: true}); }
 async function plSet(code, date, v){
