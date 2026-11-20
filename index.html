@@ -3978,6 +3978,12 @@ async function drHtml(){
     return {c, name: nm(c), cat, p: +p, a, g, sh, lots: [...new Set(prod.filter(t => t.code === c).map(t => t.lot).filter(Boolean))]}; }).sort((x, y) => (y.cat === 'TP') - (x.cat === 'TP') || x.name.localeCompare(y.name));
   const T = k => rows.reduce((s, r) => s + r[k], 0), tP = T('p'), tA = rows.filter(r => r.cat !== 'BTP').reduce((s, r) => s + r.a, 0), tG = T('g'), tS = T('sh');
   const woNew = (WO || []).filter(w => plYmd(new Date(w.createdAt || 0)) === day), woOpen = (WO || []).filter(w => !['완료','취소'].includes(w.status));
+  // 이날과 관련된 작업지시만: 발행 · 입고(이날 입고 LOT) · 납기(이날 납기인 미완료 지시) · 계획(이날 계획 품목의 진행 중 지시)
+  const prodLots = new Set(prod.map(t => t.lot).filter(Boolean)), planCodes = new Set(plan.map(p => p.code)), dueOf = w => w.dueDate ? plYmd(new Date(w.dueDate)) : '';
+  const woDay = (WO || []).filter(w => w.status !== '취소').map(w => { const tags = [];
+      if (woNew.includes(w)) tags.push('발행'); if (w.lot && prodLots.has(w.lot)) tags.push('입고');
+      if (w.status !== '완료' && dueOf(w) === day) tags.push('납기'); if (w.status !== '완료' && planCodes.has(w.code) && !tags.length) tags.push('계획');
+      return {w, tags}; }).filter(x => x.tags.length).sort((a, b) => String(a.w.orderNo).localeCompare(String(b.w.orderNo)));
   const qc = (QC || []).filter(q => String(q.inspDate || '').slice(0, 10) === day || plTxDay({dt: q.inspDate}) === day);
   const memo = ((HQS.pplan || []).find(p => p.id === 'memo|' + day) || {}).memo || '';
   const mes = DR.mes || [], mesBy = {}; mes.forEach(r => { const k = r.process_code; const o = mesBy[k] = mesBy[k] || {ok: 0, ng: 0, w: new Set(), n: 0}; o.ok += +r.good_qty || 0; o.ng += +r.ng_qty || 0; o.n++; if (r.worker_code) o.w.add(r.worker_code); });
@@ -3994,7 +4000,7 @@ async function drHtml(){
       ${card('완제품 생산 (입고)', n(tA), '#166534', '계획 ' + n(tP) + (tP ? ' · 달성 ' + Math.round(tA / tP * 100) + '%' : ''))}
       ${card('불량 (NG 이동)', n(tG), tG ? '#b91c1c' : '#166534', tA + tG ? '불량률 ' + (tG / (tA + tG) * 100).toFixed(2) + '%' : '')}
       ${card('출하', n(tS), '#185FA5', [...new Set(ship.map(t => t.dest))].join(', '))}
-      ${card('작업지시', woNew.length + '건 발행', '', '진행 중 ' + woOpen.length + '건')}
+      ${card('작업지시', woNew.length + '건 발행', '', '이날 관련 ' + woDay.length + '건')}
       ${card('검사', qc.length + '건', qc.some(q => q.result === '불합격') ? '#b91c1c' : '', '불합격 ' + qc.filter(q => q.result === '불합격').length + '건')}</div>
     ${sec('① 품목별 생산·불량·출하')}
     <div class="tw"><table><thead><tr><th>품목</th><th>구분</th><th style="text-align:right">계획</th><th style="text-align:right">생산(입고)</th><th style="text-align:right">달성률</th><th style="text-align:right">불량</th><th style="text-align:right">불량률</th><th style="text-align:right">출하</th><th>입고 LOT</th></tr></thead><tbody>
@@ -4007,9 +4013,8 @@ async function drHtml(){
     ${sec('③ PCDU 공정 실적 (MES)')}
     ${DR.mesErr ? `<div style="font-size:12.5px;color:#5D6977">${E(DR.mesErr)}</div>` : Object.keys(mesBy).length ? `<div class="tw"><table><thead><tr><th>공정</th><th style="text-align:right">실적 건</th><th style="text-align:right">양품</th><th style="text-align:right">불량</th><th>작업자</th></tr></thead><tbody>${Object.entries(mesBy).map(([k, o]) => `<tr><td>${E(k)}</td><td style="text-align:right">${o.n}</td><td style="text-align:right;font-weight:700">${n(o.ok)}</td><td style="text-align:right;color:${o.ng ? '#b91c1c' : ''}">${n(o.ng)}</td><td style="font-size:12px">${E([...o.w].join(', '))}</td></tr>`).join('')}</tbody></table></div>` : '<div style="font-size:12.5px;color:#5D6977">이날 MES 실적이 없습니다.</div>'}
     ${sec('④ 작업지시')}
-    <div class="tw"><table><thead><tr><th>구분</th><th>지시번호</th><th>품목</th><th style="text-align:right">지시</th><th style="text-align:right">생산</th><th>LOT</th><th>납기</th></tr></thead><tbody>
-    ${woNew.map(w => `<tr><td style="color:#7c3aed;font-weight:700">발행</td><td style="font-family:monospace">${E(w.orderNo)}</td><td>${E(w.name)}</td><td style="text-align:right">${n(w.planQty)}</td><td style="text-align:right">${n(w.producedQty)}</td><td style="font-family:monospace">${E(w.lot || '')}</td><td>${(w.dueDate ? E(plYmd(new Date(w.dueDate))) : '-')}</td></tr>`).join('')}
-    ${woOpen.filter(w => !woNew.includes(w)).map(w => `<tr><td style="color:#5D6977">진행 중</td><td style="font-family:monospace">${E(w.orderNo)}</td><td>${E(w.name)}</td><td style="text-align:right">${n(w.planQty)}</td><td style="text-align:right">${n(w.producedQty)}</td><td style="font-family:monospace">${E(w.lot || '')}</td><td style="color:${w.dueDate && plYmd(new Date(w.dueDate)) < day ? '#b91c1c' : ''}">${(w.dueDate ? E(plYmd(new Date(w.dueDate))) : '-')}</td></tr>`).join('') || (woNew.length ? '' : '<tr><td colspan="7" class="empty">없음</td></tr>')}</tbody></table></div>
+    <div class="tw"><table><thead><tr><th>구분</th><th>지시번호</th><th>품목</th><th style="text-align:right">지시</th><th style="text-align:right">생산</th><th>LOT</th><th>상태</th><th>납기</th></tr></thead><tbody>
+    ${woDay.map(({w, tags}) => `<tr><td style="white-space:nowrap">${tags.map(t => `<span style="display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;margin-right:3px;color:${{발행:'#4338CA',입고:'#15803D',납기:'#B91C1C',계획:'#6B7280'}[t]};background:${{발행:'#EEF2FF',입고:'#F0FDF4',납기:'#FEF2F2',계획:'#F3F4F6'}[t]}">${t}</span>`).join('')}</td><td style="font-family:monospace">${E(w.orderNo)}</td><td>${E(w.name)}</td><td style="text-align:right">${n(w.planQty)}</td><td style="text-align:right">${n(w.producedQty)}</td><td style="font-family:monospace">${E(w.lot || '')}</td><td>${E(w.status || '')}</td><td style="color:${w.status !== '완료' && dueOf(w) && dueOf(w) < day ? '#b91c1c' : ''}">${E(dueOf(w) || '-')}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">이날 관련 작업지시가 없습니다.</td></tr>'}</tbody></table></div>
     ${qc.length ? sec('⑤ 검사') + `<div class="tw"><table><thead><tr><th>검사</th><th>품목</th><th>LOT</th><th style="text-align:right">수량</th><th>결과</th><th>검사자</th></tr></thead><tbody>${qc.map(q => `<tr><td>${E(q.inspType)}</td><td>${E(q.name)}</td><td style="font-family:monospace">${E(q.lot || '')}</td><td style="text-align:right">${n(q.totalQty || q.sampleQty)}</td><td style="font-weight:700;color:${q.result === '불합격' ? '#b91c1c' : '#166534'}">${E(q.result)}</td><td>${E(q.inspector || '')}</td></tr>`).join('')}</tbody></table></div>` : ''}
     ${sec('⑥ 특이사항')}
     <textarea id="dr-memo" rows="3" placeholder="설비 고장, 자재 부족, 인원 변동, 고객 요청 등" style="width:100%;padding:8px;border:1px solid #CBD5E1;border-radius:7px;font-size:13px" ${plCan() ? '' : 'readonly'}>${E(memo)}</textarea>
