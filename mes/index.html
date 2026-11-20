@@ -211,7 +211,7 @@ function woAutoSync(){
     if (document.hidden || (!force && Date.now() - _woSyncAt < 100e3)) return;
     _woSyncAt = Date.now();
     const before = M.wo.map(w => w.wo_id + w.status).join();
-    await syncWO(true);
+    await syncWO(true); try { await asgReloadToday(); } catch (e) {}
     const after = M.wo.map(w => w.wo_id + w.status).join();
     const busy = document.querySelector('.ov') || (document.activeElement && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName));
     if (before !== after && !busy) { render(); const n = activeWO().length; toast(`🆕 작업지시 목록이 바뀌었습니다 (진행 ${n}건)`); }
@@ -225,7 +225,8 @@ async function loadMaster(){
   M.proc = p.data || []; M.mach = m.data || []; M.work = w.data || []; M.reasons = r.data || []; M.wo = o.data || []; M.route = rt.data || [];
   M.gauge = g.data || []; M.chkItem = ci.data || [];
   try { const pi = await sb.from('patrol_items').select('*').order('seq'); M.patItem = pi.error ? [] : (pi.data || []); } catch (e) { M.patItem = []; }
-  try { const pm = await sb.from('pm_items').select('*').eq('active', true).order('machine_code').order('seq'); M.pm = pm.error ? [] : (pm.data || []); } catch (e) { M.pm = []; } M.skill = sk.data || []; M.c4 = c4.data || [];
+  try { const pm = await sb.from('pm_items').select('*').eq('active', true).order('machine_code').order('seq'); M.pm = pm.error ? [] : (pm.data || []); } catch (e) { M.pm = []; }
+  try { const as = await sb.from('assignments').select('*').eq('work_date', ymd(new Date())); M.asg = as.error ? [] : (as.data || []); } catch (e) { M.asg = []; } M.skill = sk.data || []; M.c4 = c4.data || [];
   await qmErpApply(true);
 }
 // ✅ [2026-11-16] 계측기·검교정 / 작업자 자격은 ERP(품질관리)가 원본 — MES는 받아서 읽기만 한다 (작업지시와 같은 방식)
@@ -697,6 +698,71 @@ function machineView(){
         ${ci.length ? `<button class="btn" style="width:100%;margin-top:4px;${ck ? (ck.all_ok ? 'color:var(--ok)' : 'color:var(--bad);border-color:var(--bad)') : 'color:var(--warn,#B45309);border-color:#F59E0B'}" onclick="checkDlg('${E(m.code)}')">📋 일상점검 ${ck ? (ck.all_ok ? '✔ ' + hm(ck.created_at) : '✕ 이상 ' + hm(ck.created_at)) : '— 미점검'}</button>` : ''}
         ${pmD.length ? `<button class="btn" style="width:100%;margin-top:4px;${pmOver ? 'color:var(--bad);border-color:var(--bad);font-weight:700' : 'color:#B45309;border-color:#F59E0B'}" onclick="pmDlg('${E(m.code)}')">🔧 예방보전 ${pmOver ? '지남 ' + pmOver : '이번 달 ' + pmD.length}</button>` : `<button class="btn" style="width:100%;margin-top:4px;opacity:.7" onclick="pmDlg('${E(m.code)}')">🔧 예방보전</button>`}</div>`; }).join('')}</div></div>`).join('')}</div>`;
 }
+// ════════ 👥 작업자 배치표 (2026-11-20) ════════
+// 날짜·공정별로 누가 일하는지 정한다 (관리자). 자격(레벨·유효기간)과 맞지 않으면 빨간색으로 경고.
+// 현장: 그날 그 공정에 배치표가 있는데 배치되지 않은 작업자가 작업을 시작하면 한 번 확인을 받는다 (막지는 않음 — 자격 검사는 따로 막음).
+const AS = {day: '', list: []};
+function asgGate(wk){
+  const pc = S.proc, today = ymd(new Date()), L = (M.asg || []).filter(a => a.work_date === today && a.process_code === pc);
+  if (!L.length || L.some(a => a.worker_code === wk)) return true;
+  return confirm(`${workName(wk)}은(는) 오늘 "${procName(pc)}" 공정 배치표에 없습니다.\nKhông có trong bảng phân công hôm nay.\n\n배치된 작업자: ${L.map(a => workName(a.worker_code)).join(', ')}\n\n그래도 이 작업자로 진행할까요? (관리자에게 배치 변경을 알리세요)`);
+}
+async function asgLoad(){
+  if (!AS.day) AS.day = ymd(new Date());
+  const r = await sb.from('assignments').select('*').eq('work_date', AS.day).order('process_code'); AS.list = r.error ? [] : (r.data || []); AS.err = r.error ? r.error.message : '';
+}
+function asgProcs(){
+  const items = new Set((M.wo || []).filter(w => !['완료','취소'].includes(w.status)).map(w => w.code)), rt = M.route.filter(r => !items.size || items.has(r.item_code));
+  const used = new Set((rt.length ? rt : M.route).map(r => r.process_code));
+  return M.proc.filter(p => p.active !== false && used.has(p.code)).sort((a, b) => (a.seq || 0) - (b.seq || 0));
+}
+function asgChk(wk, pc){   // 자격 판정: ok / sup(감독하) / bad(자격 없음·만료·교육 중) / none(그 공정 자격 관리 안 함)
+  if (!skillOn(pc)) return ['none', ''];
+  const k = skillOf(wk, pc); if (!k) return ['bad', '자격 없음']; if (k.expired) return ['bad', '자격 만료']; if (k.level < 2) return ['bad', '교육 중'];
+  return k.level === 2 ? ['sup', '감독하'] : ['ok', 'L' + k.level];
+}
+function asgHtml(){
+  const ad = ME.role === 'admin', ps = asgProcs(), ws = M.work.filter(w => w.active !== false);
+  const col = {ok: ['#DCFCE7', '#166534'], sup: ['#FEF3C7', '#92400E'], bad: ['#FEE2E2', '#B91C1C'], none: ['#F1F5F9', '#334155']};
+  let warn = 0;
+  const rows = ps.map(p => { const L = AS.list.filter(a => a.process_code === p.code);
+    const chips = L.map(a => { const [c, t] = asgChk(a.worker_code, p.code); if (c === 'bad') warn++; return `<span style="display:inline-flex;align-items:center;gap:4px;margin:2px;padding:4px 8px;border-radius:14px;background:${col[c][0]};color:${col[c][1]};font-weight:700;font-size:13px">${E(workName(a.worker_code))}${t ? ` <span style="font-weight:400;font-size:11px">${t}</span>` : ''}${ad ? ` <a href="#" onclick="event.preventDefault();asgDel(${a.id})" style="color:inherit;text-decoration:none">✕</a>` : ''}</span>`; }).join('');
+    const sup = L.some(a => asgChk(a.worker_code, p.code)[0] === 'sup') && !L.some(a => ['ok'].includes(asgChk(a.worker_code, p.code)[0]));
+    if (sup) warn++;
+    const opts = ws.filter(w => !L.some(a => a.worker_code === w.code)).map(w => { const [c, t] = asgChk(w.code, p.code); return `<option value="${E(w.code)}">${E(w.name)}${t ? ' · ' + t : ''}${c === 'bad' ? ' ⚠' : ''}</option>`; }).join('');
+    return `<tr><td style="white-space:nowrap"><b>${E(p.name)}</b>${ctqTag(p.code)}<div class="muted" style="font-size:11px">${E(p.code)}</div></td><td>${chips || '<span class="muted">미배치</span>'}${sup ? '<div style="color:#B45309;font-size:12px;font-weight:700">⚠ 감독하 작업자만 있음 — 단독(L3) 이상 1명 필요</div>' : ''}</td>
+      <td>${ad ? `<select onchange="asgAdd('${E(p.code)}',this.value)" style="padding:6px"><option value="">+ 작업자 추가</option>${opts}</select>` : ''}</td></tr>`; }).join('');
+  const placed = new Set(AS.list.map(a => a.worker_code)), idle = ws.filter(w => !placed.has(w.code));
+  const multi = [...placed].filter(w => AS.list.filter(a => a.worker_code === w).length > 1);
+  return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><button class="btn" onclick="asgMove(-1)">◀</button><input type="date" value="${AS.day}" onchange="AS.day=this.value;loadReport()" class="btn" style="padding:8px"><button class="btn" onclick="asgMove(1)">▶</button>
+      <b style="font-size:16px">${AS.day} 작업자 배치표</b><span style="flex:1"></span>${ad ? '<button class="btn" onclick="asgCopy()">📋 전날 배치 복사</button>' : ''}<button class="btn" onclick="asgPrint()">🖨 인쇄</button></div>
+    ${AS.err ? `<p style="color:var(--bad)">${E(AS.err)}</p>` : ''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:13px">
+      <span style="padding:4px 10px;border-radius:8px;background:#F1F5F9">배치 ${placed.size}명 / 전체 ${ws.length}명</span>
+      <span style="padding:4px 10px;border-radius:8px;background:${warn ? '#FEE2E2;color:#B91C1C;font-weight:700' : '#DCFCE7;color:#166534'}">${warn ? '⚠ 자격 문제 ' + warn + '건' : '✔ 자격 일치'}</span>
+      <span class="muted">초록 = 자격 OK · 노랑 = 감독하(L2) · 빨강 = 자격 없음·만료·교육 중</span></div>
+    <div id="asg-doc"><table><thead><tr><th>공정</th><th>배치 작업자</th><th style="width:220px"></th></tr></thead><tbody>${rows || '<tr><td colspan="3" class="muted">공정이 없습니다.</td></tr>'}</tbody></table>
+    <p style="margin-top:10px;font-size:13px"><b>미배치:</b> ${idle.map(w => E(w.name)).join(', ') || '-'}${multi.length ? `<br><b>여러 공정:</b> ${multi.map(w => E(workName(w))).join(', ')}` : ''}</p></div>
+    ${ad ? '' : '<p class="muted">배치 변경은 관리자 계정에서 합니다.</p>'}`;
+}
+function asgCSV(){ return {cols: ['일자','공정','작업자','자격'], rows: AS.list.map(a => [a.work_date, procName(a.process_code), workName(a.worker_code), asgChk(a.worker_code, a.process_code)[1] || '-'])}; }
+function asgMove(d){ const x = new Date(AS.day + 'T00:00:00'); x.setDate(x.getDate() + d); AS.day = ymd(x); loadReport(); }
+async function asgAdd(pc, wk){ if (!wk) return;
+  const [c, t] = asgChk(wk, pc); if (c === 'bad' && !confirm(`${workName(wk)}은(는) "${procName(pc)}" 공정 ${t}입니다.\n현장에서 작업 시작이 막힙니다. 그래도 배치할까요?`)) { loadReport(); return; }
+  const r = await sb.from('assignments').insert({work_date: AS.day, process_code: pc, worker_code: wk}); if (r.error) alert('저장 실패: ' + r.error.message);
+  if (AS.day === ymd(new Date())) await asgReloadToday(); loadReport(); }
+async function asgDel(id){ const r = await sb.from('assignments').delete().eq('id', id); if (r.error) alert('삭제 실패: ' + r.error.message); if (AS.day === ymd(new Date())) await asgReloadToday(); loadReport(); }
+async function asgReloadToday(){ try { const as = await sb.from('assignments').select('*').eq('work_date', ymd(new Date())); if (!as.error) M.asg = as.data || []; } catch (e) {} }
+async function asgCopy(){
+  const x = new Date(AS.day + 'T00:00:00'); let src = []; for (let i = 1; i <= 7 && !src.length; i++) { x.setDate(x.getDate() - 1); const r = await sb.from('assignments').select('*').eq('work_date', ymd(x)); src = r.data || []; }
+  if (!src.length) { alert('최근 7일 안에 복사할 배치가 없습니다.'); return; }
+  const add = src.filter(a => !AS.list.some(b => b.process_code === a.process_code && b.worker_code === a.worker_code)).map(a => ({work_date: AS.day, process_code: a.process_code, worker_code: a.worker_code, role: a.role}));
+  if (!add.length) { alert('이미 같은 배치입니다.'); return; }
+  const r = await sb.from('assignments').insert(add); if (r.error) { alert('복사 실패: ' + r.error.message); return; }
+  if (AS.day === ymd(new Date())) await asgReloadToday(); loadReport(); }
+function asgPrint(){ const d = $('asg-doc'); if (!d) return; const w = window.open('', '_blank'); if (!w) return;
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>작업자 배치표 ${AS.day}</title><style>@page{size:A4;margin:10mm}body{font-family:"Malgun Gothic",sans-serif;font-size:12px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #777;padding:5px}th{background:#eef}a,select{display:none}.sg{float:right;width:210px}.sg td{height:34px;text-align:center;vertical-align:top}h1{font-size:17px;text-align:center;clear:both}</style></head><body>
+  <table class="sg"><tr><td>작성</td><td>검토</td><td>승인</td></tr><tr><td></td><td></td><td></td></tr></table><h1>작업자 배치표 · Bảng phân công — ${AS.day}</h1>${d.innerHTML}<script>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close(); }
 // ════════ 🔧 예방보전 (2026-11-20) ════════
 // 항목: pm_items(설비·항목·주기·다음 예정일) — 실시 기록(pm_records)을 넣으면 DB가 다음 예정일을 주기만큼 미룬다.
 // 설비 화면: 이번 달 예정·지난 항목 버튼 · 보고서: 연간 계획(P)·실적(●)·미실시(✕) 표 + 실시 기록 + 항목 관리(관리자)
@@ -785,6 +851,7 @@ const skillOf = (wk, pc) => { const k = M.skill.find(x => x.worker_code === wk &
 const skillOn = pc => M.skill.some(x => x.process_code === pc);
 function skillGate(wk){   // true = 진행 가능
   wk = wk || S.worker;
+  if (!asgGate(wk)) return false;
   if (!skillOn(S.proc)) return true;
   const k = skillOf(wk, S.proc), pn = procName(S.proc), wn = workName(wk);
   if (!k || k.expired || k.level < 2) { alert(`${wn}은(는) "${pn}" 공정 ${!k ? '자격이 없습니다' : k.expired ? `자격 유효기간(${k.valid_until})이 지났습니다` : '교육 중입니다'}.\nChưa đủ điều kiện làm công đoạn này.\n\n자격이 있는 작업자로 바꾸거나, 관리자가 🛠 기준정보 → 작업자 자격에서 등록하세요.`); return false; }
@@ -1091,9 +1158,9 @@ function tvView(){
 const RP = {from: '', to: '', tab: 'out', lot: ''};
 function reportView(){
   if (!RP.from) { RP.to = ymd(new Date()); RP.from = RP.to.slice(0,8) + '01'; }
-  const tabs = [['out','공정별 생산'],['worker','작업자별'],['down','비가동'],['chk','설비 점검'],['pat','공정 패트롤'],['pm','예방보전'],['lot','LOT 추적'],['erp','ERP 반영']];
+  const tabs = [['out','공정별 생산'],['worker','작업자별'],['down','비가동'],['chk','설비 점검'],['pat','공정 패트롤'],['pm','예방보전'],['asg','작업자 배치'],['lot','LOT 추적'],['erp','ERP 반영']];
   return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">${tabs.map(([k,l]) => `<button class="btn ${RP.tab === k ? 'pri' : ''}" onclick="RP.tab='${k}';render()">${l}</button>`).join('')}
-      <span style="flex:1"></span>${RP.tab !== 'lot' ? `<input type="date" value="${RP.from}" onchange="RP.from=this.value;loadReport()" class="btn" style="padding:8px"> ~ <input type="date" value="${RP.to}" onchange="RP.to=this.value;loadReport()" class="btn" style="padding:8px">` : `<input id="rp-lot" value="${E(RP.lot)}" placeholder="LOT 번호 (완제품·자재)" onkeydown="if(event.key==='Enter'){RP.lot=parseLot(this.value).lot;loadReport()}" class="btn" style="padding:8px;min-width:240px"><button class="btn pri" onclick="RP.lot=parseLot($('rp-lot').value).lot;loadReport()">조회</button>`}
+      <span style="flex:1"></span>${!['lot','asg'].includes(RP.tab) ? `<input type="date" value="${RP.from}" onchange="RP.from=this.value;loadReport()" class="btn" style="padding:8px"> ~ <input type="date" value="${RP.to}" onchange="RP.to=this.value;loadReport()" class="btn" style="padding:8px">` : `<input id="rp-lot" value="${E(RP.lot)}" placeholder="LOT 번호 (완제품·자재)" onkeydown="if(event.key==='Enter'){RP.lot=parseLot(this.value).lot;loadReport()}" class="btn" style="padding:8px;min-width:240px"><button class="btn pri" onclick="RP.lot=parseLot($('rp-lot').value).lot;loadReport()">조회</button>`}
       <button class="btn" onclick="rpCSV()">⬇ CSV</button></div><div id="rp-body" class="card">⏳ 불러오는 중…</div>`;
 }
 let RPD = {cols: [], rows: []};
@@ -1116,6 +1183,7 @@ async function loadReport(){
     (r.data || []).forEach(e => { const s = Math.max(a, new Date(e.started_at).getTime()), t = Math.min(b, e.ended_at ? new Date(e.ended_at).getTime() : b); if (t <= s) return;
       const k = e.machine_code + '|' + e.state + '|' + (e.reason_code || ''); const o = g[k] = g[k] || [machName(e.machine_code), ({run:'가동',stop:'정지',setup:'셋업',idle:'대기'})[e.state], e.reason_code ? (M.reasons.find(x => x.code === e.reason_code) || {}).name || e.reason_code : '', 0, 0]; o[3]++; o[4] += t - s; });
     cols = ['설비','상태','사유','횟수','시간']; rows = Object.values(g).sort((x,y) => y[4] - x[4]).map(o => [o[0], o[1], o[2], o[3], dur(o[4])]);
+  } else if (RP.tab === 'asg') { await asgLoad(); el.innerHTML = asgHtml(); RPD = asgCSV(); return;
   } else if (RP.tab === 'pm') {
     const y = RP.from.slice(0, 4), [r, it] = await Promise.all([sb.from('pm_records').select('*').gte('done_on', y + '-01-01').lte('done_on', y + '-12-31').order('done_on').limit(20000), sb.from('pm_items').select('*').order('machine_code').order('seq')]);
     if (r.error || it.error) { el.innerHTML = `<p class="muted">예방보전 기록을 읽지 못했습니다: ${E((r.error || it.error).message)}</p>`; return; }
