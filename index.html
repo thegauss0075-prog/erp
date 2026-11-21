@@ -19516,7 +19516,7 @@ function vpAssignPO(r, od){ const used = (HQS.vpur || []).flatMap(x => Object.va
   [...new Set((r.lines || []).map(l => l.sup).filter(Boolean))].forEach(sup => { if (!out[sup]) { out[sup] = vpDocNo('PO', od, used.concat(Object.values(out))); } }); return out; }
 const vpFmtD = d => { const t = String(d || ''); return /^\d{4}-\d{2}-\d{2}/.test(t) ? `${t.slice(8, 10)}/${t.slice(5, 7)}/${t.slice(0, 4)}` : t; };
 const VP_SIGN = `<table class="sg"><tr><th>작성</th><th>검토</th><th>확인</th><th>승인</th></tr><tr class="sp"><td></td><td></td><td></td><td></td></tr><tr class="dt"><td></td><td></td><td></td><td></td></tr></table>`;
-const VP_FORM_CSS = `@page{size:A4 portrait;margin:8mm 8mm 10mm}*{box-sizing:border-box}body{font-family:Arial,"Malgun Gothic",sans-serif;font-size:10.5px;color:#000;margin:0}.pg{page-break-after:always;position:relative}.pg:last-child{page-break-after:auto}
+const VP_FORM_CSS = `@page{size:A4 portrait;margin:8mm 8mm 10mm}*{box-sizing:border-box}body{font-family:Arial,"Malgun Gothic",sans-serif;font-size:10.5px;color:#000;margin:0}.pg{page-break-after:always;position:relative;width:194mm;margin:0 auto}.pg:last-child{page-break-after:auto}@media screen{body{background:#E5E7EB;padding:10mm 0}.pg{background:#fff;padding:8mm;width:210mm;min-height:297mm;margin:0 auto 8mm;box-shadow:0 2px 8px rgba(0,0,0,.2)}}
   table{border-collapse:collapse;width:100%}.g td,.g th{border:1px solid #000;padding:2px 4px;vertical-align:middle}.g th{font-weight:700;text-align:center;font-size:10px;line-height:1.25}.g td{height:22px}
   .sg{width:76mm;border-collapse:collapse}.sg th,.sg td{border:1px solid #000;text-align:center;font-size:11px;font-weight:400;width:25%}.sg th{height:6mm}.sg .sp td{height:19mm}.sg .dt td{height:4.5mm}
   .r{text-align:right}.c{text-align:center}.logo{height:19mm}.ttl{font-weight:700;line-height:1.15}`;
@@ -19542,7 +19542,7 @@ function vpPrint(){
   const r = VP.ed; if (!r) return; const by = {}; (r.lines || []).forEach(l => { if (l.sup) (by[l.sup] = by[l.sup] || []).push(l); });
   if (!Object.keys(by).length) { alert('선정된 업체가 없습니다.'); return; }
   const vat = r.vat === '' || r.vat == null ? 10 : +r.vat;
-  const pages = Object.entries(by).map(([s, L]) => { const sup = (HQS.vsup || []).find(x => x.name === s) || {}, sub = L.reduce((a, l) => a + vpAmt(l), 0), tax = Math.round(sub * vat / 100), po = (r.poNos || {})[s] || '(발주 처리 후 번호 부여)';
+  const pages = Object.entries(by).map(([s, L]) => { const sup = (HQS.vsup || []).find(x => x.name === s) || {}, sub = L.reduce((a, l) => a + vpAmt(l), 0), tax = Math.round(sub * vat / 100), po = (r.poNos || {})[s] || (r.src === 'import' ? r.no : '(발주 처리 후 번호 부여)');
     const rows = L.map((l, i) => `<tr><td class="c">${i + 1}</td><td>${vpE(l.name)}${l.spec ? ' — ' + vpE(l.spec) : ''}</td><td class="c">${vpN(l.qty)}</td><td class="c">${vpE(l.unit || '')}</td><td class="r">${vpN(l.price)}</td><td class="r" colspan="2">${vpN(vpAmt(l))}</td></tr>`);
     return `<div class="pg"><div style="text-align:right;font-family:'Times New Roman',serif;font-size:10px">Mã số văn bản 문서 번호 : ${vpE(po)}</div>
       <table><tr><td style="width:32%"><img class="logo" src="${VP_LOGO}"></td><td class="ttl c" style="font-size:20px">ĐƠN ĐẶT HÀNG 주문서</td><td style="width:30%"></td></tr></table>
