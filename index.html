@@ -19466,7 +19466,10 @@ function vpLastBuy(code, name, selfId){
   (HQS.vpur || []).forEach(d => { if (d.id === selfId || !['발주', '입고중', '완료'].includes(d.status)) return;
     (d.lines || []).forEach(l => { if (!l.sup || !(+l.price > 0)) return;
       let w = 0; if (code && l.code === code) w = 3; else if (nm && vpNorm(l.name) === nm) w = 2;
-      else if (q.length) { const t = vpTok(l.name), same = q.filter(x => t.includes(x)).length; if (same >= 2 && same / q.length >= 0.6) w = 1 + same / q.length / 10; }
+      else if (q.length) { const t = vpTok(l.name), same = q.filter(x => t.includes(x)).length, flat = t.join('');
+        // 규격(숫자가 든 단어: W8mm, 48mm, 5D…)은 반드시 같아야 한다 — Kapton W8mm가 W15mm로 잡히지 않게
+        const specOk = q.filter(x => /\d/.test(x)).every(x => flat.includes(x));
+        if (specOk && same >= 2 && same / q.length >= 0.6) w = 1 + same / q.length / 10; }
       if (w) hits.push({l, od: l.orderDate || d.orderDate || d.reqDate || '', no: d.no, w}); }); });
   hits.sort((x, y) => (Math.floor(y.w) - Math.floor(x.w)) || (y.w - x.w) || String(y.od).localeCompare(String(x.od))); return hits[0] || null;
 }
