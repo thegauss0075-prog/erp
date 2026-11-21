@@ -19305,7 +19305,7 @@ const vpToday = () => plYmd(new Date());
 const vpAmt = l => (+l.qty || 0) * (+l.price || 0);
 
 // 🇻🇳 한국어·베트남어 동시 표시: 그린 뒤 화면의 한국어 글자에 베트남어를 붙인다 (문구 사전)
-const VP_VI = {'구매요청·견적':'Yêu cầu mua · Báo giá','구매 대장':'Sổ mua hàng','구매 보고서':'Báo cáo mua hàng','공급업체':'Nhà cung cấp','구매요청 · 견적 비교':'Yêu cầu mua · So sánh báo giá',
+const VP_VI = {'구매요청':'Yêu cầu mua','품목':'Hàng hóa','업체 / 단가':'NCC / Đơn giá','구매 대장':'Sổ mua hàng','구매 보고서':'Báo cáo mua hàng','공급업체':'Nhà cung cấp','구매요청 · 견적 비교':'Yêu cầu mua · So sánh báo giá',
  '견적 비교표 엑셀 가져오기':'Nhập Excel so sánh báo giá','구매 보고서 엑셀 가져오기':'Nhập Excel báo cáo mua hàng','＋ 구매요청':'Tạo yêu cầu mua','전체':'Tất cả','작성':'Đang soạn','승인요청':'Chờ duyệt','승인':'Duyệt','발주':'Đặt hàng','입고중':'Đang nhận','완료':'Hoàn thành','반려':'Từ chối','취소':'Hủy',
  '전체 부서':'Tất cả bộ phận','생산 PD':'Sản xuất','사무실 OFFICE':'Văn phòng','전체 종류':'Tất cả loại','소모품 VTTH':'Vật tư tiêu hao','원부자재 NPL':'Nguyên phụ liệu','공구·비품 CCDC':'Công cụ dụng cụ',
  '번호':'Số','요청일':'Ngày yêu cầu','부서':'Bộ phận','제목 / 품목':'Tiêu đề / Hàng hóa','품목 수':'Số mặt hàng','금액 (VND)':'Thành tiền (VND)','업체':'Nhà cung cấp','상태':'Trạng thái','입고':'Nhận hàng',
@@ -19364,7 +19364,7 @@ async function renderVP(opts){
   let body = '';
   if (VP.view === 'list') body = vpListHtml(); else if (VP.view === 'ledger') body = vpLedgerHtml(); else if (VP.view === 'report') body = vpReportHtml(); else body = vpSupHtml();
   el.innerHTML = `<div class="pl">${plCss()}<style>.vp-t td,.vp-t th{white-space:nowrap}.vp-t td.wrap{white-space:normal;min-width:180px}.vp-low{background:#DCFCE7!important;font-weight:700}.vp-sel{outline:2px solid #4338CA;outline-offset:-2px}.vpvi{display:block;font-size:10.5px;font-weight:400;color:#6B7280;line-height:1.2;white-space:normal}button .vpvi{font-size:10px}.pl-tabs .vpvi{font-size:11px}.pl-pill .vpvi,span[style*="border-radius:999px"] .vpvi{display:inline;margin-left:4px}</style>
-    <div class="pl-tabs">${tab('list', '구매요청·견적')}${tab('ledger', '구매 대장')}${tab('report', '구매 보고서')}${tab('sup', '공급업체')}</div>
+    <div class="pl-tabs">${tab('list', '구매요청')}${tab('ledger', '구매 대장')}${tab('report', '구매 보고서')}${tab('sup', '공급업체')}</div>
     ${VP.err ? `<div class="pl-err">${vpE(VP.err)}</div>` : ''}${body}</div>`;
   vpBi(el);
 }
@@ -19373,8 +19373,8 @@ function vpListHtml(){
     .sort((a, b) => String(b.reqDate || '').localeCompare(String(a.reqDate || '')) || String(b.no).localeCompare(String(a.no)));
   const cnt = s => (HQS.vpur || []).filter(d => d.status === s).length;
   const chips = ['', '작성', '승인요청', '승인', '발주', '입고중', '완료', '반려'].map(s => `<button class="pl-btn" style="${VP.st === s ? 'background:#EEF2FF;border-color:#4338CA;color:#4338CA;font-weight:700' : ''}" onclick="VP.st='${s}';renderVP({local:true})">${s || '전체'}${s ? ' ' + cnt(s) : ''}</button>`).join('');
-  return `<div class="pl-head"><div><div class="pl-title">구매요청 · 견적 비교</div><div class="pl-period">요청 → 업체별 견적 → 법인장 승인 → 발주 → 입고</div></div><span style="flex:1"></span>
-      ${vpCanEdit() ? `<button class="pl-btn" onclick="vpImportPick('quote')">견적 비교표 엑셀 가져오기</button><button class="pl-btn" onclick="vpImportPick('report')">구매 보고서 엑셀 가져오기</button><button class="pl-act" style="padding:8px 14px;font-size:13px" onclick="vpEdit(null)">＋ 구매요청</button>` : ''}</div>
+  return `<div class="pl-head"><div><div class="pl-title">구매요청</div><div class="pl-period">요청 → 법인장 승인 → 발주 → 입고</div></div><span style="flex:1"></span>
+      ${vpCanEdit() ? `<button class="pl-btn" onclick="vpImportPick('report')">구매 보고서 엑셀 가져오기</button><button class="pl-act" style="padding:8px 14px;font-size:13px" onclick="vpEdit(null)">＋ 구매요청</button>` : ''}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}<span style="flex:1"></span>
       <select class="pl-btn" onchange="VP.dept=this.value;renderVP({local:true})"><option value="">전체 부서</option>${Object.entries(VP_DEPT).map(([k, v]) => `<option value="${k}" ${VP.dept === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
       <input class="pl-btn" placeholder="번호·품명·업체 검색" value="${vpE(VP.q)}" onchange="VP.q=this.value;renderVP({local:true})" style="width:200px"></div>
@@ -19395,7 +19395,7 @@ function vpEdit(id){
 function vpLowest(l, sups){ let best = null; (sups || []).forEach(s => { const q = (l.q || {})[s]; if (!q || q.na || q.noInv || !(+q.p > 0)) return; if (!best || +q.p < best.p) best = {s, p: +q.p}; }); return best; }
 function vpEdRender(){
   const r = VP.ed; if (!r) return; const lock = !['작성', '반려'].includes(r.status) || !vpCanEdit(), ro = lock ? 'disabled' : '';
-  const S = r.qsups || [], items = vpItems(), supList = vpSupNames();
+  const S = [], items = vpItems(), supList = vpSupNames();   // 견적 비교 열은 쓰지 않음 (2026-11-21)
   const tot = (r.lines || []).reduce((a, l) => a + vpAmt(l), 0);
   const set = k => `onchange="VP.ed.${k}=this.value"`;
   const qcell = (l, i, s) => { const q = (l.q || {})[s] || {}, low = vpLowest(l, S), isLow = low && low.s === s, isSel = l.sup === s;
@@ -19414,10 +19414,9 @@ function vpEdRender(){
       ${hqFld('요청자', '', `<input ${ro} value="${vpE(r.reqBy)}" ${set('reqBy')} style="${HQ_IN}">`)}
       ${hqFld('납품 조건', '', `<input ${ro} value="${vpE(r.terms || '')}" ${set('terms')} placeholder="예: 공장 도착, 세금계산서 발행" style="${HQ_IN}">`)}
       ${hqFld('VAT %', '', `<select ${ro} onchange="VP.ed.vat=this.value" style="${HQ_IN}">${['10', '8', '5', '0'].map(v => `<option ${String(r.vat ?? '10') === v ? 'selected' : ''}>${v}</option>`).join('')}</select>`)}</div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:14px">품목 · 업체별 견적</b><span class="pl-sub">초록 = 세금계산서 있는 최저가 · 테두리 = 선정 업체</span><span style="flex:1"></span>
-      ${!lock ? `<input id="vp-addsup" list="vp-sups" placeholder="견적 업체 추가" style="${HQ_IN};width:180px"><button class="pl-btn" onclick="vpAddSup()">＋ 업체</button>` : ''}</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:14px">품목</b><span class="pl-sub">업체·단가는 품목 연결 또는 품명 입력 시 최근 구매로 자동 입력</span><span style="flex:1"></span></div>
     <div class="pl-tw"><table class="pl-t vp-t" style="min-width:${760 + S.length * 130}px"><thead><tr><th>#</th><th>종류</th><th style="text-align:left">품목 (ERP 연결)</th><th>규격 / 받는 날짜 / 주의</th><th class="num">수량</th><th>단위</th>
-      ${S.map((s, k) => `<th style="text-align:center">${vpE(s)}${!lock ? ` <a href="#" onclick="vpDelSup(${k});return false" style="color:#B91C1C;text-decoration:none">✕</a>` : ''}</th>`).join('')}<th>선정 업체 / 단가</th><th class="num">금액</th><th>선정 사유</th><th></th></tr></thead><tbody>
+      ${S.map((s, k) => `<th style="text-align:center">${vpE(s)}${!lock ? ` <a href="#" onclick="vpDelSup(${k});return false" style="color:#B91C1C;text-decoration:none">✕</a>` : ''}</th>`).join('')}<th>업체 / 단가</th><th class="num">금액</th><th>비고</th><th></th></tr></thead><tbody>
     ${(r.lines || []).map((l, i) => `<tr><td>${i + 1}</td>
       <td><select ${ro} onchange="VP.ed.lines[${i}].cat=this.value" style="padding:4px;border:1px solid #D1D5DB;border-radius:5px">${Object.keys(VP_CAT).map(c => `<option ${l.cat === c ? 'selected' : ''}>${c}</option>`).join('')}</select></td>
       <td class="wrap"><input ${ro} value="${vpE(l.name)}" placeholder="품명" onchange="vpName(${i},this.value)" style="width:100%;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px">
@@ -19431,7 +19430,7 @@ function vpEdRender(){
       ${S.map(s => qcell(l, i, s)).join('')}
       <td style="vertical-align:top"><input ${ro} list="vp-sups" value="${vpE(l.sup)}" placeholder="업체" onchange="VP.ed.lines[${i}].sup=vpSupCanon(this.value);VP.ed.lines[${i}].supAuto=false" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"><br><input ${ro} value="${vpE(l.price)}" placeholder="단가" inputmode="decimal" onchange="VP.ed.lines[${i}].price=this.value;VP.ed.lines[${i}].supAuto=false;vpEdRender()" style="width:100px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right;margin-top:2px;${l.supAuto ? 'background:#F0FDF4' : ''}">${l.supAuto ? '<div style="font-size:10.5px;color:#0f766e">최근 구매 자동</div>' : ''}</td>
       <td class="num">${vpN(vpAmt(l)) || '–'}</td>
-      <td><input ${ro} value="${vpE(l.why)}" placeholder="최저가 / 품질 등" onchange="VP.ed.lines[${i}].why=this.value" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"></td>
+      <td><input ${ro} value="${vpE(l.why)}" placeholder="예: 최근 구매, 품질" onchange="VP.ed.lines[${i}].why=this.value" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"></td>
       <td>${!lock ? `<button class="pl-btn" style="padding:2px 8px;color:#B91C1C" onclick="VP.ed.lines.splice(${i},1);vpEdRender()">✕</button>` : ''}</td></tr>`).join('')}</tbody>
     <tfoot><tr><td colspan="${7 + S.length}">${!lock ? '<button class="pl-btn" onclick="VP.ed.lines.push(vpBlankLine());vpEdRender()">＋ 품목 추가</button>' : ''}</td><td class="num">${vpN(tot)}</td><td colspan="2">VND</td></tr></tfoot></table></div>
     ${hqFld('비고', '', `<textarea ${ro} rows="2" onchange="VP.ed.note=this.value" style="${HQ_IN};font-family:inherit">${vpE(r.note || '')}</textarea>`, true)}
