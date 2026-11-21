@@ -19464,7 +19464,8 @@ function vpActions(r){
   if (r.status === '승인요청') { if (vpCanApprove()) { A.push(b('반려', "vpAct('reject')")); A.push(b('승인', "vpAct('approve')", 1)); } else A.push('<span class="pl-sub" style="align-self:center">법인장 승인 대기 중</span>'); if (vpCanEdit()) A.push(b('요청 회수', "vpAct('recall')")); }
   if (r.status === '승인' && vpCanEdit()) { A.push(b('주문서 인쇄', "vpPrint()")); A.push(b('발주 처리', "vpAct('order')", 1)); }
   if (['발주', '입고중', '완료'].includes(r.status)) { A.push(b('주문서 인쇄', "vpPrint()")); A.push(b('지불 요청서', "vpPrintPM()")); if (r.status !== '완료' && vpCanEdit()) A.push(b('입고 등록', `vpRecv('${vpE(r.id)}')`, 1)); }
-  if (['승인', '발주'].includes(r.status) && vpCanApprove()) A.push(b('취소', "vpAct('cancel')"));
+  if (['승인', '발주'].includes(r.status) && vpCanApprove()) A.push(b('취소(삭제)', "vpAct('cancel')"));
+  if (r.status === '취소' && (vpCanApprove() || vpCanEdit())) A.push(b('삭제', 'vpDel()'));
   return A.join('');
 }
 function vpQ(i, s, k, v){ const l = VP.ed.lines[i]; l.q = l.q || {}; const q = l.q[s] = l.q[s] || {}; q[k] = k === 'p' ? String(v).replace(/[^0-9.]/g, '') : v;
@@ -19539,13 +19540,13 @@ async function vpAct(act){
   else if (act === 'reject') { const why = prompt('반려 사유'); if (why === null) return; r.status = '반려'; r.rejectNote = why; vpHist(r, '반려: ' + why); }
   else if (act === 'recall') { r.status = '작성'; vpHist(r, '요청 회수'); }
   else if (act === 'order') { const od = prompt('발주일 (YYYY-MM-DD)', vpToday()); if (!od) return; r.orderDate = od; r.lines.forEach(l => { if (!l.orderDate) l.orderDate = od; }); r.poNos = vpAssignPO(r, od); r.status = '발주'; vpHist(r, '발주 ' + od); }
-  else if (act === 'cancel') { if (!confirm('이 구매 건을 취소할까요?')) return; r.status = '취소'; vpHist(r, '취소'); }
+  else if (act === 'cancel') { if (!confirm(`${r.no || '이 구매 건'}을(를) 취소하고 삭제할까요? 되돌릴 수 없습니다.`)) return; return vpDel(true); }
   r.lines.forEach(l => { l.qty = +l.qty || 0; l.price = l.price === '' || l.price == null ? '' : +l.price; });
   if (await vpSave(r)) { VP.ed = JSON.parse(JSON.stringify(r)); vpEdRender(); renderVP({local: true}); } else r.status = prev;
 }
-async function vpDel(){
-  const r = VP.ed; if (!r || r.status !== '작성') return;
-  if (!confirm(`${r.no || '이 구매요청'}을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return;
+async function vpDel(ok){
+  const r = VP.ed; if (!r || !(ok || ['작성', '취소'].includes(r.status))) return;
+  if (!ok && !confirm(`${r.no || '이 구매요청'}을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return;
   const res = await apiAuto('deleteHQStore', {store: 'vpur', id: r.id}); if (!res || !res.ok) { alert('삭제 실패: ' + ((res && res.error) || '')); return; }
   HQS.vpur = (HQS.vpur || []).filter(x => x.id !== r.id); vpClose(); renderVP({local: true});
 }
