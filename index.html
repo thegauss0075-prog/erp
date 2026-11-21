@@ -19610,14 +19610,28 @@ const VP_FORM_CSS = `@page{size:A4 portrait;margin:8mm 8mm 10mm}*{box-sizing:bor
   table{border-collapse:collapse;width:100%}.g td,.g th{border:1px solid #000;padding:2px 4px;vertical-align:middle}.g th{font-weight:700;text-align:center;font-size:10px;line-height:1.25}.g td{height:22px}
   .sg{width:76mm;border-collapse:collapse}.sg th,.sg td{border:1px solid #000;text-align:center;font-size:11px;font-weight:400;width:25%}.sg th{height:6mm}.sg .sp td{height:19mm}.sg .dt td{height:4.5mm}
   .r{text-align:right}.c{text-align:center}.logo{height:19mm}.ttl{font-weight:700;line-height:1.15}`;
-function vpWin(title, body){ const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해 주세요.'); return; }
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${vpE(title)}</title><style>${VP_FORM_CSS}</style></head><body>${body}<script>window.onload=()=>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close(); }
+// 인쇄 전에 도장·서명을 확실히 불러온다: 창을 먼저 열고(팝업 차단 방지) → 이미지 확보 → 내용 쓰기
+async function vpEnsureSeal(){
+  const has = () => { try { return !!(invImg('seal') || invImg('title')); } catch (e) { return false; } };
+  if (!has() && !(VP.seal && VP.sign)) {
+    try { const c = await api('getHQStore', {store: 'hqcfg'}); if (c && c.ok) { const f = id => ((c.data || []).find(x => x.id === id) || {}).d || ''; VP.seal = VP.seal || f('vn_seal'); VP.sign = VP.sign || f('vn_sign'); } } catch (e) {}
+  }
+  if (!has() && !(VP.seal && VP.sign) && (isMaster || (typeof hqCan === 'function' && hqCan('cost', 'R')))) { try { await loadCost(); } catch (e) {} }
+  // 마스터·원가 권한자가 인쇄하면 구매용 사본도 만들어 둔다(직원 인쇄용)
+  try { const A = invImg('seal'), T = invImg('title'), now = new Date().toISOString();
+    if (A && !VP.seal) { const d = await vpUrlShrink(A, 380); if (await qmPut('hqcfg', {id: 'vn_seal', d, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'invoice seal'})) VP.seal = d; }
+    if (T && !VP.sign) { const d = await vpUrlShrink(T, 360); if (await qmPut('hqcfg', {id: 'vn_sign', d, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'invoice title'})) VP.sign = d; } } catch (e) {}
+}
+async function vpWin(title, body){ const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해 주세요.'); return; }
+  w.document.write('<p style="font:14px sans-serif;padding:20px">도장·서명 불러오는 중… / Đang tải…</p>');
+  if (typeof body === 'function') { await vpEnsureSeal(); body = body(); }
+  w.document.open(); w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${vpE(title)}</title><style>${VP_FORM_CSS}</style></head><body>${body}<script>window.onload=()=>setTimeout(()=>print(),300)<\/script></body></html>`); w.document.close(); }
 const vpPad = (rows, n, cols) => rows.concat(Array(Math.max(0, n - rows.length)).fill(`<tr>${'<td></td>'.repeat(cols)}</tr>`)).join('');
 // ① 구매 요청서 (YÊU CẦU ĐẶT MUA)
 function vpPrintRQ(){
   const r = VP.ed; if (!r) return; const L = (r.lines || []).filter(l => l.name);
   const rows = L.map((l, i) => `<tr><td class="c">${i + 1}</td><td>${vpE(l.name)}</td><td>${vpE(l.spec || '')}</td><td class="c">${vpN(l.qty)}</td><td class="c">${vpE(l.unit || '')}</td><td class="c">${l.photo ? `<img src="${vpE(l.photo)}" style="max-height:18mm;max-width:100%">` : ''}</td><td class="c">${vpE(vpFmtD(l.needDate || ''))}</td><td>${vpE(l.note || l.memo || '')}</td></tr>`);
-  vpWin(r.no, `<div class="pg">
+  vpWin(r.no, () => `<div class="pg">
     <table><tr><td style="width:30%"><img class="logo" src="${VP_LOGO}"></td><td class="ttl" style="font-size:22px;vertical-align:top;padding-top:2mm">YÊU CẦU ĐẶT MUA<br>구매 요청서</td><td style="width:78mm;vertical-align:bottom" rowspan="2">${vpSignBox(r)}</td></tr>
       <tr><td colspan="2" style="vertical-align:bottom"><table style="width:62%;font-size:9.5px">
         <tr><td style="border-bottom:1px solid #000;padding:5px 0">Số yêu cầu 요청 번호 &nbsp;&nbsp;: <b>${vpE(r.no)}</b></td></tr>
@@ -19632,7 +19646,7 @@ function vpPrint(){
   const r = VP.ed; if (!r) return; const by = {}; (r.lines || []).forEach(l => { if (l.sup) (by[l.sup] = by[l.sup] || []).push(l); });
   if (!Object.keys(by).length) { alert('선정된 업체가 없습니다.'); return; }
   const vat = r.vat === '' || r.vat == null ? 10 : +r.vat;
-  const pages = Object.entries(by).map(([s, L]) => { const sup = (HQS.vsup || []).find(x => x.name === s) || {}, sub = L.reduce((a, l) => a + vpAmt(l), 0), tax = Math.round(sub * vat / 100), po = (r.poNos || {})[s] || (r.src === 'import' ? r.no : '(발주 처리 후 번호 부여)');
+  const pages = () => Object.entries(by).map(([s, L]) => { const sup = (HQS.vsup || []).find(x => x.name === s) || {}, sub = L.reduce((a, l) => a + vpAmt(l), 0), tax = Math.round(sub * vat / 100), po = (r.poNos || {})[s] || (r.src === 'import' ? r.no : '(발주 처리 후 번호 부여)');
     const rows = L.map((l, i) => `<tr><td class="c">${i + 1}</td><td>${vpE(l.name)}${l.spec ? ' — ' + vpE(l.spec) : ''}</td><td class="c">${vpN(l.qty)}</td><td class="c">${vpE(l.unit || '')}</td><td class="r">${vpN(l.price)}</td><td class="r" colspan="2">${vpN(vpAmt(l))}</td></tr>`);
     return `<div class="pg"><div style="text-align:right;font-family:'Times New Roman',serif;font-size:10px">Mã số văn bản 문서 번호 : ${vpE(po)}</div>
       <table><tr><td style="width:32%"><img class="logo" src="${VP_LOGO}"></td><td class="ttl c" style="font-size:20px">ĐƠN ĐẶT HÀNG 주문서</td><td style="width:30%"></td></tr></table>
@@ -19659,7 +19673,7 @@ function vpPrintPM(){
     return `<tr><td class="c">${i + 1}</td><td>${vpE(sup.fullName || s)}<br><span style="font-size:9px">${vpE(L.map(l => l.name).slice(0, 3).join(', '))}${L.length > 3 ? ' …' : ''}</span></td><td class="c">${L.length}</td><td class="r">${vpN(amt)}</td><td class="c">${vpE((r.poNos || {})[s] || '')}</td><td class="c">${vpE(sup.bankAcc || '')}</td><td class="c" colspan="2">${vpE(sup.bank || '')}</td><td>${vat ? 'VAT ' + vat + '% 포함' : ''}</td></tr>`; });
   const krw = +rate > 0 ? Math.round(total / +rate) : 0;
   const pad = vpPad(rows, 22, 9).replace(/<tr>(<td><\/td>){9}<\/tr>/g, '<tr><td></td><td></td><td></td><td></td><td></td><td></td><td colspan="2"></td><td></td></tr>');
-  vpWin('지불 요청 ' + r.no, `<div class="pg">
+  vpWin('지불 요청 ' + r.no, () => `<div class="pg">
     <table><tr><td style="width:32%"><img class="logo" src="${VP_LOGO}"></td><td class="ttl c" style="font-size:21px">지불 요청<br>ĐỀ NGHỊ THANH TOÁN</td><td style="width:10%"></td></tr></table>
     <table style="margin-top:1mm"><tr><td style="width:46%;vertical-align:bottom"><table style="font-size:9.5px;font-weight:700">
       <tr><td style="border-bottom:1px solid #000;padding:6px 0">기안부서/ Bộ phận đề nghị : ${vpE(VP_DEPT_VI[r.dept] || r.dept || '')}</td></tr>
