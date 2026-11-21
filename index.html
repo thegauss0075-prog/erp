@@ -19313,7 +19313,7 @@ const vpToday = () => plYmd(new Date());
 const vpAmt = l => (+l.qty || 0) * (+l.price || 0);
 
 // 🇻🇳 한국어·베트남어 동시 표시: 그린 뒤 화면의 한국어 글자에 베트남어를 붙인다 (문구 사전)
-const VP_VI = {'구매요청':'Yêu cầu mua','공급가액 (VAT 별도)':'Tiền hàng (chưa VAT)','합계 (VAT 포함) VND':'Tổng (gồm VAT) VND','품목':'Hàng hóa','업체 / 단가':'NCC / Đơn giá','구매 대장':'Sổ mua hàng','구매 보고서':'Báo cáo mua hàng','공급업체':'Nhà cung cấp','구매요청 · 견적 비교':'Yêu cầu mua · So sánh báo giá',
+const VP_VI = {'구매요청':'Yêu cầu mua','도장·서명 설정':'Con dấu · Chữ ký','도장·서명 설정 ✓':'Con dấu · Chữ ký ✓','공급가액 (VAT 별도)':'Tiền hàng (chưa VAT)','합계 (VAT 포함) VND':'Tổng (gồm VAT) VND','품목':'Hàng hóa','업체 / 단가':'NCC / Đơn giá','구매 대장':'Sổ mua hàng','구매 보고서':'Báo cáo mua hàng','공급업체':'Nhà cung cấp','구매요청 · 견적 비교':'Yêu cầu mua · So sánh báo giá',
  '견적 비교표 엑셀 가져오기':'Nhập Excel so sánh báo giá','구매 보고서 엑셀 가져오기':'Nhập Excel báo cáo mua hàng','＋ 구매요청':'Tạo yêu cầu mua','전체':'Tất cả','작성':'Đang soạn','승인요청':'Chờ duyệt','승인':'Duyệt','발주':'Đặt hàng','입고중':'Đang nhận','완료':'Hoàn thành','반려':'Từ chối','취소':'Hủy',
  '전체 부서':'Tất cả bộ phận','생산 PD':'Sản xuất','사무실 OFFICE':'Văn phòng','생산용':'Sản xuất','사무용':'Văn phòng','전체 종류':'Tất cả loại','소모품 VTTH':'Vật tư tiêu hao','원부자재 NPL':'Nguyên phụ liệu','공구·비품 CCDC':'Công cụ dụng cụ',
  '번호':'Số','요청일':'Ngày yêu cầu','부서':'Bộ phận','제목 / 품목':'Tiêu đề / Hàng hóa','품목 수':'Số mặt hàng','금액 (VND)':'Thành tiền (VND)','업체':'Nhà cung cấp','상태':'Trạng thái','입고':'Nhận hàng',
@@ -19348,6 +19348,7 @@ async function vpLoad(){
   const [a, b] = await Promise.all([api('getHQStore', {store: 'vpur'}), api('getHQStore', {store: 'vsup'})]);
   if (a && a.ok) { HQS.vpur = a.data || []; VP.err = ''; VP.loaded = true; } else VP.err = /bad store/i.test(a && a.error || '') ? '서버(Code.gs)를 새 버전으로 배포해야 법인 구매를 저장할 수 있습니다. (vpur·vsup 저장소 추가됨)' : '구매 자료를 불러오지 못했습니다: ' + ((a && a.error) || '서버 응답 없음');
   if (b && b.ok) HQS.vsup = b.data || [];
+  try { const c = await api('getHQStore', {store: 'hqcfg'}); if (c && c.ok) { const f = id => ((c.data || []).find(x => x.id === id) || {}).d || ''; VP.seal = f('vn_seal'); VP.sign = f('vn_sign'); } } catch (e) {}
 }
 async function vpSave(rec){ rec.updatedBy = CURRENT_USER || ''; rec.updatedAt = new Date().toISOString(); return qmPut('vpur', rec); }
 function vpHist(r, act){ r.history = (r.history || []).concat([{at: new Date().toISOString(), by: CURRENT_USER || '', act}]); }
@@ -19381,7 +19382,7 @@ function vpListHtml(){
     .sort((a, b) => String(b.reqDate || '').localeCompare(String(a.reqDate || '')) || String(b.no).localeCompare(String(a.no)));
   const cnt = s => (HQS.vpur || []).filter(d => d.status === s).length;
   const chips = ['', '작성', '승인요청', '승인', '발주', '입고중', '완료', '반려'].map(s => `<button class="pl-btn" style="${VP.st === s ? 'background:#EEF2FF;border-color:#4338CA;color:#4338CA;font-weight:700' : ''}" onclick="VP.st='${s}';renderVP({local:true})">${s || '전체'}${s ? ' ' + cnt(s) : ''}</button>`).join('');
-  return `<div class="pl-head"><div><div class="pl-title">구매요청</div><div class="pl-period">요청 → 법인장 승인 → 발주 → 입고</div></div><span style="flex:1"></span>
+  return `<div class="pl-head"><div><div class="pl-title">구매요청</div><div class="pl-period">요청 → 법인장 승인 → 발주 → 입고</div></div><span style="flex:1"></span>${(isMaster || isAdmin) ? `<button class="pl-btn" onclick="vpSealDlg()">도장·서명 설정${VP.seal && VP.sign ? ' ✓' : ''}</button>` : ''}
       ${vpCanEdit() ? `<button class="pl-btn" onclick="vpImportPick('report')">구매 보고서 엑셀 가져오기</button><button class="pl-act" style="padding:8px 14px;font-size:13px" onclick="vpEdit(null)">＋ 구매요청</button>` : ''}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}<span style="flex:1"></span>
       ${vpDeptSeg()}
@@ -19553,6 +19554,33 @@ function vpDocNo(kind, date, used){ const d = String(date || vpToday()), base = 
 function vpAssignPO(r, od){ const used = (HQS.vpur || []).flatMap(x => Object.values(x.poNos || {})), out = {...(r.poNos || {})};
   [...new Set((r.lines || []).map(l => l.sup).filter(Boolean))].forEach(sup => { if (!out[sup]) { out[sup] = vpDocNo('PO', od, used.concat(Object.values(out))); } }); return out; }
 const vpFmtD = d => { const t = String(d || ''); return /^\d{4}-\d{2}-\d{2}/.test(t) ? `${t.slice(8, 10)}/${t.slice(5, 7)}/${t.slice(0, 4)}` : t; };
+// ✒️ 법인 도장·법인장 서명 (승인된 문서에만 찍힘) — hqcfg 'vn_seal' · 'vn_sign' (흰 바탕 JPEG → 인쇄 때 multiply로 투명처럼)
+function vpImgShrink(file, maxW){ return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => { const im = new Image(); im.onload = () => {
+  let w = im.width, h = im.height; const k = Math.min(1, maxW / w); w = Math.round(w * k); h = Math.round(h * k);
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(im, 0, 0, w, h);
+  let q = 0.85, d = cv.toDataURL('image/jpeg', q); while (d.length > 40000 && q > 0.35) { q -= 0.1; d = cv.toDataURL('image/jpeg', q); } res(d); }; im.onerror = rej; im.src = fr.result; }; fr.onerror = rej; fr.readAsDataURL(file); }); }
+function vpSealDlg(){
+  const box = (k, t, v) => `<div style="flex:1;min-width:240px"><b>${t}</b><div style="height:130px;border:1px dashed #CBD5E1;border-radius:8px;margin:6px 0;display:flex;align-items:center;justify-content:center;background:#fff">${v ? `<img src="${v}" style="max-height:120px;max-width:100%;mix-blend-mode:multiply">` : '<span class="pl-sub">없음</span>'}</div>
+    <input type="file" accept="image/*" onchange="vpSealSet('${k}',this.files[0])"> ${v ? `<button class="pl-btn" style="padding:3px 10px" onclick="vpSealSet('${k}',null)">지우기</button>` : ''}</div>`;
+  vpModal(`<h3 style="margin:0 0 6px">주문서 도장·서명</h3><div class="pl-sub" style="margin-bottom:10px">법인장 <b>승인이 난 구매 건</b>의 주문서 아래 "XÁC NHẬN CỦA ĐƠN VỊ MUA HÀNG" 칸에 도장과 서명이 찍히고, 결재란 승인 칸에 서명이 들어갑니다. 흰 바탕에 찍은 도장·서명을 스캔하거나 사진으로 올리세요 (자동으로 줄여 저장).</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">${box('vn_seal', '회사 도장 (CÔNG TY TNHH THE GAUSS VINA)', VP.seal)}${box('vn_sign', '법인장 서명', VP.sign)}</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="pl-btn" onclick="vpClose()">닫기</button></div>`, 640);
+}
+async function vpSealSet(id, file){
+  if (!(isMaster || isAdmin)) return;
+  if (!file && !confirm('지울까요?')) return;
+  const d = file ? await vpImgShrink(file, id === 'vn_seal' ? 360 : 420).catch(() => '') : '';
+  if (file && !d) { alert('이미지를 읽지 못했습니다.'); return; }
+  if (await qmPut('hqcfg', {id, d, updatedAt: new Date().toISOString(), updatedBy: CURRENT_USER || ''})) { if (id === 'vn_seal') VP.seal = d; else VP.sign = d; vpSealDlg(); renderVP({local: true}); }
+}
+const vpApproved = r => !!(r && r.approvedAt && ['승인', '발주', '입고중', '완료'].includes(r.status));
+// 결재란: 승인된 건이면 승인 칸에 서명 + 날짜
+const vpSignBox = r => { const ok = vpApproved(r) && VP.sign;
+  return `<table class="sg"><tr><th>작성</th><th>검토</th><th>확인</th><th>승인</th></tr><tr class="sp"><td></td><td></td><td></td><td style="position:relative">${ok ? `<img src="${VP.sign}" style="max-width:95%;max-height:17mm;mix-blend-mode:multiply">` : ''}</td></tr><tr class="dt"><td></td><td></td><td></td><td style="font-size:9px">${vpApproved(r) ? vpE(vpFmtD(String(r.approvedAt).slice(0, 10))) : ''}</td></tr></table>`; };
+const vpBuyerConfirm = r => { const ok = vpApproved(r);
+  return `<div style="display:flex;justify-content:flex-end;margin-top:5mm"><div style="width:78mm;text-align:center;font-family:'Times New Roman',serif"><b style="font-size:12px">XÁC NHẬN CỦA ĐƠN VỊ MUA HÀNG</b><br><i style="font-size:11px">(Ký &amp; ghi rõ họ tên)</i>
+    <div style="position:relative;height:34mm">${ok && VP.seal ? `<img src="${VP.seal}" style="position:absolute;left:8mm;top:1mm;height:32mm;mix-blend-mode:multiply;opacity:.95">` : ''}${ok && VP.sign ? `<img src="${VP.sign}" style="position:absolute;left:24mm;top:5mm;max-height:24mm;max-width:50mm;mix-blend-mode:multiply">` : ''}</div>
+    <div style="font-size:11.5px;font-weight:700">${ok ? 'KIM IN SUN' : ''}</div><div style="font-size:10px">${ok ? 'Giám đốc · 법인장' : ''}</div></div></div>`; };
 const VP_SIGN = `<table class="sg"><tr><th>작성</th><th>검토</th><th>확인</th><th>승인</th></tr><tr class="sp"><td></td><td></td><td></td><td></td></tr><tr class="dt"><td></td><td></td><td></td><td></td></tr></table>`;
 const VP_FORM_CSS = `@page{size:A4 portrait;margin:8mm 8mm 10mm}*{box-sizing:border-box}body{font-family:Arial,"Malgun Gothic",sans-serif;font-size:10.5px;color:#000;margin:0}.pg{page-break-after:always;position:relative;width:194mm;margin:0 auto}.pg:last-child{page-break-after:auto}@media screen{body{background:#E5E7EB;padding:10mm 0}.pg{background:#fff;padding:8mm;width:210mm;min-height:297mm;margin:0 auto 8mm;box-shadow:0 2px 8px rgba(0,0,0,.2)}}
   table{border-collapse:collapse;width:100%}.g td,.g th{border:1px solid #000;padding:2px 4px;vertical-align:middle}.g th{font-weight:700;text-align:center;font-size:10px;line-height:1.25}.g td{height:22px}
@@ -19566,7 +19594,7 @@ function vpPrintRQ(){
   const r = VP.ed; if (!r) return; const L = (r.lines || []).filter(l => l.name);
   const rows = L.map((l, i) => `<tr><td class="c">${i + 1}</td><td>${vpE(l.name)}</td><td>${vpE(l.spec || '')}</td><td class="c">${vpN(l.qty)}</td><td class="c">${vpE(l.unit || '')}</td><td class="c">${l.photo ? `<img src="${vpE(l.photo)}" style="max-height:18mm;max-width:100%">` : ''}</td><td class="c">${vpE(vpFmtD(l.needDate || ''))}</td><td>${vpE(l.note || l.memo || '')}</td></tr>`);
   vpWin(r.no, `<div class="pg">
-    <table><tr><td style="width:30%"><img class="logo" src="${VP_LOGO}"></td><td class="ttl" style="font-size:22px;vertical-align:top;padding-top:2mm">YÊU CẦU ĐẶT MUA<br>구매 요청서</td><td style="width:78mm;vertical-align:bottom" rowspan="2">${VP_SIGN}</td></tr>
+    <table><tr><td style="width:30%"><img class="logo" src="${VP_LOGO}"></td><td class="ttl" style="font-size:22px;vertical-align:top;padding-top:2mm">YÊU CẦU ĐẶT MUA<br>구매 요청서</td><td style="width:78mm;vertical-align:bottom" rowspan="2">${vpSignBox(r)}</td></tr>
       <tr><td colspan="2" style="vertical-align:bottom"><table style="width:62%;font-size:9.5px">
         <tr><td style="border-bottom:1px solid #000;padding:5px 0">Số yêu cầu 요청 번호 &nbsp;&nbsp;: <b>${vpE(r.no)}</b></td></tr>
         <tr><td style="border-bottom:1px solid #000;padding:5px 0">Ngày yêu cầu 요청 날짜 : <b>${vpE(vpFmtD(r.reqDate))}</b></td></tr>
@@ -19585,17 +19613,17 @@ function vpPrint(){
     return `<div class="pg"><div style="text-align:right;font-family:'Times New Roman',serif;font-size:10px">Mã số văn bản 문서 번호 : ${vpE(po)}</div>
       <table><tr><td style="width:32%"><img class="logo" src="${VP_LOGO}"></td><td class="ttl c" style="font-size:20px">ĐƠN ĐẶT HÀNG 주문서</td><td style="width:30%"></td></tr></table>
       <table class="g" style="margin-top:2mm"><colgroup><col style="width:14%"><col style="width:38%"><col style="width:9%"><col style="width:7%"><col style="width:12%"><col style="width:10%"><col style="width:10%"></colgroup>
-        <tr><td colspan="7" style="padding:0"><table><tr><td style="border:0;font-size:10px;font-style:italic;line-height:1.35;padding:3px 4px">NGƯỜI MUA : <b>${VP_CO.name}</b><br>MÃ SỐ THUẾ : ${VP_CO.tax}<br>ĐỊA CHỈ : ${VP_CO.addr}<br>SỐ ĐT &nbsp;: ${VP_CO.tel}<br>Mail nhận hóa đơn &nbsp;: ${VP_CO.mail}</td><td style="border:0;width:78mm;padding:2px">${VP_SIGN}</td></tr></table></td></tr>
+        <tr><td colspan="7" style="padding:0"><table><tr><td style="border:0;font-size:10px;font-style:italic;line-height:1.35;padding:3px 4px">NGƯỜI MUA : <b>${VP_CO.name}</b><br>MÃ SỐ THUẾ : ${VP_CO.tax}<br>ĐỊA CHỈ : ${VP_CO.addr}<br>SỐ ĐT &nbsp;: ${VP_CO.tel}<br>Mail nhận hóa đơn &nbsp;: ${VP_CO.mail}</td><td style="border:0;width:78mm;padding:2px">${vpSignBox(r)}</td></tr></table></td></tr>
         <tr><td colspan="7" style="font-style:italic;font-size:10px">Chúng tôi xin gửi quý công ty đơn đặt hàng theo các điều khoản như sau:<br>우리는고객님 에게 다음 조건에 대한 주문을 보내고 싶습니다 :</td></tr>
         <tr><td style="font-size:9.5px">Tên nhà cung cấp<br>공급 업체명</td><td colspan="3"><b>${vpE(sup.fullName || s)}</b>${sup.tax ? `<br><span style="font-size:9.5px">MST: ${vpE(sup.tax)}</span>` : ''}</td><td style="font-size:9.5px">Số PO<br>주문 (PO ) 번호</td><td colspan="2"><b>${vpE(po)}</b></td></tr>
         <tr><td style="font-size:9.5px">Địa chỉ<br>주소</td><td colspan="3">${vpE(sup.addr || '')}</td><td style="font-size:9.5px">SĐT<br>전화번호</td><td colspan="2">${vpE(sup.phone || '')}${sup.contact ? '<br>' + vpE(sup.contact) : ''}</td></tr>
         <tr><td style="font-size:9.5px">Ngày đặt hàng<br>주문 날짜</td><td colspan="3">${vpE(vpFmtD(r.orderDate || vpToday()))}</td><td style="font-size:9.5px">Điều kiện mua hàng<br>납품 조건</td><td colspan="2">${vpE(r.terms || '')}</td></tr>
         <tr><td colspan="7" style="height:6px;padding:0"></td></tr>
         <tr><th style="height:34px">STT순서</th><th>Sản phẩm đặt mua<br>제품명</th><th>Số lượng<br>수량</th><th>ĐVT<br>단위</th><th>Đơn giá<br>(vnd)<br>단가</th><th colspan="2">Thành tiền (VND)<br>금액</th></tr>
-        ${vpPad(rows, 17, 7).replace(/<tr><td><\/td><td><\/td><td><\/td><td><\/td><td><\/td><td><\/td><td><\/td><\/tr>/g, '<tr><td></td><td></td><td></td><td></td><td></td><td colspan="2"></td></tr>')}
+        ${vpPad(rows, 13, 7).replace(/<tr><td><\/td><td><\/td><td><\/td><td><\/td><td><\/td><td><\/td><td><\/td><\/tr>/g, '<tr><td></td><td></td><td></td><td></td><td></td><td colspan="2"></td></tr>')}
         <tr><th colspan="6" style="height:30px">Tổng tiền hàng<br>총 상품 금액</th><td class="r"><b>${vpN(sub)}</b></td></tr>
         <tr><th colspan="6" style="height:30px">Thuế VAT${vat ? ' ' + vat + '%' : ''}<br>부가세 (VND)</th><td class="r">${vpN(tax)}</td></tr>
-        <tr><th colspan="6" style="height:30px">Tổng tiền (Vnd)<br>총 금액 (VND)</th><td class="r"><b>${vpN(sub + tax)}</b></td></tr></table></div>`; }).join('');
+        <tr><th colspan="6" style="height:30px">Tổng tiền (Vnd)<br>총 금액 (VND)</th><td class="r"><b>${vpN(sub + tax)}</b></td></tr></table>${vpBuyerConfirm(r)}</div>`; }).join('');
   vpWin('주문서 ' + r.no, pages);
 }
 // ③ 지불 요청서 (ĐỀ NGHỊ THANH TOÁN) — 업체별 1줄
@@ -19612,7 +19640,7 @@ function vpPrintPM(){
     <table style="margin-top:1mm"><tr><td style="width:46%;vertical-align:bottom"><table style="font-size:9.5px;font-weight:700">
       <tr><td style="border-bottom:1px solid #000;padding:6px 0">기안부서/ Bộ phận đề nghị : ${vpE(VP_DEPT_VI[r.dept] || r.dept || '')}</td></tr>
       <tr><td style="border-bottom:1px solid #000;padding:6px 0">기안일자/ Date: ${vpE(vpFmtD(vpToday()))}</td></tr>
-      <tr><td style="border-bottom:1px solid #000;padding:6px 0">제목/ Hạng mục : ${vpE(r.title || r.no)}</td></tr></table></td><td></td><td style="width:78mm">${VP_SIGN}</td></tr></table>
+      <tr><td style="border-bottom:1px solid #000;padding:6px 0">제목/ Hạng mục : ${vpE(r.title || r.no)}</td></tr></table></td><td></td><td style="width:78mm">${vpSignBox(r)}</td></tr></table>
     <table class="g" style="margin-top:3mm"><colgroup><col style="width:5%"><col style="width:22%"><col style="width:7%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:8%"><col style="width:7%"><col style="width:12%"></colgroup>
       <tr><th style="height:30px">STT<br>순서</th><th>Nội dung chi<br>지급 내용</th><th>SL<br>수양</th><th>Tổng tiền (VND)<br>금액</th><th>Số PO<br>PO 번호</th><th>Số tài khoản<br>계좌 번호</th><th colspan="2">Ngân hàng 은행</th><th>Ghi chú<br>비고</th></tr>
       ${pad}
