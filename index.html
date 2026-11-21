@@ -4963,7 +4963,15 @@ function _renderQCBody() {
     return;
   }
   const resultColor = {'합격':'#166534','조건부합격':'#b45309','불합격':'#b91c1c'};
+  // 🔎 [2026-11-21] 합격인데 입고 기록이 아예 없는 검사도 '재고 미반영'으로 잡는다.
+  //    (실사용: TGGNHPV 30KW PFC 240EA — 검사 저장 응답이 실패로 와서 자동입고 단계가 실행되지 않았고,
+  //     실패 표시(inboundFailed)도 남지 않아 아무도 몰랐던 건)
+  const txOldest = Math.min(...(txLog || []).map(t => new Date(t.dt).getTime()).filter(x => x > 0));
+  const qcNoInbound = r => r.result === '합격' && ['출하검사', '수입검사'].includes(r.inspType) && r.site !== 'HQ' && r.lot && !/재고 미반영/.test(String(r.note || ''))
+    && new Date(r.inspDate || r.createdAt).getTime() >= txOldest + 864e5
+    && !(txLog || []).some(t => (t.type === 'tp-in' || t.type === 'in') && t.code === r.code && lotNorm(t.lot) === lotNorm(r.lot));
   body.innerHTML = sorted.map(r => {
+    if (!r.inboundFailed && qcNoInbound(r)) r = {...r, inboundFailed: 'nolog'};
     const attachIcon = r.attachmentUrl
       ? `<a href="${r.attachmentUrl}" target="_blank" title="${r.attachmentName||'첨부파일'} 열기" style="text-decoration:none;color:#16a34a;margin-right:4px">${CLIP_SVG}</a>`
       : `<span title="첨부된 파일 없음" style="color:#cbd5e1;margin-right:4px;cursor:default">${CLIP_SVG}</span>`;
@@ -4973,7 +4981,7 @@ function _renderQCBody() {
       : '';
     // ✅ 자동입고가 끝내 실패해서 표시가 남아있는 기록은 눈에 띄게 경고 표시
     //    (실사용 사고: TP 출하검사 합격인데 서버 혼잡으로 자동입고가 조용히 실패했던 건).
-    const inboundFailedBadge = r.inboundFailed ? `<div style="color:#b91c1c;font-weight:700;font-size:11px;margin-bottom:2px">⚠️ 재고 미반영</div>` : '';
+    const inboundFailedBadge = r.inboundFailed ? `<div style="color:#b91c1c;font-weight:700;font-size:11px;margin-bottom:2px" title="${r.inboundFailed === 'nolog' ? '합격 검사인데 이 LOT의 입고 기록이 없습니다. 🔄 버튼으로 재고에 반영하세요.' : '자동 입고가 실패했습니다.'}">⚠️ 재고 미반영${r.inboundFailed === 'nolog' ? ' (입고 기록 없음)' : ''}</div>` : '';
     return `<tr>
     <td>${r.inspType||'-'}${r.site === 'HQ' ? '<div style="font-size:10.5px;font-weight:700;color:#0f766e">🏢 본사</div>' : ''}</td>
     <td>${r.name||''} <span style="color:#aaa;font-size:11px;font-family:monospace">${r.code||''}</span></td>
