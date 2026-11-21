@@ -19348,13 +19348,13 @@ async function vpLoad(){
   const [a, b] = await Promise.all([api('getHQStore', {store: 'vpur'}), api('getHQStore', {store: 'vsup'})]);
   if (a && a.ok) { HQS.vpur = a.data || []; VP.err = ''; VP.loaded = true; } else VP.err = /bad store/i.test(a && a.error || '') ? '서버(Code.gs)를 새 버전으로 배포해야 법인 구매를 저장할 수 있습니다. (vpur·vsup 저장소 추가됨)' : '구매 자료를 불러오지 못했습니다: ' + ((a && a.error) || '서버 응답 없음');
   if (b && b.ok) HQS.vsup = b.data || [];
-  try { const c = await api('getHQStore', {store: 'hqcfg'}); if (c && c.ok) { const f = id => ((c.data || []).find(x => x.id === id) || {}).d || ''; VP.seal = f('vn_seal'); VP.sign = f('vn_sign'); } } catch (e) {}
+  try { const c = await api('getHQStore', {store: 'hqcfg'}); if (c && c.ok) { const f = id => ((c.data || []).find(x => x.id === id) || {}).d || ''; VP.seal = f('vn_seal'); VP.sign = f('vn_sig'); } } catch (e) {}
   // 마스터가 열면: 구매용 사본이 비어 있고 인보이스 도장·서명이 있으면 자동으로 복사 (직원 화면에서도 찍히도록)
-  try { if (vpCanApprove() && (!VP.seal || !VP.sign)) { let A = '', T = ''; try { A = invImg('seal'); T = invImg('title'); } catch (e) {}
+  try { if (vpCanApprove() && (!VP.seal)) { let A = '', T = ''; try { A = invImg('seal'); T = invImg('title'); } catch (e) {}
     if (!A && !T && typeof loadCost === 'function') { await loadCost(); try { A = invImg('seal'); T = invImg('title'); } catch (e) {} }
     const now = new Date().toISOString();
     if (A && !VP.seal) { const d = await vpUrlShrink(A, 380); if (await qmPut('hqcfg', {id: 'vn_seal', d, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'invoice seal'})) VP.seal = d; }
-    if (T && !VP.sign) { const d = await vpUrlShrink(T, 360); if (await qmPut('hqcfg', {id: 'vn_sign', d, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'invoice title'})) VP.sign = d; } } } catch (e) {}
+    } } catch (e) {}
 }
 async function vpSave(rec){ rec.updatedBy = CURRENT_USER || ''; rec.updatedAt = new Date().toISOString(); return qmPut('vpur', rec); }
 function vpHist(r, act){ r.history = (r.history || []).concat([{at: new Date().toISOString(), by: CURRENT_USER || '', act}]); }
@@ -19569,7 +19569,7 @@ function vpSealDlg(){
   const box = (k, t, v) => `<div style="flex:1;min-width:240px"><b>${t}</b><div style="height:130px;border:1px dashed #CBD5E1;border-radius:8px;margin:6px 0;display:flex;align-items:center;justify-content:center;background:#fff">${v ? `<img src="${v}" style="max-height:120px;max-width:100%;mix-blend-mode:multiply">` : '<span class="pl-sub">없음</span>'}</div>
     <input type="file" accept="image/*" onchange="vpSealSet('${k}',this.files[0])"> ${v ? `<button class="pl-btn" style="padding:3px 10px" onclick="vpSealSet('${k}',null)">지우기</button>` : ''}</div>`;
   vpModal(`<h3 style="margin:0 0 6px">주문서 도장·서명</h3><div class="pl-sub" style="margin-bottom:10px">법인장 <b>승인이 난 구매 건</b>의 주문서 아래 "XÁC NHẬN CỦA ĐƠN VỊ MUA HÀNG" 칸에 도장과 서명이 찍히고, 결재란 승인 칸에 서명이 들어갑니다. 흰 바탕에 찍은 도장·서명을 스캔하거나 사진으로 올리세요 (자동으로 줄여 저장).</div>
-    <div style="display:flex;gap:16px;flex-wrap:wrap">${box('vn_seal', '회사 도장·서명', VP.seal)}${box('vn_sign', '직함 도장 (이름)', VP.sign)}</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">${box('vn_seal', '회사 도장·서명', VP.seal)}${box('vn_sig', '서명 (승인란)', VP.sign)}</div>
     <div style="margin-top:10px"><button class="pl-act" style="padding:7px 14px" onclick="vpSealFromInvoice()">출고 인보이스의 도장·서명 그대로 쓰기</button> <span class="pl-sub">출고 → 인보이스 "서류에 넣을 도장·서명"에 등록된 이미지를 가져옵니다.</span></div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="pl-btn" onclick="vpClose()">닫기</button></div>`, 640);
 }
@@ -19582,7 +19582,18 @@ async function vpSealSet(id, file){
 }
 // 출고 인보이스 '서류에 넣을 도장·서명'(seal: 회사 도장·서명, title: 직함 도장)이 있으면 그것을 쓴다 (원가 권한으로 불러온 경우)
 const vpSealImg = () => { try { return invImg('seal') || VP.seal; } catch (e) { return VP.seal; } };
-const vpTitleImg = () => { try { return invImg('title') || VP.sign; } catch (e) { return VP.sign; } };
+// 승인란 서명: 회사 도장·서명 이미지에서 빨간 도장을 빼고 서명 획(파랑·검정)만 뽑아낸다
+async function vpSigFromSeal(url){ try { const im = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
+  const w = im.width, h = im.height, cv = document.createElement('canvas'); cv.width = w; cv.height = h; const g = cv.getContext('2d'); g.drawImage(im, 0, 0);
+  const D = g.getImageData(0, 0, w, h), p = D.data; let x0 = w, y0 = h, x1 = -1, y1 = -1, n = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y * w + x) * 4, R = p[i], G = p[i + 1], B = p[i + 2], A = p[i + 3];
+    const ink = A > 60 && (R + G + B) < 600 && !(R > 110 && R > G * 1.35 && R > B * 1.35);   // 빨강(도장)·흰 바탕 제외
+    if (ink) { n++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } else p[i + 3] = 0; }
+  if (n < 80 || x1 < 0) return '';
+  g.putImageData(D, 0, 0); const pd = 4; x0 = Math.max(0, x0 - pd); y0 = Math.max(0, y0 - pd); x1 = Math.min(w - 1, x1 + pd); y1 = Math.min(h - 1, y1 + pd);
+  const o = document.createElement('canvas'); o.width = x1 - x0 + 1; o.height = y1 - y0 + 1; o.getContext('2d').drawImage(cv, x0, y0, o.width, o.height, 0, 0, o.width, o.height);
+  return o.toDataURL('image/png'); } catch (e) { return ''; } }
+const vpTitleImg = () => VP.sign || '';
 async function vpUrlShrink(url, maxW){ const im = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
   let w = im.width, h = im.height; const k = Math.min(1, maxW / w); w = Math.round(w * k); h = Math.round(h * k);
   const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(im, 0, 0, w, h);
@@ -19594,17 +19605,17 @@ async function vpSealFromInvoice(){
   if (!a && !b) { alert('인보이스 도장·서명을 불러오지 못했습니다. 마스터(원가 권한)로 로그인한 뒤 다시 눌러 주세요.'); return; }
   const now = new Date().toISOString();
   if (a) { const d = await vpUrlShrink(a, 380); if (await qmPut('hqcfg', {id: 'vn_seal', d, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'invoice seal'})) VP.seal = d; }
-  if (b) { const d = await vpUrlShrink(b, 360); if (await qmPut('hqcfg', {id: 'vn_sign', d, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'invoice title'})) VP.sign = d; }
+  const sg = await vpSigFromSeal(a || VP.seal); if (sg && await qmPut('hqcfg', {id: 'vn_sig', d: sg, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'from seal'})) VP.sign = sg;
   vpSealDlg(); renderVP({local: true});
 }
 const vpApproved = r => !!(r && r.approvedAt && ['승인', '발주', '입고중', '완료'].includes(r.status));
 // 결재란: 승인된 건이면 승인 칸에 서명 + 날짜
 const vpSignBox = r => { const S = vpTitleImg(), ok = vpApproved(r) && S;
   return `<table class="sg"><tr><th>작성</th><th>검토</th><th>확인</th><th>승인</th></tr><tr class="sp"><td></td><td></td><td></td><td style="position:relative">${ok ? `<img src="${S}" style="max-width:95%;max-height:17mm;mix-blend-mode:multiply">` : ''}</td></tr><tr class="dt"><td></td><td></td><td></td><td style="font-size:9px">${vpApproved(r) ? vpE(vpFmtD(String(r.approvedAt).slice(0, 10))) : ''}</td></tr></table>`; };
-const vpBuyerConfirm = r => { const ok = vpApproved(r), A = ok ? vpSealImg() : '', T = ok ? vpTitleImg() : '';
+const vpBuyerConfirm = r => { const ok = vpApproved(r), A = ok ? vpSealImg() : '';
   return `<div style="display:flex;justify-content:flex-end;margin-top:5mm"><div style="width:80mm;text-align:center;font-family:'Times New Roman',serif"><b style="font-size:12px">XÁC NHẬN CỦA ĐƠN VỊ MUA HÀNG</b><br><i style="font-size:11px">(Ký &amp; ghi rõ họ tên)</i>
     <div style="height:30mm;display:flex;align-items:center;justify-content:center">${A ? `<img src="${A}" style="max-height:30mm;max-width:70mm;mix-blend-mode:multiply">` : ''}</div>
-    <div style="min-height:9mm;display:flex;align-items:center;justify-content:center">${T ? `<img src="${T}" style="max-height:11mm;max-width:60mm;mix-blend-mode:multiply">` : (ok ? '<b style="font-size:11.5px">KIM IN SUN</b>' : '')}</div></div></div>`; };
+    </div></div>`; };
 const VP_SIGN = `<table class="sg"><tr><th>작성</th><th>검토</th><th>확인</th><th>승인</th></tr><tr class="sp"><td></td><td></td><td></td><td></td></tr><tr class="dt"><td></td><td></td><td></td><td></td></tr></table>`;
 const VP_FORM_CSS = `@page{size:A4 portrait;margin:8mm 8mm 10mm}*{box-sizing:border-box}body{font-family:Arial,"Malgun Gothic",sans-serif;font-size:10.5px;color:#000;margin:0}.pg{page-break-after:always;position:relative;width:194mm;margin:0 auto}.pg:last-child{page-break-after:auto}@media screen{body{background:#E5E7EB;padding:10mm 0}.pg{background:#fff;padding:8mm;width:210mm;min-height:297mm;margin:0 auto 8mm;box-shadow:0 2px 8px rgba(0,0,0,.2)}}
   table{border-collapse:collapse;width:100%}.g td,.g th{border:1px solid #000;padding:2px 4px;vertical-align:middle}.g th{font-weight:700;text-align:center;font-size:10px;line-height:1.25}.g td{height:22px}
@@ -19614,13 +19625,13 @@ const VP_FORM_CSS = `@page{size:A4 portrait;margin:8mm 8mm 10mm}*{box-sizing:bor
 async function vpEnsureSeal(){
   const has = () => { try { return !!(invImg('seal') || invImg('title')); } catch (e) { return false; } };
   if (!has() && !(VP.seal && VP.sign)) {
-    try { const c = await api('getHQStore', {store: 'hqcfg'}); if (c && c.ok) { const f = id => ((c.data || []).find(x => x.id === id) || {}).d || ''; VP.seal = VP.seal || f('vn_seal'); VP.sign = VP.sign || f('vn_sign'); } } catch (e) {}
+    try { const c = await api('getHQStore', {store: 'hqcfg'}); if (c && c.ok) { const f = id => ((c.data || []).find(x => x.id === id) || {}).d || ''; VP.seal = VP.seal || f('vn_seal'); VP.sign = VP.sign || f('vn_sig'); } } catch (e) {}
   }
   if (!has() && !(VP.seal && VP.sign) && (isMaster || (typeof hqCan === 'function' && hqCan('cost', 'R')))) { try { await loadCost(); } catch (e) {} }
   // 마스터·원가 권한자가 인쇄하면 구매용 사본도 만들어 둔다(직원 인쇄용)
   try { const A = invImg('seal'), T = invImg('title'), now = new Date().toISOString();
     if (A && !VP.seal) { const d = await vpUrlShrink(A, 380); if (await qmPut('hqcfg', {id: 'vn_seal', d, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'invoice seal'})) VP.seal = d; }
-    if (T && !VP.sign) { const d = await vpUrlShrink(T, 360); if (await qmPut('hqcfg', {id: 'vn_sign', d, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'invoice title'})) VP.sign = d; } } catch (e) {}
+    if (!VP.sign) { const sg = await vpSigFromSeal(A || VP.seal); if (sg) { VP.sign = sg; if (isMaster) await qmPut('hqcfg', {id: 'vn_sig', d: sg, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'from seal'}); } } } catch (e) {}
 }
 async function vpWin(title, body){ const w = window.open('', '_blank'); if (!w) { alert('팝업 차단을 해제해 주세요.'); return; }
   w.document.write('<p style="font:14px sans-serif;padding:20px">도장·서명 불러오는 중… / Đang tải…</p>');
