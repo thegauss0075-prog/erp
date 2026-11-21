@@ -19349,6 +19349,12 @@ async function vpLoad(){
   if (a && a.ok) { HQS.vpur = a.data || []; VP.err = ''; VP.loaded = true; } else VP.err = /bad store/i.test(a && a.error || '') ? '서버(Code.gs)를 새 버전으로 배포해야 법인 구매를 저장할 수 있습니다. (vpur·vsup 저장소 추가됨)' : '구매 자료를 불러오지 못했습니다: ' + ((a && a.error) || '서버 응답 없음');
   if (b && b.ok) HQS.vsup = b.data || [];
   try { const c = await api('getHQStore', {store: 'hqcfg'}); if (c && c.ok) { const f = id => ((c.data || []).find(x => x.id === id) || {}).d || ''; VP.seal = f('vn_seal'); VP.sign = f('vn_sign'); } } catch (e) {}
+  // 마스터가 열면: 구매용 사본이 비어 있고 인보이스 도장·서명이 있으면 자동으로 복사 (직원 화면에서도 찍히도록)
+  try { if (vpCanApprove() && (!VP.seal || !VP.sign)) { let A = '', T = ''; try { A = invImg('seal'); T = invImg('title'); } catch (e) {}
+    if (!A && !T && typeof loadCost === 'function') { await loadCost(); try { A = invImg('seal'); T = invImg('title'); } catch (e) {} }
+    const now = new Date().toISOString();
+    if (A && !VP.seal) { const d = await vpUrlShrink(A, 380); if (await qmPut('hqcfg', {id: 'vn_seal', d, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'invoice seal'})) VP.seal = d; }
+    if (T && !VP.sign) { const d = await vpUrlShrink(T, 360); if (await qmPut('hqcfg', {id: 'vn_sign', d, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'invoice title'})) VP.sign = d; } } } catch (e) {}
 }
 async function vpSave(rec){ rec.updatedBy = CURRENT_USER || ''; rec.updatedAt = new Date().toISOString(); return qmPut('vpur', rec); }
 function vpHist(r, act){ r.history = (r.history || []).concat([{at: new Date().toISOString(), by: CURRENT_USER || '', act}]); }
