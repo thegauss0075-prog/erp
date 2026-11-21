@@ -19304,7 +19304,7 @@ async function qcLotDocs(id){
 const VP = {loaded: false, err: '', view: 'list', st: '', q: '', year: '', dept: '', cat: '', sup: '', ed: null};
 const VP_ST = {'작성': ['#475569', '#F1F5F9'], '승인요청': ['#B45309', '#FFFBEB'], '승인': ['#4338CA', '#EEF2FF'], '발주': ['#185FA5', '#EFF6FF'], '입고중': ['#0F766E', '#F0FDFA'], '완료': ['#15803D', '#F0FDF4'], '반려': ['#B91C1C', '#FEF2F2'], '취소': ['#6B7280', '#F3F4F6']};
 const VP_CAT = {VTTH: '소모품 VTTH', NPL: '원부자재 NPL', CCDC: '공구·비품 CCDC'};
-const VP_DEPT = {PD: '생산 PD', OFFICE: '사무실 OFFICE'};
+const VP_DEPT = {PD: '생산용', OFFICE: '사무용'};
 const vpE = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const vpN = v => (v === '' || v == null || isNaN(+v)) ? '' : (+v).toLocaleString('en-US', {maximumFractionDigits: 2});
 const vpCanEdit = () => !!(isMaster || isAdmin || USER_ROLE === 'admin' || USER_ROLE === 'user');
@@ -19315,7 +19315,7 @@ const vpAmt = l => (+l.qty || 0) * (+l.price || 0);
 // 🇻🇳 한국어·베트남어 동시 표시: 그린 뒤 화면의 한국어 글자에 베트남어를 붙인다 (문구 사전)
 const VP_VI = {'구매요청':'Yêu cầu mua','품목':'Hàng hóa','업체 / 단가':'NCC / Đơn giá','구매 대장':'Sổ mua hàng','구매 보고서':'Báo cáo mua hàng','공급업체':'Nhà cung cấp','구매요청 · 견적 비교':'Yêu cầu mua · So sánh báo giá',
  '견적 비교표 엑셀 가져오기':'Nhập Excel so sánh báo giá','구매 보고서 엑셀 가져오기':'Nhập Excel báo cáo mua hàng','＋ 구매요청':'Tạo yêu cầu mua','전체':'Tất cả','작성':'Đang soạn','승인요청':'Chờ duyệt','승인':'Duyệt','발주':'Đặt hàng','입고중':'Đang nhận','완료':'Hoàn thành','반려':'Từ chối','취소':'Hủy',
- '전체 부서':'Tất cả bộ phận','생산 PD':'Sản xuất','사무실 OFFICE':'Văn phòng','전체 종류':'Tất cả loại','소모품 VTTH':'Vật tư tiêu hao','원부자재 NPL':'Nguyên phụ liệu','공구·비품 CCDC':'Công cụ dụng cụ',
+ '전체 부서':'Tất cả bộ phận','생산 PD':'Sản xuất','사무실 OFFICE':'Văn phòng','생산용':'Sản xuất','사무용':'Văn phòng','전체 종류':'Tất cả loại','소모품 VTTH':'Vật tư tiêu hao','원부자재 NPL':'Nguyên phụ liệu','공구·비품 CCDC':'Công cụ dụng cụ',
  '번호':'Số','요청일':'Ngày yêu cầu','부서':'Bộ phận','제목 / 품목':'Tiêu đề / Hàng hóa','품목 수':'Số mặt hàng','금액 (VND)':'Thành tiền (VND)','업체':'Nhà cung cấp','상태':'Trạng thái','입고':'Nhận hàng',
  '새 구매요청':'Yêu cầu mua mới','닫기':'Đóng','제목':'Tiêu đề','요청자':'Người yêu cầu','품목 · 업체별 견적':'Hàng hóa · Báo giá theo NCC','종류':'Loại','품목 (ERP 연결)':'Hàng hóa (liên kết ERP)','규격':'Quy cách','수량':'Số lượng','단위':'ĐVT',
  '선정 업체 / 단가':'NCC được chọn / Đơn giá','금액':'Thành tiền','선정 사유':'Lý do chọn','＋ 품목 추가':'Thêm hàng','＋ 업체':'Thêm NCC','비고':'Ghi chú','저장':'Lưu','승인 요청':'Gửi duyệt','삭제':'Xóa','요청 회수':'Rút yêu cầu',
@@ -19384,11 +19384,11 @@ function vpListHtml(){
   return `<div class="pl-head"><div><div class="pl-title">구매요청</div><div class="pl-period">요청 → 법인장 승인 → 발주 → 입고</div></div><span style="flex:1"></span>
       ${vpCanEdit() ? `<button class="pl-btn" onclick="vpImportPick('report')">구매 보고서 엑셀 가져오기</button><button class="pl-act" style="padding:8px 14px;font-size:13px" onclick="vpEdit(null)">＋ 구매요청</button>` : ''}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}<span style="flex:1"></span>
-      <select class="pl-btn" onchange="VP.dept=this.value;renderVP({local:true})"><option value="">전체 부서</option>${Object.entries(VP_DEPT).map(([k, v]) => `<option value="${k}" ${VP.dept === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+      ${vpDeptSeg()}
       <input class="pl-btn" placeholder="번호·품명·업체 검색" value="${vpE(VP.q)}" onchange="VP.q=this.value;renderVP({local:true})" style="width:200px"></div>
     <div class="pl-tw"><table class="pl-t vp-t" style="min-width:900px"><thead><tr><th style="text-align:left">번호</th><th>요청일</th><th>부서</th><th style="text-align:left">제목 / 품목</th><th class="num">품목 수</th><th class="num">금액 (VND)</th><th style="text-align:left">업체</th><th>상태</th><th></th></tr></thead><tbody>
     ${docs.map(d => { const L = d.lines || [], amt = L.reduce((a, l) => a + vpAmt(l), 0), sups = [...new Set(L.map(l => l.sup).filter(Boolean))];
-      return `<tr style="cursor:pointer" onclick="vpEdit('${vpE(d.id)}')"><td style="font-family:ui-monospace,monospace">${vpE(d.no)}${d.src === 'import' ? ' <span class="pl-sub">가져옴</span>' : ''}</td><td>${vpE(d.reqDate || '')}</td><td>${vpE(d.dept || '')}</td>
+      return `<tr style="cursor:pointer" onclick="vpEdit('${vpE(d.id)}')"><td style="font-family:ui-monospace,monospace">${vpE(d.no)}${d.src === 'import' ? ' <span class="pl-sub">가져옴</span>' : ''}</td><td>${vpE(d.reqDate || '')}</td><td>${vpE(VP_DEPT[d.dept] || d.dept || '')}</td>
         <td class="wrap"><b>${vpE(d.title || '')}</b><div class="pl-sub">${vpE(L.slice(0, 3).map(l => l.name).join(', '))}${L.length > 3 ? ' 외 ' + (L.length - 3) : ''}</div></td>
         <td class="num">${L.length}</td><td class="num">${vpN(amt) || '–'}</td><td class="wrap" style="min-width:120px">${vpE(sups.join(', '))}</td><td>${hqPill(d.status, VP_ST[d.status])}</td>
         <td>${d.status === '발주' || d.status === '입고중' ? `<button class="pl-act" onclick="event.stopPropagation();vpRecv('${vpE(d.id)}')">입고</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">구매요청이 없습니다. "＋ 구매요청" 또는 엑셀 가져오기로 시작하세요.</td></tr>'}</tbody></table></div>`;
@@ -19414,10 +19414,11 @@ function vpEdRender(){
       <input ${ro} value="${vpE(q.note || '')}" placeholder="규격·메모" onchange="vpQ(${i},'${vpE(s)}','note',this.value)" style="width:110px;padding:3px 5px;border:1px solid #E5E7EB;border-radius:5px;font-size:11px;margin-top:2px">
       ${!lock ? `<div><button class="pl-btn" style="padding:2px 8px;font-size:11px;margin-top:3px" onclick="vpPick(${i},'${vpE(s)}')">${isSel ? '✓ 선정됨' : '이 업체 선정'}</button></div>` : (isSel ? '<div style="font-size:11px;color:#4338CA;font-weight:700">✓ 선정</div>' : '')}</td>`; };
   vpModal(`<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><h3 style="margin:0;font-size:17px">${r.no ? vpE(r.no) : '새 구매요청'}</h3>${hqPill(r.status, VP_ST[r.status])}<span style="flex:1"></span><button class="pl-btn" onclick="vpClose()">닫기</button></div>
-    <datalist id="vp-items">${items.map(x => `<option value="${vpE(x.code)} — ${vpE(x.name)}">`).join('')}</datalist><datalist id="vp-sups">${supList.map(x => `<option value="${vpE(x)}">`).join('')}</datalist>
+    <datalist id="vp-items">${items.map(x => `<option value="${vpE(x.code)} — ${vpE(x.name)}">`).join('')}</datalist>
+    <datalist id="vp-hist">${(() => { const C = vpCatalog(); return C.filter(o => o.dept === r.dept).concat(C.filter(o => o.dept !== r.dept)).map(o => `<option value="${vpE(vpCatKey(o))}">${vpE([o.last.sup, o.last.price ? vpN(o.last.price) + (o.last.unit ? '/' + o.last.unit : '') : '', String(o.last.od).slice(0, 10), o.n + '회'].filter(Boolean).join(' · '))}</option>`).join(''); })()}</datalist><datalist id="vp-sups">${supList.map(x => `<option value="${vpE(x)}">`).join('')}</datalist>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px">
       ${hqFld('제목', '', `<input ${ro} value="${vpE(r.title)}" ${set('title')} placeholder="예: 11월 소모품 구매" style="${HQ_IN}">`)}
-      ${hqFld('부서', '', `<select ${ro} ${set('dept')} style="${HQ_IN}">${Object.entries(VP_DEPT).map(([k, v]) => `<option value="${k}" ${r.dept === k ? 'selected' : ''}>${v}</option>`).join('')}</select>`)}
+      ${hqFld('부서', '', `<select ${ro} onchange="VP.ed.dept=this.value;vpEdRender()" style="${HQ_IN}">${Object.entries(VP_DEPT).map(([k, v]) => `<option value="${k}" ${r.dept === k ? 'selected' : ''}>${v}</option>`).join('')}</select>`)}
       ${hqFld('요청일', '', `<input type="date" ${ro} value="${vpE(r.reqDate)}" ${set('reqDate')} style="${HQ_IN}">`)}
       ${hqFld('요청자', '', `<input ${ro} value="${vpE(r.reqBy)}" ${set('reqBy')} style="${HQ_IN}">`)}
       ${hqFld('납품 조건', '', `<input ${ro} value="${vpE(r.terms || '')}" ${set('terms')} placeholder="예: 공장 도착, 세금계산서 발행" style="${HQ_IN}">`)}
@@ -19427,7 +19428,7 @@ function vpEdRender(){
       ${S.map((s, k) => `<th style="text-align:center">${vpE(s)}${!lock ? ` <a href="#" onclick="vpDelSup(${k});return false" style="color:#B91C1C;text-decoration:none">✕</a>` : ''}</th>`).join('')}<th>업체 / 단가</th><th class="num">금액</th><th>비고</th><th></th></tr></thead><tbody>
     ${(r.lines || []).map((l, i) => `<tr><td>${i + 1}</td>
       <td><select ${ro} onchange="VP.ed.lines[${i}].cat=this.value" style="padding:4px;border:1px solid #D1D5DB;border-radius:5px">${Object.keys(VP_CAT).map(c => `<option ${l.cat === c ? 'selected' : ''}>${c}</option>`).join('')}</select></td>
-      <td class="wrap"><input ${ro} value="${vpE(l.name)}" placeholder="품명" onchange="vpName(${i},this.value)" style="width:100%;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px">
+      <td class="wrap"><input ${ro} value="${vpE(l.name)}" list="vp-hist" placeholder="품명 — 과거 구매 품목 검색 (생산용/사무용)" onchange="vpName(${i},this.value)" style="width:100%;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px">
         <input ${ro} value="${vpE(l.memo || '')}" placeholder="요청 메모 (예: 품질 좋은 제품 요청)" onchange="VP.ed.lines[${i}].memo=this.value" style="width:100%;padding:3px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:11px;margin-top:2px;color:#B45309">
         <input ${ro} list="vp-items" value="${vpE(l.code ? l.code + ' — ' + ((allRows().find(x => x.code === l.code) || {}).name || '') : '')}" placeholder="ERP 품목 연결 (소모품 VTTH·원자재 VN) — 최근 업체·단가 자동" onchange="vpLink(${i},this.value)" style="width:100%;padding:3px 6px;border:1px solid #E5E7EB;border-radius:5px;font-size:11px;margin-top:2px"></td>
       <td style="vertical-align:top"><input ${ro} value="${vpE(l.spec)}" placeholder="규격" onchange="VP.ed.lines[${i}].spec=this.value" style="width:120px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px">
@@ -19491,7 +19492,28 @@ function vpLink(i, v){ const code = String(v).split(' — ')[0].trim(), it = vpI
   if (!v) { l.code = ''; return; } if (!it) { alert('목록에서 ERP 소모품(VTTH)·원자재 VN 품목을 골라 주세요.'); vpEdRender(); return; }
   l.code = it.code; if (!l.name) l.name = it.name; if (!l.unit) l.unit = it.unit || ''; l.cat = it.cat === 'VN' ? 'NPL' : 'VTTH';
   vpAutoFill(l); vpEdRender(); }
-function vpName(i, v){ const l = VP.ed.lines[i]; l.name = v; if (vpAutoFill(l)) vpEdRender(); }
+// 🔎 과거 구매 품목 목록 (엑셀에서 가져온 기록 포함) — 생산용·사무용 구분, 품목별 최근 구매 1건
+function vpCatalog(){
+  const m = {}; (HQS.vpur || []).forEach(d => { if (!['발주', '입고중', '완료'].includes(d.status)) return;
+    (d.lines || []).forEach(l => { if (!l.name) return; const k = (d.dept || 'PD') + '|' + vpNorm(l.name), od = l.orderDate || d.orderDate || d.reqDate || '';
+      const o = m[k] = m[k] || {dept: d.dept || 'PD', name: String(l.name).trim(), n: 0, last: null}; o.n++;
+      if (!o.last || String(od) > String(o.last.od)) o.last = {od, sup: l.sup, price: l.price, unit: l.unit, spec: l.spec, cat: l.cat, code: l.code}; }); });
+  return Object.values(m).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+}
+const vpCatKey = o => `[${o.dept === 'OFFICE' ? '사무용' : '생산용'}] ${o.name}`;
+function vpName(i, v){
+  const l = VP.ed.lines[i], hit = vpCatalog().find(o => vpCatKey(o) === String(v).trim());
+  if (hit) {   // 목록에서 고르면 최근 구매 그대로 채움
+    const h = hit.last; l.name = hit.name; l.unit = l.unit || h.unit || ''; l.spec = l.spec || h.spec || ''; if (h.cat) l.cat = h.cat; if (h.code && !l.code) l.code = h.code;
+    if (!l.sup || l.supAuto) { l.sup = vpSupCanon(h.sup); l.price = +h.price || ''; l.supAuto = true; l.supSrc = ''; l.why = `최근 구매 ${String(h.od).slice(0, 10)}`; }
+    if (VP.ed.dept !== hit.dept && !(VP.ed.lines || []).some((x, j) => j !== i && x.name)) VP.ed.dept = hit.dept;
+    vpEdRender(); return; }
+  l.name = v; if (vpAutoFill(l)) vpEdRender();
+}
+function vpDeptSeg(){
+  const b = (k, t) => `<button class="pl-btn" style="${VP.dept === k ? 'background:#EEF2FF;border-color:#4338CA;color:#4338CA;font-weight:700' : ''}" onclick="VP.dept='${k}';renderVP({local:true})">${t}</button>`;
+  return `<span style="display:inline-flex;gap:4px">${b('', '전체')}${b('PD', '생산용')}${b('OFFICE', '사무용')}</span>`;
+}
 function vpCheck(r, strict){
   r.lines = (r.lines || []).filter(l => String(l.name || '').trim() || l.code);
   if (!r.lines.length) return '품목을 1개 이상 넣어 주세요.';
@@ -19637,7 +19659,7 @@ async function vpRecvSave(){
 function vpFilters(){
   const L = vpLedger(), years = [...new Set(L.map(x => x.y).filter(Boolean))].sort().reverse(); if (!years.includes(VP.year)) years.unshift(VP.year);
   return `<select class="pl-btn" onchange="VP.year=this.value;renderVP({local:true})">${years.map(y => `<option ${VP.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select>
-    <select class="pl-btn" onchange="VP.dept=this.value;renderVP({local:true})"><option value="">전체 부서</option>${Object.entries(VP_DEPT).map(([k, v]) => `<option value="${k}" ${VP.dept === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+    ${vpDeptSeg()}
     <select class="pl-btn" onchange="VP.cat=this.value;renderVP({local:true})"><option value="">전체 종류</option>${Object.entries(VP_CAT).map(([k, v]) => `<option value="${k}" ${VP.cat === k ? 'selected' : ''}>${v}</option>`).join('')}</select>`;
 }
 function vpLedgerRows(){ const q = VP.q.toLowerCase(); return vpLedger().filter(x => x.y === VP.year && (!VP.dept || x.d.dept === VP.dept) && (!VP.cat || x.l.cat === VP.cat) && (!VP.sup || x.l.sup === VP.sup) && (!q || [x.l.name, x.l.spec, x.l.sup, x.d.no].join(' ').toLowerCase().includes(q))); }
@@ -19646,11 +19668,11 @@ function vpLedgerHtml(){
   return `<div class="pl-head"><div><div class="pl-title">구매 대장</div><div class="pl-period">발주된 품목 전체 · ${R.length}건 · ${vpN(tot)} VND${miss.length ? ` · <b class="part">미입고 ${miss.length}건</b>` : ''}</div></div><span style="flex:1"></span>${vpFilters()}
       <input class="pl-btn" placeholder="품명·업체·번호" value="${vpE(VP.q)}" onchange="VP.q=this.value;renderVP({local:true})" style="width:170px"><button class="pl-btn" onclick="vpLedgerXlsx()">엑셀</button></div>
     <div class="pl-tw"><table class="pl-t vp-t" style="min-width:1150px"><thead><tr><th>주문일</th><th>종류</th><th>부서</th><th style="text-align:left">공급업체</th><th style="text-align:left">품명</th><th>규격</th><th class="num">수량</th><th>단위</th><th class="num">단가</th><th class="num">금액</th><th>입고일</th><th class="num">입고</th><th class="num">미입고</th><th>번호</th></tr></thead><tbody>
-    ${R.map(x => `<tr style="cursor:pointer" onclick="vpEdit('${vpE(x.d.id)}')"><td>${vpE(x.od)}</td><td>${vpE(x.l.cat)}</td><td>${vpE(x.d.dept)}</td><td class="wrap" style="min-width:150px">${vpE(x.l.sup)}</td><td class="wrap"><b>${vpE(x.l.name)}</b>${x.l.code ? `<div class="pl-sub">${vpE(x.l.code)}</div>` : ''}</td><td>${vpE(x.l.spec || '')}</td>
+    ${R.map(x => `<tr style="cursor:pointer" onclick="vpEdit('${vpE(x.d.id)}')"><td>${vpE(x.od)}</td><td>${vpE(x.l.cat)}</td><td>${vpE(VP_DEPT[x.d.dept] || x.d.dept)}</td><td class="wrap" style="min-width:150px">${vpE(x.l.sup)}</td><td class="wrap"><b>${vpE(x.l.name)}</b>${x.l.code ? `<div class="pl-sub">${vpE(x.l.code)}</div>` : ''}</td><td>${vpE(x.l.spec || '')}</td>
       <td class="num">${vpN(x.l.qty)}</td><td>${vpE(x.l.unit || '')}</td><td class="num">${vpN(x.l.price)}</td><td class="num"><b>${vpN(x.amt)}</b></td><td>${vpE(x.l.recvDate || '')}</td><td class="num">${vpN(x.l.recvQty || 0)}</td><td class="num ${x.miss ? 'part' : ''}">${x.miss ? vpN(x.miss) : ''}</td><td style="font-family:ui-monospace,monospace;font-size:11px">${vpE(x.d.no)}</td></tr>`).join('') || '<tr><td colspan="14" class="empty">조건에 맞는 구매 기록이 없습니다.</td></tr>'}</tbody></table></div>`;
 }
 function vpLedgerXlsx(){
-  const rows = vpLedgerRows().map(x => ({'주문일': x.od, '월': x.m, '종류': VP_CAT[x.l.cat] || x.l.cat, '부서': x.d.dept, '공급업체': x.l.sup, '품명': x.l.name, 'ERP 품목': x.l.code || '', '규격': x.l.spec || '', '수량': +x.l.qty || 0, '단위': x.l.unit || '', '단가': +x.l.price || 0, '금액': x.amt, '입고일': x.l.recvDate || '', '입고 수량': +x.l.recvQty || 0, '미입고': x.miss, '구매번호': x.d.no}));
+  const rows = vpLedgerRows().map(x => ({'주문일': x.od, '월': x.m, '종류': VP_CAT[x.l.cat] || x.l.cat, '부서': VP_DEPT[x.d.dept] || x.d.dept, '공급업체': x.l.sup, '품명': x.l.name, 'ERP 품목': x.l.code || '', '규격': x.l.spec || '', '수량': +x.l.qty || 0, '단위': x.l.unit || '', '단가': +x.l.price || 0, '금액': x.amt, '입고일': x.l.recvDate || '', '입고 수량': +x.l.recvQty || 0, '미입고': x.miss, '구매번호': x.d.no}));
   const ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '구매대장'); XLSX.writeFile(wb, `법인구매대장_${VP.year}.xlsx`);
 }
 // ── 구매 보고서 (엑셀 피벗 대체) ─────────────────────────
