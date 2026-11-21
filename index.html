@@ -4996,7 +4996,7 @@ function _renderQCBody() {
     <td style="font-size:12px;color:#888">${inboundFailedBadge}${r.note||'-'}</td>
     <td class="no-print" style="white-space:nowrap">
       ${(r.inspType==='수입검사' && r.result==='합격') ? `<button class="edit-btn" onclick="printQCLotQR(${r.id})" title="LOT QR 라벨 인쇄 (창고 보관/자재출고용)">🔖</button>` : ''}
-      ${(isAdmin && r.inboundFailed) ? `<button class="edit-btn" onclick="retryQCInbound(${r.id})" title="재고 반영 재시도" style="color:#b91c1c">🔄</button>` : ''}
+      ${((isAdmin || isMaster || USER_ROLE === 'admin' || USER_ROLE === 'user') && r.inboundFailed) ? `<button class="edit-btn" onclick="retryQCInbound(${r.id})" title="재고 반영 재시도" style="color:#b91c1c">🔄</button>` : ''}
       ${isAdmin ? `<button class="edit-btn" onclick="openEditQC(${r.id})" title="수정">✏️</button>` : ''}
       ${isAdmin ? `<button class="edit-btn" onclick="deleteQC(${r.id})" title="삭제">🗑️</button>` : ''}
     </td>
