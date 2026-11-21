@@ -19624,8 +19624,8 @@ const VP_FORM_CSS = `@page{size:A4 portrait;margin:8mm 8mm 10mm}*{box-sizing:bor
 // 인쇄 전에 도장·서명을 확실히 불러온다: 창을 먼저 열고(팝업 차단 방지) → 이미지 확보 → 내용 쓰기
 async function vpEnsureSeal(){
   const has = () => { try { return !!(invImg('seal') || invImg('title')); } catch (e) { return false; } };
-  if (!has() && !(VP.seal && VP.sign)) {
-    try { const c = await api('getHQStore', {store: 'hqcfg'}); if (c && c.ok) { const f = id => ((c.data || []).find(x => x.id === id) || {}).d || ''; VP.seal = VP.seal || f('vn_seal'); VP.sign = VP.sign || f('vn_sig'); } } catch (e) {}
+  {
+    try { const c = await api('getHQStore', {store: 'hqcfg'}); if (c && c.ok) { const f = id => ((c.data || []).find(x => x.id === id) || {}).d || ''; VP.seal = f('vn_seal') || VP.seal; VP.sign = f('vn_sig') || VP.sign; } } catch (e) {}
   }
   if (!has() && !(VP.seal && VP.sign) && (isMaster || (typeof hqCan === 'function' && hqCan('cost', 'R')))) { try { await loadCost(); } catch (e) {} }
   // 마스터·원가 권한자가 인쇄하면 구매용 사본도 만들어 둔다(직원 인쇄용)
