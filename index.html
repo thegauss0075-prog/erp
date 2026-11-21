@@ -19570,7 +19570,7 @@ function vpSealDlg(){
     <input type="file" accept="image/*" onchange="vpSealSet('${k}',this.files[0])"> ${v ? `<button class="pl-btn" style="padding:3px 10px" onclick="vpSealSet('${k}',null)">지우기</button>` : ''}</div>`;
   vpModal(`<h3 style="margin:0 0 6px">주문서 도장·서명</h3><div class="pl-sub" style="margin-bottom:10px">법인장 <b>승인이 난 구매 건</b>의 주문서 아래 "XÁC NHẬN CỦA ĐƠN VỊ MUA HÀNG" 칸에 도장과 서명이 찍히고, 결재란 승인 칸에 서명이 들어갑니다. 흰 바탕에 찍은 도장·서명을 스캔하거나 사진으로 올리세요 (자동으로 줄여 저장).</div>
     <div style="display:flex;gap:16px;flex-wrap:wrap">${box('vn_seal', '회사 도장·서명', VP.seal)}${box('vn_sig', '서명 (승인란)', VP.sign)}</div>
-    <div style="margin-top:10px"><button class="pl-act" style="padding:7px 14px" onclick="vpSealFromInvoice()">출고 인보이스의 도장·서명 그대로 쓰기</button> <span class="pl-sub">출고 → 인보이스 "서류에 넣을 도장·서명"에 등록된 이미지를 가져옵니다.</span></div>
+    <div style="margin-top:10px"><button class="pl-act" style="padding:7px 14px" onclick="vpSealFromInvoice()">회사 도장을 출고 인보이스 것으로 다시 가져오기</button> <span class="pl-sub">승인란 서명은 바뀌지 않습니다.</span></div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="pl-btn" onclick="vpClose()">닫기</button></div>`, 640);
 }
 async function vpSealSet(id, file){
@@ -19605,7 +19605,7 @@ async function vpSealFromInvoice(){
   if (!a && !b) { alert('인보이스 도장·서명을 불러오지 못했습니다. 마스터(원가 권한)로 로그인한 뒤 다시 눌러 주세요.'); return; }
   const now = new Date().toISOString();
   if (a) { const d = await vpUrlShrink(a, 380); if (await qmPut('hqcfg', {id: 'vn_seal', d, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'invoice seal'})) VP.seal = d; }
-  const sg = await vpSigFromSeal(a || VP.seal); if (sg && await qmPut('hqcfg', {id: 'vn_sig', d: sg, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'from seal'})) VP.sign = sg;
+  const sg = VP.sign ? '' : await vpSigFromSeal(a || VP.seal); if (sg && await qmPut('hqcfg', {id: 'vn_sig', d: sg, updatedAt: now, updatedBy: CURRENT_USER || '', src: 'from seal'})) VP.sign = sg;
   vpSealDlg(); renderVP({local: true});
 }
 const vpApproved = r => !!(r && r.approvedAt && ['승인', '발주', '입고중', '완료'].includes(r.status));
