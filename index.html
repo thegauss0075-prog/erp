@@ -14807,7 +14807,7 @@ function hqsCheckLines(r, err){
   if (!String(r.customer||'').trim()) { err.textContent = '거래처를 넣어주세요.'; return false; }
   if (!r.lines.length || r.lines.some(l => !l.code || !(+l.qty > 0))) { err.textContent = '품목과 수량을 확인해주세요.'; return false; }
   if (!hqItemOK(r.lines)) { err.textContent = '목록에 없는 품목 코드가 있습니다. 목록에서 골라주세요.'; return false; }
-  r.lines.forEach(l => { delete l.supAuto; l.qty = +l.qty || 0; l.price = l.price === '' || l.price == null ? '' : +l.price; });
+  r.lines.forEach(l => { delete l.supAuto; delete l.supSrc; l.qty = +l.qty || 0; l.price = l.price === '' || l.price == null ? '' : +l.price; });
   return true;
 }
 function hqsStamp(r, isNew){ r.updatedAt = new Date().toISOString(); r.updatedBy = CURRENT_USER||''; if (isNew) { r.createdAt = r.updatedAt; r.createdBy = r.updatedBy; } }
@@ -19428,7 +19428,7 @@ function vpEdRender(){
       <td><input ${ro} value="${vpE(l.qty)}" inputmode="decimal" onchange="VP.ed.lines[${i}].qty=this.value;vpEdRender()" style="width:70px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right"></td>
       <td><input ${ro} value="${vpE(l.unit)}" onchange="VP.ed.lines[${i}].unit=this.value" style="width:56px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"></td>
       ${S.map(s => qcell(l, i, s)).join('')}
-      <td style="vertical-align:top"><input ${ro} list="vp-sups" value="${vpE(l.sup)}" placeholder="업체" onchange="VP.ed.lines[${i}].sup=vpSupCanon(this.value);VP.ed.lines[${i}].supAuto=false" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"><br><input ${ro} value="${vpE(l.price)}" placeholder="단가" inputmode="decimal" onchange="VP.ed.lines[${i}].price=this.value;VP.ed.lines[${i}].supAuto=false;vpEdRender()" style="width:100px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right;margin-top:2px;${l.supAuto ? 'background:#F0FDF4' : ''}">${l.supAuto ? '<div style="font-size:10.5px;color:#0f766e">최근 구매 자동</div>' : ''}</td>
+      <td style="vertical-align:top"><input ${ro} list="vp-sups" value="${vpE(l.sup)}" placeholder="업체" onchange="VP.ed.lines[${i}].sup=vpSupCanon(this.value);VP.ed.lines[${i}].supAuto=false" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"><br><input ${ro} value="${vpE(l.price)}" placeholder="단가" inputmode="decimal" onchange="VP.ed.lines[${i}].price=this.value;VP.ed.lines[${i}].supAuto=false;vpEdRender()" style="width:100px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px;text-align:right;margin-top:2px;${l.supAuto ? 'background:#F0FDF4' : ''}">${l.supAuto ? `<div style="font-size:10.5px;color:#0f766e">최근 구매 자동</div>${l.supSrc ? `<div style="font-size:10px;color:#B45309;max-width:140px;white-space:normal" title="품명이 똑같지 않아 비슷한 품목의 최근 구매를 넣었습니다. 맞는지 확인하세요.">유사: ${vpE(l.supSrc)}</div>` : ''}` : ''}</td>
       <td class="num">${vpN(vpAmt(l)) || '–'}</td>
       <td><input ${ro} value="${vpE(l.why)}" placeholder="예: 최근 구매, 품질" onchange="VP.ed.lines[${i}].why=this.value" style="width:130px;padding:4px 6px;border:1px solid #D1D5DB;border-radius:5px"></td>
       <td>${!lock ? `<button class="pl-btn" style="padding:2px 8px;color:#B91C1C" onclick="VP.ed.lines.splice(${i},1);vpEdRender()">✕</button>` : ''}</td></tr>`).join('')}</tbody>
@@ -19459,17 +19459,22 @@ function vpPick(i, s){ const l = VP.ed.lines[i], q = (l.q || {})[s] || {}; if (q
 function vpAddSup(){ const v = (document.getElementById('vp-addsup') || {}).value || ''; const s = vpSupCanon(v.trim()); if (!s) return; if (!(VP.ed.qsups || []).includes(s)) VP.ed.qsups = (VP.ed.qsups || []).concat([s]); vpEdRender(); }
 function vpDelSup(k){ const s = VP.ed.qsups[k]; if (!confirm(`${s} 견적 열을 지울까요?`)) return; VP.ed.qsups.splice(k, 1); VP.ed.lines.forEach(l => { if (l.q) delete l.q[s]; if (l.sup === s && !l.supManual) { l.sup = ''; l.price = ''; } }); vpEdRender(); }
 // 최근 구매 찾기: 같은 ERP 품목(코드) → 없으면 같은 품명. 발주된 구매(발주·입고중·완료) 중 가장 최근 주문일
+// 품명 단어 (베트남어 성조·대소문자 무시, 한글 포함)
+const vpTok = t => [...new Set(String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().split(/[^0-9a-z가-힣]+/).filter(w => w.length > 1 || /[가-힣]/.test(w)))];
 function vpLastBuy(code, name, selfId){
-  const nm = vpNorm(name), hits = [];
+  const q = vpTok(name), nm = vpNorm(name), hits = [];
   (HQS.vpur || []).forEach(d => { if (d.id === selfId || !['발주', '입고중', '완료'].includes(d.status)) return;
-    (d.lines || []).forEach(l => { if (!l.sup || !(+l.price > 0)) return; const byCode = code && l.code === code, byName = nm && vpNorm(l.name) === nm; if (byCode || byName) hits.push({l, od: l.orderDate || d.orderDate || d.reqDate || '', no: d.no, w: byCode ? 1 : 0}); }); });
-  hits.sort((x, y) => (y.w - x.w) || String(y.od).localeCompare(String(x.od))); return hits[0] || null;
+    (d.lines || []).forEach(l => { if (!l.sup || !(+l.price > 0)) return;
+      let w = 0; if (code && l.code === code) w = 3; else if (nm && vpNorm(l.name) === nm) w = 2;
+      else if (q.length) { const t = vpTok(l.name), same = q.filter(x => t.includes(x)).length; if (same >= 2 && same / q.length >= 0.6) w = 1 + same / q.length / 10; }
+      if (w) hits.push({l, od: l.orderDate || d.orderDate || d.reqDate || '', no: d.no, w}); }); });
+  hits.sort((x, y) => (Math.floor(y.w) - Math.floor(x.w)) || (y.w - x.w) || String(y.od).localeCompare(String(x.od))); return hits[0] || null;
 }
 function vpAutoFill(l, force){
   if (!force && l.sup && !l.supAuto) return;   // 직접 고른 업체는 그대로
   const h = vpLastBuy(l.code, l.name, VP.ed && VP.ed.id); if (!h) return false;
   l.sup = vpSupCanon(h.l.sup); l.price = +h.l.price; l.supAuto = true; if (!l.unit) l.unit = h.l.unit || ''; if (!l.spec && h.l.spec) l.spec = h.l.spec; if (!l.cat || l.cat === 'VTTH') l.cat = h.l.cat || l.cat;
-  l.why = `최근 구매 ${String(h.od).slice(0, 10)} (${h.no})`; return true;
+  l.why = `최근 구매 ${String(h.od).slice(0, 10)} (${h.no})`; l.supSrc = h.w < 2 ? h.l.name : ''; return true;
 }
 function vpLink(i, v){ const code = String(v).split(' — ')[0].trim(), it = vpItems().find(x => x.code === code); const l = VP.ed.lines[i];
   if (!v) { l.code = ''; return; } if (!it) { alert('목록에서 ERP 소모품(VTTH)·원자재 VN 품목을 골라 주세요.'); vpEdRender(); return; }
