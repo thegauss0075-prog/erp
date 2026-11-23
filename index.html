@@ -19892,5 +19892,36 @@ async function vpImportReport(wb){
 }
 
 </script>
+<script>
+// ✅ [2026-11-23] MES(Supabase) 상태 감시 — MES API가 응답하지 않으면 ERP 위쪽에 경고를 띄운다.
+//    11/22~23 MES API 서버가 이틀 가까이 멈춰 있었는데(504) 아무도 몰랐던 일을 막기 위해.
+(function(){
+  let fails = 0, lastOk = 0;
+  async function mesPing(){
+    if (document.hidden || typeof QM_SB_URL === 'undefined') return;
+    const ctl = new AbortController(), tid = setTimeout(() => ctl.abort(), 15000);
+    let ok = false, code = '';
+    try { const r = await fetch(QM_SB_URL + '/rest/v1/stop_reasons?select=code&limit=1', {headers: {apikey: QM_SB_KEY}, signal: ctl.signal, cache: 'no-store'}); code = r.status; ok = r.status < 500; }
+    catch (e) { code = e.name === 'AbortError' ? '응답 없음' : '연결 실패'; }
+    clearTimeout(tid);
+    if (ok) { fails = 0; lastOk = Date.now(); mesBanner(false); } else { fails++; if (fails >= 2) mesBanner(true, code); }
+  }
+  function mesBanner(show, code){
+    let el = document.getElementById('mes-down-banner');
+    if (!show) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.id = 'mes-down-banner';
+      el.style.cssText = 'position:sticky;top:0;z-index:9999;background:#b91c1c;color:#fff;padding:9px 14px;font-size:13px;line-height:1.5;text-align:center';
+      document.body.prepend(el); }
+    const since = lastOk ? ' · 마지막 정상 ' + new Date(lastOk).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit'}) : '';
+    el.innerHTML = `⚠️ <b>MES 서버가 응답하지 않습니다</b> (${code}${since}) — MES 입력·조회가 저장되지 않을 수 있습니다. ` +
+      `관리자는 Supabase 대시보드 → gauss-mes → Project Settings → <b>Restart project</b> / ` +
+      `<b>Máy chủ MES không phản hồi</b> — báo quản trị viên khởi động lại.`;
+  }
+  setTimeout(mesPing, 20000);
+  setInterval(mesPing, 5 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) mesPing(); });
+  window.mesPing = mesPing;
+})();
+</script>
 </body>
 </html>
