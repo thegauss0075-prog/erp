@@ -2996,9 +2996,20 @@ function poShipAlloc() {
     const pos = PO.filter(r => r.itemCode === code)
       .sort((a,b) => String(a.poDate||a.createdAt||'').localeCompare(String(b.poDate||b.createdAt||'')) || (+a.poItemNumber||0)-(+b.poItemNumber||0));
     if (!pos.length) return;
-    let left = (typeof txLog !== 'undefined' ? txLog : []).filter(t => t.code === code && t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP').reduce((s,t)=>s+(+t.qty||0),0);
-    pos.forEach(r => { const q = +r.poQty || 0; const u = Math.min(q, Math.max(0,left)); deducted[r.id] = u; left -= u; });
-    excess[code] = Math.max(0, left);
+    // ✅ [2026-11-23] 출고는 "그 출고 시점에 이미 등록돼 있던 발주"에만 채우고, 남는 출고(초과)는 버린다.
+    //    → 새로 들어온 발주가 예전 초과 출고로 미리 깎이지 않는다 (CH330125 5T 261123: 2,280이 1,921로 보이던 문제)
+    //    가장 오래된 발주는 등록 전 출고도 받는다(처음 시스템에 올릴 때 이미 나간 출고).
+    const vnDay = x => { const t = new Date(x || 0).getTime(); return t ? new Date(t + 7 * 3600e3).toISOString().slice(0, 10) : ''; };
+    const poAt = r => { const d = vnDay(r.poDate), c = vnDay(r.createdAt); return d && c ? (d < c ? d : c) : (d || c); };
+    pos.forEach(r => { deducted[r.id] = 0; });
+    const ships = (typeof txLog !== 'undefined' ? txLog : []).filter(t => t.code === code && t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP')
+      .map(t => ({q: +t.qty || 0, d: (typeof plTxDay === 'function' ? plTxDay(t) : String(t.dt || '').slice(0, 10)) || ''})).sort((a, b) => a.d.localeCompare(b.d));
+    let over = 0;
+    ships.forEach(sh => { let left = sh.q;
+      pos.forEach((r, i) => { if (left <= 0) return; if (i > 0 && sh.d && poAt(r) > sh.d) return;
+        const room = (+r.poQty || 0) - deducted[r.id]; if (room <= 0) return; const u = Math.min(room, left); deducted[r.id] += u; left -= u; });
+      over += Math.max(0, left); });
+    excess[code] = over;
   });
   return {deducted, excess};
 }
