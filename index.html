@@ -6298,7 +6298,9 @@ async function applyBOMSuggestion() {
     if (!input) { warnings.push(`${b.materialName} (재고 없음, 목록에 없음)`); return; }
     const remain = +input.dataset.remain || 0;
     let applyQty = Math.min(needQty, remain);
-    if (isRollIssue(b.materialCode, b.materialCat) && needQty > 0) {   // 롤 단위: 필요량을 덮는 롤 전체
+    // ✅ [2026-11-23] 재고 단위가 Roll인 자재(테이프)는 '롤 단위' 설정과 상관없이 소수점 롤이 아니라 올림한 롤 수로 출고
+    const rollUnit = /^roll/i.test(String((allRows().find(r => r.code === b.materialCode && String(r.cat).toUpperCase() === String(b.materialCat).toUpperCase()) || {}).unit || b.materialUnit || '').trim());
+    if ((isRollIssue(b.materialCode, b.materialCat) || rollUnit) && needQty > 0) {   // 롤 단위: 필요량을 덮는 롤 전체
       const rp = rollPick(b.materialCode, b.materialCat, needQty);
       if (rp.sum > 0) { applyQty = Math.min(rp.sum, remain); rolls.push(`🧵 ${b.materialName}: 필요 ${needQty.toLocaleString(undefined, {maximumFractionDigits: 2})} → ${rp.sum.toLocaleString()} ${b.materialUnit || ''} 출고 (${rp.picks.map(p => p.lot).join(', ')})`); }
     }
