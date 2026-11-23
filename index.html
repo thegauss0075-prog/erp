@@ -6577,7 +6577,9 @@ function getSameModelBTPWorkOrders(wo) {
     // ✅ [2026-11-13] 재고 입고 전이라도 "생산중"인 반제품 지시서는 지시번호 연결(추적 기록만)용으로 보여준다
     const live = !['완료','취소'].includes(w.status || '대기');
     if (remain <= 0 && !live) return; // 이미 다 소진된 완료 LOT은 제외
-    results.push({ woId: w.id, orderNo: w.orderNo, code: w.code, name: w.name, unit: w.unit, lot: w.lot, producedQty: +w.producedQty||0, remain, status: w.status || '대기', linkOnly: remain <= 0 });
+    // ✅ [2026-11-23] 생산중인 반제품 지시서는 재고가 조금 있어도 "연결"(재고 차감 없이 지시번호·LOT 기록)로 보여준다.
+    //    (반납 등으로 LOT에 재고가 몇 개 생기면 출고 모드로 바뀌어, 필요 수량 960 > 재고 240으로 연결이 막히던 문제)
+    results.push({ woId: w.id, orderNo: w.orderNo, code: w.code, name: w.name, unit: w.unit, lot: w.lot, producedQty: +w.producedQty||0, remain, status: w.status || '대기', linkOnly: remain <= 0 || live });
   });
   return results;
 }
@@ -6959,7 +6961,9 @@ async function woReturnMat(id, presetQty, silent){
   if (!silent) {
     await loadWOMaterials(); try { await syncNow(); } catch(e) {}
     renderWOTraceLists(); try { renderWOMatBrowse(); } catch(e) {}
-    alert(`✅ 반납 완료 / Đã trả về kho — ${m.name} ${q.toLocaleString()} ${m.unit||''}${wo ? ` (${wo.orderNo})` : ''}`);
+    alert(res.linkOnly
+      ? `✅ 투입 기록에서 뺐습니다 — ${m.name} ${q.toLocaleString()} ${m.unit||''}${wo ? ` (${wo.orderNo})` : ''}\n재고에서 빠진 적이 없는 연결 기록이라 재고는 ${(+res.restored||0).toLocaleString()}만 되돌렸습니다.`
+      : `✅ 반납 완료 / Đã trả về kho — ${m.name} ${q.toLocaleString()} ${m.unit||''}${wo ? ` (${wo.orderNo})` : ''}`);
   }
   return true;
 }
