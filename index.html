@@ -5989,7 +5989,7 @@ function renderBOMList() {
     return `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #e0e7ff;font-size:12px">
       <span>${b.materialName} <span style="color:#aaa;font-family:monospace;font-size:10px">${b.materialCode}</span></span>
-      <span>1개당 <strong>${(+b.qtyPerUnit||0).toLocaleString()}</strong> ${displayUnit}
+      <span>1개당 <strong>${(+b.qtyPerUnit||0).toLocaleString(undefined, {maximumFractionDigits: 8})}</strong> ${displayUnit}${bomIsTape({unit: displayUnit, name: b.materialName}) ? ` <span style="color:#666">(≈ ${Math.round((+b.qtyPerUnit||0) * bomRollLen({name: b.materialName}) * 1000 * 10) / 10}mm)</span>` : ''}
         ${!['viewer','hq'].includes(USER_ROLE) ? `<button onclick="toggleRollIssue('${b.materialCode}','${b.materialCat}','${String(b.materialName||'').replace(/'/g,'')}')" title="롤(LOT) 단위로 통째 출고" style="margin-left:6px;padding:1px 7px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid ${isRollIssue(b.materialCode, b.materialCat) ? '#92400e;background:#fef3c7;color:#92400e;font-weight:700' : '#ccd;background:#fff;color:#888'}">${isRollIssue(b.materialCode, b.materialCat) ? '🧵 롤 단위' : '롤 단위?'}</button>` : ''}
         ${isAdmin ? `<button onclick="deleteBOMItemUI(${b.id})" style="border:none;background:none;color:#b91c1c;cursor:pointer;margin-left:6px">✕</button>` : ''}
       </span>
@@ -6011,6 +6011,9 @@ function renderBOMList() {
 // ✅ 자재를 하나씩 검색→선택→추가하지 않고, 검색으로 좁혀서 여러 자재의
 //    "1개당 소요량"을 한 번에 입력한 뒤 일괄 추가할 수 있게 한다.
 //    이미 소요량이 설정된 자재는 위 목록에 나오니 여기서는 제외한다.
+// ✅ [2026-11-23] 테이프(Roll 단위)는 소요량을 mm로 넣으면 롤로 바꿔 저장한다 (1롤 길이: 이름의 L33m 등, 없으면 33m)
+function bomIsTape(r){ return /roll/i.test(r.unit || '') && /tape|테이프|băng/i.test(r.name || ''); }
+function bomRollLen(r){ const m = String(r.name || '').match(/L\s*(\d+(?:\.\d+)?)\s*m\b/i); return m ? +m[1] : 33; }
 function renderBOMBrowse() {
   if (!woTraceTarget) return;
   const q = (document.getElementById('bom-browse-filter').value || '').toLowerCase().trim();
@@ -6033,7 +6036,10 @@ function renderBOMBrowse() {
   container.innerHTML = (woTraceTarget.cat === 'BTP' && !q ? '<div style="color:#5D6977;font-size:11px;padding:2px 2px 4px">COIL만 표시 중 — 다른 자재(동판·부자재 등)는 위 검색창에 입력하면 나옵니다</div>' : '') + list.map(r => `
     <div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #e0e7ff;font-size:12px">
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.name} (${r.code})">${r.name} <span style="color:#aaa;font-family:monospace;font-size:10px">${r.code}</span></span>
-      <input class="bomb-qty" data-code="${r.code}" data-cat="${r.cat}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" type="number" placeholder="1개당 소요량" style="width:90px;font-size:11px">
+      ${bomIsTape(r)
+        ? `<input class="bomb-qty" data-code="${r.code}" data-cat="${r.cat}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" data-tape="1" type="number" step="any" placeholder="1개당 mm" title="제품 1개에 쓰는 테이프 길이(mm). 저장할 때 롤 단위로 바꿉니다." style="width:72px;font-size:11px">
+           <span style="font-size:10px;color:#666;white-space:nowrap">mm · 1롤 <input class="bomb-roll" type="number" step="any" value="${bomRollLen(r)}" style="width:38px;font-size:10px">m</span>`
+        : `<input class="bomb-qty" data-code="${r.code}" data-cat="${r.cat}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" type="number" step="any" placeholder="1개당 소요량" style="width:90px;font-size:11px">`}
     </div>`).join('');
 }
 
@@ -6043,10 +6049,14 @@ async function submitBOMBrowse() {
   if (!woTraceTarget) return;
 
   const rows = Array.from(document.querySelectorAll('#bom-browse-list .bomb-qty'))
-    .map(inp => ({
-      code: inp.dataset.code, cat: inp.dataset.cat, name: inp.dataset.name, unit: inp.dataset.unit,
-      qtyPerUnit: parseFloat(inp.value)
-    }))
+    .map(inp => {
+      let q = parseFloat(inp.value);
+      if (inp.dataset.tape === '1' && q > 0) {   // mm → 롤
+        const rl = parseFloat((inp.parentElement.querySelector('.bomb-roll') || {}).value) || 33;
+        q = +(q / (rl * 1000)).toFixed(8);
+      }
+      return { code: inp.dataset.code, cat: inp.dataset.cat, name: inp.dataset.name, unit: inp.dataset.unit, qtyPerUnit: q };
+    })
     .filter(r => r.qtyPerUnit && r.qtyPerUnit > 0);
 
   if (!rows.length) { errEl.textContent = '소요량을 입력한 자재가 없습니다.'; errEl.style.display='block'; return; }
