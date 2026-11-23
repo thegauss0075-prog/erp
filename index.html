@@ -3858,7 +3858,10 @@ async function renderPlan(opts){
   if (!opts.local) { if (!PL.loaded) el.innerHTML = '<div class="empty">⏳ 불러오는 중…</div>';
     await Promise.all([loadWO().catch(() => {}), loadVNCPO(true).catch(() => {}), PL.mode === 'daily' ? loadQC().catch(() => {}) : null, plLoad().catch(e => { PL.err = String(e.message || e); })]); }
   if (tok !== PL.tok) return;   // 더 늦게 시작한 그리기가 있으면 이 결과는 버린다
-  if (PL.mode === 'daily') { const h = await drHtml(); if (tok !== PL.tok) return; el.innerHTML = '<div class="pl">' + plCss() + plTabs() + h + '</div>'; return; }
+  if (PL.mode === 'daily') {
+    // ✅ [2026-11-23] 생산일보는 MES 조회를 기다리는 동안 화면이 그대로라 "클릭이 안 된다"처럼 보였다 → 탭과 '불러오는 중'을 먼저 그린다
+    if (!el.querySelector('.dr-wait')) el.innerHTML = '<div class="pl">' + plCss() + plTabs() + '<div class="empty dr-wait">⏳ 생산일보 불러오는 중… / Đang tải báo cáo sản xuất…</div></div>';
+    const h = await drHtml(); if (tok !== PL.tok) return; el.innerHTML = '<div class="pl">' + plCss() + plTabs() + h + '</div>'; return; }
   if (!PL.wk) PL.wk = plMonday(new Date());
   const today = plYmd(new Date()), days = []; for (let i = 0; i < 14; i++) { const d = new Date(PL.wk); d.setDate(d.getDate() + i); days.push(plYmd(d)); }
   const plans = (HQS.pplan || []).filter(p => +p.qty > 0), planOf = (c, d) => +((plans.find(p => p.code === c && p.date === d) || {}).qty || 0);
@@ -3977,6 +3980,13 @@ function plTabs(){
 // ════════════════════════════════════════════════════════════════════
 const DR = {mesDay: '', mes: null, mesErr: ''}, PAT_SLOTS_DR = ['초', '중', '종'];
 async function drMes(day){
+  // MES 응답이 늦어도 생산일보는 12초 안에 그린다 (MES 부분만 안내 문구로 대체)
+  let done = false;
+  const work = drMesLoad(day).then(() => { done = true; });
+  await Promise.race([work, new Promise(r => setTimeout(r, 12000))]);
+  if (!done) { DR.mes = null; DR.x = null; DR.mesDay = ''; DR.mesErr = 'MES 응답이 늦어 PCDU 공정 실적·비가동·점검·부적합을 이번에는 불러오지 못했습니다. 새로고침을 눌러 다시 시도하세요.'; }
+}
+async function drMesLoad(day){
   if (DR.mesDay === day && DR.mes) return; DR.mes = null; DR.mesErr = ''; DR.x = null;
   try { const sb = await qmSbLive(); if (!sb) { DR.mesErr = '이 브라우저에서 MES에 로그인하면 PCDU 공정 실적·비가동·점검·부적합도 함께 나옵니다.'; return; }
     const d0 = new Date(day + 'T00:00:00+07:00').toISOString(), d1 = new Date(day + 'T23:59:59+07:00').toISOString();
