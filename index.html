@@ -3026,7 +3026,8 @@ function poExcessAfterBase(code) {
   const shipped = txLog.filter(t => t.code === code && t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && String(t.dt || '') > since).reduce((s,t)=>s+(+t.qty||0),0);
   return Math.max(0, shipped - capacity);
 }
-function poExcess(code) { return PO_SHIP_BASED_CODES.includes(code) ? (poShipAlloc().excess[code] || 0) : poExcessAfterBase(code); }
+// ✅ [2026-11-23] 초과분은 계산·표시하지 않는다 (요청). 잔량은 0에서 멈춘다.
+function poExcess(code) { return 0; }
 
 // ✅ 품목코드별로 발주들을 묶어서 "총 발주수량"과 "총 잔량"을 보여준다.
 //    (발주관리 요약 화면과 대시보드 "부족 자재" 카드가 이 그룹핑을 함께 사용한다)
@@ -3092,8 +3093,7 @@ function exportPOExcel() {
     '품목코드': g.itemCode,
     '품명': g.itemName,
     '총 발주수량': g.totalQty,
-    '총 잔량': g.totalRemain,
-    '초과수량': g.excess || 0
+    '총 잔량': g.totalRemain
   }));
 
   const wb = XLSX.utils.book_new();
