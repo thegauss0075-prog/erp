@@ -5983,6 +5983,14 @@ function rollPick(code, cat, need){
   const {inType, outType} = woMatLotTypes(cat);
   const {activeLots} = computeActiveLots(code, inType, outType, cat);
   const picks = []; let sum = 0;
+  // ✅ [2026-11-23] 재고 단위가 이미 '롤'(Roll)인 자재(테이프 등)는 LOT 하나에 롤이 여러 개 들어 있다.
+  //    LOT을 통째로 내보내지 않고, 필요량을 올림한 롤 수만큼만 출고한다 (필요 6.97롤 → 7롤, 전에는 LOT 전체 20롤)
+  const it = (typeof allRows === 'function' ? allRows() : []).find(r => r.code === code && String(r.cat).toUpperCase() === String(cat).toUpperCase());
+  if (it && /^roll/i.test(String(it.unit || '').trim())) {
+    let want = Math.ceil(need - 1e-9);
+    for (const l of activeLots) { if (want <= 0) break; if (!(l.remain > 0)) continue; const q = Math.min(l.remain, want); picks.push({lot: l.lot, qty: q}); sum += q; want -= q; }
+    return {picks, sum, short: Math.max(0, need - sum)};
+  }
   for (const l of activeLots) { if (sum >= need - 1e-9) break; if (!(l.remain > 0)) continue; picks.push({lot: l.lot, qty: l.remain}); sum += l.remain; }
   return {picks, sum, short: Math.max(0, need - sum)};
 }
@@ -6292,7 +6300,7 @@ async function applyBOMSuggestion() {
     let applyQty = Math.min(needQty, remain);
     if (isRollIssue(b.materialCode, b.materialCat) && needQty > 0) {   // 롤 단위: 필요량을 덮는 롤 전체
       const rp = rollPick(b.materialCode, b.materialCat, needQty);
-      if (rp.sum > 0) { applyQty = Math.min(rp.sum, remain); rolls.push(`🧵 ${b.materialName}: 필요 ${needQty.toLocaleString()} → 롤 ${rp.picks.length}개 ${rp.sum.toLocaleString()} 출고 (${rp.picks.map(p => p.lot).join(', ')})`); }
+      if (rp.sum > 0) { applyQty = Math.min(rp.sum, remain); rolls.push(`🧵 ${b.materialName}: 필요 ${needQty.toLocaleString(undefined, {maximumFractionDigits: 2})} → ${rp.sum.toLocaleString()} ${b.materialUnit || ''} 출고 (${rp.picks.map(p => p.lot).join(', ')})`); }
     }
     input.value = applyQty > 0 ? applyQty : '';
     if (needQty > remain) warnings.push(`${b.materialName} (필요 ${needQty.toLocaleString()} · 재고 ${remain.toLocaleString()}만 채움)`);
