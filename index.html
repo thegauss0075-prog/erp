@@ -1534,10 +1534,14 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <h3 id="spo-ov-title">➕ 자재 발주 등록</h3>
     <div class="ov-fr"><label>자재 * / NVL (코드나 품명으로 검색)</label><input id="spo-mat" list="spo-mat-list" placeholder="예: NPL14/L-03 또는 CORE"><datalist id="spo-mat-list"></datalist></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div class="ov-fr"><label>발주 수량 * / Số lượng</label><input id="spo-qty" type="number" min="0" step="any"></div>
+      <div class="ov-fr"><label>발주 수량 * / Số lượng</label><input id="spo-qty" type="number" min="0" step="any" oninput="spoSchedSum()"></div>
       <div class="ov-fr"><label>발주번호 / Số PO</label><input id="spo-poNo" placeholder="선택"></div>
       <div class="ov-fr"><label>발주일 * / Ngày đặt</label><input id="spo-orderDate" type="date"></div>
       <div class="ov-fr"><label>입고 예정일 / Ngày dự kiến nhập</label><input id="spo-dueDate" type="date"></div>
+    </div>
+    <div class="ov-fr"><label>분할 입고 일정 / Lịch nhập từng đợt <span style="font-weight:400;color:#8A95A3;font-size:11.5px">— 선택. 나눠 들어오면 줄마다 수량·날짜 (합계 = 발주 수량)</span></label>
+      <div id="spo-sched"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:4px"><button type="button" onclick="spoSchedAdd()" style="padding:4px 12px;border-radius:7px;border:1px dashed #185FA5;background:#fff;color:#185FA5;font-size:12.5px;cursor:pointer">+ 일정 추가 / Thêm đợt</button><span id="spo-sched-sum" style="font-size:12px"></span></div>
     </div>
     <div class="ov-fr"><label>공급사 / Nhà cung cấp</label><input id="spo-supplier" list="spo-sup-list" placeholder="예: THE GAUSS (본사)"><datalist id="spo-sup-list"></datalist></div>
     <div class="ov-fr"><label>비고 / Ghi chú</label><input id="spo-note" placeholder="선택 (인보이스 번호, 선적 정보 등)"></div>
@@ -3315,7 +3319,9 @@ function renderPOShortageCard() {
   const matRow = m => `
         <div onclick="go('inv');document.getElementById('inv-q').value='${m.materialCode}';renderInv()" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0 3px 12px">
           <span style="font-size:12px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="badge ${CB[m.materialCat]}" style="margin-right:6px">${CL[m.materialCat]}</span>${m.materialName} <span style="color:#aaa;font-size:10px;font-family:monospace">${m.materialCode}</span></span>
-          <span style="font-size:12px;font-weight:700;color:#92400e;flex-shrink:0">부족 / Thiếu ${fmt(m.shortQty)}${m.materialUnit || ''}${(() => { const o = (typeof spoOpenQty === 'function') ? spoOpenQty(m.materialCode) : 0; return o > 0 ? ` <span style="font-weight:600;color:${o >= m.shortQty ? '#166534' : '#185FA5'}">· 입고예정 ${fmt(o)}${o >= m.shortQty ? ' ✔' : ''}</span>` : ''; })()}</span>
+          <span style="font-size:12px;font-weight:700;color:#92400e;flex-shrink:0;text-align:right">부족 / Thiếu ${fmt(m.shortQty)}${m.materialUnit || ''}${(() => { const sc = (typeof spoOpenSched === 'function') ? spoOpenSched(m.materialCode) : [], o = sc.reduce((a, x) => a + x.qty, 0); if (!(o > 0)) return '';
+            const md = d => d ? d.slice(5).replace('-', '/') : '날짜 미정', dates = sc.some(x => x.date) ? ' ' + sc.map(x => `${fmt(x.qty)} (${md(x.date)})`).join(' · ') : ' ' + fmt(o);
+            return ` <span style="font-weight:600;color:${o >= m.shortQty ? '#166534' : '#185FA5'}">· 입고예정${dates}${o >= m.shortQty ? ' ✔' : ''}</span>`; })()}</span>
         </div>`;
   // ✅ 반제품(BTP) 부족분 — 완제품 BOM에 등록된 소요량(qtyPerUnit) 비율 그대로 계산된
   //    반제품 부족 수량이다(완제품 1개당 반제품 1개라고 가정하지 않음 — 예: 3.2KW OUT-L은
@@ -16388,6 +16394,40 @@ function spoAlloc(){
   });
   return filled;
 }
+// ✅ [2026-11-25] 분할 입고 일정 — 받은 수량을 날짜 순으로 앞 일정부터 채우고, 남은 일정(날짜·수량)을 돌려준다
+let SPO_SCHED = [];
+function spoSchedList(p){ return (Array.isArray(p.sched) && p.sched.length > 1) ? p.sched.slice().sort((a, b) => String(a.date||'').localeCompare(String(b.date||''))) : [{date: p.dueDate || '', qty: +p.qty || 0}]; }
+function spoSchedFill(p, got){ let g = +got || 0; return spoSchedList(p).map(x => { const q = +x.qty || 0, t = Math.min(g, q); g -= t; return {date: x.date || '', qty: q, got: t, left: q - t}; }); }
+function spoSchedRender(){
+  const box = document.getElementById('spo-sched'); if (!box) return;
+  box.innerHTML = SPO_SCHED.map((x, i) => `<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px"><span style="font-size:12px;color:#8A95A3;width:34px">${i + 1}차</span><input type="number" min="0" step="any" value="${x.qty}" placeholder="수량" oninput="SPO_SCHED[${i}].qty=this.value;spoSchedSum()" style="flex:1;min-width:0"><input type="date" value="${x.date}" onchange="SPO_SCHED[${i}].date=this.value" style="flex:1;min-width:0"><button type="button" onclick="SPO_SCHED.splice(${i},1);spoSchedRender()" style="border:none;background:none;color:#b91c1c;font-size:16px;cursor:pointer" title="삭제">×</button></div>`).join('');
+  spoSchedSum();
+}
+function spoSchedSum(){
+  const el = document.getElementById('spo-sched-sum'); if (!el) return;
+  if (SPO_SCHED.length < 2) { el.textContent = SPO_SCHED.length ? '2개 이상일 때 분할 일정으로 저장됩니다' : ''; el.style.color = '#8A95A3'; return; }
+  const tot = SPO_SCHED.reduce((a, x) => a + (+x.qty || 0), 0), q = +document.getElementById('spo-qty').value || 0, ok = Math.abs(tot - q) < 1e-6;
+  el.textContent = `합계 ${tot.toLocaleString()} / 발주 ${q.toLocaleString()}${ok ? ' ✔' : ' — 맞춰주세요'}`; el.style.color = ok ? '#166534' : '#b91c1c';
+}
+function spoSchedAdd(){
+  if (!SPO_SCHED.length) SPO_SCHED.push({qty: document.getElementById('spo-qty').value || '', date: document.getElementById('spo-dueDate').value || ''});
+  SPO_SCHED.push({qty: '', date: ''}); spoSchedRender();
+}
+// 발주 목록의 '입고 예정일' 칸: 분할이면 차수별로 (받은 일정 ✔, 날짜 지난 미입고는 빨강)
+function spoSchedView(r){
+  if (!(Array.isArray(r.sched) && r.sched.length > 1)) return r.dueDate || '-';
+  const today = bdToday(), n = v => (+v||0).toLocaleString(undefined,{maximumFractionDigits:3});
+  return spoSchedFill(r, r.got).map(x => { const done = r.closed || x.left <= 1e-9, late = !done && x.date && x.date < today;
+    return `<div style="white-space:nowrap;${done ? 'color:#8A95A3' : late ? 'color:#b91c1c;font-weight:700' : ''}">${x.date || '미정'} · ${n(x.qty)}${done ? ' ✔' : x.got > 0 ? ` <span style="font-size:11px">(남음 ${n(x.left)})</span>` : ''}</div>`; }).join('');
+}
+// 대시보드용: 이 자재의 남은 입고 예정을 날짜별로 묶는다 [{date, qty}]
+function spoOpenSched(code){
+  if (!SPO.length) return [];
+  const a = spoAlloc(), by = {};
+  SPO.filter(p => p.code === code && p.route !== 'wire' && !p.closed).forEach(p => { const r = spoRow(p, a); if (r.remain <= 0) return;
+    spoSchedFill(p, r.got).forEach(x => { if (x.left > 1e-9) by[x.date] = (by[x.date] || 0) + x.left; }); });
+  return Object.entries(by).map(([date, qty]) => ({date, qty})).sort((x, y) => (x.date || '9').localeCompare(y.date || '9'));
+}
 function spoRow(p, alloc){
   if (p.route === 'wire') {   // 외주 가공용 와이어: 베트남에 입고되지 않는다 → "외주업체 입고" 단계면 완료
     const q = +p.qty || 0, dn = !!p.closed || p.stage === '외주업체 입고';
@@ -16395,8 +16435,10 @@ function spoRow(p, alloc){
   }
   const q = +p.qty || 0, got = alloc[p.id] || 0, remain = Math.max(0, q - got);
   const today = bdToday();
-  const status = (p.closed || remain <= 0) ? 'done' : (p.dueDate && p.dueDate < today ? 'late' : (got > 0 ? 'part' : 'wait'));
-  return {...p, q, got, remain: (p.closed ? 0 : remain), status};
+  // 분할 일정이면 "날짜가 지났는데 아직 다 안 들어온 차수"가 있을 때만 지연
+  const open = (p.closed || remain <= 0) ? [] : spoSchedFill(p, got).filter(x => x.left > 1e-9);
+  const status = (p.closed || remain <= 0) ? 'done' : (open.some(x => x.date && x.date < today) ? 'late' : (got > 0 ? 'part' : 'wait'));
+  return {...p, q, got, remain: (p.closed ? 0 : remain), status, nextDate: open.length ? open[0].date : (p.dueDate || '')};
 }
 function spoOpenQty(code){
   if (!SPO.length) return 0;
@@ -16413,7 +16455,7 @@ function renderSupplyPO(){
   document.getElementById('spo-cnt').textContent = `미입고 ${cnt.wait+cnt.part+cnt.late}건${cnt.late?` · 지연 ${cnt.late}건`:''} · 완료 ${cnt.done}건`;
   if (onlyOpen) rows = rows.filter(r => r.status !== 'done');
   if (q) rows = rows.filter(r => [r.poNo, r.supplier, r.code, r.name].some(v => String(v||'').toLowerCase().includes(q)));
-  rows.sort((x,y) => ({late:0,part:1,wait:2,done:3})[x.status] - ({late:0,part:1,wait:2,done:3})[y.status] || String(x.dueDate||'9').localeCompare(String(y.dueDate||'9')));
+  rows.sort((x,y) => ({late:0,part:1,wait:2,done:3})[x.status] - ({late:0,part:1,wait:2,done:3})[y.status] || String(x.nextDate||x.dueDate||'9').localeCompare(String(y.dueDate||'9')));
   const lbl = {wait:['대기','#5D6977'], part:['일부 입고','#185FA5'], late:['입고 지연','#b91c1c'], done:['완료','#166534']};
   const n = v => (+v||0).toLocaleString(undefined,{maximumFractionDigits:3});
   body.innerHTML = rows.length ? rows.map(r => `<tr>
@@ -16422,7 +16464,7 @@ function renderSupplyPO(){
       <td style="text-align:right">${n(r.q)} <span style="color:#8A95A3;font-size:11px">${r.unit||''}</span></td>
       <td style="text-align:right;color:#166534">${n(r.got)}</td>
       <td style="text-align:right;font-weight:700;color:${r.remain>0?'#b45309':'#166534'}">${n(r.remain)}</td>
-      <td>${r.dueDate||'-'}</td>
+      <td>${spoSchedView(r)}</td>
       <td><span style="color:${lbl[r.status][1]};font-weight:600">${lbl[r.status][0]}</span>${r.closed&&r.got<r.q?' <span style="color:#8A95A3;font-size:11px">(종결)</span>':''}</td>
       <td style="white-space:normal;color:#5D6977;font-size:12px">${r.note||''}</td>
       <td class="no-print">${!['viewer','hq'].includes(USER_ROLE)?`<button class="edit-btn" title="수정" onclick="openSupplyPO('${r.id}')">✏️</button>`:''}${isMaster?`<button class="edit-btn" title="삭제" onclick="deleteSupplyPOUI('${r.id}')">🗑️</button>`:''}</td>
@@ -16448,6 +16490,8 @@ function openSupplyPO(id){
   document.getElementById('spo-qty').value = p ? p.qty : '';
   document.getElementById('spo-orderDate').value = p ? (p.orderDate||'') : bdToday();
   document.getElementById('spo-dueDate').value = p ? (p.dueDate||'') : '';
+  SPO_SCHED = (p && Array.isArray(p.sched) && p.sched.length > 1) ? p.sched.map(x => ({qty: x.qty, date: x.date || ''})) : [];
+  spoSchedRender();
   document.getElementById('spo-note').value = p ? (p.note||'') : '';
   document.getElementById('spo-closed').checked = !!(p && p.closed);
   document.getElementById('spo-closed-row').style.display = p ? '' : 'none';
@@ -16465,12 +16509,21 @@ async function submitSupplyPO(){
   if (!(qty > 0)) return show('발주 수량을 입력해주세요.');
   const orderDate = document.getElementById('spo-orderDate').value;
   if (!orderDate) return show('발주일을 입력해주세요.');
+  // ✅ [2026-11-25] 분할 입고 일정: 줄마다 수량·날짜, 합계 = 발주 수량. 입고 예정일은 마지막 날짜로 맞춘다.
+  const sched = SPO_SCHED.filter(x => +x.qty > 0 || x.date).map(x => ({qty: +x.qty || 0, date: x.date || ''}));
+  if (sched.length > 1) {
+    if (sched.some(x => !(x.qty > 0) || !x.date)) return show('분할 입고 일정은 줄마다 수량과 날짜를 모두 넣어주세요.');
+    const tot = sched.reduce((a, x) => a + x.qty, 0);
+    if (Math.abs(tot - qty) > 1e-6) return show(`분할 입고 일정 합계(${tot.toLocaleString()})가 발주 수량(${qty.toLocaleString()})과 같아야 합니다.`);
+    sched.sort((a, b) => a.date.localeCompare(b.date));
+    document.getElementById('spo-dueDate').value = sched[sched.length - 1].date;
+  } else if (sched.length === 1 && sched[0].date) document.getElementById('spo-dueDate').value = sched[0].date;
   const old = _spoEditId ? SPO.find(x => x.id === _spoEditId) : null;
   const rec = {
     ...(old || {}),   // [2026-11-06] 본사 업무에서 넣은 단가·선적 단계·B/L 등은 그대로 유지
     id: old ? old.id : ('S' + Date.now()), poNo: document.getElementById('spo-poNo').value.trim(),
     supplier: document.getElementById('spo-supplier').value.trim(), code: m.code, name: m.name, cat: m.cat, unit: m.unit,
-    qty, orderDate, dueDate: document.getElementById('spo-dueDate').value, note: document.getElementById('spo-note').value.trim(),
+    qty, orderDate, dueDate: document.getElementById('spo-dueDate').value, sched: sched.length > 1 ? sched : [], note: document.getElementById('spo-note').value.trim(),
     closed: old ? document.getElementById('spo-closed').checked : false,
     closedAt: old && document.getElementById('spo-closed').checked ? (old.closedAt || new Date().toISOString()) : '',
     createdBy: old ? old.createdBy : (CURRENT_USER||''), createdAt: old ? old.createdAt : new Date().toISOString()
@@ -16492,7 +16545,7 @@ async function deleteSupplyPOUI(id){
 function exportSupplyPOExcel(){
   const a = spoAlloc();
   const rows = SPO.filter(p => p.route !== 'wire').map(p => spoRow(p, a)).map(r => ({'발주일':r.orderDate,'발주번호':r.poNo,'공급사':r.supplier,'구분':r.cat,'자재코드':r.code,'품명':r.name,'단위':r.unit,
-    '발주수량':r.q,'입고수량':r.got,'미입고':r.remain,'입고예정일':r.dueDate,'상태':({wait:'대기',part:'일부 입고',late:'입고 지연',done:'완료'})[r.status],'비고':r.note}));
+    '발주수량':r.q,'입고수량':r.got,'미입고':r.remain,'입고예정일':(Array.isArray(r.sched)&&r.sched.length>1?r.sched.map(x=>`${x.date} ${x.qty}`).join(' / '):r.dueDate),'상태':({wait:'대기',part:'일부 입고',late:'입고 지연',done:'완료'})[r.status],'비고':r.note}));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length?rows:[{'발주일':'(없음)'}]), '자재발주');
   XLSX.writeFile(wb, `자재발주_${bdToday()}.xlsx`);
