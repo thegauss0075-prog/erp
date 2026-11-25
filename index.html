@@ -805,7 +805,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <div id="wrap-otp" style="display:none">
     <div class="io-form type-out-tp">
       <div class="fh out-tp">🚚 완제품 출고 등록 / Xuất kho Thành Phẩm</div>
-      <div style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:8px 12px;font-size:12.5px;margin:-4px 0 12px">솔루엠·본사로 나가는 <b>정식 출고</b>는 <a href="javascript:void 0" onclick="go('ship')" style="font-weight:700">🚚 출고 탭 → 출고 예정</a>에서 등록하세요. 이 화면은 NG 창고 이동·반제품 출고·급한 샘플용입니다 (이중 출고 주의).<br><span style="color:#B45309">Xuất chính thức cho Solum / HQ: dùng tab 🚚 Xuất hàng → Kế hoạch xuất. Màn hình này dùng cho chuyển NG, xuất BTP, mẫu gấp.</span></div>
+      <div style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:8px 12px;font-size:12.5px;margin:-4px 0 12px">솔루엠·본사로 출고되는 <b>정식 출고</b>는 <a href="javascript:void 0" onclick="go('ship')" style="font-weight:700">🚚 출고 탭 → 출고 예정</a>에서 등록하세요. 이 화면은 NG 창고 이동·반제품 출고·급한 샘플용입니다 (이중 출고 주의).<br><span style="color:#B45309">Xuất chính thức cho Solum / HQ: dùng tab 🚚 Xuất hàng → Kế hoạch xuất. Màn hình này dùng cho chuyển NG, xuất BTP, mẫu gấp.</span></div>
       <div class="fr ac-wrap" style="margin-bottom:12px">
         <label>품목 검색 (완제품·반제품) / Tìm kiếm TP</label>
         <input id="otp-q" placeholder="코드 또는 품명 입력..." autocomplete="off" oninput="acSearch('otp')" onkeydown="acKey(event,'otp')">
@@ -838,7 +838,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
           <input id="otp-ng-reason" placeholder="예: 외관 불량, 치수 불량 등">
         </div>
         <div class="fr" id="otp-sample-row" style="grid-column:1/-1">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;color:#7c3aed"><input type="checkbox" id="otp-sample" onchange="setSample(this.checked)" style="width:18px;height:18px"> 🧪 샘플 출고 / Xuất mẫu <span style="font-weight:400;font-size:11.5px;color:#888">— 재고는 빠지고, 매출·발주 잔량·출하 실적에는 잡히지 않습니다</span></label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;color:#7c3aed"><input type="checkbox" id="otp-sample" onchange="setSample(this.checked)" style="width:18px;height:18px"> 🧪 샘플 출고 / Xuất mẫu <span style="font-weight:400;font-size:11.5px;color:#888">— 재고는 차감되고, 매출·발주 잔량·출하 실적에는 집계되지 않습니다</span></label>
           <input id="otp-sample-purpose" list="otp-sample-purpose-list" placeholder="샘플 용도 * (예: 승인용, 신뢰성 시험, 고객 요청) / Mục đích" style="display:none;margin-top:6px">
           <datalist id="otp-sample-purpose-list"><option value="승인용 / Phê duyệt"><option value="신뢰성 시험 / Thử độ tin cậy"><option value="고객 요청 / Khách yêu cầu"><option value="개발·평가 / Phát triển"></datalist>
         </div>
@@ -1027,7 +1027,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     <button class="period-btn"    data-status="진행중"  onclick="setWOStatusFilter('진행중')">진행중</button>
     <button class="period-btn"    data-status="완료"    onclick="setWOStatusFilter('완료')">완료</button>
     <button class="period-btn"    data-status="보류"    onclick="setWOStatusFilter('보류')">보류</button>
-    <button class="period-btn wo-qcw-btn" data-status="__qcwait" onclick="setWOStatusFilter('__qcwait')" title="생산은 완료됐지만 출하검사를 아직 안 한 작업지시">🔬 출하검사 대기</button>
+    <button class="period-btn wo-qcw-btn" data-status="__qcwait" onclick="setWOStatusFilter('__qcwait')" title="생산은 완료되었지만 출하검사를 아직 하지 않은 작업지시">🔬 출하검사 대기</button>
   </div>
   <div style="display:flex;gap:6px;margin-bottom:12px">
     <button class="period-btn" id="wo-period-7"  onclick="setWOPeriod(7)">최근 1주일</button>
@@ -1195,7 +1195,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       </div>
     </div>
     <div class="ov-fr" id="qc-wo-search-wrap" style="display:none;background:#f0fdf4;border-radius:8px;padding:8px 10px;border-left:3px solid #166534">
-      <label>완료된 작업지시 검색 * — 고르면 품목·LOT·수량이 자동으로 채워집니다</label>
+      <label>완료된 작업지시 검색 * — 선택하면 품목·LOT·수량이 자동으로 입력됩니다</label>
       <div class="ac-wrap">
         <input id="qc-wo-search-q" placeholder="지시번호·코드·품명 입력..." autocomplete="off" oninput="acSearchQCWO()" onkeydown="acKeyQCWO(event)">
         <div id="qc-wo-search-drop" class="ac-drop"></div>
@@ -1551,7 +1551,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 <div class="ov-bg" id="lot-ov">
   <div class="ov-box" style="max-width:980px;width:96%;max-height:92vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px">
-      <h3 style="margin:0">🔗 LOT 추적 <span style="font-size:12px;font-weight:400;color:#5D6977">/ Truy xuất LOT — 제품 LOT은 구성 자재와 출고처를, 자재 LOT은 쓰인 제품과 출고처를 보여줍니다</span></h3>
+      <h3 style="margin:0">🔗 LOT 추적 <span style="font-size:12px;font-weight:400;color:#5D6977">/ Truy xuất LOT — 제품 LOT은 구성 자재와 출고처를, 자재 LOT은 쓰인 제품과 출고처를 표시합니다</span></h3>
       <button class="ov-cancel" onclick="closeOv('lot-ov')" style="padding:6px 14px;border-radius:8px;border:none;cursor:pointer;flex-shrink:0">닫기 / Đóng</button>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:14px">
@@ -1749,8 +1749,8 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
       <button onclick="clearAllPOItemsUI()" id="po-clear-btn" style="padding:8px 16px;border-radius:8px;border:1px solid #b91c1c;background:#fff;color:#b91c1c;font-size:13px;cursor:pointer;font-weight:700">🗑️ 전체 삭제</button>
     </div>
   </div>
-  <div style="font-size:12.5px;color:#5b21b6;background:#faf5ff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 12px;margin-bottom:8px">🔗 발주는 <b>본사 영업 → 주문서(고객 PO)</b>에서 <b>확정</b>하면 여기에 자동 등록됩니다. 본사에서 수량·납기를 고치면 같이 바뀌고, PO를 취소하면 종결됩니다. (엑셀 업로드는 쓰지 않습니다)</div>
-  <div style="font-size:12px;color:#888;margin-bottom:1rem;display:none">SOLUM 발주 현황 엑셀을 업로드하면 자동으로 분석합니다. 확인 후 등록할 항목을 골라 등록하면 됩니다 (자동 등록되지 않습니다). 완제품이 실제로 출고되면 오래된 발주부터 자동으로 잔량이 차감됩니다.</div>
+  <div style="font-size:12.5px;color:#5b21b6;background:#faf5ff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 12px;margin-bottom:8px">🔗 발주는 <b>본사 영업 → 주문서(고객 PO)</b>에서 <b>확정</b>하면 여기에 자동 등록됩니다. 본사에서 수량·납기를 수정하면 같이 바뀌고, PO를 취소하면 종결됩니다. (엑셀 업로드는 쓰지 않습니다)</div>
+  <div style="font-size:12px;color:#888;margin-bottom:1rem;display:none">SOLUM 발주 현황 엑셀을 업로드하면 자동으로 분석합니다. 확인 후 등록할 항목을 선택하여 등록하면 됩니다 (자동 등록되지 않습니다). 완제품이 실제로 출고되면 오래된 발주부터 자동으로 잔량이 차감됩니다.</div>
 
   <div id="po-review-wrap" style="display:none;background:#fdf4ff;border:1.5px solid #e9a3f0;border-radius:12px;padding:1rem;margin-bottom:1.5rem">
     <div style="font-weight:700;color:#a21caf;margin-bottom:8px">📥 읽어낸 발주 항목 (검토 후 등록하세요)</div>
@@ -1786,7 +1786,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
         <button onclick="exportSupplyPOExcel()" style="padding:8px 16px;border-radius:8px;border:1px solid #166534;background:#fff;color:#166534;font-size:13px;cursor:pointer;font-weight:700">📊 엑셀 다운로드</button>
       </div>
     </div>
-    <div style="font-size:12px;color:#5D6977;margin-bottom:.75rem">본사·현지 공급사에 낸 자재 발주입니다. 입고 수량은 따로 입력하지 않아도 됩니다 — 입출고 탭에서 자재 입고를 등록하면 같은 자재의 오래된 발주부터 자동으로 채워집니다.</div>
+    <div style="font-size:12px;color:#5D6977;margin-bottom:.75rem">본사·현지 공급사에 낸 자재 발주입니다. 입고 수량은 따로 입력하지 않아도 됩니다 — 입출고 탭에서 자재 입고를 등록하면 같은 자재의 오래된 발주부터 자동으로 입력됩니다.</div>
     <div class="toolbar">
       <div class="sw"><span class="si">🔍</span><input id="spo-q" placeholder="발주번호·공급사·자재 검색" oninput="renderSupplyPO()"></div>
       <label style="font-size:13px;color:#5D6977;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="spo-open-only" checked onchange="renderSupplyPO()"> 미입고만 보기</label>
@@ -1884,7 +1884,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
     </details>
     <details style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:10px">
       <summary style="font-weight:700;cursor:pointer;color:#92400e">⑤ 접착제 사용량 점검 <span id="cost-adh-month" style="font-weight:400;color:#b45309"></span></summary>
-      <div style="font-size:11px;color:#92400e;margin:8px 0 6px">관리자 점검용(본사 화면에는 안 보임) · 통 단위로 출고해서 한 달만 보면 들쭉날쭉하므로 <b>최근 3개월 누적</b>으로 비교 · 표준 = 생산수량 × 1개당 사용량(g, ②에서 수정) · 실제 = "자재 출고" 합계 · 원가의 재료비에는 표준 사용량이 이미 들어가 있음</div>
+      <div style="font-size:11px;color:#92400e;margin:8px 0 6px">관리자 점검용(본사 화면에는 안 보임) · 통 단위로 출고해서 한 달만 보면 들쭉날쭉하므로 <b>최근 3개월 누적</b>으로 비교 · 표준 = 생산수량 × 1개당 사용량(g, ②에서 수정) · 실제 = "자재 출고" 합계 · 원가의 재료비에는 표준 사용량이 이미 포함되어 있음</div>
       <div class="tw"><table style="width:100%"><thead><tr><th>접착제</th><th style="text-align:right">표준 사용량</th><th style="text-align:right">실제 출고</th><th style="text-align:right">차이</th><th style="text-align:right">차이 금액</th></tr></thead><tbody id="cost-adh-body"></tbody></table></div>
     </details>
   </div>
@@ -1895,7 +1895,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
   <!-- 📄 인보이스·패킹리스트 (관리자) -->
   <div id="inv-panel" class="ds-panel" style="display:none">
     <div class="ds-head"><h3>📄 인보이스·패킹리스트 만들기 <span>/ Lập Invoice · Packing list</span></h3></div>
-    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">출고가 정해지면 출고처를 고르고 <b>새 인보이스 작성</b>을 눌러 모델·수량을 넣습니다. 단가·HS코드·품명·포장값은 자동으로 채워집니다.<br><span style="color:#8A95A3">Khi đã chốt lô xuất, chọn nơi nhận và bấm "Lập Invoice mới", nhập model và số lượng — đơn giá, mã HS, mô tả, đóng gói được điền tự động.</span></div>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">출고가 정해지면 출고처를 선택하고 <b>새 인보이스 작성</b>을 눌러 모델·수량을 입력합니다. 단가·HS코드·품명·포장값은 자동으로 입력됩니다.<br><span style="color:#8A95A3">Khi đã chốt lô xuất, chọn nơi nhận và bấm "Lập Invoice mới", nhập model và số lượng — đơn giá, mã HS, mô tả, đóng gói được điền tự động.</span></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
       <select id="inv-kind" onchange="INV=null;renderInvPanel()"><option value="SOL">솔루엠비나 / Solum Vina (DDP)</option><option value="KR">본사 / Trụ sở THE GAUSS INC. (EXW gia công)</option></select>
       <button onclick="invStartManual()" style="padding:8px 16px;border-radius:8px;border:none;background:#185FA5;color:#fff;font-weight:700;cursor:pointer">➕ 새 인보이스 작성 / Lập Invoice mới</button>
@@ -1956,7 +1956,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
 <div class="ov-bg" id="rename-code-ov" style="z-index:2100">
   <div class="ov-box" style="max-height:85vh;overflow-y:auto">
     <h3>✏️ 품목코드 변경</h3>
-    <p style="font-size:12px;color:#888;margin-bottom:10px">오타 수정 등으로 품목코드 자체를 바꿉니다. 이 품목의 모든 입출고 이력도 새 코드로 함께 이동합니다.</p>
+    <p style="font-size:12px;color:#888;margin-bottom:10px">오타 수정 등으로 품목코드 자체를 변경합니다. 이 품목의 모든 입출고 이력도 새 코드로 함께 이동합니다.</p>
     <div class="ov-fr" style="margin-bottom:8px">
       <label>현재 코드</label>
       <input id="rc-old-code" readonly style="background:#f5f6f8;color:#888">
@@ -3471,7 +3471,7 @@ async function handlePOExcelUpload(event) {
       }
 
       if (!items.length) {
-        alert('⚠️ 발주 데이터를 찾지 못했습니다.\n\n가장 흔한 원인: SOLUM에서 받은 엑셀 파일 자체의 형식 때문에 브라우저에서 못 읽는 경우가 있습니다.\n해결 방법: 이 파일을 Excel이나 Google Sheets에서 열어서 "다른 이름으로 저장"(또는 다운로드) 한 다음, 그 새 파일을 다시 업로드해보세요.\n\n(그래도 안 되면, 3행부터 데이터가 있고 8번째 열이 품목코드인 SOLUM 발주 현황 형식이 맞는지 확인해주세요.)');
+        alert('⚠️ 발주 데이터를 찾지 못했습니다.\n\n가장 흔한 원인: SOLUM에서 받은 엑셀 파일 자체의 형식 때문에 브라우저에서 읽지 못하는 경우가 있습니다.\n해결 방법: 이 파일을 Excel이나 Google Sheets에서 열어서 "다른 이름으로 저장"(또는 다운로드) 한 다음, 그 새 파일을 다시 업로드해보세요.\n\n(그래도 안 되면, 3행부터 데이터가 있고 8번째 열이 품목코드인 SOLUM 발주 현황 형식이 맞는지 확인해주세요.)');
         return;
       }
 
@@ -3701,7 +3701,7 @@ function acPick(dir,i){
     fillForm('otp',item);
     const w=document.getElementById('otp-q').parentNode;let h=document.getElementById('otp-btp-hint');
     if(!h){h=document.createElement('div');h.id='otp-btp-hint';h.style.cssText='margin-top:6px;padding:6px 10px;border-radius:7px;background:#E8F0F8;color:#185FA5;font-size:12.5px';w.appendChild(h);}
-    h.innerHTML='ℹ️ 반제품은 이 화면에서 "반제품 출고"로 처리됩니다 (자재 출고에서 자동으로 옮겨옴).<br><b>완제품 생산에 넣는 거라면</b> 여기 말고 <b>작업지시 → 🔗 전공정 추적 → 자재 투입</b>으로 등록하세요 — 그래야 어느 작업지시·LOT에 들어갔는지 추적됩니다. / Nếu đưa vào sản xuất TP: Lệnh sản xuất → 🔗 → Xuất NVL';
+    h.innerHTML='ℹ️ 반제품은 이 화면에서 "반제품 출고"로 처리됩니다 (자재 출고에서 자동으로 옮겨옴).<br><b>완제품 생산에 투입하는 경우라면</b> 여기 말고 <b>작업지시 → 🔗 전공정 추적 → 자재 투입</b>으로 등록하세요 — 그래야 어느 작업지시·LOT에 투입되었는지 추적됩니다. / Nếu đưa vào sản xuất TP: Lệnh sản xuất → 🔗 → Xuất NVL';
     clearTimeout(window._btpHintT);window._btpHintT=setTimeout(()=>{const x=document.getElementById('otp-btp-hint');if(x)x.remove();},30000);
     return;
   }
@@ -4641,7 +4641,7 @@ async function submitWO() {
     if (!lotValue) { errEl.textContent = 'LOT 번호를 입력해주세요.'; errEl.style.display='block'; document.getElementById('wo-lot').focus(); return; }
     const dup = WO.find(w => String(w.lot || '').trim().toLowerCase() === lotValue.toLowerCase());
     // ✅ 제품 LOT은 라벨과 같이 "같은 날·같은 제조사면 같은 LOT"이라 중복을 막지 않고 확인만 받는다
-    if (dup && !confirm(`이미 다른 작업지시(${dup.orderNo || ''})에서 쓰는 LOT입니다: ${lotValue}\n같은 LOT으로 등록할까요?`)) { document.getElementById('wo-lot').focus(); return; }
+    if (dup && !confirm(`이미 다른 작업지시(${dup.orderNo || ''})에서 사용하는 LOT입니다: ${lotValue}\n같은 LOT으로 등록할까요?`)) { document.getElementById('wo-lot').focus(); return; }
   }
 
   const body = {
@@ -4666,7 +4666,7 @@ async function submitWO() {
 
   closeOv('wo-add-ov');
   await renderWO();
-  alert(`✅ 작업지시가 등록됐습니다. (LOT: ${body.lot})`);
+  alert(`✅ 작업지시가 등록되었습니다. (LOT: ${body.lot})`);
 }
 
 // ── 작업지시 수정 (관리자 전용) ──────────────────────────────
@@ -4725,7 +4725,7 @@ async function submitEditWO() {
     // 계획을 줄였으면, 새 계획보다 많이 투입된 자재를 반납할지 묻는다
     try { await Promise.all([loadWOMaterials(), (BOM && BOM.length) ? null : loadBOM()]); } catch(e) {}
     const ex = woExcessMats({...editedWO, planQty}, planQty);
-    if (ex.length && confirm(`✅ 작업지시가 수정됐습니다 (계획 ${oldPlan.toLocaleString()} → ${planQty.toLocaleString()}).\n\n새 계획(BOM 기준)보다 많이 투입된 자재가 있습니다:\n${ex.map(x => `• ${x.name}: 투입 ${x.issued.toLocaleString()} / 필요 ${x.need.toLocaleString()} → 반납 ${x.excess.toLocaleString()} ${x.unit||''}`).join('\n')}\n\n지금 창고로 반납할까요? (가장 나중에 투입된 LOT부터 반납)\nTrả NVL dư về kho?`)) {
+    if (ex.length && confirm(`✅ 작업지시가 수정되었습니다 (계획 ${oldPlan.toLocaleString()} → ${planQty.toLocaleString()}).\n\n새 계획(BOM 기준)보다 많이 투입된 자재가 있습니다:\n${ex.map(x => `• ${x.name}: 투입 ${x.issued.toLocaleString()} / 필요 ${x.need.toLocaleString()} → 반납 ${x.excess.toLocaleString()} ${x.unit||''}`).join('\n')}\n\n지금 창고로 반납할까요? (가장 나중에 투입된 LOT부터 반납)\nTrả NVL dư về kho?`)) {
       let okN = 0;
       for (const x of ex) {
         let left = x.excess;
@@ -4737,10 +4737,10 @@ async function submitEditWO() {
       }
       await loadWOMaterials(); try { await syncNow(); } catch(e) {}
       alert(`↩ 반납 완료 ${okN}건 / Đã trả về kho`);
-    } else alert('✅ 작업지시가 수정됐습니다.');
+    } else alert('✅ 작업지시가 수정되었습니다.');
     return;
   }
-  alert('✅ 작업지시가 수정됐습니다.');
+  alert('✅ 작업지시가 수정되었습니다.');
 }
 
 // ── 실적 입력 ──────────────────────────────
@@ -4788,7 +4788,7 @@ async function submitWOProd() {
   const newTotal = parseFloat(document.getElementById('wo-prod-qty').value);
   if (isNaN(newTotal) || newTotal < 0) { errEl.textContent = '수량을 입력해주세요.'; errEl.style.display='block'; return; }
   const ngQ = parseFloat(document.getElementById('wo-prod-ng').value) || 0, ngReason = document.getElementById('wo-prod-ng-reason').value.trim();
-  if (ngQ < 0) { errEl.textContent = '불량 수량이 잘못됐습니다.'; errEl.style.display='block'; return; }
+  if (ngQ < 0) { errEl.textContent = '불량 수량이 잘못되었습니다.'; errEl.style.display='block'; return; }
   if (ngQ > 0 && !ngReason) { errEl.textContent = '불량 사유를 입력해주세요.'; errEl.style.display='block'; return; }
 
   const planQty = +woProdTarget.planQty || 0;
@@ -4843,7 +4843,7 @@ async function submitWOProd() {
         const ng = {id: Date.now(), type: 'ng-in', code: w.code, name: w.name, cat, unit: w.unit, qty: ngQ,
           note: `[실적 ${w.orderNo}] LOT ${w.lot || '-'}`, reason: ngReason, dt: vnDt(), user: CURRENT_USER || '', model: getModel(w.code, w.name)};
         const r = await retrySafe(() => api('addNG', {...ng, token: ADMIN_TOKEN}));
-        if (!r || !r.ok) { errEl.textContent = (delta !== 0 ? '⚠️ 양품 실적은 반영됐지만 ' : '') + '불량 입고 실패: ' + (r && r.error || '서버 응답 없음') + ' — 불량(NG) 탭에서 직접 입고해주세요.'; errEl.style.display='block'; document.getElementById('wo-prod-qty').value = newTotal; woProdTarget.producedQty = newTotal; return; }
+        if (!r || !r.ok) { errEl.textContent = (delta !== 0 ? '⚠️ 양품 실적은 반영되었지만 ' : '') + '불량 입고 실패: ' + (r && r.error || '서버 응답 없음') + ' — 불량(NG) 탭에서 직접 입고해주세요.'; errEl.style.display='block'; document.getElementById('wo-prod-qty').value = newTotal; woProdTarget.producedQty = newTotal; return; }
         try { await syncNow(); } catch (e) {}
       }
     } finally {
@@ -5126,7 +5126,7 @@ async function acSearchQCWO() {
     (w.name||'').toLowerCase().includes(q)
   ).slice(0, 12);
   qcWoAcResults = res; qcWoAcIdx = -1;
-  if (!res.length) { drop.innerHTML = `<div style="padding:8px;color:#aaa;font-size:12px">검사 대상 작업지시가 없습니다 (완료됐지만 검사 안 한 지시서만 표시됩니다).</div>`; drop.style.display = 'block'; return; }
+  if (!res.length) { drop.innerHTML = `<div style="padding:8px;color:#aaa;font-size:12px">검사 대상 작업지시가 없습니다 (완료되었지만 검사하지 않은 지시서만 표시됩니다).</div>`; drop.style.display = 'block'; return; }
   drop.innerHTML = res.map((w,i) => `<div class="ac-item" data-i="${i}" onmousedown="acPickQCWO(${i})">
     <div>${hl(w.orderNo,q)} <span style="color:#888;font-size:11px">${w.lot||'LOT 없음'}</span></div>
     <div class="ac-sub">${hl(w.name,q)} (${hl(w.code,q)}) · 실적 ${(+w.producedQty||0).toLocaleString()} ${w.unit||''}</div>
@@ -5476,7 +5476,7 @@ async function submitQC() {
     const lotIn = w.lot ? (txLog||[]).filter(t => same(t) && t.type === 'tp-in' && lotNorm(t.lot) === lotNorm(w.lot)) : [];
     if (adj.length || lotIn.length) {
       const why = [lotIn.length ? `• 같은 LOT(${w.lot})으로 이미 입고 ${lotIn.reduce((a,t)=>a+(+t.qty||0),0).toLocaleString()}개가 있습니다` : '',
-                   adj.length ? `• 이 작업지시 생산 이후 재고 실사 조정이 있었습니다 (${fmtDt(adj[0].dt)}) — 실사 수량에 이미 포함됐을 수 있습니다` : ''].filter(Boolean).join('\n');
+                   adj.length ? `• 이 작업지시 생산 이후 재고 실사 조정이 있었습니다 (${fmtDt(adj[0].dt)}) — 실사 수량에 이미 포함되었을 수 있습니다` : ''].filter(Boolean).join('\n');
       qcSkipInbound = !confirm(`⚠️ 재고가 이중으로 잡힐 수 있습니다\n\n${why}\n\n[확인] 검사 기록 + 재고 ${totalQty.toLocaleString()}개 입고\n[취소] 검사 기록만 남기고 재고는 그대로 (권장)`);
       if (qcSkipInbound) body.note = ((body.note || '') + ' [재고 미반영 — 이미 재고에 포함]').trim();
     }
@@ -5545,7 +5545,7 @@ async function submitQC() {
       const label = inspType === '출하검사' ? '완제품입고' : '자재입고';
       let msg = `✅ 품질검사 등록 완료 + ${label} ${totalQty.toLocaleString()} ${qcSelectedItem.unit||''} 자동 반영되었습니다.`;
       if (wasRecovered) {
-        msg = `⏳ 처리 중 응답이 늦게 와서 "서버 처리 실패"로 보였지만, 확인 결과 실제로는 정상 저장됐습니다.\n\n` + msg;
+        msg = `⏳ 처리 중 응답이 늦게 와서 "서버 처리 실패"로 보였지만, 확인 결과 실제로는 정상 저장되었습니다.\n\n` + msg;
       }
       if (consumeResult) {
         if (!consumeResult.consumed.length && !consumeResult.shortages.length) {
@@ -5555,11 +5555,11 @@ async function submitQC() {
           msg += `\n\n📦 자동 차감된 자재:\n${lines}`;
         }
         if (consumeResult.shortages.length) {
-          msg += `\n\n⚠️ 재고 부족으로 다 못 채운 자재:\n${consumeResult.shortages.join('\n')}`;
+          msg += `\n\n⚠️ 재고 부족으로 모두 채우지 못한 자재:\n${consumeResult.shortages.join('\n')}`;
         }
       }
       alert(msg);
-    } else if (qcSkipInbound) alert('✅ 출하검사 기록만 저장했습니다 (재고는 바꾸지 않음).');
+    } else if (qcSkipInbound) alert('✅ 출하검사 기록만 저장했습니다 (재고는 변경하지 않음).');
   } finally {
     guard.release();
   }
@@ -5734,7 +5734,7 @@ async function autoInboundFromQC(qcBody, totalQty, unit) {
     //    자동입고 응답을 못 받고 재고가 그대로였던 건).
     const matched = await findRecentMatchingTx({ type: txEntry.type, code: txEntry.code, lot: txEntry.lot, qty: txEntry.qty });
     if (matched) { applyInboundTxLocally(txEntry); return true; }
-    alert(`⚠️ 품질검사는 저장됐지만, 자동 입고 반영에는 실패했습니다: ${res && res.error ? res.error : '알 수 없는 오류'}\n입출고 화면에서 수동으로 입고를 등록하시거나, 품질검사 목록에서 "🔄 재시도" 버튼을 눌러주세요.`);
+    alert(`⚠️ 품질검사는 저장되었지만, 자동 입고 반영에는 실패했습니다: ${res && res.error ? res.error : '알 수 없는 오류'}\n입출고 화면에서 수동으로 입고를 등록하시거나, 품질검사 목록에서 "🔄 재시도" 버튼을 눌러주세요.`);
     return false;
   }
   applyInboundTxLocally(txEntry);
@@ -6077,7 +6077,7 @@ function renderBOMBrowse() {
     <div style="display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #e0e7ff;font-size:12px">
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.name} (${r.code})">${r.name} <span style="color:#aaa;font-family:monospace;font-size:10px">${r.code}</span></span>
       ${bomIsTape(r)
-        ? `<input class="bomb-qty" data-code="${r.code}" data-cat="${r.cat}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" data-tape="1" type="number" step="any" placeholder="1개당 mm" title="제품 1개에 쓰는 테이프 길이(mm). 저장할 때 롤 단위로 바꿉니다." style="width:72px;font-size:11px">
+        ? `<input class="bomb-qty" data-code="${r.code}" data-cat="${r.cat}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" data-tape="1" type="number" step="any" placeholder="1개당 mm" title="제품 1개에 사용하는 테이프 길이(mm). 저장할 때 롤 단위로 변경합니다." style="width:72px;font-size:11px">
            <span style="font-size:10px;color:#666;white-space:nowrap">mm · 1롤 <input class="bomb-roll" type="number" step="any" value="${bomRollLen(r)}" style="width:38px;font-size:10px">m</span>`
         : `<input class="bomb-qty" data-code="${r.code}" data-cat="${r.cat}" data-name="${(r.name||'').replace(/"/g,'&quot;')}" data-unit="${r.unit||''}" type="number" step="any" placeholder="1개당 소요량" style="width:90px;font-size:11px">`}
     </div>`).join('');
@@ -6936,7 +6936,7 @@ function ngfLinesHtml(){
       <td style="padding:5px 6px">${esc(l.name)} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${esc(l.code)}</span></td>
       <td style="padding:5px 6px;text-align:right;font-weight:700">${l.need.toLocaleString()} ${esc(l.unit)}</td>
       <td style="padding:5px 6px;text-align:right;color:${short ? '#b91c1c' : '#5D6977'}">${st.toLocaleString()}${short ? ' ⚠️ 부족' : ''}</td></tr>`;
-  }).join('') : `<tr><td colspan="4" style="padding:10px;color:#8A95A3;text-align:center">${NGF.kind === 'tp' ? (NGF.cands.some(c => c.per > 0) ? '불량 수량을 입력하세요' : '이 제품의 BOM이 없어 자재를 계산할 수 없습니다 — 자재 불량으로 하나씩 등록하세요') : '자재와 수량을 고르세요'}</td></tr>`;
+  }).join('') : `<tr><td colspan="4" style="padding:10px;color:#8A95A3;text-align:center">${NGF.kind === 'tp' ? (NGF.cands.some(c => c.per > 0) ? '불량 수량을 입력하세요' : '이 제품의 BOM이 없어 자재를 계산할 수 없습니다 — 자재 불량으로 하나씩 등록하세요') : '자재와 수량을 선택하세요'}</td></tr>`;
   return rowsHtml;
 }
 function ngfLinesOnly(){ if (!NGF) return; NGF.lines = ngfLines(); const t = document.getElementById('ngf-tbody'); if (t) t.innerHTML = ngfLinesHtml(); }
@@ -6959,7 +6959,7 @@ function ngfRender(){
       <label style="font-size:12px;color:#475569">불량 수량 / SL lỗi<input id="ngf-qty" type="number" min="0" step="any" value="${esc(NGF.qty)}" oninput="NGF.qty=this.value;ngfLinesOnly()" style="width:100%;margin-top:3px;padding:6px"></label>
     </div>
     <label style="font-size:12px;color:#475569;display:block;margin-bottom:10px">불량 사유 / Lý do<input id="ngf-reason" value="${esc(NGF.reason)}" oninput="NGF.reason=this.value" placeholder="예: 코어 크랙, L값 불량, 단선" style="width:100%;margin-top:3px;padding:6px"></label>
-    <div style="font-weight:700;font-size:12.5px;margin-bottom:4px">다시 출고할 자재 ${NGF.kind==='tp'?'<span style="font-weight:400;color:#5D6977">(분해해서 다시 쓰는 부품은 체크 해제)</span>':''}</div>
+    <div style="font-weight:700;font-size:12.5px;margin-bottom:4px">다시 출고할 자재 ${NGF.kind==='tp'?'<span style="font-weight:400;color:#5D6977">(분해해서 다시 사용하는 부품은 체크 해제)</span>':''}</div>
     <table style="width:100%;border-collapse:collapse;font-size:12.5px;border:1px solid #DCE1E7;border-radius:8px"><thead><tr style="background:#F1F5F9"><th style="width:24px"></th><th style="text-align:left;padding:5px 6px">자재</th><th style="text-align:right;padding:5px 6px">출고 수량</th><th style="text-align:right;padding:5px 6px">재고</th></tr></thead><tbody id="ngf-tbody">${rowsHtml}</tbody></table>
     <div id="ngf-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px;display:none"></div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
@@ -6972,7 +6972,7 @@ async function ngfSubmit(){
   const wo = NGF.wo, q = +NGF.qty || 0, err = document.getElementById('ngf-err');
   const fail = t => { err.textContent = t; err.style.display = 'block'; };
   if (!(q > 0)) return fail('불량 수량을 입력해주세요.');
-  if (NGF.kind === 'mat' && !NGF.mat) return fail('불량 자재를 골라주세요.');
+  if (NGF.kind === 'mat' && !NGF.mat) return fail('불량 자재를 선택해 주세요.');
   if (!NGF.reason.trim()) return fail('불량 사유를 입력해주세요.');
   const lines = NGF.lines.filter(l => l.on && l.need > 0);
   if (!lines.length) return fail('다시 출고할 자재가 없습니다.');
@@ -6999,7 +6999,7 @@ async function ngfSubmit(){
     const body = {workOrderId: wo.id, orderNo: wo.orderNo, productCode: wo.code, rows: rows.map(r => ({...r, ngRefId, ngRefLabel}))};
     let r2 = await apiPost('addWOMaterialsBatch', body);
     if (!r2 || !r2.ok) { const already = await findMatchingWOBatchSince(rows); if (already) r2 = {ok: true, failures: []}; }
-    if (!r2 || !r2.ok) return fail('⚠️ 불량은 등록됐지만 자재 출고에 실패했습니다: ' + (r2 && r2.error || '서버 응답 없음') + ' — 아래 "재고 있는 자재에서 출고"로 다시 출고해주세요.');
+    if (!r2 || !r2.ok) return fail('⚠️ 불량은 등록되었지만 자재 출고에 실패했습니다: ' + (r2 && r2.error || '서버 응답 없음') + ' — 아래 "재고 있는 자재에서 출고"로 다시 출고해주세요.');
     ngfClose();
     try { await syncNow(); } catch(e) {}
     await loadWOMaterials(); renderWOTraceLists(); try { renderWOMatBrowse(); } catch(e) {}
@@ -7024,7 +7024,7 @@ async function woReturnMat(id, presetQty, silent){
     await loadWOMaterials(); try { await syncNow(); } catch(e) {}
     renderWOTraceLists(); try { renderWOMatBrowse(); } catch(e) {}
     alert(res.linkOnly
-      ? `✅ 투입 기록에서 뺐습니다 — ${m.name} ${q.toLocaleString()} ${m.unit||''}${wo ? ` (${wo.orderNo})` : ''}\n재고에서 빠진 적이 없는 연결 기록이라 재고는 ${(+res.restored||0).toLocaleString()}만 되돌렸습니다.`
+      ? `✅ 투입 기록에서 뺐습니다 — ${m.name} ${q.toLocaleString()} ${m.unit||''}${wo ? ` (${wo.orderNo})` : ''}\n재고에서 차감된 적이 없는 연결 기록이라 재고는 ${(+res.restored||0).toLocaleString()}만 되돌렸습니다.`
       : `✅ 반납 완료 / Đã trả về kho — ${m.name} ${q.toLocaleString()} ${m.unit||''}${wo ? ` (${wo.orderNo})` : ''}`);
   }
   return true;
@@ -7045,7 +7045,7 @@ function woExcessMats(wo, newPlan){
 async function deleteWOMaterialUI(id) {
   if (!isAdmin) { alert('관리자 로그인이 필요합니다.'); return; }
   const m = WO_MAT.find(x => String(x.id) === String(id));
-  if (!confirm(`잘못 등록한 투입 기록을 삭제할까요?\n${m ? `${m.name} ${(+m.qty||0).toLocaleString()} ${m.unit||''} (LOT ${m.lot && m.lot !== '__nolot__' ? m.lot : '미지정'})` : ''}\n\n삭제하면 이 수량이 같은 LOT으로 창고 재고에 되돌아갑니다.\n(실제로 남은 자재를 돌려받는 경우에는 '↩ 반납'을 쓰세요)`)) return;
+  if (!confirm(`잘못 등록한 투입 기록을 삭제할까요?\n${m ? `${m.name} ${(+m.qty||0).toLocaleString()} ${m.unit||''} (LOT ${m.lot && m.lot !== '__nolot__' ? m.lot : '미지정'})` : ''}\n\n삭제하면 이 수량이 같은 LOT으로 창고 재고에 되돌아갑니다.\n(실제로 남은 자재를 돌려받는 경우에는 '↩ 반납'을 사용하세요)`)) return;
   const res = await retrySafe(() => api('deleteWOMaterial', { id, token: ADMIN_TOKEN, user: CURRENT_USER || '' }));
   if (!res || !res.ok) { alert('삭제 실패: ' + (res && res.error ? res.error : '알 수 없는 오류')); return; }
   await loadWOMaterials(); try { await syncNow(); } catch(e) {}
@@ -7921,7 +7921,7 @@ async function doSubmit(dir){
     if (isNGMove) {
       let ngRes = await retrySafe(() => api('addNG', {...ngLogEntry, token: ADMIN_TOKEN}));
       if (!ngRes || !ngRes.ok) {
-        alert(`⚠️ 완제품 출고는 서버에 반영됐지만, 불량(NG) 재고 반영은 실패했습니다: ${ngRes && ngRes.error ? ngRes.error : '알 수 없는 오류'}\n\n불량(NG) 탭에서 해당 품목을 확인하고 필요 시 수동으로 보정해주세요.`);
+        alert(`⚠️ 완제품 출고는 서버에 반영되었지만, 불량(NG) 재고 반영은 실패했습니다: ${ngRes && ngRes.error ? ngRes.error : '알 수 없는 오류'}\n\n불량(NG) 탭에서 해당 품목을 확인하고 필요 시 수동으로 보정해주세요.`);
         // ✅ 완제품 출고분은 이미 서버에 확정됐으므로 그대로 로컬에 반영 (NG만 누락된 상태로 진행)
         ngLogEntry = null;
       }
@@ -8388,7 +8388,7 @@ function ngmPrint(){
   const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;'), n = v => (Math.round((+v||0)*1000)/1000).toLocaleString();
   const sum = {}; rows.forEach(r => { (sum[r.code] = sum[r.code] || {...r, qty:0, cnt:0}); sum[r.code].qty += r.qty; sum[r.code].cnt++; });
   const tpL = {TP:'완성품 NG', copper:'동선 NG', mat:'원자재 NG'}[NGM.tp] || '전체';
-  const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단됐습니다. 팝업을 허용해주세요.'); return; }
+  const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단되었습니다. 팝업을 허용해주세요.'); return; }
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${ngmTitle()} ${NGM.m}</title><style>
     @page{size:A4 landscape;margin:0} body{font-family:'Malgun Gothic','Noto Sans KR',sans-serif;font-size:10.5px;color:#111;margin:0;padding:10mm;width:297mm;box-sizing:border-box} thead{display:table-header-group} tr{page-break-inside:avoid} .sum{page-break-inside:avoid} td{white-space:nowrap} td.w{white-space:normal}
     h1{font-size:16px;margin:0} .sub{color:#555;margin:2px 0 8px} table{width:100%;border-collapse:collapse;margin-bottom:10px} th,td{border:1px solid #555;padding:3px 5px} th{background:#eee} td.r{text-align:right}
@@ -10139,7 +10139,7 @@ function exportCostPDF(){
   .noprint { margin: 8px 0; } @media print { .noprint { display: none; } }
 </style></head><body>
 <div class="noprint"><button onclick="window.print()" style="padding:8px 16px;font-size:13px;font-weight:700">🖨️ 인쇄 / PDF로 저장</button>
-  <span style="color:#666;margin-left:8px">인쇄 창에서 대상을 “PDF로 저장”으로 고르세요 (가로 방향)</span></div>
+  <span style="color:#666;margin-left:8px">인쇄 창에서 대상을 “PDF로 저장”으로 선택하세요 (가로 방향)</span></div>
 <h1>제조원가 보고서 — ${m}</h1>
 <div class="meta">THE GAUSS VINA · 재료비 기준: ${basisName} · 환율 1 USD = ${fx.usd?fx.usd.toLocaleString():'-'} VND, 1 KRW = ${fx.krw||'-'} VND · 출력 ${now} (베트남 시간) · 매출·이익률은 출고 기준</div>
 <h2>매출 · 제조원가</h2><div class="tiles">${clone('cost-tiles')}</div>
@@ -11189,7 +11189,7 @@ function applyCurTarget() {
   // 미리보기 갱신 트리거
   const deltaEl = document.getElementById('ie-cur-delta');
   if (deltaEl && deltaEl.oninput) deltaEl.oninput();
-  alert(`현재고 ${base.toLocaleString()} → ${target.toLocaleString()} 로 만들기 위한 조정량 ${delta>0?'+':''}${delta.toLocaleString()}이 자동 입력됐습니다.\n사유를 입력하고 저장해주세요.`);
+  alert(`현재고 ${base.toLocaleString()} → ${target.toLocaleString()} 로 만들기 위한 조정량 ${delta>0?'+':''}${delta.toLocaleString()}이 자동 입력되었습니다.\n사유를 입력하고 저장해주세요.`);
 }
 
 function openItemEdit(code, catHint) {
@@ -11450,7 +11450,7 @@ async function saveItemEdit() {
 
   closeOv('item-edit-ov');
   renderInv(); initDashboard(); renderHist();
-  alert(`✅ 품목 수정 완료${stockChanged ? '\n재고 조정 이력이 기록됐습니다.' : ''}`);
+  alert(`✅ 품목 수정 완료${stockChanged ? '\n재고 조정 이력이 기록되었습니다.' : ''}`);
 }
 
 // ── 품목코드 변경 (오타 수정용) ──────────────────────────────
@@ -11508,7 +11508,7 @@ async function confirmRenameCode() {
   if (API_URL || IS_GAS) await syncNow();
   closeOv('rename-code-ov');
   renderInv(); initDashboard(); renderHist();
-  alert(`✅ 코드가 "${newCode}"로 변경됐습니다.`);
+  alert(`✅ 코드가 "${newCode}"로 변경되었습니다.`);
 }
 
 // ── 품목 비활성화 모달
@@ -11578,7 +11578,7 @@ async function confirmItemDel() {
 
   closeOv('item-del-ov');
   renderInv(); initDashboard(); renderHist();
-  alert('✅ 품목이 비활성화됐습니다. 이력은 보존됩니다.');
+  alert('✅ 품목이 비활성화되었습니다. 이력은 보존됩니다.');
 }
 
 // ── 품목 완전삭제 모달 (관리자, 되돌릴 수 없음)
@@ -11658,7 +11658,7 @@ async function confirmItemPermDel() {
 
   closeOv('item-perm-del-ov');
   renderInv(); initDashboard(); renderHist();
-  alert('✅ 품목이 완전히 삭제됐습니다.');
+  alert('✅ 품목이 완전히 삭제되었습니다.');
 }
 
 // ════════════════════════════════════════════════════════════
@@ -11808,7 +11808,7 @@ function openTrace(code, catHint) {
       </div>
       ${anyMismatch ? `
       <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #ddd">
-        <div style="font-size:11px;color:#888;margin-bottom:6px">맞다고 판단되는 값을 넣고 수정하세요 (기본값은 "코드+카테고리 기준" 계산값입니다).</div>
+        <div style="font-size:11px;color:#888;margin-bottom:6px">맞다고 판단되는 값을 입력하고 수정하세요 (기본값은 "코드+카테고리 기준" 계산값입니다).</div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <input id="diag-fix-value" type="number" value="${codeAndCatTotal}" style="width:120px;font-size:12px;padding:5px 8px;border-radius:6px;border:1px solid #dde">
           <button onclick="applyStockDiagnosisFix('${code}','${item.cat}')" style="padding:5px 12px;border-radius:6px;border:1px solid #b45309;background:#b45309;color:#fff;font-size:12px;cursor:pointer;font-weight:600">이 값으로 현재고 수정</button>
@@ -12482,7 +12482,7 @@ function mcRender(){
       ${+MC.month.slice(5)}월 말일 기준 재고를 입출고 이력으로 계산했습니다 (현재고 − 그 뒤 입출고). 실사 재고와 맞는지 확인한 뒤 확정하세요.<br>
       재공(WIP)은 이력이 없어 지금 값으로 기록됩니다. 확정해도 현재고·월초재고는 바뀌지 않습니다.</p>
     ${snap.partial ? `<div style="background:#fef3c7;border-radius:6px;padding:8px 10px;font-size:12.5px;margin-bottom:8px">⚠️ 이 달은 아직 끝나지 않았습니다. 지금 시점의 재고로 확정됩니다.</div>` : ''}
-    ${MC.list === null ? '<div style="font-size:12px;color:#888;margin-bottom:8px">확정 기록 불러오는 중…</div>' : done.length ? `<div style="background:#ede9fe;border-radius:6px;padding:8px 10px;font-size:12.5px;margin-bottom:8px">이미 확정된 달입니다: ${done.map(x => `<b>${x.rev}차</b> ${(x.closedAt||'').slice(0,10)} ${x.user}`).join(' · ')}<br>다시 확정하면 지우지 않고 <b>${done.length + 1}차</b>로 추가됩니다.</div>` : ''}
+    ${MC.list === null ? '<div style="font-size:12px;color:#888;margin-bottom:8px">확정 기록 불러오는 중…</div>' : done.length ? `<div style="background:#ede9fe;border-radius:6px;padding:8px 10px;font-size:12.5px;margin-bottom:8px">이미 확정된 달입니다: ${done.map(x => `<b>${x.rev}차</b> ${(x.closedAt||'').slice(0,10)} ${x.user}`).join(' · ')}<br>다시 확정하면 삭제하지 않고 <b>${done.length + 1}차</b>로 추가됩니다.</div>` : ''}
     <div style="max-height:40vh;overflow:auto;border:1px solid #eee;border-radius:6px;margin-bottom:10px"><table style="width:100%;font-size:12px"><thead><tr><th>구분</th><th>코드</th><th>품명</th><th style="text-align:right">월말 재고</th><th style="text-align:right">재공</th></tr></thead><tbody>
       ${Object.entries(byCat).map(([c, arr]) => arr.filter(x => x.qty || x.wip).map(x => `<tr><td>${CL[c]||c}</td><td style="font-family:monospace;font-size:11px">${x.code}</td><td>${x.name}</td><td style="text-align:right;font-weight:700;${x.qty < 0 ? 'color:#b91c1c' : ''}">${fmt(x.qty)}</td><td style="text-align:right">${x.wip ? fmt(x.wip) : '-'}</td></tr>`).join('')).join('')}
       ${snap.ng.filter(x => x.qty).map(x => `<tr style="background:#fef2f2"><td>불량</td><td style="font-family:monospace;font-size:11px">${x.code}</td><td>${x.name}</td><td style="text-align:right;font-weight:700">${fmt(x.qty)}</td><td>-</td></tr>`).join('')}
@@ -12701,7 +12701,7 @@ async function saveNGItemEdit() {
 
   closeOv('ng-item-edit-ov');
   renderNG(); initNGModel(); initDashboard(); renderHist();
-  alert(`✅ 불량 품목 수정 완료${stockChanged ? '\n재고 조정 이력이 기록됐습니다.' : ''}`);
+  alert(`✅ 불량 품목 수정 완료${stockChanged ? '\n재고 조정 이력이 기록되었습니다.' : ''}`);
 }
 
 function openNGItemDel(code) {
@@ -12747,7 +12747,7 @@ async function confirmNGItemDel() {
 
   closeOv('ng-item-del-ov');
   renderNG(); initNGModel(); initDashboard(); renderHist();
-  alert('✅ 불량 품목이 비활성화됐습니다. 이력은 보존됩니다.');
+  alert('✅ 불량 품목이 비활성화되었습니다. 이력은 보존됩니다.');
 }
 
 // 불량 신규 품목 추가
@@ -13291,7 +13291,7 @@ else location.reload();
     </div>
     <p style="font-size:12px;color:#b91c1c;margin-bottom:10px">⚠️ 절대값이 아닌 <strong>조정량</strong>을 입력하세요. 예) 늘리려면 +50, 줄이려면 -50</p>
     <div style="background:#fffbeb;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#92400e">
-      💡 또는, <strong>"바꾸고 싶은 최종 현재고"</strong>를 직접 입력하면 조정량이 자동 계산됩니다 →
+      💡 또는, <strong>"변경할 최종 현재고"</strong>를 직접 입력하면 조정량이 자동 계산됩니다 →
       <input id="ie-cur-target" type="number" placeholder="예: 970" style="width:90px;margin-left:4px;padding:3px 6px;border-radius:5px;border:1px solid #f59e0b">
       <button type="button" onclick="applyCurTarget()" style="margin-left:4px;padding:3px 10px;border-radius:5px;border:1px solid #92400e;background:#fff;color:#92400e;font-size:11px;cursor:pointer">적용</button>
     </div>
@@ -13663,9 +13663,9 @@ function renderBonded(){
   if (lossy.length) notes.push(['warn', `실제 투입이 BOM 소요량과 5% 넘게 차이 나는 자재 ${lossy.length}개 — 세관은 이 차이(손실)의 근거를 요구합니다. 불량·공정 손실 기록이나 BOM을 확인하세요.`]);
   const noNorm = c.mats.filter(r => r.outQ && !r.prodNorm);
   if (noNorm.length) notes.push(['warn', `투입은 있는데 BOM에 없는 자재 ${noNorm.length}개: ${noNorm.slice(0,6).map(r=>r.name||r.code).join(', ')}${noNorm.length>6?' 외':''}`]);
-  if (c.noBOM.length) notes.push(['warn', `BOM이 없어 원자재 환산이 빠진 완제품: ${c.noBOM.join(', ')}`]);
+  if (c.noBOM.length) notes.push(['warn', `BOM이 없어 원자재 환산이 누락된 완제품: ${c.noBOM.join(', ')}`]);
   if (!notes.length) notes.push(['good', '마이너스 재고·BOM 누락·5% 초과 손실이 없습니다.']);
-  notes.push(['info', '완제품 출고는 수출, 반제품 출고는 완제품 공정 투입입니다. 재공품(공정 중 재고)은 이력에 없어서 빠져 있습니다. 연말 실사 때 원자재로 환산해 따로 반영하세요.']);
+  notes.push(['info', '완제품 출고는 수출, 반제품 출고는 완제품 공정 투입입니다. 재공품(공정 중 재고)은 이력에 없어서 누락되어 있습니다. 연말 실사 때 원자재로 환산해 따로 반영하세요.']);
   const noteColor = {bad:'#b91c1c', warn:'#92400e', good:'#166534', info:'#5D6977'};
   const th = (k, v, r) => `<th class="${r===1?'r':(r===2?'c':'')}">${k}<span class="vi">${v}</span></th>`;
   const tdN = (v, extra='') => `<td class="r" style="${extra}">${n(v)}</td>`;
@@ -13816,7 +13816,7 @@ function hqUserEdit(email){
       ${hqFld('회사 이메일 *', '', `<input id="hqu-email" type="email" ${isNew ? '' : 'disabled'} value="${hqE(r.email)}" placeholder="name@thegauss.com" style="${HQ_IN}">`)}
       ${hqFld('이름 *', '', `<input id="hqu-name" value="${hqE(r.name)}" style="${HQ_IN}">`)}
       ${hqFld('직책·부서', '', `<input id="hqu-title" value="${hqE(r.title)}" placeholder="예: 구매 과장" style="${HQ_IN}">`)}
-      ${hqFld('권한 묶음 (조직도 기준)', '', `<select onchange="if(this.value){const p=HQ_PERM_PRESETS[this.value];HQ_PERM_AREAS.forEach(([k])=>{const s=document.getElementById('hqu-p-'+k);if(s)s.value=p[k]||''});document.getElementById('hqu-ap').checked=!!p.approve;document.getElementById('hqu-ex').checked=!!p.exec}" style="${HQ_IN}"><option value="">— 고르면 아래 칸이 채워짐 —</option>${Object.keys(HQ_PERM_PRESETS).map(k => `<option>${k}</option>`).join('')}</select>`)}
+      ${hqFld('권한 묶음 (조직도 기준)', '', `<select onchange="if(this.value){const p=HQ_PERM_PRESETS[this.value];HQ_PERM_AREAS.forEach(([k])=>{const s=document.getElementById('hqu-p-'+k);if(s)s.value=p[k]||''});document.getElementById('hqu-ap').checked=!!p.approve;document.getElementById('hqu-ex').checked=!!p.exec}" style="${HQ_IN}"><option value="">— 선택하면 아래 칸이 채워짐 —</option>${Object.keys(HQ_PERM_PRESETS).map(k => `<option>${k}</option>`).join('')}</select>`)}
     </div>
     <div class="tw" style="margin-top:12px"><table><thead><tr>${HQ_PERM_AREAS.map(a => `<th>${a[1]}</th>`).join('')}<th>구매 승인</th><th>📊 경영 요약</th></tr></thead><tbody><tr>${
       HQ_PERM_AREAS.map(([k]) => `<td><select id="hqu-p-${k}" style="${HQ_IN}">${(k === 'vn' || k === 'cost' ? HQ_PERM_OPTS.slice(0, k === 'vn' ? 2 : 3) : HQ_PERM_OPTS).map(([v, l]) => `<option value="${v}" ${(r.perms||{})[k] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td>`).join('')}
@@ -13831,15 +13831,15 @@ function hqUserEdit(email){
 function hqShowTempPw(email, pw, title){
   hqModal('hq-upw', `<div style="text-align:center"><h3 style="margin:0 0 6px">${hqE(title)}</h3><div style="color:#5D6977;font-size:13px">${hqE(email)}</div>
     <div style="font:700 28px/1.4 monospace;letter-spacing:3px;margin:14px 0;user-select:all">${hqE(pw)}</div>
-    <div style="font-size:12.5px;color:#5D6977;line-height:1.6">이 창을 닫으면 다시 볼 수 없습니다. 본인에게 직접 전달하세요.<br>첫 로그인 때 새 비밀번호로 바꾸게 됩니다.</div>
+    <div style="font-size:12.5px;color:#5D6977;line-height:1.6">이 창을 닫으면 다시 볼 수 없습니다. 본인에게 직접 전달하세요.<br>첫 로그인 때 새 비밀번호로 변경하게 됩니다.</div>
     <button onclick="hqClose('hq-upw')" style="margin-top:14px;padding:8px 18px;border-radius:8px;border:none;background:#334155;color:#fff;font-weight:600;cursor:pointer">닫기</button></div>`, 420);
 }
 async function hqUserSave(isNew){
   const v = id => document.getElementById(id).value.trim(), err = document.getElementById('hqu-err'), btn = document.getElementById('hqu-go');
   const rec = {email: isNew ? v('hqu-email').toLowerCase() : HQU.ed.email, name: v('hqu-name'), title: v('hqu-title'), active: document.getElementById('hqu-active').checked, perms: {approve: document.getElementById('hqu-ap').checked, exec: document.getElementById('hqu-ex').checked}};
   HQ_PERM_AREAS.forEach(([k]) => rec.perms[k] = document.getElementById('hqu-p-' + k).value);
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rec.email)) { err.textContent = '회사 이메일을 정확히 넣어주세요.'; return; }
-  if (!rec.name) { err.textContent = '이름을 넣어주세요.'; return; }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rec.email)) { err.textContent = '회사 이메일을 정확히 입력해 주세요.'; return; }
+  if (!rec.name) { err.textContent = '이름을 입력해 주세요.'; return; }
   if (isNew && HQU.list.some(u => u.email === rec.email)) { err.textContent = '이미 있는 계정입니다.'; return; }
   btn.disabled = true; btn.textContent = '⏳ 저장 중…';
   const r = await api('hqUserSave', {rec});
@@ -13871,10 +13871,10 @@ function hqPwChange(forced){
 }
 async function hqPwSave(forced){
   const o = document.getElementById('hqpw-old').value, n = document.getElementById('hqpw-new').value, n2 = document.getElementById('hqpw-new2').value, err = document.getElementById('hqpw-err');
-  if (!o) { err.textContent = '현재 비밀번호를 넣어주세요.'; return; }
+  if (!o) { err.textContent = '현재 비밀번호를 입력해 주세요.'; return; }
   if (n.length < 8) { err.textContent = '새 비밀번호는 8자 이상이어야 합니다.'; return; }
   if (n !== n2) { err.textContent = '새 비밀번호 두 칸이 다릅니다.'; return; }
-  if (n === o) { err.textContent = '지금과 다른 비밀번호를 쓰세요.'; return; }
+  if (n === o) { err.textContent = '지금과 다른 비밀번호를 사용하세요.'; return; }
   const b = document.getElementById('hqpw-go'); b.disabled = true;
   const r = await api('hqUserChangePw', {oldPw: o, newPw: n}); b.disabled = false;
   if (!r || !r.ok) { err.textContent = (r && r.error) || '서버 응답 없음'; return; }
@@ -13993,7 +13993,7 @@ function hqExecView(){
       <div style="background:#fff;border:1px solid #FDE68A;border-radius:12px;padding:12px 14px"><div style="font-weight:700;color:#B45309;margin-bottom:6px">📅 7일 안 지급할 채무 (지난 것 포함)</div>${soonAP.length ? `<table style="width:100%;font-size:13px">${soonAP.map(x => `<tr><td style="border:none;padding:3px 0;white-space:nowrap;color:${x.due < today ? '#B91C1C' : '#475569'}">${hqE(x.due)}</td><td style="border:none;padding:3px 6px">${hqE(x.p.supplier || '')}</td><td style="border:none;padding:3px 0;text-align:right;font-weight:700;white-space:nowrap">${hqM(x.b, x.p.cur)}</td></tr>`).join('')}</table>` : '<div style="color:#15803D;font-size:13px">없음</div>'}</div></div>
     <div style="font-size:12px;color:#64748B;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:8px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <span>환율 (원화 환산): 1 USD = <input type="number" step="0.01" value="${fx ? Math.round(fx * 100) / 100 : ''}" onchange="hqFxSet('usdKrw','hq_usdkrw',this.value)" style="${HQ_IN};width:90px;padding:3px 6px;text-align:right"> 원</span>
-      ${missAll.size ? `<b style="color:#B91C1C">환율이 없어 원화 합계에서 빠진 통화: ${[...missAll].join(', ')}</b>` : ''}
+      ${missAll.size ? `<b style="color:#B91C1C">환율이 없어 원화 합계에서 제외된 통화: ${[...missAll].join(', ')}</b>` : ''}
       <span style="flex:1"></span><span>매출 = 판매 입력 · 구매 = 구매(매입) 입력 기준. 입력하지 않은 거래는 반영되지 않습니다.</span></div>`;
   return html;
 }
@@ -14213,7 +14213,7 @@ function hqCPORender(){
       (r.lines||[]).map((l, i) => `<tr>
         <td><input list="hq-items" value="${hqE(l.code ? l.code + (l.name ? ' — ' + l.name : '') : '')}" onchange="hqCPOLine(${i},'item',this.value)" style="${HQ_IN}"></td>
         <td><input type="number" value="${hqE(l.qty)}" oninput="hqCPOLine(${i},'qty',this.value)" style="${HQ_IN};width:90px"></td>
-        <td style="white-space:nowrap"><input type="number" step="0.0001" value="${hqE(l.price)}" oninput="hqCPOLine(${i},'price',this.value);this.style.background='';this.nextElementSibling&&(this.nextElementSibling.textContent='')" style="${HQ_IN};width:100px;${l.priceAuto ? 'background:#F0FDF4' : ''}">${l.priceAuto ? `<div style="font-size:10.5px;color:#0f766e" title="자동 입력 — 직접 고치면 그 값으로 저장">${hqE(l.priceSrc || '자동')}</div>` : (l.code && (l.price === '' || l.price == null) ? '<div style="font-size:10.5px;color:#b91c1c">단가 기록 없음</div>' : '<div></div>')}</td>
+        <td style="white-space:nowrap"><input type="number" step="0.0001" value="${hqE(l.price)}" oninput="hqCPOLine(${i},'price',this.value);this.style.background='';this.nextElementSibling&&(this.nextElementSibling.textContent='')" style="${HQ_IN};width:100px;${l.priceAuto ? 'background:#F0FDF4' : ''}">${l.priceAuto ? `<div style="font-size:10.5px;color:#0f766e" title="자동 입력 — 직접 수정하면 그 값으로 저장">${hqE(l.priceSrc || '자동')}</div>` : (l.code && (l.price === '' || l.price == null) ? '<div style="font-size:10.5px;color:#b91c1c">단가 기록 없음</div>' : '<div></div>')}</td>
         <td><input type="date" value="${hqE(l.due||'')}" oninput="hqCPOLine(${i},'due',this.value)" style="${HQ_IN}"></td>
         <td><input type="date" value="${hqE(l.replyDue||'')}" oninput="hqCPOLine(${i},'replyDue',this.value)" style="${HQ_IN}"></td>
         <td><input type="number" value="${hqE(l.shipped ?? '')}" placeholder="${isNew ? '' : hqN(al[i]||0)}" title="비워 두면 출고 기록에서 자동 계산" oninput="hqCPOLine(${i},'shipped',this.value)" style="${HQ_IN};width:80px"></td>
@@ -14260,9 +14260,9 @@ function hqCPOLine(i, k, v){
 async function hqCPOSave(){
   const r = HQ_EDIT, err = document.getElementById('hq-err'); if (!r || !hqCanWrite()) return;
   r.lines = (r.lines||[]).filter(l => l.code || l.qty);
-  if (!String(r.customer||'').trim() || !String(r.custPoNo||'').trim() || !r.recvDate) { err.textContent = '고객사·고객 PO No·접수일을 넣어주세요.'; return; }
+  if (!String(r.customer||'').trim() || !String(r.custPoNo||'').trim() || !r.recvDate) { err.textContent = '고객사·고객 PO No·접수일을 입력해 주세요.'; return; }
   if (!r.lines.length || r.lines.some(l => !l.code || !(+l.qty > 0))) { err.textContent = '품목과 수량을 확인해주세요.'; return; }
-  if (!hqItemOK(r.lines)) { err.textContent = '목록에 없는 품목 코드가 있습니다. 품목을 목록에서 골라주세요.'; return; }
+  if (!hqItemOK(r.lines)) { err.textContent = '목록에 없는 품목 코드가 있습니다. 품목을 목록에서 선택해 주세요.'; return; }
   const dup = HQ.cpo.find(x => x.id !== r.id && String(x.customer).trim() === String(r.customer).trim() && String(x.custPoNo).trim() === String(r.custPoNo).trim());
   if (dup && !confirm(`같은 고객사·PO No(${r.custPoNo})가 이미 있습니다 (${dup.cpoNo}). 그래도 저장할까요?`)) return;
   const old = HQ.cpo.find(x => String(x.id) === String(r.id));
@@ -14302,7 +14302,7 @@ async function hqCPOSave(){
     autoPR.history = [{at: autoPR.createdAt, by: '자동 (' + (CURRENT_USER||'') + ')', status: '요청'}];
     const pr = await retrySafe(() => api('saveHQPR', {rec: autoPR}));
     if (pr && pr.ok) { HQ.pr.push(autoPR); alert(`✅ ${r.cpoNo} 확정\n부족 자재 ${autoPR.lines.length}건으로 구매요청 ${autoPR.prNo}를 자동으로 만들었습니다.\n구매 → 구매요청·승인에서 수량·공급사를 확인하세요.`); }
-    else alert('PO는 저장됐지만 구매요청 자동 생성에 실패했습니다: ' + ((pr && pr.error) || '') + '\n구매 → 자재 소요 계산에서 직접 만들어 주세요.');
+    else alert('PO는 저장되었지만 구매요청 자동 생성에 실패했습니다: ' + ((pr && pr.error) || '') + '\n구매 → 자재 소요 계산에서 직접 만들어 주세요.');
   } else if (nowConfirmed) alert(`✅ ${r.cpoNo} 확정 — ${r.mrpNote}`);
   renderHQ();
 }
@@ -14459,7 +14459,7 @@ function hqMRPView(){
         <td style="text-align:right;font-weight:700;color:${x.short > 0 ? '#b91c1c' : '#166534'}">${x.short > 0 ? hqN(x.short) : '충분'}</td>
         <td style="white-space:nowrap"><input type="number" min="0" value="${hqE(HQ.mrpQty[x.k] ?? (x.short > 0 ? hqMRPDefQty(x) : ''))}" placeholder="${x.short > 0 ? '' : '0'}" oninput="HQ.mrpQty['${hqE(x.k)}']=this.value;HQ.mrpSel['${hqE(x.k)}']=+this.value>0;const c=document.getElementById('mrp-c-${i}');if(c)c.checked=+this.value>0;hqMRPBtn()" style="${HQ_IN};width:100px;color:#1f2937">${x.roll ? `<div style="font-size:11px;color:#7c3aed;margin-top:2px">🧵 롤 단위 출고</div>` : ''}</td>
         <td><input value="${hqE(HQ.mrpSup[x.k] ?? x.sup)}" oninput="HQ.mrpSup['${hqE(x.k)}']=this.value" placeholder="공급사" style="${HQ_IN};width:130px;color:#1f2937"></td></tr>`).join('')}</tbody></table></div>` : ''}
-    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">구매 수량은 부족 수량이 기본으로 들어가 있고, 최소 주문 수량(MOQ)·롤 무게에 맞춰 바꿀 수 있습니다. 충분한 자재도 수량을 넣으면 같이 요청됩니다. 부족 = 총 소요 − 법인 재고 − 생산 출고(미완료 작업지시에 나가 있는 자재, 출하검사 합격분 제외) − 입고 예정(미입고 발주) − 요청 중(승인 전·발주 전 구매요청). 반제품은 반제품 재고를 먼저 쓰고 모자란 만큼만 원자재로 펼칩니다.</div>`;
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">구매 수량은 부족 수량이 기본으로 입력되어 있고, 최소 주문 수량(MOQ)·롤 무게에 맞춰 변경할 수 있습니다. 충분한 자재도 수량을 입력하면 같이 요청됩니다. 부족 = 총 소요 − 법인 재고 − 생산 출고(미완료 작업지시에 나가 있는 자재, 출하검사 합격분 제외) − 입고 예정(미입고 발주) − 요청 중(승인 전·발주 전 구매요청). 반제품은 반제품 재고를 먼저 사용하고 모자란 만큼만 원자재로 펼칩니다.</div>`;
 }
 // 기본 구매 수량: 부족 수량. 롤 단위 자재는 1롤 수량의 배수로 올림
 function hqMRPDefQty(x){ return Math.ceil(x.short); }
@@ -14467,10 +14467,10 @@ function hqMRPBtn(){ const b = document.getElementById('mrp-go'); if (b) { const
 async function hqMRPToPR(){
   if (!hqCanWrite()) return;
   const m = hqMRP(), sel = m.mats.filter(x => HQ.mrpSel[x.k]);
-  if (!sel.length) { alert('구매할 자재를 체크하거나 구매 수량을 넣어주세요.'); return; }
+  if (!sel.length) { alert('구매할 자재를 체크하거나 구매 수량을 입력해 주세요.'); return; }
   const lines = sel.map(x => ({code: x.code, name: x.name, cat: x.cat, unit: x.unit, qty: +(HQ.mrpQty[x.k] ?? hqMRPDefQty(x)) || 0, supplier: (HQ.mrpSup[x.k] ?? x.sup) || '', note: x.from, model: hqMatModel(x.code, x.cat, x.from)})).filter(l => l.qty > 0);
   const dues = m.rows.flatMap(r => r.ls.filter(l => l.rem > 0).map(l => l.replyDue || l.due)).filter(Boolean).sort();
-  if (!lines.length) { alert('구매 수량이 0입니다. 수량을 넣어주세요.'); return; }
+  if (!lines.length) { alert('구매 수량이 0입니다. 수량을 입력해 주세요.'); return; }
   const pr = {id: String(Date.now()), date: hqToday(), status: '요청', lines, needBy: dues[0] ? hqAddDays(dues[0], -21) : '', basis: [...new Set(Object.values(m.refs).flatMap(s => [...s]))].join(', '), reason: '고객 PO 자재 소요 계산(MRP)', history: []};
   HQ.mrpSel = {}; HQ.mrpQty = {}; HQ.mrpSup = {};
   hqPREdit(null, pr);
@@ -14529,7 +14529,7 @@ function hqBPView(){
     .filter(r => !q || [r.code, r.note, r.it && r.it.name].join(' ').toLowerCase().includes(q)).sort((a, b) => a.code.localeCompare(b.code, 'ko', {numeric: true}));
   const unknown = rows.filter(r => !r.it).length, last = hqBPRec().updatedAt;
   const fmt = (v, c) => c === 'KRW' ? Math.round(v).toLocaleString() + ' 원' : (+v).toLocaleString(undefined, {maximumFractionDigits: 4}) + ' USD';
-  return `<div style="font-size:12.5px;color:#5D6977;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:8px 12px;margin-bottom:10px">본사가 구매하는 자재의 <b>기준 단가(USD·KRW)</b>입니다. 구매요청·공급사 발주·매입에서 최근 구매가가 없을 때 이 단가가 기본으로 들어갑니다. <b>VND 자재는 베트남 법인이 현지에서 사므로 넣지 않습니다.</b> 단가는 ERP 자재 단위(Ea·Kg·Roll) 1개당 금액입니다.</div>
+  return `<div style="font-size:12.5px;color:#5D6977;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:8px 12px;margin-bottom:10px">본사가 구매하는 자재의 <b>기준 단가(USD·KRW)</b>입니다. 구매요청·공급사 발주·매입에서 최근 구매가가 없을 때 이 단가가 기본으로 들어갑니다. <b>VND 자재는 베트남 법인이 현지에서 구매하므로 입력하지 않습니다.</b> 단가는 ERP 자재 단위(Ea·Kg·Roll) 1개당 금액입니다.</div>
     <div class="toolbar" style="gap:6px;flex-wrap:wrap">
       ${hqCan('buy','W') ? `<button onclick="document.getElementById('hq-bp-file').click()" style="padding:7px 14px;border-radius:8px;border:1px solid #b45309;background:#b45309;color:#fff;font-weight:600;cursor:pointer">📥 단가 엑셀 불러오기</button><input type="file" id="hq-bp-file" accept=".xlsx,.xls" style="display:none" onchange="hqBPImport(this)">
       <button onclick="hqBPEdit('')" style="padding:7px 14px;border-radius:8px;border:1px solid #b45309;background:#fff;color:#b45309;font-weight:600;cursor:pointer">➕ 단가 추가</button>` : ''}
@@ -14559,7 +14559,7 @@ async function hqBPImport(inp){
     const old = cur0[code]; if (!old) add++; else if (old.cur !== cur || +old.price !== price) chg.push(`${code}: ${old.price} ${old.cur} → ${price} ${cur}`); else return;
     items[code] = v; });
   if (!add && !chg.length) { alert(`바뀐 단가가 없습니다.${skipVND ? `\n(VND 자재 ${skipVND}개는 베트남 법인 현지 구매라 건너뜀)` : ''}`); return; }
-  if (!confirm(`본사 구매 기준단가 — 새로 ${add}개` + (chg.length ? `, 변경 ${chg.length}개:\n` + chg.slice(0, 10).join('\n') + (chg.length > 10 ? '\n…' : '') : '') + `\n\n· VND 자재 ${skipVND}개는 베트남 법인 현지 구매라 넣지 않습니다` + (bad ? `\n· 통화·단가가 비어 있거나 잘못된 줄 ${bad}개 건너뜀` : '') + (unknown.length ? `\n· ERP에 없는 자재코드 ${unknown.length}개 (그대로 저장, 목록에 표시): ${unknown.slice(0, 5).join(', ')}` : '') + '\n\n저장할까요?')) return;
+  if (!confirm(`본사 구매 기준단가 — 새로 ${add}개` + (chg.length ? `, 변경 ${chg.length}개:\n` + chg.slice(0, 10).join('\n') + (chg.length > 10 ? '\n…' : '') : '') + `\n\n· VND 자재 ${skipVND}개는 베트남 법인 현지 구매이므로 입력하지 않습니다` + (bad ? `\n· 통화·단가가 비어 있거나 잘못된 줄 ${bad}개 건너뜀` : '') + (unknown.length ? `\n· ERP에 없는 자재코드 ${unknown.length}개 (그대로 저장, 목록에 표시): ${unknown.slice(0, 5).join(', ')}` : '') + '\n\n저장할까요?')) return;
   await hqBPSave(items, `✅ 기준단가 저장 — 새로 ${add}개 · 변경 ${chg.length}개`);
 }
 function hqBPEdit(code){
@@ -14567,12 +14567,12 @@ function hqBPEdit(code){
   const v = (hqBPRec().items || {})[code] || {cur: 'USD'};
   const c = code || (prompt('자재코드') || '').trim(); if (!c) return;
   const pr = prompt(`${c} 단가 (ERP 자재 단위 1개당)`, v.price ?? ''); if (pr === null) return;
-  const cur = (prompt('통화 (USD 또는 KRW)', v.cur || 'USD') || '').trim().toUpperCase(); if (!['USD','KRW'].includes(cur)) { alert('USD 또는 KRW만 넣을 수 있습니다 (VND 자재는 베트남 법인 구매).'); return; }
+  const cur = (prompt('통화 (USD 또는 KRW)', v.cur || 'USD') || '').trim().toUpperCase(); if (!['USD','KRW'].includes(cur)) { alert('USD 또는 KRW만 입력할 수 있습니다 (VND 자재는 베트남 법인 구매).'); return; }
   const note = prompt('근거 (선택)', v.note || ''); if (note === null) return;
-  if (!(+pr > 0)) { alert('단가를 숫자로 넣어 주세요.'); return; }
+  if (!(+pr > 0)) { alert('단가를 숫자로 입력해 주세요.'); return; }
   hqBPSave({...(hqBPRec().items || {}), [c]: {...v, cur, price: +pr, note: note.trim(), src: v.src || '직접 입력', at: new Date().toISOString(), by: CURRENT_USER || ''}});
 }
-function hqBPDel(code){ if (!hqCanWrite() || !confirm(`${code} 기준단가를 지울까요?`)) return; const it = {...(hqBPRec().items || {})}; delete it[code]; hqBPSave(it); }
+function hqBPDel(code){ if (!hqCanWrite() || !confirm(`${code} 기준단가를 삭제할까요?`)) return; const it = {...(hqBPRec().items || {})}; delete it[code]; hqBPSave(it); }
 function hqPRAutoPrice(l){
   if (!l.code) return;
   if (!l.cur) { const sc = (hqsSup(l.supplier || '') || {}).cur; if (HQ_PR_CURS.includes(sc)) l.cur = sc; }
@@ -14613,7 +14613,7 @@ function hqPRTot(){
   const line = (l, v) => `<div style="display:flex;justify-content:flex-end;gap:14px;padding:2px 0"><span style="color:#5D6977">${l}</span><b style="min-width:150px;text-align:right">${v}</b></div>`;
   const t = document.getElementById('hqpr-tot-v');
   if (t) t.innerHTML = line('달러 합계', usd ? hqM(usd, 'USD') : '-') + line('원화 합계', krw ? hqM(krw, 'KRW') : '-') + other.map(c => line(c + ' 합계', hqM(sum[c], c))).join('')
-    + `<div style="display:flex;justify-content:flex-end;gap:14px;padding:6px 0 0;margin-top:4px;border-top:1px solid #E6EAEF"><span style="color:#5D6977">총 금액 (원화 환산${usd ? ` · 1 USD = ${fx ? fx.toLocaleString() + '원' : '환율 미입력'}` : ''})</span><b style="min-width:150px;text-align:right;font-size:17px;color:#b45309">${usd && !fx ? '환율을 넣어 주세요' : hqM(krw + usd * fx, 'KRW')}</b></div>`
+    + `<div style="display:flex;justify-content:flex-end;gap:14px;padding:6px 0 0;margin-top:4px;border-top:1px solid #E6EAEF"><span style="color:#5D6977">총 금액 (원화 환산${usd ? ` · 1 USD = ${fx ? fx.toLocaleString() + '원' : '환율 미입력'}` : ''})</span><b style="min-width:150px;text-align:right;font-size:17px;color:#b45309">${usd && !fx ? '환율을 입력해 주세요' : hqM(krw + usd * fx, 'KRW')}</b></div>`
     + (miss ? `<div style="color:#b45309;font-size:12px;margin-top:2px">· 단가 없는 자재 ${miss}건 제외</div>` : '');
 }
 function hqPRRender(){
@@ -14671,7 +14671,7 @@ async function hqPRSave(status, extra){
   if (deciding ? !hqCan('buy', 'A') : !hqCanWrite()) { if (deciding) alert('구매요청 승인 권한이 없습니다.'); return false; }
   r.lines = (r.lines||[]).filter(l => l.code || l.qty);
   if (!r.lines.length || r.lines.some(l => !l.code || !(+l.qty > 0))) { err.textContent = '자재와 수량을 확인해주세요.'; return false; }
-  if (!hqItemOK(r.lines)) { err.textContent = '목록에 없는 자재 코드가 있습니다. 자재를 목록에서 골라주세요.'; return false; }
+  if (!hqItemOK(r.lines)) { err.textContent = '목록에 없는 자재 코드가 있습니다. 자재를 목록에서 선택해 주세요.'; return false; }
   const old = HQ.pr.find(x => String(x.id) === String(r.id));
   if (!r.prNo) r.prNo = hqNextNo('PR', HQ.pr, 'prNo', r.date);
   r.lines.forEach(l => l.qty = +l.qty || 0);
@@ -14738,7 +14738,7 @@ function hqPRToPO(){
   const sups = [...new Set(r.lines.map(l => l.supplier || '(공급사 미정)'))];
   const due = r.needBy || hqAddDays(hqToday(), 30);
   hqModal('hq-po', `<h3 style="margin:0 0 10px;font-size:16px">🚢 공급사 발주로 전환 <span style="font-weight:400;color:#5D6977;font-size:12.5px">${hqE(r.prNo)}</span></h3>
-    <div style="font-size:12.5px;color:#5D6977;margin-bottom:8px">공급사별로 발주번호가 하나씩 만들어집니다. 단가는 비워 두고 나중에 넣어도 됩니다.<br>배송 경로는 자재마다 고릅니다: <b>➡️ 직송</b> = 공급사가 베트남으로 바로 보냄 · <b>🏢 본사 경유</b> = 본사로 입고한 뒤 본사에서 베트남으로 발송 · <b>🔁 외주 가공</b> = 와이어를 사서 외주업체로 보내고, 외주업체가 권선해 베트남으로 보냄 (와이어 발주서 + 외주 가공 발주서가 따로 만들어짐)</div>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:8px">공급사별로 발주번호가 하나씩 만들어집니다. 단가는 비워 두고 나중에 입력해도 됩니다.<br>배송 경로는 자재마다 선택합니다: <b>➡️ 직송</b> = 공급사가 베트남으로 바로 보냄 · <b>🏢 본사 경유</b> = 본사로 입고한 뒤 본사에서 베트남으로 발송 · <b>🔁 외주 가공</b> = 와이어를 구매하여 외주업체로 보내고, 외주업체가 권선해 베트남으로 보냄 (와이어 발주서 + 외주 가공 발주서가 따로 만들어짐)</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:10px">
       ${hqFld('발주일','Ngày đặt', `<input id="hqpo-date" type="date" value="${hqToday()}" style="${HQ_IN}">`)}
       ${hqFld('입고 예정일','Dự kiến nhập', `<input id="hqpo-due" type="date" value="${due}" style="${HQ_IN}">`)}
@@ -14758,16 +14758,16 @@ async function hqPRToPOGo(){
   const sups = [...new Set(r.lines.map(l => l.supplier || '(공급사 미정)'))];
   const nos = {}, routes = {}; document.querySelectorAll('#hq-po .hqpo-no').forEach(i => nos[sups[+i.dataset.s]] = i.value.trim());
   document.querySelectorAll('#hq-po .hqpo-route').forEach(i => routes[+i.dataset.i] = i.value);
-  if (Object.values(nos).some(v => !v)) { err.textContent = '발주번호를 넣어주세요.'; return; }
+  if (Object.values(nos).some(v => !v)) { err.textContent = '발주번호를 입력해 주세요.'; return; }
   const date = document.getElementById('hqpo-date').value, due = document.getElementById('hqpo-due').value, inc = document.getElementById('hqpo-inc').value.trim();
   const prices = {}, curs = {}; document.querySelectorAll('#hq-po .hqpo-price').forEach(i => prices[+i.dataset.i] = i.value); document.querySelectorAll('#hq-po .hqpo-lcur').forEach(i => curs[+i.dataset.i] = i.value);
   // 🔁 외주 가공 줄 확인
   const subs = {};
   for (let i = 0; i < r.lines.length; i++) { if (routes[i] !== 'sub') continue;
     const g = k => ((document.getElementById(`hqpo-s${k}-${i}`) || {}).value || '').trim(), o = {proc: g('proc'), wsup: g('wsup'), witem: g('witem'), wspec: g('wspec'), wqty: g('wqty'), wprice: g('wprice'), wcur: g('wcur') || 'USD'};
-    if (!o.proc) { err.textContent = `${r.lines[i].name}: 외주업체를 넣어주세요.`; return; }
-    if (!o.wsup) { err.textContent = `${r.lines[i].name}: 와이어 공급사를 넣어주세요.`; return; }
-    if (!(+o.wqty > 0)) { err.textContent = `${r.lines[i].name}: 와이어 발주 수량(kg)을 넣어주세요.`; return; }
+    if (!o.proc) { err.textContent = `${r.lines[i].name}: 외주업체를 입력해 주세요.`; return; }
+    if (!o.wsup) { err.textContent = `${r.lines[i].name}: 와이어 공급사를 입력해 주세요.`; return; }
+    if (!(+o.wqty > 0)) { err.textContent = `${r.lines[i].name}: 와이어 발주 수량(kg)을 입력해 주세요.`; return; }
     subs[i] = o; }
   // 외주 가공 발주번호: 일반 발주번호 다음부터 (와이어 공급사별 · 외주업체별로 하나씩)
   const used = new Set(sups.filter(sp => r.lines.some((l, i) => (l.supplier || '(공급사 미정)') === sp && !subs[i])).map(sp => nos[sp])), extra = {}; let pool = hqPONos(sups.length + Object.keys(subs).length * 2 + 2).filter(n => !used.has(n));
@@ -14853,7 +14853,7 @@ function hqsLinesHtml(obj, path, cur, opts){
       ${o.due ? `<td><input type="date" value="${hqE(l.due||'')}" oninput="hqsLine('${path}',${i},'due',this.value)" style="${HQ_IN}"></td>` : ''}
       <td style="text-align:right;white-space:nowrap" id="${path}-amt-${i}">${(+l.qty||0) && (+l.price||0) ? hqM((+l.qty)*(+l.price), cur) : '-'}</td>
       <td><button onclick="HQS.ed.lines.splice(${i},1);hqsReRender()" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></td></tr>`).join('')}</tbody></table></div>
-    <button onclick="HQS.ed.lines.push({code:'',name:'',qty:'',price:''});hqsReRender()" style="margin-top:6px;padding:5px 12px;border-radius:7px;border:1px dashed #5b21b6;background:#fff;color:#5b21b6;cursor:pointer">＋ 품목 추가</button><button onclick="hqsFillPrices()" title="단가가 빈 품목에 이 고객의 최근 단가 → 없으면 제조원가 탭의 판매가를 넣습니다" style="margin-top:6px;margin-left:6px;padding:5px 12px;border-radius:7px;border:1px dashed #0f766e;background:#fff;color:#0f766e;cursor:pointer">💲 빈 단가 채우기 (판매가)</button>`;
+    <button onclick="HQS.ed.lines.push({code:'',name:'',qty:'',price:''});hqsReRender()" style="margin-top:6px;padding:5px 12px;border-radius:7px;border:1px dashed #5b21b6;background:#fff;color:#5b21b6;cursor:pointer">＋ 품목 추가</button><button onclick="hqsFillPrices()" title="단가가 빈 품목에 이 고객의 최근 단가 → 없으면 제조원가 탭의 판매가를 적용합니다" style="margin-top:6px;margin-left:6px;padding:5px 12px;border-radius:7px;border:1px dashed #0f766e;background:#fff;color:#0f766e;cursor:pointer">💲 빈 단가 채우기 (판매가)</button>`;
 }
 function hqsLine(path, i, k, v){
   const l = HQS.ed.lines[i]; if (!l) return;
@@ -14883,7 +14883,7 @@ function hqsCostSale(code, cur){
 async function hqsFillPrices(){
   if (!HQS.ed) return; if (!Object.keys(COST.model || {}).length && (isMaster || hqCan('cost', 'R'))) { try { await loadCost(); } catch (e) {} }
   let n = 0, miss = []; (HQS.ed.lines || []).forEach(l => { if (!l.code || (l.price !== '' && l.price != null)) return; const p = hqsLastPrice(HQS.ed.customer, l.code, HQS.ed.cur); if (p !== '') { l.price = p; n++; } else miss.push(l.name || l.code); });
-  hqsReRender(); if (miss.length) alert(`단가 ${n}건을 채웠습니다.\n판매가가 없는 품목 ${miss.length}건: ${miss.join(', ')}\n(제조원가 탭 ② 모델 정보에 판매가를 넣거나 직접 입력하세요)`);
+  hqsReRender(); if (miss.length) alert(`단가 ${n}건을 채웠습니다.\n판매가가 없는 품목 ${miss.length}건: ${miss.join(', ')}\n(제조원가 탭 ② 모델 정보에 판매가를 입력하거나 직접 입력하세요)`);
 }
 function hqsCostKick(){ try { if (Object.keys(COST.model || {}).length || window._hqCostLoading || COST_SERVER_OK === 'auth' || COST_SERVER_OK === false) return; if (!(isMaster || (typeof hqCan === 'function' && hqCan('cost', 'R')))) return;
   window._hqCostLoading = true; loadCost().catch(() => {}).finally(() => { window._hqCostLoading = false; }); } catch (e) {} }
@@ -14911,9 +14911,9 @@ function hqsDatalists(){
 }
 function hqsCheckLines(r, err){
   r.lines = (r.lines||[]).filter(l => l.code || l.qty);
-  if (!String(r.customer||'').trim()) { err.textContent = '거래처를 넣어주세요.'; return false; }
+  if (!String(r.customer||'').trim()) { err.textContent = '거래처를 입력해 주세요.'; return false; }
   if (!r.lines.length || r.lines.some(l => !l.code || !(+l.qty > 0))) { err.textContent = '품목과 수량을 확인해주세요.'; return false; }
-  if (!hqItemOK(r.lines)) { err.textContent = '목록에 없는 품목 코드가 있습니다. 목록에서 골라주세요.'; return false; }
+  if (!hqItemOK(r.lines)) { err.textContent = '목록에 없는 품목 코드가 있습니다. 목록에서 선택해 주세요.'; return false; }
   r.lines.forEach(l => { delete l.supAuto; delete l.supSrc; l.qty = +l.qty || 0; l.price = l.price === '' || l.price == null ? '' : +l.price; });
   return true;
 }
@@ -14921,7 +14921,7 @@ function hqsStamp(r, isNew){ r.updatedAt = new Date().toISOString(); r.updatedBy
 // 공용 인쇄 (견적서·거래명세서)
 function hqsPrintDoc(title, en, no, r, metaRows, note){
   const e = hqE, sup = hqsLineTot(r.lines), vat = sup * (+r.vatRate||0) / 100;
-  const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단됐습니다. 팝업을 허용해주세요.'); return; }
+  const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단되었습니다. 팝업을 허용해주세요.'); return; }
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e(title)} ${e(no)}</title><style>
     @page{size:A4;margin:0} body{font-family:'Malgun Gothic','Noto Sans KR',sans-serif;font-size:11.5px;color:#111;margin:0;padding:14mm;width:210mm;box-sizing:border-box}
     h1{text-align:center;font-size:22px;letter-spacing:6px;margin:0} .en{text-align:center;color:#555;margin:2px 0 14px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #444;padding:5px 7px} th{background:#f1f1f1}
@@ -14969,7 +14969,7 @@ function hqCustEdit(id, name){
 }
 async function hqCustSave(){
   const c = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite()) return;
-  c.name = String(c.name||'').trim(); if (!c.name) { err.textContent = '거래처명을 넣어주세요.'; return; }
+  c.name = String(c.name||'').trim(); if (!c.name) { err.textContent = '거래처명을 입력해 주세요.'; return; }
   if (HQS.cust.some(x => x.id !== c.id && x.name === c.name)) { err.textContent = '같은 이름의 거래처가 이미 있습니다.'; return; }
   c.payTerms = c.payTerms === '' ? '' : +c.payTerms || 0; c.vatRate = c.vatRate === '' || c.vatRate == null ? '' : +c.vatRate || 0;
   hqsStamp(c, !HQS.cust.some(x => x.id === c.id));
@@ -15091,7 +15091,7 @@ function hqSaleRender(){
       ${hqFld('인보이스·세금계산서 No','Số HĐ', `<input value="${hqE(r.invNo||'')}" ${set('invNo')} style="${HQ_IN}">`)}
     </div>${hqsLinesHtml(r, 'hqs', r.cur)}
     <div id="hqs-tot" style="text-align:right;margin-top:6px">${hqsTotHtml(r)}</div>
-    ${(r.lines||[]).some(l => (l.txIds||[]).length) ? '<div style="font-size:11.5px;color:#0f766e;margin-top:4px">📦 법인 출고 기록과 연결된 판매입니다 (같은 출고가 두 번 매출로 잡히지 않음).</div>' : ''}
+    ${(r.lines||[]).some(l => (l.txIds||[]).length) ? '<div style="font-size:11.5px;color:#0f766e;margin-top:4px">📦 법인 출고 기록과 연결된 판매입니다 (같은 출고가 두 번 매출로 집계되지 않음).</div>' : ''}
     ${hqFld('비고','Ghi chú', `<textarea rows="2" ${set('note')} style="${HQ_IN};font-family:inherit">${hqE(r.note||'')}</textarea>`, true)}
     <div id="hq-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
     <div style="display:flex;justify-content:space-between;gap:6px;margin-top:12px;flex-wrap:wrap"><div>${!isNew && hqCan('sales','D') ? hqsBtn('🗑 삭제', `hqsDelete('sale','${r.id}','${hqE(r.sNo)}').then(ok=>{if(ok){hqClose('hq-s');renderHQ()}})`, '#b91c1c') : ''}</div>
@@ -15099,7 +15099,7 @@ function hqSaleRender(){
 }
 async function hqSaleSave(){
   const r = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite() || !hqsCheckLines(r, err)) return;
-  if (!r.date) { err.textContent = '판매일을 넣어주세요.'; return; }
+  if (!r.date) { err.textContent = '판매일을 입력해 주세요.'; return; }
   if (r.lines.some(l => l.price === '')) { if (!confirm('단가가 비어 있는 품목이 있습니다. 0원으로 저장할까요?')) return; }
   const c = hqsCust(r.customer); if (!r.dueDate && c && c.payTerms) r.dueDate = hqAddDays(r.date, +c.payTerms);
   if (!r.sNo) r.sNo = hqNextNo('SL', HQS.sale, 'sNo', r.date);
@@ -15208,7 +15208,7 @@ function hqPayRender(){
 }
 async function hqPaySave(){
   const p = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite()) return;
-  if (!String(p.customer||'').trim() || !p.date || !(+p.amount > 0)) { err.textContent = '거래처·수금일·금액을 넣어주세요.'; return; }
+  if (!String(p.customer||'').trim() || !p.date || !(+p.amount > 0)) { err.textContent = '거래처·수금일·금액을 입력해 주세요.'; return; }
   p.amount = +p.amount; hqsStamp(p, !HQS.pay.some(x => x.id === p.id));
   if (await hqsSave('pay', p)) { HQS._bal = null; hqClose('hq-p'); renderHQ(); }
 }
@@ -15265,7 +15265,7 @@ function hqSupEdit(id, name){
 }
 async function hqSupSave(){
   const c = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite()) return;
-  c.name = String(c.name||'').trim(); if (!c.name) { err.textContent = '공급사명을 넣어주세요.'; return; }
+  c.name = String(c.name||'').trim(); if (!c.name) { err.textContent = '공급사명을 입력해 주세요.'; return; }
   if (HQS.sup.some(x => x.id !== c.id && x.name === c.name)) { err.textContent = '같은 이름의 공급사가 이미 있습니다.'; return; }
   c.payTerms = c.payTerms === '' ? '' : +c.payTerms || 0; c.vatRate = c.vatRate === '' || c.vatRate == null ? '' : +c.vatRate || 0;
   hqsStamp(c, !HQS.sup.some(x => x.id === c.id));
@@ -15324,9 +15324,9 @@ function hqPurchRender(){
 async function hqPurchSave(){
   const r = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite()) return;
   r.customer = r.supplier;   // 공용 검사 함수(hqsCheckLines)가 customer를 본다
-  if (!String(r.supplier||'').trim()) { err.textContent = '공급사를 넣어주세요.'; return; }
+  if (!String(r.supplier||'').trim()) { err.textContent = '공급사를 입력해 주세요.'; return; }
   if (!hqsCheckLines(r, err)) return; delete r.customer;
-  if (!r.date) { err.textContent = '구매일을 넣어주세요.'; return; }
+  if (!r.date) { err.textContent = '구매일을 입력해 주세요.'; return; }
   if (r.lines.some(l => l.price === '') && !confirm('단가가 비어 있는 자재가 있습니다. 0원으로 저장할까요?')) return;
   const c = hqsSup(r.supplier); if (!r.dueDate && c && c.payTerms) r.dueDate = hqAddDays(r.date, +c.payTerms);
   if (!r.pNo) r.pNo = hqNextNo('PU', HQS.purch, 'pNo', r.date);
@@ -15354,7 +15354,7 @@ function hqPurchFromPO(){
   HQS._unpSups = sups;
 }
 function hqPurchFromPOGo(si){
-  const ids = [...document.querySelectorAll(`#hq-unp .hqu-cb[data-s="${si}"]:checked`)].map(i => i.value); if (!ids.length) { alert('구매로 넣을 자재를 체크해주세요.'); return; }
+  const ids = [...document.querySelectorAll(`#hq-unp .hqu-cb[data-s="${si}"]:checked`)].map(i => i.value); if (!ids.length) { alert('구매 요청할 자재를 선택해 주세요.'); return; }
   const rows = hqUnpurchased().filter(r => ids.includes(String(r.id)));
   const sup = (HQS._unpSups || [])[si] ?? (rows[0].supplier || ''), c = hqsSup(sup);
   const lines = rows.map(r => ({code: r.code, name: r.name, cat: r.cat, unit: r.unit, qty: r.left, price: r.price === undefined ? '' : r.price, spoId: r.id, poNo: r.poNo || ''}));
@@ -15430,7 +15430,7 @@ function hqPPayRender(){
 }
 async function hqPPaySave(){
   const p = HQS.ed, err = document.getElementById('hq-err'); if (!hqCanWrite()) return;
-  if (!String(p.supplier||'').trim() || !p.date || !(+p.amount > 0)) { err.textContent = '공급사·지급일·금액을 넣어주세요.'; return; }
+  if (!String(p.supplier||'').trim() || !p.date || !(+p.amount > 0)) { err.textContent = '공급사·지급일·금액을 입력해 주세요.'; return; }
   p.amount = +p.amount; hqsStamp(p, !HQS.ppay.some(x => x.id === p.id));
   if (await hqsSave('ppay', p)) { hqClose('hq-pp'); renderHQ(); }
 }
@@ -15477,7 +15477,7 @@ function hqRepData(id){
   if (id === 'stockMove' || id === 'safety') {
     const items = hqRepItems().filter(x => !HQR.cat || x.cat === HQR.cat);
     if (id === 'safety') { const rows = items.filter(x => +x.min > 0).map(x => { const c = +x.cur||0, m = +x.min||0; return [x.cat, x.code, x.name, x.unit||'', c, m, c - m, c < m ? '⚠️ 부족' : c < m * 1.2 ? '주의' : '안정']; }).sort((a,b) => (a[6]) - (b[6]));
-      return {cols:['구분','코드','품명','단위','현재고','안전재고','차이','판정'], rows, num:[4,5,6], note: rows.length ? '' : '안전재고(min)가 입력된 품목이 없습니다. 품목 수정에서 안전재고를 넣으면 여기서 분석됩니다.'}; }
+      return {cols:['구분','코드','품명','단위','현재고','안전재고','차이','판정'], rows, num:[4,5,6], note: rows.length ? '' : '안전재고(min)가 입력된 품목이 없습니다. 품목 수정에서 안전재고를 입력하면 여기서 분석됩니다.'}; }
     const e = bdVNStart(T) + 864e5, s = bdVNStart(F);
     const rows = items.map(x => { const ts = tx.filter(t => t.code === x.code && (!t.cat || String(t.cat).toUpperCase() === x.cat));
       const after = ts.filter(t => bdTime(t) >= e).reduce((a,t) => a + bdDelta(t), 0), end = (+x.cur||0) - after;
@@ -15487,7 +15487,7 @@ function hqRepData(id){
     return {cols:['구분','코드','품명','단위','기초','입고','출고','조정','기말'], rows, num:[4,5,6,7,8]};
   }
   if (id === 'stockDaily') {
-    const it = hqRepItems().find(x => x.code === HQR.item); if (!it) return {cols:[], rows:[], note:'품목을 골라주세요.'};
+    const it = hqRepItems().find(x => x.code === HQR.item); if (!it) return {cols:[], rows:[], note:'품목을 선택해 주세요.'};
     const ts = tx.filter(t => t.code === it.code && (!t.cat || String(t.cat).toUpperCase() === it.cat)), e = bdVNStart(T) + 864e5;
     let bal = (+it.cur||0) - ts.filter(t => bdTime(t) >= e).reduce((a,t) => a + bdDelta(t), 0);
     const days = []; for (let d = T; d >= F; d = hqAddDays(d, -1)) days.push(d);
@@ -15519,7 +15519,7 @@ function hqRepData(id){
     const rows = Object.values(g).map(o => [o.n, o.c, o.beg, o.add, o.sub, o.beg + o.add - o.sub]).filter(r => r[2] || r[3] || r[4] || r[5]).sort((a,b) => String(a[0]).localeCompare(String(b[0])));
     return {cols:[isAR ? '거래처' : '공급사','통화','전월 이월', isAR ? '당월 매출' : '당월 구매', isAR ? '당월 수금' : '당월 지급','월말 잔액'], rows, num:[2,3,4,5], cur:1}; }
   if (id === 'arLedger' || id === 'apLedger') {
-    const isAR = id === 'arLedger', who = HQR.ent; if (!who) return {cols:[], rows:[], note: (isAR ? '거래처' : '공급사') + '를 골라주세요.'};
+    const isAR = id === 'arLedger', who = HQR.ent; if (!who) return {cols:[], rows:[], note: (isAR ? '거래처' : '공급사') + '를 선택해 주세요.'};
     const docs = (isAR ? HQS.sale : HQS.purch).filter(d => d[isAR ? 'customer' : 'supplier'] === who), pays = (isAR ? HQS.pay : HQS.ppay).filter(p => p[isAR ? 'customer' : 'supplier'] === who);
     const ev = [...docs.map(d => ({date: d.date, kind: isAR ? '판매' : '구매', no: d[isAR ? 'sNo' : 'pNo'], memo: (d.lines||[]).map(l => `${l.name} ${hqN(l.qty)}`).join(', '), cur: d.cur, plus: isAR ? hqsSaleTotals(d).total : hqPurchTotals(d).total, minus: 0})),
       ...pays.map(p => ({date: p.date, kind: isAR ? '수금' : '지급', no: p[isAR ? 'saleNo' : 'purchNo'] || '', memo: [p.method, p.note].filter(Boolean).join(' · '), cur: p.cur, plus: 0, minus: N(p.amount)}))].sort((a,b) => String(a.date).localeCompare(String(b.date)) || (b.plus - a.plus));
@@ -15546,7 +15546,7 @@ function hqRepData(id){
     const curs = [...new Set([...HQS.sale.map(s => s.cur), ...HQS.purch.map(p => p.cur)])].filter(Boolean).sort();
     const rows = ms.map(k => { const r = [k]; curs.forEach(c => { r.push(HQS.sale.filter(s => s.cur === c && String(s.date).slice(0,7) === k).reduce((a,s) => a + hqsSaleTotals(s).total, 0)); r.push(HQS.purch.filter(p => p.cur === c && String(p.date).slice(0,7) === k).reduce((a,p) => a + hqPurchTotals(p).total, 0)); }); return r; });
     return {cols:['월', ...curs.flatMap(c => [`매출 (${c})`, `구매 (${c})`])], rows, num: curs.flatMap((_, i) => [1 + i*2, 2 + i*2])}; }
-  if (id === 'price') { const code = HQR.item; if (!code) return {cols:[], rows:[], note:'품목·자재를 골라주세요.'};
+  if (id === 'price') { const code = HQR.item; if (!code) return {cols:[], rows:[], note:'품목·자재를 선택해 주세요.'};
     const ev = [...HQS.sale.flatMap(s => (s.lines||[]).filter(l => l.code === code && l.price !== '').map(l => [s.date, '판매', s.customer, s.sNo, s.cur, +l.price, N(l.qty)])),
       ...HQS.quote.flatMap(s => (s.lines||[]).filter(l => l.code === code && l.price !== '').map(l => [s.date, '견적', s.customer, s.qNo, s.cur, +l.price, N(l.qty)])),
       ...HQ.cpo.flatMap(s => (s.lines||[]).filter(l => l.code === code && l.price !== '' && l.price != null).map(l => [s.recvDate, '주문', s.customer, s.cpoNo, s.cur, +l.price, N(l.qty)])),
@@ -15554,7 +15554,7 @@ function hqRepData(id){
       ...SPO.filter(p => p.code === code && p.price !== '' && p.price != null).map(p => [p.orderDate, '발주', p.supplier, p.poNo, p.cur, +p.price, N(p.qty)])].sort((a,b) => String(a[0]).localeCompare(String(b[0])));
     const last = {}; const rows = ev.map(r => { const k = r[1] + r[2] + r[4], pv = last[k]; last[k] = r[5]; return [...r, pv === undefined ? '' : (r[5] - pv === 0 ? '-' : (r[5] > pv ? '▲ ' : '▼ ') + Math.abs(Math.round((r[5] - pv) / pv * 1000) / 10) + '%')]; });
     return {cols:['일자','구분','거래처','번호','통화','단가','수량','직전 대비'], rows, num:[5,6], sub: (hqRepItems().find(x => x.code === code) || {}).name || code}; }
-  if (id === 'history') { const kw = HQR.ent.trim().toLowerCase(); if (!kw) return {cols:[], rows:[], note:'품목 코드·품명 또는 거래처·공급사 이름을 넣어주세요.'};
+  if (id === 'history') { const kw = HQR.ent.trim().toLowerCase(); if (!kw) return {cols:[], rows:[], note:'품목 코드·품명 또는 거래처·공급사 이름을 입력해 주세요.'};
     const hit = (...a) => a.join(' ').toLowerCase().includes(kw), rows = [];
     HQS.quote.forEach(d => (d.lines||[]).forEach(l => { if (hit(d.customer, l.code, l.name)) rows.push([d.date, '견적', d.qNo, d.customer, l.code, l.name, N(l.qty), l.price, d.cur]); }));
     HQ.cpo.forEach(d => (d.lines||[]).forEach(l => { if (hit(d.customer, l.code, l.name)) rows.push([d.recvDate, '주문', d.cpoNo, d.customer, l.code, l.name, N(l.qty), l.price, d.cur]); }));
@@ -15608,7 +15608,7 @@ function hqRepExcel(){
 function hqRepPrint(){
   const {def, d, tot} = HQR._last || {}; if (!d || !d.rows.length) { alert('인쇄할 자료가 없습니다.'); return; }
   const e = hqE, fmt = (v, i, r) => d.num && d.num.includes(i) && typeof v === 'number' ? (d.cur !== undefined ? hqM(v, r[d.cur]) : hqN(v)) : e(v ?? '');
-  const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단됐습니다. 팝업을 허용해주세요.'); return; }
+  const w = window.open('', '_blank'); if (!w) { alert('팝업이 차단되었습니다. 팝업을 허용해주세요.'); return; }
   const land = d.cols.length > 7;
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e(def.t)}</title><style>
     @page{size:A4 ${land ? 'landscape' : 'portrait'};margin:0} body{font-family:'Malgun Gothic','Noto Sans KR',sans-serif;font-size:10.5px;color:#111;margin:0;padding:10mm;width:${land ? '297mm' : '210mm'};box-sizing:border-box}
@@ -15651,7 +15651,7 @@ function hqQAView(ngOnly, hqOnly){
         <td style="font-size:12px">${hqE(r.lot||'')}</td><td style="text-align:right">${hqN(r.totalQty)}</td><td style="text-align:right">${hqN(r.sampleQty)}</td><td style="text-align:right;color:${(+r.defectQty||0) ? '#b91c1c' : ''}">${hqN(r.defectQty)}</td>
         <td>${hqPill(r.result||'', rc[r.result])}</td><td>${hqE(r.inspector||'')}</td>${hqOnly ? `<td style="font-size:12px">${hqE(r.supplier||'')}${r.poNo ? `<div style="font-family:monospace;color:#5D6977">${hqE(r.poNo)}</div>` : ''}</td>` : `<td style="white-space:nowrap">${r.site === 'HQ' ? '🏢 본사' : '🇻🇳 법인'}</td>`}<td style="white-space:nowrap">${hqQAFiles(r)}${hqOnly && isAdmin ? ` <button class="edit-btn" onclick="openEditQC(${+r.id})" title="수정">✏️</button>` : ''}</td><td style="white-space:normal;font-size:12px;color:#5D6977;max-width:260px">${hqE(r.note||'')}</td></tr>`).join('')}</tbody></table></div>`
       : `<div class="empty">${ngOnly ? '✅ 이 달 불합격·조건부합격이 없습니다.' : '이 달 검사 기록이 없습니다.'}</div>`}
-    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">${hqOnly ? '본사에서 한 수입검사입니다. 법인 수입검사와 같은 양식(시료·불량·판정·첨부)이고, 법인 재고에는 반영되지 않습니다. 법인 품질검사 탭에도 "🏢 본사" 표시로 함께 보입니다.' : '법인 품질검사 기록과 본사 수입검사를 함께 보여줍니다.'}</div>`;
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">${hqOnly ? '본사에서 한 수입검사입니다. 법인 수입검사와 같은 양식(시료·불량·판정·첨부)이고, 법인 재고에는 반영되지 않습니다. 법인 품질검사 탭에도 "🏢 본사" 표시로 함께 보입니다.' : '법인 품질검사 기록과 본사 수입검사를 함께 표시합니다.'}</div>`;
 }
 async function hqQAInAdd(){
   if (!hqCanWrite()) return;
@@ -15784,7 +15784,7 @@ function hqShipView(){
         <td style="font-size:12px">${hqE(x.blNo||'')}${x.invNo ? `<div>${hqE(x.invNo)}</div>` : ''}</td><td>${step(x.stage, x.stages)}</td>
         <td style="white-space:nowrap"><div class="hq-acts"><button onclick="hqShipEdit('${hqE(x.poNo)}')" title="단계·서류 수정">✏️ 수정</button><button onclick="hqPOPrint('${hqE(x.poNo)}')" title="공급사별 발주서 인쇄">🖨️ 발주서</button><button onclick="hqPOExcel('${hqE(x.poNo)}')" title="발주서 엑셀">📄 엑셀</button>${x.rows.some(r => r.route !== 'wire' && hqVNAvail(r) > 0) ? `<button class="inv" onclick="hqVNShipEdit(null,'${hqE(x.poNo)}')" title="이 발주로 베트남 발송 인보이스 작성">🧾 인보이스</button>` : ''}${hqCan('buy','D') ? `<button class="del" onclick="hqShipDelete('${hqE(x.poNo)}')" title="발주 삭제">🗑️</button>` : ''}</div></td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty">진행 중인 자재 발주가 없습니다.</div>'}
-    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">입고 수량은 법인 입출고 탭의 자재 입고를 등록하면 같은 자재의 오래된 발주부터 자동으로 채워집니다. 다 들어오면 "입고 완료"가 됩니다.</div>`;
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">입고 수량은 법인 입출고 탭의 자재 입고를 등록하면 같은 자재의 오래된 발주부터 자동으로 입력됩니다. 모두 입고되면 "입고 완료"가 됩니다.</div>`;
 }
 // 📅 [2026-11-25] 본사 발주·선적 수정에서 자재 줄마다 입고 일정(분할 가능)을 넣는다. 합계 = 발주 수량.
 let HQSE_SCH = {};
@@ -15816,7 +15816,7 @@ function hqShipEdit(poNo){
         <td><input class="hqs-sup" data-id="${hqE(r.id)}" list="hqs-sups" value="${hqE(r.supplier || '')}" placeholder="공급사" style="${HQ_IN};width:140px"></td>
         <td>${r.route === 'wire' ? `<span style="font-size:12px;color:#7c3aed">🧵 → ${hqE(r.shipTo || '외주업체')}</span>` : HQ_ROUTE_SEL('hqs-route', r.kind === 'proc' ? 'sub' : r.route === 'hq' ? 'hq' : 'direct', `data-id="${hqE(r.id)}" data-i="${ri}" onchange="const t=document.getElementById('hqse-sub-${ri}');if(t)t.style.display=this.value==='sub'?'':'none'"`, true)}${r.kind === 'proc' ? (w => w ? `<div style="font-size:11px;color:#7c3aed;margin-top:3px">🧵 ${hqE(w.poNo)} ${hqE(w.supplier)} ${hqN(w.qty)}kg</div>` : '')(SPO.find(q => q.linkId === r.linkId && q.kind === 'wire')) : ''}</td>
         <td style="white-space:nowrap"><input class="hqs-price" data-id="${hqE(r.id)}" type="number" step="0.0001" value="${hqE(r.price ?? '')}" style="${HQ_IN};width:96px"> <select class="hqs-lcur" data-id="${hqE(r.id)}" style="${HQ_IN};width:70px">${HQ_PR_CURS.map(c => `<option ${(r.cur || 'USD')===c?'selected':''}>${c}</option>`).join('')}</select></td><td style="min-width:250px">${r.route === 'wire' ? '<span style="font-size:12px;color:#8A95A3">-</span>' : hqseSchInit(ri, r)}</td></tr>${r.route !== 'wire' && r.kind !== 'proc' ? hqSubRow({...r, supplier: ''}, ri, 7, 'hqse') : ''}`).join('')}</tbody></table></div>
-    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">🔁 외주 가공으로 바꾸면 와이어 발주서가 새로 만들어지고, 이 줄의 공급사는 외주업체로 바뀝니다 (단가 = 가공비). "입고 완료"는 베트남 법인 자재 입고가 다 들어오면 자동으로 표시됩니다. 본사 경유는 "🏢 본사 입고·베트남 발송" 탭에서 본사 입고·발송을 등록하면 단계가 자동으로 바뀝니다.</div>
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">🔁 외주 가공으로 변경하면 와이어 발주서가 새로 만들어지고, 이 줄의 공급사는 외주업체로 바뀝니다 (단가 = 가공비). "입고 완료"는 베트남 법인 자재 입고가 모두 입고되면 자동으로 표시됩니다. 본사 경유는 "🏢 본사 입고·베트남 발송" 탭에서 본사 입고·발송을 등록하면 단계가 자동으로 바뀝니다.</div>
     <div id="hqs-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
     <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px"><button onclick="hqClose('hq-sh')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
       <button id="hqs-go" onclick="hqShipSave('${hqE(poNo)}')" style="padding:7px 16px;border-radius:8px;border:1px solid #185FA5;background:#185FA5;color:#fff;font-weight:600;cursor:pointer">💾 저장</button></div>`, 1150);
@@ -15836,15 +15836,15 @@ async function hqShipSave(poNo){
     const g = k => ((document.getElementById(`hqse-s${k}-${ri}`) || {}).value || '').trim();
     subs[r.id] = {proc: g('proc'), wsup: g('wsup'), witem: g('witem'), wspec: g('wspec'), wqty: g('wqty'), wprice: g('wprice'), wcur: g('wcur') || 'USD'}; });
   for (const [id, o] of Object.entries(subs)) { const nm = (x.rows.find(r => r.id === id) || {}).name;
-    if (!o.proc) { err.textContent = `${nm}: 외주업체를 넣어주세요.`; return; }
-    if (!o.wsup) { err.textContent = `${nm}: 와이어 공급사를 넣어주세요.`; return; }
-    if (!(+o.wqty > 0)) { err.textContent = `${nm}: 와이어 발주 수량(kg)을 넣어주세요.`; return; } }
+    if (!o.proc) { err.textContent = `${nm}: 외주업체를 입력해 주세요.`; return; }
+    if (!o.wsup) { err.textContent = `${nm}: 와이어 공급사를 입력해 주세요.`; return; }
+    if (!(+o.wqty > 0)) { err.textContent = `${nm}: 와이어 발주 수량(kg)을 입력해 주세요.`; return; } }
   // 📅 입고 일정 확인 (저장 전에 전부 검사 — 일부만 저장되는 것 방지)
   const schOf = {};
   for (let ri = 0; ri < x.rows.length; ri++) { const r = x.rows[ri], L = HQSE_SCH[ri]; if (!L || r.route === 'wire') continue;
     const c = L.filter(e => +e.qty > 0 || e.date).map(e => ({qty: L.length === 1 ? r.q : +e.qty || 0, date: e.date || ''}));
     if (c.length > 1) {
-      if (c.some(e => !(e.qty > 0) || !e.date)) { err.textContent = `${r.name}: 분할 입고 일정은 줄마다 수량과 날짜를 넣어주세요.`; return; }
+      if (c.some(e => !(e.qty > 0) || !e.date)) { err.textContent = `${r.name}: 분할 입고 일정은 줄마다 수량과 날짜를 입력해 주세요.`; return; }
       const tot = c.reduce((a, e) => a + e.qty, 0); if (Math.abs(tot - r.q) > 1e-6) { err.textContent = `${r.name}: 입고 일정 합계(${hqN(tot)})가 발주 수량(${hqN(r.q)})과 같아야 합니다.`; return; }
       c.sort((a, b) => a.date.localeCompare(b.date)); schOf[r.id] = {sched: c, dueDate: c[c.length - 1].date};
     } else schOf[r.id] = {sched: [], dueDate: c.length ? c[0].date : (r.dueDate || '')};
@@ -15878,7 +15878,7 @@ async function hqShipSave(poNo){
 // 🗑️ 발주 삭제 (마스터): 발주번호의 모든 자재 줄을 지우고, 연결된 구매요청은 다시 "승인"으로 돌려 재발주할 수 있게 한다
 async function hqShipDelete(poNo){
   const x = hqShipGroups().find(g => g.poNo === poNo); if (!x) return;
-  if (x.got > 0 && !confirm(`⚠️ ${poNo}는 이미 ${hqN(x.got)} 입고된 기록이 있습니다.\n발주를 지워도 입고 기록(재고)은 그대로 남습니다. 계속할까요?`)) return;
+  if (x.got > 0 && !confirm(`⚠️ ${poNo}는 이미 ${hqN(x.got)} 입고된 기록이 있습니다.\n발주를 삭제해도 입고 기록(재고)은 그대로 남습니다. 계속할까요?`)) return;
   if (!confirm(`${poNo} 발주를 삭제할까요? (${x.supplier || '공급사 미정'} · 자재 ${x.rows.length}건)\n${x.rows.map(r => '• ' + r.name + ' ' + hqN(r.q) + ' ' + (r.unit || '')).join('\n')}\n\n삭제하면 되돌릴 수 없습니다.`)) return;
   for (const r of x.rows) {
     const res = await retrySafe(() => api('deleteSupplyPO', {id: r.id}));
@@ -15970,7 +15970,7 @@ function hqWhView(){
         <td style="text-align:right;white-space:nowrap">${hqN(x.q)} ${hqE(x.p.unit||'')}</td><td style="text-align:right">${hqN(x.recv)}</td><td style="text-align:right">${hqN(x.sent)}</td>
         <td style="text-align:right;font-weight:700;color:${x.stock > 0 ? '#7c3aed' : '#8A95A3'}">${hqN(x.stock)}</td><td style="text-align:right;color:${x.wait > 0 ? '#b45309' : '#8A95A3'}">${hqN(x.wait)}</td>
         <td><button onclick="hqRecvEdit('${hqE(x.p.id)}')" style="padding:4px 10px;border-radius:7px;border:1px solid #7c3aed;background:#fff;color:#7c3aed;font-weight:600;cursor:pointer;white-space:nowrap">📥 본사 입고</button></td></tr>`).join('')}</tbody></table></div>`
-      : `<div class="empty">본사 경유 발주가 없습니다. 발주로 전환할 때(또는 발주서 ✏️ 수정에서) 배송 경로를 "🏢 본사 경유"로 고르세요.</div>`}
+      : `<div class="empty">본사 경유 발주가 없습니다. 발주로 전환할 때(또는 발주서 ✏️ 수정에서) 배송 경로를 "🏢 본사 경유"로 선택하세요.</div>`}
     <h4 style="margin:16px 0 6px;font-size:14px">✈️ 베트남 발송 인보이스 <span style="font-weight:400;font-size:12px;color:#8A95A3">— 본사 발송분과 직송분은 인보이스를 따로 만듭니다</span></h4>
     ${ships.length ? `<div class="tw"><table><thead><tr><th>Invoice No</th><th>발송일</th><th>방식</th><th>자재</th><th>B/L · AWB</th><th>ETA</th><th>상태</th><th></th></tr></thead><tbody>${
       ships.map(h => `<tr><td style="font-family:monospace;font-size:12px">${hqE(h.invNo)}<div style="font-family:inherit;font-size:11px;font-weight:700;color:${hqVNRoute(h) === 'direct' ? '#0f766e' : '#7c3aed'}">${hqVNRoute(h) === 'direct' ? '➡️ 직송' : '🏢 본사 발송'}</div></td><td style="white-space:nowrap">${hqE(h.shipDate||'')}</td><td style="white-space:nowrap">${HQ_SHIP_MODES[h.mode] || hqE(h.mode)}</td>
@@ -15986,7 +15986,7 @@ function hqRecvEdit(id){
   const recv = hqRecvQty(p), left = Math.max(0, (+p.qty||0) - recv);
   hqModal('hq-rv', `<h3 style="margin:0 0 6px;font-size:16px">📥 본사 입고 — ${hqE(p.name)}</h3>
     <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">${hqE(p.poNo||'')} · ${hqE(p.supplier||'')} · 발주 ${hqN(p.qty)} ${hqE(p.unit||'')} · 입고 ${hqN(recv)} · 남은 수량 <b>${hqN(left)}</b></div>
-    ${(p.hqRecv||[]).length ? `<div class="tw"><table><thead><tr><th>입고일</th><th style="text-align:right">수량</th><th>비고</th><th>등록</th><th></th></tr></thead><tbody>${p.hqRecv.map((r, i) => `<tr><td>${hqE(r.date)}</td><td style="text-align:right">${hqN(r.qty)}</td><td>${hqE(r.note||'')}</td><td style="font-size:11.5px;color:#8A95A3">${hqE(r.by||'')}</td><td><button onclick="hqRecvDel('${hqE(p.id)}',${i})" class="edit-btn" title="이 입고 기록 지우기">✕</button></td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${(p.hqRecv||[]).length ? `<div class="tw"><table><thead><tr><th>입고일</th><th style="text-align:right">수량</th><th>비고</th><th>등록</th><th></th></tr></thead><tbody>${p.hqRecv.map((r, i) => `<tr><td>${hqE(r.date)}</td><td style="text-align:right">${hqN(r.qty)}</td><td>${hqE(r.note||'')}</td><td style="font-size:11.5px;color:#8A95A3">${hqE(r.by||'')}</td><td><button onclick="hqRecvDel('${hqE(p.id)}',${i})" class="edit-btn" title="이 입고 기록 삭제">✕</button></td></tr>`).join('')}</tbody></table></div>` : ''}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px">
       ${hqFld('입고일','', `<input id="hqrv-date" type="date" value="${hqToday()}" style="${HQ_IN}">`)}
       ${hqFld('입고 수량 (' + hqE(p.unit||'') + ')','', `<input id="hqrv-qty" type="number" step="any" value="${left || ''}" style="${HQ_IN}">`)}
@@ -16003,8 +16003,8 @@ async function hqRecvSave(id){
   if (!hqCan('buy','W')) { alert('구매 입력·수정 권한이 없습니다.'); return; }
   const p = SPO.find(s => String(s.id) === String(id)); if (!p) return;
   const qty = +document.getElementById('hqrv-qty').value, date = document.getElementById('hqrv-date').value, err = document.getElementById('hqrv-err');
-  if (!(qty > 0)) { err.textContent = '입고 수량을 넣어주세요.'; return; }
-  if (!date) { err.textContent = '입고일을 넣어주세요.'; return; }
+  if (!(qty > 0)) { err.textContent = '입고 수량을 입력해 주세요.'; return; }
+  if (!date) { err.textContent = '입고일을 입력해 주세요.'; return; }
   if (hqRecvQty(p) + qty > (+p.qty||0) * 1.1 && !confirm(`입고 합계가 발주 수량(${hqN(p.qty)})보다 10% 넘게 많습니다. 그래도 등록할까요?`)) return;
   const hqRecv = (p.hqRecv || []).concat([{date, qty, note: document.getElementById('hqrv-note').value.trim(), by: CURRENT_USER || '', at: new Date().toISOString()}]);
   const patch = {hqRecv}; if (HQ_STAGES_HQ.indexOf(p.stage) < 2) { patch.stage = '본사 입고'; patch.stageLog = (p.stageLog || []).concat([{stage: '본사 입고', at: new Date().toISOString(), by: CURRENT_USER||''}]); }
@@ -16014,8 +16014,8 @@ async function hqRecvDel(id, i){
   if (!hqCan('buy','W')) { alert('구매 입력·수정 권한이 없습니다.'); return; }
   const p = SPO.find(s => String(s.id) === String(id)); if (!p) return; const r = (p.hqRecv||[])[i]; if (!r) return;
   const after = hqRecvQty(p) - (+r.qty||0);
-  if (after < hqSentQty(p.id)) { alert(`이 기록을 지우면 본사 입고(${hqN(after)})가 이미 베트남으로 보낸 수량(${hqN(hqSentQty(p.id))})보다 적어집니다. 발송 기록을 먼저 고쳐주세요.`); return; }
-  if (!confirm(`${r.date} 입고 ${hqN(r.qty)}을(를) 지울까요?`)) return;
+  if (after < hqSentQty(p.id)) { alert(`이 기록을 삭제하면 본사 입고(${hqN(after)})가 이미 베트남으로 보낸 수량(${hqN(hqSentQty(p.id))})보다 적어집니다. 발송 기록을 먼저 수정해 주세요.`); return; }
+  if (!confirm(`${r.date} 입고 ${hqN(r.qty)}을(를) 삭제할까요?`)) return;
   if (await hqSPOPut(p, {hqRecv: p.hqRecv.filter((_, k) => k !== i)})) { hqRecvEdit(id); renderHQ(); }
 }
 // ✈️ 베트남 발송 (항공/해상/특송) — 본사 보관분에서 나눠 보낼 수 있다
@@ -16045,7 +16045,7 @@ function hqSealEdit(){
     <div style="text-align:center;padding:12px;border:1px dashed #DCE1E7;border-radius:10px;min-height:120px">${d ? `<img src="${d}" style="max-height:140px">` : '<span style="color:#8A95A3">등록된 도장이 없습니다</span>'}</div>
     <input type="file" accept="image/*" onchange="hqSealUpload(this)" style="margin-top:10px">
     <div id="hqseal-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
-    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${d && hqCan('buy','D') ? hqsBtn('🗑 도장 지우기', 'hqSealClear()', '#b91c1c') : ''}</div>${hqsBtn('닫기', "hqClose('hq-seal')", '#64748b')}</div>`, 520);
+    <div style="display:flex;justify-content:space-between;margin-top:12px"><div>${d && hqCan('buy','D') ? hqsBtn('🗑 도장 삭제', 'hqSealClear()', '#b91c1c') : ''}</div>${hqsBtn('닫기', "hqClose('hq-seal')", '#64748b')}</div>`, 520);
 }
 function hqSealShrink(img, max, q){
   const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
@@ -16063,7 +16063,7 @@ async function hqSealUpload(input){
   const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; }).catch(() => null);
   if (!img) { err.textContent = '이미지를 읽지 못했습니다.'; return; }
   let d = ''; for (const [m, q] of [[300, .85], [240, .8], [200, .7], [160, .6]]) { d = hqSealShrink(img, m, q); if (d.length < 40000) break; }
-  if (d.length >= 40000) { err.textContent = '이미지가 너무 큽니다. 도장 부분만 잘라서 다시 올려주세요.'; return; }
+  if (d.length >= 40000) { err.textContent = '이미지가 너무 큽니다. 도장 부분만 잘라서 다시 업로드해 주세요.'; return; }
   const rec = {id: 'seal_corp', d}; hqsStamp(rec, !hqSeal());
   // 이미지가 커서 주소(GET)로는 못 보낸다 → POST로 저장
   err.textContent = '⏳ 저장 중…';
@@ -16073,7 +16073,7 @@ async function hqSealUpload(input){
   hqSealEdit(); renderHQ(); hqToast('🖋️ 도장 이미지를 저장했습니다');
 }
 async function hqSealClear(){
-  if (!hqCan('buy','W') || !confirm('도장 이미지를 지울까요?')) return;
+  if (!hqCan('buy','W') || !confirm('도장 이미지를 삭제할까요?')) return;
   const res = await retrySafe(() => api('deleteHQStore', {store: 'hqcfg', id: 'seal_corp'}));
   if (!res || !res.ok) { alert('삭제 실패: ' + ((res && res.error) || '')); return; }
   HQS.hqcfg = HQS.hqcfg.filter(x => x.id !== 'seal_corp'); hqSealEdit(); renderHQ();
@@ -16131,7 +16131,7 @@ function hqNameCodes(){
 function hqNameEdit(){
   const rows = hqNameCodes(), SI = HQ_IN + ';padding:4px 6px;font-size:12.5px';
   hqModal('hq-nm', `<h3 style="margin:0 0 6px;font-size:16px">🏷️ 본사 품명 (발주서·인보이스용)</h3>
-    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">베트남 품명과 본사가 공급사에 발주하고 인보이스에 쓰는 품명이 다를 때 넣어주세요. 비워 두면 베트남 품명을 그대로 씁니다.<br>예) COIL 0.8mm × 6.0mm AIW 2Ts-5P → Item <b>FLAT COPPER WIRE</b> · Spec <b>0.8mm*6mm AIW</b></div>
+    <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">베트남 품명과 본사가 공급사에 발주하고 인보이스에 사용하는 품명이 다를 때 입력해 주세요. 비워 두면 베트남 품명을 그대로 사용합니다.<br>예) COIL 0.8mm × 6.0mm AIW 2Ts-5P → Item <b>FLAT COPPER WIRE</b> · Spec <b>0.8mm*6mm AIW</b></div>
     <div class="tw" style="max-height:60vh;overflow:auto"><table style="font-size:12.5px"><thead><tr><th>코드</th><th>베트남 품명</th><th>Item (본사)</th><th>Spec (본사)</th></tr></thead><tbody>${
       rows.map(r => { const n = hqNameOf(r.code, r.name) || {}; return `<tr><td style="font-family:monospace;font-size:11.5px">${hqE(r.code)}</td><td style="min-width:200px">${hqE(r.name || '')}</td>
         <td><input class="hqnm" data-c="${hqE(r.code)}" data-n="${hqE(r.name || '')}" data-k="item" value="${hqE(n.item || '')}" placeholder="예: FLAT COPPER WIRE" style="${SI};width:170px"></td>
@@ -16187,7 +16187,7 @@ function hqVNRender(){
   const li = (x, k, w, type) => `<input class="hqv-l" data-id="${hqE(x.p.id)}" data-k="${k}" ${type ? `type="${type}" step="any"` : ''} value="${hqE(x.l[k] ?? '')}" style="${SI};width:${w}px${type ? ';text-align:right' : ''}">`;
   const boxes = e.packs.map(p => p.no);
   hqModal('hq-vs', `<h3 style="margin:0 0 10px;font-size:16px">${isNew ? (isHQ ? '🏢 본사 발송 인보이스 만들기' : '➡️ 직송 인보이스 만들기') : '✏️ ' + (isHQ ? '본사 발송 ' : '직송 ') + hqE(e.invNo)}</h3>
-    <div style="font-size:12.5px;color:#5D6977;margin:-4px 0 10px">${isHQ ? '본사에 입고된(보관 중인) 자재만 나옵니다.' : '직송 인보이스는 공급사마다 따로 만듭니다. Port of loading에 공급사 출발지를 넣어주세요.'}</div>
+    <div style="font-size:12.5px;color:#5D6977;margin:-4px 0 10px">${isHQ ? '본사에 입고된(보관 중인) 자재만 나옵니다.' : '직송 인보이스는 공급사마다 따로 만듭니다. Port of loading에 공급사 출발지를 입력해 주세요.'}</div>
     ${isHQ ? '' : `<div style="display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:8px 10px;background:#F0FDFA;border:1px solid #99F6E4;border-radius:9px"><b style="font-size:13px;color:#0f766e">출고 공급사</b>
       <select onchange="hqVNSup(this.value)" style="${HQ_IN};width:auto;min-width:200px">${[...new Set([e.sup || '', ...hqVNDirectSups(e.id)])].map(v => `<option value="${hqE(v)}" ${(e.sup || '') === v ? 'selected' : ''}>${hqE(v || '(공급사 미정)')}</option>`).join('')}</select>
       <span style="font-size:12px;color:#5D6977">이 공급사의 직송 발주만 아래에 나옵니다</span></div>`}
@@ -16254,7 +16254,7 @@ function hqVNMode(m){
 async function hqVNShipSave(print){
   if (!hqCan('buy','W')) { alert('구매 입력·수정 권한이 없습니다.'); return; }
   hqVNGrab(); const e = HQS.ed, err = document.getElementById('hqv-err');
-  if (!e.invNo) { err.textContent = 'Invoice No를 넣어주세요.'; return; }
+  if (!e.invNo) { err.textContent = 'Invoice No를 입력해 주세요.'; return; }
   if (HQS.hqship.some(x => x.id !== e.id && x.invNo === e.invNo)) { err.textContent = '같은 Invoice No가 이미 있습니다.'; return; }
   const lines = [];
   for (const [sid, v] of Object.entries(e.sel)) {
@@ -16265,9 +16265,9 @@ async function hqVNShipSave(print){
     lines.push({spoId: p.id, poNo: p.poNo || '', code: p.code, name: p.name, unit: p.unit || '', qty, hs: v.hs || '', item: v.item || '', spec: v.spec || p.name, origin: v.origin || HQ_CIPL.origin,
       nw: v.nw === '' || v.nw == null ? '' : +v.nw, box: +v.box || 1, price: p.price === '' || p.price == null ? '' : +p.price, cur: p.cur || 'USD', supplier: p.supplier || ''});
   }
-  if (!lines.length) { err.textContent = '보낼 자재 수량을 넣어주세요.'; return; }
+  if (!lines.length) { err.textContent = '보낼 자재 수량을 입력해 주세요.'; return; }
   const used = new Set(lines.map(l => l.box)), empty = e.packs.filter(p => !used.has(+p.no));
-  if (empty.length) { err.textContent = `포장 ${empty.map(p => p.no).join(', ')}번에 들어간 자재가 없습니다. 자재의 "포장 No"를 고르거나 포장을 빼주세요.`; return; }
+  if (empty.length) { err.textContent = `포장 ${empty.map(p => p.no).join(', ')}번에 투입된 자재가 없습니다. 자재의 "포장 No"를 선택하거나 포장을 빼주세요.`; return; }
   if (e.route === 'direct' && !e.loadPort) e.loadPort = hqSupCountryEn(lines[0].supplier);
   const rec = {...e, lines, packs: e.packs.map(p => ({no: +p.no, type: p.type, gw: p.gw === '' ? '' : +p.gw, size: p.size || ''})), cbm: e.cbm === '' || e.cbm == null ? '' : +e.cbm};
   delete rec.sel; delete rec.plt; delete rec.ct; delete rec.pkgs;
@@ -16279,7 +16279,7 @@ async function hqVNShipSave(print){
 }
 async function hqVNShipDelete(id){
   const h = HQS.hqship.find(x => String(x.id) === String(id)); if (!h) return;
-  if (!confirm(`${h.invNo} 발송 기록을 삭제할까요? 보낸 수량은 다시 본사 보관으로 돌아갑니다.\n되돌릴 수 없습니다. (보내지 않고 남겨 두려면 상태를 "취소"로 바꾸세요)`)) return;
+  if (!confirm(`${h.invNo} 발송 기록을 삭제할까요? 보낸 수량은 다시 본사 보관으로 돌아갑니다.\n되돌릴 수 없습니다. (보내지 않고 남겨 두려면 상태를 "취소"로 변경하세요)`)) return;
   const res = await retrySafe(() => api('deleteHQStore', {store: 'hqship', id}));
   if (!res || !res.ok) { alert('삭제 실패: ' + ((res && res.error) || '')); return; }
   HQS.hqship = HQS.hqship.filter(x => String(x.id) !== String(id)); renderHQ();
@@ -16521,7 +16521,7 @@ async function submitSupplyPO(){
   const matTxt = document.getElementById('spo-mat').value.trim();
   const code = matTxt.split('|')[0].trim(), catTxt = (matTxt.split('|')[2]||'').trim();
   const m = spoMatList().find(x => x.code === code && (!catTxt || x.cat === catTxt)) || spoMatList().find(x => x.code === code);
-  if (!m) return show('자재를 목록에서 골라주세요 (코드 또는 품명으로 검색).');
+  if (!m) return show('자재를 목록에서 선택해 주세요 (코드 또는 품명으로 검색).');
   const qty = +document.getElementById('spo-qty').value;
   if (!(qty > 0)) return show('발주 수량을 입력해주세요.');
   const orderDate = document.getElementById('spo-orderDate').value;
@@ -16711,7 +16711,7 @@ async function openFileViewer(id, title){
   const r = await api('getQCFile', {id});
   if (!FV || FV.id !== id) return;
   if (!r || !r.ok) {
-    const why = r && r.error === 'unknown action: getQCFile' ? '서버(Code.gs)를 새 버전으로 배포해야 이 기능을 쓸 수 있습니다.' : (r && r.error || '서버 응답 없음');
+    const why = r && r.error === 'unknown action: getQCFile' ? '서버(Code.gs)를 새 버전으로 배포해야 이 기능을 사용할 수 있습니다.' : (r && r.error || '서버 응답 없음');
     fvShell(FV.title, `<div class="empty">파일을 불러오지 못했습니다: ${why}<br><br><a href="https://drive.google.com/file/d/${id}/view" target="_blank" rel="noopener">드라이브에서 열기</a></div>`); return;
   }
   FV.title = r.name || FV.title;
@@ -16840,7 +16840,7 @@ async function woCapHint(mode){
   let h = `<div style="color:#185FA5">🏭 생산 가능 <b title="클릭하면 계획수량에 입력" style="cursor:pointer;text-decoration:underline" onclick="const i=document.getElementById('${mode === 'edit' ? 'wo-edit-plan-qty' : 'wo-plan-qty'}');i.value=${r.can};woCapHint('${mode}')">${n(r.can)}</b>개 <span style="color:#5D6977">(병목: ${neck})</span>${wo ? ' <span style="color:#8A95A3">· 이미 투입분 포함</span>' : ''}</div>`;
   r.mats.filter(m => m.pend > 0).forEach(m => { h += `<div style="color:#7c3aed;margin-top:2px">🔄 생산 중 반제품 포함: ${esc(m.b.materialName || m.b.materialCode)} ${n(m.pend)}개 <span style="color:#8A95A3">(실적 입력 · 출하검사 전 — ${m.pendWos.map(w => esc(w.orderNo) + ' ' + n(w.p)).join(', ')})</span></div>`; });
   if (plan > 0 && r.short.length) h += `<div style="color:#b91c1c;font-weight:600;margin-top:2px">⚠️ 자재 부족 / Thiếu NVL: ${r.short.map(m => `${esc(m.b.materialName || m.b.materialCode)} ${n(m.short)} 부족`).join(', ')}</div>`;
-  else if (plan > 0 && r.resvShort.length) h += `<div style="color:#b45309;margin-top:2px">ℹ️ 재고는 있지만 다른 미완료 작업지시도 쓸 예정: ${r.resvShort.map(m => `${esc(m.b.materialName || m.b.materialCode)} (예정 ${n(m.resv)})`).join(', ')}</div>`;
+  else if (plan > 0 && r.resvShort.length) h += `<div style="color:#b45309;margin-top:2px">ℹ️ 재고는 있지만 다른 미완료 작업지시도 사용할 예정: ${r.resvShort.map(m => `${esc(m.b.materialName || m.b.materialCode)} (예정 ${n(m.resv)})`).join(', ')}</div>`;
   else if (plan > 0) h += `<div style="color:#166534;margin-top:2px">✅ 자재 충분 / Đủ NVL</div>`;
   el.innerHTML = h;
 }
@@ -16890,7 +16890,7 @@ function renderCapacity(){
           }).join('') : '');
       };
       detail = `<tr><td colspan="4" style="padding:6px 10px 12px;background:#F8FAFC">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12.5px">목표 수량 / SL mục tiêu <input type="number" min="0" value="${tgt || ''}" placeholder="예: 3000" oninput="CAP.target['${key}']=this.value;clearTimeout(window._capT);window._capT=setTimeout(()=>{renderCapacity();const e=document.getElementById('cap-tgt');if(e){e.focus();}},400)" id="cap-tgt" style="width:110px;padding:5px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px"> <span style="color:#5D6977">넣으면 자재별 부족 수량(발주 필요량)이 나옵니다</span></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12.5px">목표 수량 / SL mục tiêu <input type="number" min="0" value="${tgt || ''}" placeholder="예: 3000" oninput="CAP.target['${key}']=this.value;clearTimeout(window._capT);window._capT=setTimeout(()=>{renderCapacity();const e=document.getElementById('cap-tgt');if(e){e.focus();}},400)" id="cap-tgt" style="width:110px;padding:5px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px"> <span style="color:#5D6977">입력하면 자재별 부족 수량(발주 필요량)이 나옵니다</span></div>
         <table style="width:100%;border-collapse:collapse;font-size:12.5px;background:#fff;border:1px solid #DCE1E7"><thead><tr style="background:#F1F5F9"><th style="text-align:left;padding:5px 6px">자재</th><th style="text-align:right;padding:5px 6px">1개당</th><th style="text-align:right;padding:5px 6px">재고</th><th style="text-align:right;padding:5px 6px">가능 수량</th>${tgt ? '<th style="text-align:right;padding:5px 6px">필요량</th><th style="text-align:right;padding:5px 6px">부족</th>' : ''}</tr></thead>
         <tbody>${c.mats.map(m => line(m, 0)).join('')}</tbody></table></td></tr>`;
     }
@@ -16911,8 +16911,8 @@ function renderCapacity(){
       <table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid #DCE1E7"><th style="text-align:left;padding:6px">제품</th><th style="text-align:right;padding:6px">생산 가능</th><th style="text-align:left;padding:6px">병목 자재</th><th></th></tr></thead>
       <tbody>${rows || '<tr><td colspan="4" class="empty">BOM이 등록된 제품이 없습니다.</td></tr>'}</tbody></table>
       <div style="font-size:11.5px;color:#8A95A3;margin-top:10px;line-height:1.6">
-        · 재고는 지금 ERP 재고(작업지시로 이미 출고된 자재는 빠진 상태) 기준입니다. 진행 중 작업지시의 남은 소요량은 따로 빼지 않습니다.<br>
-        · 완제품은 반제품 재고에 더해, 반제품 자재로 더 만들 수 있는 수량까지 합쳐 계산합니다. 같은 자재를 여러 제품이 함께 쓰면 각 제품을 따로 계산한 값입니다(합계가 아님).
+        · 재고는 지금 ERP 재고(작업지시로 이미 출고된 자재는 제외된 상태) 기준입니다. 진행 중 작업지시의 남은 소요량은 따로 빼지 않습니다.<br>
+        · 완제품은 반제품 재고에 더해, 반제품 자재로 더 만들 수 있는 수량까지 합쳐 계산합니다. 같은 자재를 여러 제품이 함께 사용하면 각 제품을 따로 계산한 값입니다(합계가 아님).
         ${noBom.length ? `<br>· BOM이 없어 계산할 수 없는 제품: ${esc(noBom.join(', '))}` : ''}</div>
     </div></div>`;
 }
@@ -16931,7 +16931,7 @@ function openLotTrace(lot){
   if (!QC.length) need.push(loadQC());
   if (!BOM.length && typeof loadBOM === 'function') need.push(loadBOM());
   document.getElementById('lot-body').innerHTML = need.length ? '<div class="empty">⏳ 작업지시·투입 자재 기록을 불러오는 중...</div>' : '';
-  Promise.all(need).then(() => { if (document.getElementById('lot-q').value) runLotTrace(); else document.getElementById('lot-body').innerHTML = '<div class="empty">LOT 번호를 입력하면 그 LOT의 구성 자재와 출고처를 보여줍니다.</div>'; });
+  Promise.all(need).then(() => { if (document.getElementById('lot-q').value) runLotTrace(); else document.getElementById('lot-body').innerHTML = '<div class="empty">LOT 번호를 입력하면 그 LOT의 구성 자재와 출고처를 표시합니다.</div>'; });
   setTimeout(() => document.getElementById('lot-q').focus(), 50);
 }
 function runLotTrace(){
@@ -16958,7 +16958,7 @@ function runLotTrace(){
       <td style="padding:4px 8px">${m.lot ? lotLink(m.lot) : '<span style="color:#b45309">(LOT 없음)</span>'}</td>
       <td style="padding:4px 8px;text-align:right">${n(m.qty)} ${m.unit||''}</td>
       <td style="padding:4px 8px">${String(m.cat||'').toUpperCase()==='BTP' ? '' : lotQCBadge(m.code, m.lot)}</td></tr>` +
-      (m.sub||[]).map(s => `<tr><td colspan="4" style="padding:2px 8px 2px ${26+lvl*18}px;color:#5D6977;font-size:12px;white-space:normal">↳ 반제품 지시서 ${s.wo.orderNo||''}에 들어간 자재</td></tr>` + matRows(s.mats, lvl+1)).join('')).join('');
+      (m.sub||[]).map(s => `<tr><td colspan="4" style="padding:2px 8px 2px ${26+lvl*18}px;color:#5D6977;font-size:12px;white-space:normal">↳ 반제품 지시서 ${s.wo.orderNo||''}에 투입된 자재</td></tr>` + matRows(s.mats, lvl+1)).join('')).join('');
   const matList = mats => mats.length ? `<div class="tw"><table style="font-size:12.5px"><thead><tr><th>투입 자재</th><th>자재 LOT</th><th style="text-align:right">수량</th><th>수입검사</th></tr></thead><tbody>${matRows(mats, 0)}</tbody></table></div>`
     : '<div style="color:#b45309;font-size:12.5px">⚠️ 이 작업지시에 투입 자재 기록이 없습니다 (작업지시 → 추적 화면에서 자재 출고를 등록해야 추적됩니다).</div>';
   let html = '';
@@ -16991,7 +16991,7 @@ function runLotTrace(){
     const eu = lotEstUsed(L).filter(x => x.prods.length);
     if (eu.length) {
       html += sec('🎯 이 자재 LOT이 쓰인 곳 — 추정 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Nơi sử dụng (ước tính)</span>',
-        `<div style="font-size:12px;color:#92400e;background:#FEF3C7;border-radius:6px;padding:6px 10px;margin-bottom:8px">작업지시 없이 출고(투입)된 자재라 실제 사용 기록이 없습니다. 출고 후 ${LOT_EST_DAYS}일 안에 이 자재를 쓰는 제품(BOM)의 생산 입고를 순서대로 채운 <b>추정</b>입니다.</div>` +
+        `<div style="font-size:12px;color:#92400e;background:#FEF3C7;border-radius:6px;padding:6px 10px;margin-bottom:8px">작업지시 없이 출고(투입)된 자재라 실제 사용 기록이 없습니다. 출고 후 ${LOT_EST_DAYS}일 안에 이 자재를 사용하는 제품(BOM)의 생산 입고를 순서대로 채운 <b>추정</b>입니다.</div>` +
         eu.map(x => {
           const g = {}; x.prods.forEach(p => { const k = (p.t.lot || '(LOT 없음)') + '|' + p.t.code; (g[k] = g[k] || {t: p.t, pcat: p.pcat, q: 0, days: []}).q += p.q; g[k].days.push(lotFmtDt(p.t).slice(5,10)); });
           return card(`<div style="font-weight:600">📤 자재 출고 ${lotFmtDt(x.it)} · ${x.it.name||x.it.code} ${n(x.it.qty)} ${x.it.unit||''}</div>` +
@@ -17014,7 +17014,7 @@ function runLotTrace(){
   if (inTx.length && !tree.length) html += sec('📥 입고 기록 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Nhập kho</span>', `<div class="tw"><table><thead><tr><th>입고일</th><th>품목</th><th style="text-align:right">수량</th><th>비고</th></tr></thead><tbody>${inTx.map(t => `<tr><td>${lotFmtDt(t)}</td><td>${t.name||t.code} <span style="font-family:monospace;color:#8A95A3;font-size:11px">${t.code}</span></td><td style="text-align:right">${n(t.qty)} ${t.unit||''}</td><td>${t.note||'-'}</td></tr>`).join('')}</tbody></table></div>`);
   if (qcs.length) html += sec('🔬 품질검사 기록 <span style="font-weight:400;color:#5D6977;font-size:12px">/ Kiểm tra chất lượng</span>', `<div class="tw"><table><thead><tr><th>검사일</th><th>구분</th><th>품목</th><th style="text-align:right">시료/불량</th><th>판정</th><th>검사자</th><th>첨부</th></tr></thead><tbody>${qcs.map(q => `<tr><td>${q.inspDate||lotFmtDt(q)}</td><td>${q.inspType||''}</td><td>${q.name||q.code||''}</td><td style="text-align:right">${n(q.sampleQty)} / ${n(q.defectQty)}</td><td style="font-weight:600;color:${/불|NG|fail/i.test(q.result||'')?'#b91c1c':'#166534'}">${q.result||'-'}</td><td>${q.inspector||'-'}</td><td>${q.attachmentUrl?`<a href="${q.attachmentUrl}" target="_blank" rel="noopener">보기</a>`:'-'}</td></tr>`).join('')}</tbody></table></div>`);
   if (!tree.length && ships.length) html = sec('🚚 이 LOT의 출고', shipTable(ships)) + html;
-  box.innerHTML = html || `<div class="empty">"${raw}" LOT 기록을 찾지 못했습니다. 철자를 확인하거나 목록에서 골라주세요.</div>`;
+  box.innerHTML = html || `<div class="empty">"${raw}" LOT 기록을 찾지 못했습니다. 철자를 확인하거나 목록에서 선택해 주세요.</div>`;
 }
 function lotQCBadge(code, lot){
   const L = lotNorm(lot); if (!L) return '';
@@ -17262,7 +17262,7 @@ function invImg(k){
 async function invUploadImg(k, input){
   const file = input.files && input.files[0]; input.value = '';
   if (!file) return;
-  if (!/^image\/(png|jpeg)$/.test(file.type)) { alert('PNG 또는 JPG 이미지를 골라주세요.'); return; }
+  if (!/^image\/(png|jpeg)$/.test(file.type)) { alert('PNG 또는 JPG 이미지를 선택해 주세요.'); return; }
   const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
   // 너무 크면 줄인다(가로 최대 360px, 투명 배경 유지)
   const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
@@ -17292,11 +17292,11 @@ async function invRemoveImg(k){
 }
 function renderInvImgRow(){
   const el = document.getElementById('inv-img-row'); if (!el) return;
-  el.innerHTML = '<span style="font-weight:600">서류에 넣을 도장·서명 <span class="vi" style="display:inline">/ Con dấu · chữ ký</span></span>' + Object.entries(INV_IMG).map(([k,l]) => {
+  el.innerHTML = '<span style="font-weight:600">서류에 사용할 도장·서명 <span class="vi" style="display:inline">/ Con dấu · chữ ký</span></span>' + Object.entries(INV_IMG).map(([k,l]) => {
     const d = invImg(k);
     return `<span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line,#DCE1E7);border-radius:8px;padding:4px 8px;background:#fff">
       ${d ? `<img src="${d}" alt="${l}" style="height:34px">` : `<span style="color:#8A95A3">${l} 없음</span>`}
-      <label style="cursor:pointer;color:#185FA5;font-weight:600">${d?'바꾸기 / Đổi':'올리기 / Tải lên'}<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="invUploadImg('${k}', this)"></label>
+      <label style="cursor:pointer;color:#185FA5;font-weight:600">${d?'변경 / Đổi':'올리기 / Tải lên'}<input type="file" accept="image/png,image/jpeg" style="display:none" onchange="invUploadImg('${k}', this)"></label>
       ${d ? `<button onclick="invRemoveImg('${k}')" style="border:none;background:none;color:#b91c1c;cursor:pointer">삭제 / Xóa</button>` : ''}</span>`;
   }).join('') + '<span id="inv-img-status" style="color:#5D6977"></span>';
 }
@@ -17325,7 +17325,7 @@ async function invSetCutoff(){
   const kind = document.getElementById('inv-kind').value;
   const cur = (invDoc().cutoff || {})[kind] || '';
   const v = (prompt(`${kind==='KR'?'본사':'솔루엠'} 출고 중 이 날짜까지는 모두 인보이스 발행 완료로 표시합니다 (YYYY-MM-DD).\n비우면 해제합니다.\nĐánh dấu đã có Invoice đến ngày này.`, cur || document.getElementById('inv-to').value || bdToday()) ?? '').trim();
-  if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) { alert('날짜 형식은 2026-10-19처럼 넣어주세요.'); return; }
+  if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) { alert('날짜 형식은 2026-10-19처럼 입력해 주세요.'); return; }
   const d = JSON.parse(JSON.stringify(invDoc())); d.cutoff = d.cutoff || {};
   if (v) d.cutoff[kind] = v; else delete d.cutoff[kind];
   if (await saveCost('model', '_doc', d)) { document.getElementById('inv-from').value = ''; renderInvPanel(); }
@@ -17339,7 +17339,7 @@ async function invLinkExisting(){
   const no = (prompt('이미 발행한 인보이스 번호를 입력하세요 (예: TG20261024)\nNhập số Invoice đã phát hành', '') || '').trim();
   if (!no) return;
   const date = (prompt('인보이스 날짜 (YYYY-MM-DD)\nNgày Invoice', picked.map(invVNDate).sort()[0]) || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { alert('날짜 형식은 2026-10-24처럼 넣어주세요.'); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { alert('날짜 형식은 2026-10-24처럼 입력해 주세요.'); return; }
   const byCode = {};
   picked.forEach(t => { (byCode[t.code] = byCode[t.code] || {code:t.code, name:t.name, qty:0}).qty += +t.qty||0; });
   const key = invKey(no), prev = (COST.model||{})[key];
@@ -17393,7 +17393,7 @@ function invLine(code, name, qty, day){
 }
 function invAddLine(){
   const sel = document.getElementById('inv-add-code'), q = +document.getElementById('inv-add-qty').value;
-  if (!sel.value || !(q > 0)) { alert('품목과 수량을 넣어주세요.'); return; }
+  if (!sel.value || !(q > 0)) { alert('품목과 수량을 입력해 주세요.'); return; }
   const tp = (DB.tp||[]).find(r => r.code === sel.value) || {code: sel.value, name: sel.value};
   const ex = INV.lines.find(l => l.code === tp.code);
   if (ex) ex.qty = (+ex.qty||0) + q; else INV.lines.push(invLine(tp.code, tp.name, q, INV.invDate || bdToday()));
@@ -17511,7 +17511,7 @@ function invEstimate(){
   if (!INV) return;
   INV.auto = INV.auto || {net:false, gross:false, cbm:false, pallets:false};
   if (INV.palAuto === undefined) INV.palAuto = true;
-  if (invIsBox()) { invEstimateBox(); const w = document.getElementById('inv-kg-warn'); const noKg = INV.lines.filter(l => !(+l.unitKg)); if (w) w.textContent = noKg.length ? `⚠️ 개당 무게가 없어 순중량에서 빠진 품목: ${noKg.map(l=>l.name||l.code).join(', ')} — 표의 "개당 kg"에 넣어주세요.` : ''; return; }
+  if (invIsBox()) { invEstimateBox(); const w = document.getElementById('inv-kg-warn'); const noKg = INV.lines.filter(l => !(+l.unitKg)); if (w) w.textContent = noKg.length ? `⚠️ 개당 무게가 없어 순중량에서 제외된 품목: ${noKg.map(l=>l.name||l.code).join(', ')} — 표의 "개당 kg"에 입력해 주세요.` : ''; return; }
   const r2 = v => Math.round(v*100)/100;
   // 자동 배정이거나, 품목 수가 바뀌었으면(추가·삭제) 다시 짠다 (팔레트별 실측 무게는 번호대로 유지)
   if (INV.palAuto || !Array.isArray(INV.plan) || INV.plan.some(p => !p.q || p.q.length !== INV.lines.length)) {
@@ -17542,7 +17542,7 @@ function invEstimate(){
   });
   const noKg = INV.lines.filter(l => !(+l.unitKg));
   const w = document.getElementById('inv-kg-warn');
-  if (w) w.textContent = noKg.length ? `⚠️ 개당 무게가 없어 순중량에서 빠진 품목: ${noKg.map(l=>l.name||l.code).join(', ')} — 표의 "개당 kg"에 넣어주세요.` : '';
+  if (w) w.textContent = noKg.length ? `⚠️ 개당 무게가 없어 순중량에서 제외된 품목: ${noKg.map(l=>l.name||l.code).join(', ')} — 표의 "개당 kg"에 입력해 주세요.` : '';
   invPlanRefresh();
 }
 function renderInvPlan(){
@@ -17551,20 +17551,20 @@ function renderInvPlan(){
   const cell = 'width:100%;padding:5px 6px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12.5px;text-align:right';
   box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 6px">
       <div style="font-size:13px;font-weight:600">팔레트 구성 / Phân bổ pallet <span id="inv-plan-mode" style="font-size:10.5px;padding:1px 6px;border-radius:999px;margin-left:2px"></span>
-        <span style="font-weight:400;color:#5D6977;font-size:12px">— 박스를 순서대로 쌓아 자동 배정합니다. 실제로 실은 대로 수량을 고치면 패킹리스트가 팔레트별로 나옵니다</span></div>
+        <span style="font-weight:400;color:#5D6977;font-size:12px">— 박스를 순서대로 쌓아 자동 배정합니다. 실제로 실은 대로 수량을 수정하면 패킹리스트가 팔레트별로 나옵니다</span></div>
       <div style="display:flex;gap:6px"><button onclick="invPlanAdd()" style="padding:5px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:12.5px">+ 팔레트 / Pallet</button>
         <button onclick="INV.palAuto=true;INV.plan.forEach(p=>{p.lots={};p.lotTxt={};p.boxes='';});invEstimate();renderInvPlan()" style="padding:5px 10px;border-radius:6px;border:1px solid var(--line,#DCE1E7);background:#fff;cursor:pointer;font-size:12.5px">자동 배정 / Tự động</button>
         ${INV.planId && typeof SPL !== 'undefined' && ((SPL.find(x => x.id === INV.planId) || {}).pallets || []).length ? `<button onclick="invReloadPlanPallets()" title="출고 예정에 입력한 팔레트·LOT·박스 구성 그대로" style="padding:5px 10px;border-radius:6px;border:1px solid #b45309;background:#FFFBEB;color:#92400E;cursor:pointer;font-size:12.5px">📦 출고 예정 구성 / Theo KH xuất</button>` : ''}
         <label style="padding:5px 10px;border-radius:6px;border:1px solid #16a34a;background:#F0FDF4;color:#166534;cursor:pointer;font-size:12.5px" title="THÔNG TIN XUẤT HÀNG 엑셀 — 팔레트·LOT·박스·무게를 그대로 채웁니다">📥 출하 정보 파일 / File xuất hàng<input type="file" accept=".xlsx" onchange="invImportShipInfo(this)" style="display:none"></label></div></div>
     <div class="tw"><table style="font-size:12.5px"><thead><tr><th>팔레트<span class="vi">Pallet</span></th>${INV.lines.map(l=>`<th style="text-align:right;white-space:normal;min-width:90px">${l.name||l.code}</th>`).join('')}<th style="text-align:right">박스<span class="vi">Thùng</span></th><th style="text-align:right">순중량 kg<span class="vi">N.W</span></th><th style="text-align:right">총중량 kg<span class="vi">G.W</span></th><th></th></tr></thead><tbody>
       ${INV.plan.map((p,k) => `<tr><td style="font-weight:600;white-space:nowrap">${k+1} <button onclick="INV.plan[${k}]._lo=!INV.plan[${k}]._lo;renderInvPlan()" title="LOT별 포장 입력" style="padding:1px 6px;border-radius:5px;border:1px solid ${p.lots && Object.values(p.lots).some(a => a && a.length) ? '#16a34a;background:#DCFCE7' : 'var(--line,#DCE1E7);background:#fff'};cursor:pointer;font-size:11px">LOT</button></td>
-        ${INV.lines.map((l,i)=>`<td><input type="number" min="0" id="inv-pq-${k}-${i}" value="${+p.q[i]||''}" oninput="invPlanSet(${k},${i},this.value)" ${invPalLots(p,i) ? 'readonly title="LOT별 수량 합계 (LOT 칸에서 고치세요)"' : ''} style="${cell};min-width:70px${invPalLots(p,i) ? ';background:#F0FDF4' : ''}"></td>`).join('')}
+        ${INV.lines.map((l,i)=>`<td><input type="number" min="0" id="inv-pq-${k}-${i}" value="${+p.q[i]||''}" oninput="invPlanSet(${k},${i},this.value)" ${invPalLots(p,i) ? 'readonly title="LOT별 수량 합계 (LOT 칸에서 수정하세요)"' : ''} style="${cell};min-width:70px${invPalLots(p,i) ? ';background:#F0FDF4' : ''}"></td>`).join('')}
         <td style="text-align:right"><input type="number" min="0" id="inv-pb-${k}" value="${p.boxes||''}" oninput="invPlanBoxes(${k},this.value)" title="LOT별 끝수 박스 등으로 실제 박스가 다르면 직접 입력 (비우면 자동 계산)" style="${cell};width:58px;text-align:right"></td>
         <td><input type="number" value="${p.net??''}" id="inv-pn-${k}" oninput="invPlanW(${k},'net',this.value)" style="${cell};min-width:80px"></td>
         <td><input type="number" value="${p.gross??''}" id="inv-pg-${k}" oninput="invPlanW(${k},'gross',this.value)" style="${cell};min-width:80px"></td>
         <td><button onclick="invPlanDel(${k})" title="팔레트 빼기" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></td></tr>
-        ${p._lo ? `<tr style="background:#F8FAFC"><td style="font-size:11px;color:#5D6977;vertical-align:top">LOT별<br>LOT 수량</td>${INV.lines.map((l,i)=>`<td style="vertical-align:top"><textarea rows="4" placeholder="TGGOFEV 1000&#10;TGGOJEV 460" oninput="invPlanLots(${k},${i},this.value)" style="width:100%;min-width:120px;padding:5px 6px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12px;font-family:monospace">${String((p.lotTxt||{})[i]||'').replace(/</g,'&lt;')}</textarea><div id="inv-pl-sum-${k}-${i}" style="font-size:11px;color:#166534">${invPalLots(p,i) ? `LOT ${invPalLots(p,i).length}개 · ${(+p.q[i]).toLocaleString()}개 · ${(invPalBase(p).find(o => o.i === i)||{cs:[]}).cs.reduce((a,c)=>a+c.n,0)}박스` : ''}</div></td>`).join('')}<td colspan="4" style="font-size:11.5px;color:#5D6977;vertical-align:top">한 줄에 "LOT 수량"씩 넣거나 엑셀 표를 그대로 붙여넣으세요.<br>LOT마다 박스를 따로 나눕니다 (1,000개 → 48×20 + 40×1).<br>Dán bảng LOT từ Excel.</td></tr>` : ''}`).join('')}
-      <tr style="background:#F6F8FA"><td style="font-weight:600">배정 합계 / Tổng</td>${INV.lines.map((l,i)=>`<td style="text-align:right" id="inv-ps-${i}"></td>`).join('')}<td colspan="4" style="color:#5D6977;font-size:11.5px">무게 칸이 비어 있으면 회색 예상값을 씁니다 · 계근 후 팔레트별 실측값을 넣으세요</td></tr>
+        ${p._lo ? `<tr style="background:#F8FAFC"><td style="font-size:11px;color:#5D6977;vertical-align:top">LOT별<br>LOT 수량</td>${INV.lines.map((l,i)=>`<td style="vertical-align:top"><textarea rows="4" placeholder="TGGOFEV 1000&#10;TGGOJEV 460" oninput="invPlanLots(${k},${i},this.value)" style="width:100%;min-width:120px;padding:5px 6px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12px;font-family:monospace">${String((p.lotTxt||{})[i]||'').replace(/</g,'&lt;')}</textarea><div id="inv-pl-sum-${k}-${i}" style="font-size:11px;color:#166534">${invPalLots(p,i) ? `LOT ${invPalLots(p,i).length}개 · ${(+p.q[i]).toLocaleString()}개 · ${(invPalBase(p).find(o => o.i === i)||{cs:[]}).cs.reduce((a,c)=>a+c.n,0)}박스` : ''}</div></td>`).join('')}<td colspan="4" style="font-size:11.5px;color:#5D6977;vertical-align:top">한 줄에 "LOT 수량"씩 입력하거나 엑셀 표를 그대로 붙여넣으세요.<br>LOT마다 박스를 따로 나눕니다 (1,000개 → 48×20 + 40×1).<br>Dán bảng LOT từ Excel.</td></tr>` : ''}`).join('')}
+      <tr style="background:#F6F8FA"><td style="font-weight:600">배정 합계 / Tổng</td>${INV.lines.map((l,i)=>`<td style="text-align:right" id="inv-ps-${i}"></td>`).join('')}<td colspan="4" style="color:#5D6977;font-size:11.5px">무게 칸이 비어 있으면 회색 예상값을 사용합니다 · 계근 후 팔레트별 실측값을 입력하세요</td></tr>
     </tbody></table></div>`;
   invPlanRefresh();
 }
@@ -17574,7 +17574,7 @@ function invPlanRefresh(){
   if (mode) { mode.textContent = INV.palAuto ? '자동' : '직접 입력'; mode.style.background = INV.palAuto ? '#FEF3C7' : '#DCFCE7'; mode.style.color = INV.palAuto ? '#92400E' : '#166534'; }
   INV.plan.forEach((p,k) => {
     const b = document.getElementById('inv-pb-'+k);
-    if (b) { b.placeholder = String(invPalNatural(p)); const g = invPalBoxGuess(p); b.style.background = g ? '#FEE2E2' : (p.boxes !== '' && p.boxes != null) ? '#DCFCE7' : ''; b.title = g ? `박스 수(${invPalBoxN(p)})가 계산(${invPalNatural(p)})과 다릅니다. LOT 버튼을 눌러 LOT별 수량을 넣어야 패킹리스트에 끝수 박스가 바르게 나옵니다.` : 'LOT별 끝수 박스 등으로 실제 박스가 다르면 직접 입력 (비우면 자동 계산)'; }
+    if (b) { b.placeholder = String(invPalNatural(p)); const g = invPalBoxGuess(p); b.style.background = g ? '#FEE2E2' : (p.boxes !== '' && p.boxes != null) ? '#DCFCE7' : ''; b.title = g ? `박스 수(${invPalBoxN(p)})가 계산(${invPalNatural(p)})과 다릅니다. LOT 버튼을 눌러 LOT별 수량을 입력해야 패킹리스트에 끝수 박스가 바르게 나옵니다.` : 'LOT별 끝수 박스 등으로 실제 박스가 다르면 직접 입력 (비우면 자동 계산)'; }
     const w = invPalWeights(p);
     const n = document.getElementById('inv-pn-'+k), g = document.getElementById('inv-pg-'+k);
     if (n) n.placeholder = w.est ? String(w.est) : '';
@@ -17696,7 +17696,7 @@ async function invImportShipInfo(input){
       return {q, lots, lotTxt, boxes: '', net: r2(p.net), gross: r2(p.gross)}; });
     INV.palAuto = false; INV.packMode = 'pallet';
     INV.auto = {...(INV.auto || {}), net: true, gross: true, cbm: true, pallets: true};
-    if (extras.length) msg.push(`🚫 인보이스에서 뺀 별도 품목(팔레트 무게와 따로 적힌 교체품 등): ${extras.map(e => `${e.code} ${e.qty}개(PL${e.pallet})`).join(', ')}`);
+    if (extras.length) msg.push(`🚫 인보이스에서 제외한 별도 품목(팔레트 무게와 따로 적힌 교체품 등): ${extras.map(e => `${e.code} ${e.qty}개(PL${e.pallet})`).join(', ')}`);
     renderInvEditor(); invEstimate(); renderInvPlan(); invRefreshTotals();
     alert(`📥 출하 정보 파일을 불러왔습니다 — 팔레트 ${pals.length}개\n\n` + (msg.join('\n') || '품목 수량 변경 없음'));
   } catch (e) { alert('출하 정보 파일을 읽지 못했습니다: ' + e.message); }
@@ -17709,14 +17709,14 @@ function renderInvEditor(){
   const missing = INV.lines.filter(l => !(INV.kind==='KR' ? +l.fee : +l.sale) || !l.hs || !l.pcsBox).map(l => l.name||l.code);
   ed.innerHTML = `
     <div style="border-top:1px solid var(--line,#DCE1E7);margin-top:14px;padding-top:14px">
-      <h4 style="font-size:14px;margin:0 0 10px">② 서류 내용 확인 / Kiểm tra nội dung <span style="font-weight:400;color:#5D6977;font-size:12px">— ${INV.kind==='KR'?'본사(THE GAUSS INC.) · EXW 임가공':'솔루엠비나 · DDP'} · 고친 HS·품명·박스 입수·연락처는 저장돼 다음에도 쓰입니다</span></h4>
+      <h4 style="font-size:14px;margin:0 0 10px">② 서류 내용 확인 / Kiểm tra nội dung <span style="font-weight:400;color:#5D6977;font-size:12px">— ${INV.kind==='KR'?'본사(THE GAUSS INC.) · EXW 임가공':'솔루엠비나 · DDP'} · 수정한 HS·품명·박스 입수·연락처는 저장돼 다음에도 쓰입니다</span></h4>
       ${INV.planId ? `<div style="background:#DCFCE7;color:#166534;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:8px">📦 출고 예정 ${((typeof SPL!=='undefined'?SPL:[]).find(p=>p.id===INV.planId)||{}).no||''}에서 불러온 인보이스입니다. 엑셀을 만들면 출고 예정에 인보이스 번호와 최종 수량이 연결됩니다.</div>` : ''}
       ${INV._oldRev ? `<div style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:8px">📜 예전 판(Rev.${INV.rev||0})을 보고 있습니다. 이 상태로 엑셀을 만들면 이 내용이 새 판으로 저장됩니다(되돌리기).</div>` : ''}
       ${(COST.model||{})[invKey(INV.invNo)] ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:8px;background:#F6F8FA;border-radius:8px;padding:8px 10px">
-        <span>📝 이미 만든 인보이스입니다 (현재 <b>Rev.${((COST.model||{})[invKey(INV.invNo)].rev)||0}</b>). 내용을 바꿔 다시 만들면 이전 판은 보관되고 판 번호가 올라갑니다.</span>
+        <span>📝 이미 만든 인보이스입니다 (현재 <b>Rev.${((COST.model||{})[invKey(INV.invNo)].rev)||0}</b>). 내용을 변경하여 다시 만들면 이전 판은 보관되고 판 번호가 올라갑니다.</span>
         <input value="${String(INV.revNote||'').replace(/"/g,'&quot;')}" oninput="INV.revNote=this.value" placeholder="수정 사유 (예: 통관 시 수량 정정 1,000→980)" style="flex:1;min-width:240px;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12.5px">
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" ${INV.markRevised!==false?'checked':''} onchange="INV.markRevised=this.checked"> 엑셀에 REVISED 표시</label></div>` : ''}
-      ${missing.length?`<div style="color:#b45309;font-size:12.5px;margin-bottom:8px">⚠️ 단가·HS코드·박스 입수가 비어 있는 품목: ${missing.join(', ')} — 아래 표에서 채워 주세요.</div>`:''}
+      ${missing.length?`<div style="color:#b45309;font-size:12.5px;margin-bottom:8px">⚠️ 단가·HS코드·박스 입수가 비어 있는 품목: ${missing.join(', ')} — 아래 표에서 입력해 주세요.</div>`:''}
       <div class="inv-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:12px;align-items:end">
         ${f('인보이스 번호 / Số Invoice','invNo',INV.invNo)}${f('인보이스 일자 / Ngày Invoice','invDate',INV.invDate,'date')}${f('출항·출발일 / Ngày khởi hành','shipDate',INV.shipDate,'date')}
         <div class="ov-fr" style="margin:0"><label>운송 방법 / Vận chuyển</label><select onchange="invSetMode(this.value)" style="width:100%;padding:6px 8px;font-size:13px">${Object.entries(INV_MODES).map(([k,v]) => `<option value="${k}" ${INV.mode===k?'selected':''}>${v.lbl}</option>`).join('')}</select></div>
@@ -17729,15 +17729,15 @@ function renderInvEditor(){
         INV.lines.map((l,i) => `<tr><td><button onclick="invDelLine(${i})" title="빼기" style="float:right;border:none;background:none;color:#b91c1c;cursor:pointer">✕</button>${l.name||''}<div style="font-family:monospace;color:#8A95A3;font-size:11px">${l.code}</div>${INV.kind==='KR'?`<div style="margin-top:3px">${inp(`lines.${i}.en`, l.en, '150px')}</div>`:''}</td>
           <td>${inp(`lines.${i}.hs`, l.hs, '90px')}</td><td style="white-space:normal"><textarea oninput="invSet('lines.${i}.vi', this.value)" rows="2" style="width:100%;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px;font-size:12px;font-family:inherit">${l.vi||''}</textarea></td>
           <td style="text-align:right">${inp(`lines.${i}.qty`, l.qty, '80px', 'number')}</td><td style="text-align:right">${inp(`lines.${i}.pcsBox`, l.pcsBox, '70px', 'number')}</td><td style="text-align:right">${inp(`lines.${i}.unitKg`, l.unitKg, '76px', 'number')}</td><td style="text-align:right">${inp(`lines.${i}.perPallet`, l.perPallet, '64px', 'number')}</td>
-          <td style="text-align:right">${inp(`lines.${i}.fee`, l.fee, '80px', 'number')}</td><td style="text-align:right">${INV.kind==='KR'?inp(`lines.${i}.foc`, l.foc, '80px', 'number'):inp(`lines.${i}.sale`, l.sale, '80px', 'number')}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">아래 "품목 추가"로 출고할 모델과 수량을 넣어주세요.</td></tr>'}</tbody></table></div>
+          <td style="text-align:right">${inp(`lines.${i}.fee`, l.fee, '80px', 'number')}</td><td style="text-align:right">${INV.kind==='KR'?inp(`lines.${i}.foc`, l.foc, '80px', 'number'):inp(`lines.${i}.sale`, l.sale, '80px', 'number')}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">아래 "품목 추가"로 출고할 모델과 수량을 입력해 주세요.</td></tr>'}</tbody></table></div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px;font-size:13px">
         <span style="font-weight:600">품목 추가 / Thêm mặt hàng</span>
         <select id="inv-add-code" style="min-width:220px"><option value="">모델 선택 / Chọn model</option>${(DB.tp||[]).filter(r=>r.active!==false).map(r=>`<option value="${r.code}">${r.name} (${r.code})</option>`).join('')}</select>
         <input id="inv-add-qty" type="number" min="1" placeholder="수량 / SL" style="width:100px;padding:6px 8px;border:1px solid var(--line,#DCE1E7);border-radius:6px">
         <button onclick="invAddLine()" style="padding:6px 12px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;font-weight:600;cursor:pointer">추가 / Thêm</button>
-        <span style="color:#8A95A3;font-size:12px">출고 등록 전이면 여기서 품목·수량을 넣습니다 / Nhập mặt hàng, SL nếu chưa đăng ký xuất</span>
+        <span style="color:#8A95A3;font-size:12px">출고 등록 전이면 여기서 품목·수량을 입력합니다 / Nhập mặt hàng, SL nếu chưa đăng ký xuất</span>
       </div>
-      <div style="font-size:13px;font-weight:600;margin:6px 0">포장 / Đóng gói <span style="font-weight:400;color:#5D6977;font-size:12px">— 수량으로 자동 계산된 <b style="color:#92400E">예상</b>값입니다. 계근 후 실측값으로 고치면 <b style="color:#166534">실측</b>으로 바뀝니다(칸을 비우면 다시 예상값)<br>Giá trị <b>dự kiến</b> tính từ số lượng — nhập số cân thực tế để đổi thành <b>thực tế</b>.</span></div>
+      <div style="font-size:13px;font-weight:600;margin:6px 0">포장 / Đóng gói <span style="font-weight:400;color:#5D6977;font-size:12px">— 수량으로 자동 계산된 <b style="color:#92400E">예상</b>값입니다. 계근 후 실측값으로 수정하면 <b style="color:#166534">실측</b>으로 바뀝니다(칸을 비우면 다시 예상값)<br>Giá trị <b>dự kiến</b> tính từ số lượng — nhập số cân thực tế để đổi thành <b>thực tế</b>.</span></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:13px"><span style="font-weight:600">포장 방식 / Kiểu đóng gói</span>
         ${[['pallet','팔레트 / Pallet'],['box','박스만 (팔레트 없음) / Chỉ thùng']].map(([k,t]) => `<label style="display:flex;align-items:center;gap:4px;padding:5px 10px;border-radius:8px;border:1px solid ${(INV.packMode||'pallet')===k?'#185FA5':'var(--line,#DCE1E7)'};background:${(INV.packMode||'pallet')===k?'#E8F0F8':'#fff'};cursor:pointer"><input type="radio" name="inv-pack" ${(INV.packMode||'pallet')===k?'checked':''} onchange="invSetPack('${k}')"> ${t}</label>`).join('')}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:6px">
@@ -17753,7 +17753,7 @@ function renderInvEditor(){
       <div id="inv-kg-warn" style="font-size:12px;color:#b45309;margin-bottom:6px"></div>
       <div id="inv-plan" style="margin-bottom:10px"></div>
       <div id="inv-totals" style="font-size:13px;color:#18212B;margin-bottom:10px"></div>
-      ${(invImg('seal')||invImg('title')) ? `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="inv-stamp" ${INV.stamp!==false?'checked':''} onchange="INV.stamp=this.checked"> 서명란에 도장·서명 넣기 / Đóng dấu vào ô ký</label>` : '<div style="font-size:12px;color:#8A95A3;margin-bottom:8px">도장·서명 이미지를 위에서 올려 두면 서명란에 자동으로 들어갑니다.</div>'}
+      ${(invImg('seal')||invImg('title')) ? `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:8px;cursor:pointer"><input type="checkbox" id="inv-stamp" ${INV.stamp!==false?'checked':''} onchange="INV.stamp=this.checked"> 서명란에 도장·서명 넣기 / Đóng dấu vào ô ký</label>` : '<div style="font-size:12px;color:#8A95A3;margin-bottom:8px">도장·서명 이미지를 위에서 업로드해 두면 서명란에 자동으로 들어갑니다.</div>'}
       <button id="inv-make" onclick="invMakeExcel()" style="padding:9px 18px;border-radius:8px;border:none;background:#166534;color:#fff;font-weight:700;cursor:pointer">📥 인보이스·패킹리스트 엑셀 만들기 / Tạo file Excel</button>
     </div>`;
   invEstimate(); renderInvPlan(); invRefreshTotals();
@@ -17833,7 +17833,7 @@ function invOpenRecord(key){
   document.getElementById('inv-editor').scrollIntoView({behavior:'smooth', block:'start'});
 }
 async function invDeleteRecord(key){
-  if (!confirm('이 인보이스 기록을 목록에서 지울까요? 수정 이력도 함께 지워집니다. (이미 내려받은 엑셀 파일은 그대로입니다)')) return;
+  if (!confirm('이 인보이스 기록을 목록에서 삭제할까요? 수정 이력도 함께 삭제됩니다. (이미 내려받은 엑셀 파일은 그대로입니다)')) return;
   const no = ((COST.model||{})[key]||{}).invNo;
   for (const k of Object.keys(COST.model||{}).filter(k => k.startsWith(key + '#'))) await saveCost('model', k, null);
   if (await saveCost('model', key, null)) {
@@ -17849,7 +17849,7 @@ function renderInvRecords(){
   if (!list.length) { el.innerHTML = ''; return; }
   const modeLbl = m => (INV_MODES[m] || {}).lbl || '';
   el.innerHTML = `<details ${list.some(r => !r.external && r.mode && r.mode !== 'TRUCK' && !r.vessel) ? 'open' : ''} style="margin-bottom:12px">
-    <summary style="cursor:pointer;font-weight:600;font-size:13px">📁 만든 인보이스 / Invoice đã lập ${list.length}건 <span style="font-weight:400;color:#5D6977;font-size:12px">— 열어서 편명·AWB 번호 등을 넣고 같은 번호로 다시 만들 수 있습니다</span></summary>
+    <summary style="cursor:pointer;font-weight:600;font-size:13px">📁 만든 인보이스 / Invoice đã lập ${list.length}건 <span style="font-weight:400;color:#5D6977;font-size:12px">— 열어서 편명·AWB 번호 등을 입력하고 같은 번호로 다시 만들 수 있습니다</span></summary>
     <div class="tw" style="margin-top:8px"><table><thead><tr><th>인보이스 번호<span class="vi">Số Invoice</span></th><th>일자<span class="vi">Ngày</span></th><th>출고처<span class="vi">Nơi nhận</span></th><th>운송<span class="vi">Vận chuyển</span></th><th>편명·선박·AWB<span class="vi">Chuyến / AWB</span></th><th style="text-align:right">수량<span class="vi">SL</span></th><th style="text-align:right">금액 USD<span class="vi">Trị giá</span></th><th></th></tr></thead><tbody>${
       list.slice(0, 30).map(r => {
         const qty = (r.lines||[]).reduce((s,l)=>s+(+l.qty||0),0);
@@ -17858,18 +17858,18 @@ function renderInvRecords(){
         const hist = (r.revs||[]).slice().reverse().map(h => `<div style="margin:3px 0"><b>Rev.${h.rev}</b> <span style="color:#8A95A3">${h.at ? new Date(Date.parse(h.at) + 7*3600e3).toISOString().slice(0,16).replace('T',' ') : ''} ${h.by||''}</span>${h.note?` · ${h.note}`:''}<br><span style="color:#5D6977">${(h.changes||[]).join(' · ')||'변경 내용 없음'}</span> <a href="javascript:void 0" onclick="invOpenRecord('${r.key}#r${h.rev-1}')" style="font-size:11.5px">Rev.${h.rev-1===0?'0(원본)':h.rev-1} 열어보기</a></div>`).join('');
         return `<tr><td style="font-family:monospace;font-weight:600">${r.invNo||''}${r.rev?` <span style="font-family:inherit;font-size:10.5px;padding:1px 6px;border-radius:999px;background:#EDE9FE;color:#5B21B6">Rev.${r.rev}</span>`:''}${r.external?` <span style="font-family:var(--font);font-size:10.5px;padding:1px 6px;border-radius:999px;background:#F1F5F9;color:#5D6977">외부 발행</span>`:''}${hist?`<details style="font-family:var(--font);font-weight:400;font-size:12px;white-space:normal;max-width:520px"><summary style="cursor:pointer;color:#185FA5">수정 이력 ${r.revs.length}건</summary>${hist}</details>`:''}</td><td>${r.invDate||''}</td><td>${r.kind==='KR'?'본사':'솔루엠'}</td><td>${modeLbl(r.mode)}</td>
           <td>${needVessel ? '<span style="color:#b45309">⚠️ 미입력</span>' : (r.vessel||'-')}</td><td style="text-align:right">${qty.toLocaleString()}</td><td style="text-align:right">$${amt.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-          <td style="white-space:nowrap"><button class="edit-btn" title="열기" onclick="invOpenRecord('${r.key}')">✏️</button><button class="edit-btn" title="목록에서 지우기" onclick="invDeleteRecord('${r.key}')">🗑️</button></td></tr>`;
+          <td style="white-space:nowrap"><button class="edit-btn" title="열기" onclick="invOpenRecord('${r.key}')">✏️</button><button class="edit-btn" title="목록에서 삭제" onclick="invDeleteRecord('${r.key}')">🗑️</button></td></tr>`;
       }).join('')}</tbody></table></div></details>`;
 }
 async function invMakeExcel(){
   if (!INV) return;
-  if (!INV.lines.length) { alert('품목을 하나 이상 넣어주세요.'); return; }
+  if (!INV.lines.length) { alert('품목을 하나 이상 입력해 주세요.'); return; }
   const guard = withButtonGuard('#inv-make', '⏳ 만드는 중...'); if (guard === null) return;
   try {
     const EX = await invLoadExcelJS();
     delete INV._oldRev;
     const gp = invIsBox() ? [] : (INV.plan||[]).map((p,k) => invPalBoxGuess(p) ? k+1 : 0).filter(Boolean);
-    if (gp.length && !confirm(`⚠️ ${gp.join(', ')}번 팔레트는 박스 수만 바꾸고 LOT별 수량을 넣지 않아 끝수 박스 구성을 알 수 없습니다.\n팔레트 번호 옆 LOT 버튼으로 LOT별 수량을 넣으면 패킹리스트가 LOT별로 나옵니다.\n\n그래도 이대로 만들까요?`)) return;
+    if (gp.length && !confirm(`⚠️ ${gp.join(', ')}번 팔레트는 박스 수만 변경하고 LOT별 수량을 입력하지 않아 끝수 박스 구성을 알 수 없습니다.\n팔레트 번호 옆 LOT 버튼으로 LOT별 수량을 입력하면 패킹리스트가 LOT별로 나옵니다.\n\n그래도 이대로 만들까요?`)) return;
     invPrepareRev();
     const wb = new EX.Workbook();
     const wsI = wb.addWorksheet('invoice', {pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0}});
@@ -18182,7 +18182,7 @@ const splPalBoxN = p => (p.rows || []).reduce((a, r) => a + splRowBoxes(r), 0);
 function splDraftLots(){ const m = {}; SPL_DRAFT.forEach(l => (l.lots||[]).forEach(x => { const k = l.code + '|' + splBase(x.lot); m[k] = (m[k] || 0) + (+x.qty || 0); })); return m; }
 // LOT별 수량을 박스로 나눠 팔레트당 56박스씩 쌓는다 (같은 LOT은 한 줄, 넘치면 다음 팔레트로)
 function splPalAuto(){
-  if (SPL_PAL.length && !confirm('지금 팔레트 구성을 지우고 자동으로 다시 만들까요?')) return;
+  if (SPL_PAL.length && !confirm('지금 팔레트 구성을 삭제하고 자동으로 다시 만들까요?')) return;
   const cap = 56, out = []; let cur = {rows: []}, used = 0;
   const add = (code, lot, q) => { const r = cur.rows.find(x => x.code === code && x.lot === lot); if (r) r.qty += q; else cur.rows.push({code, lot, qty: q}); };
   Object.entries(splDraftLots()).forEach(([k, q]) => { const [code, lot] = k.split('|'), per = splPer(code) || q;
@@ -18230,10 +18230,10 @@ function splPalHtml(){
       </tbody></table><button onclick="splPalAddRow(${k})" style="margin-top:4px;padding:3px 9px;border-radius:6px;border:1px dashed #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:12px">+ 줄 / Dòng</button></div>`; }).join('');
   const ck = splPalCheck(), bad = ck.filter(c => Math.abs(c.need - c.got) > 0.0005);
   return `<div style="border-top:1px dashed var(--line,#DCE1E7);margin-top:8px;padding-top:8px">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px"><div style="font-weight:600;font-size:13px">🧱 팔레트 구성 <span class="vi">Phân bổ pallet</span> <span style="font-weight:400;font-size:12px;color:#5D6977">— 팔레트마다 LOT 수량만 넣으면 박스(12개·48개)는 자동 계산 · LOT 끝 -0001/-0002는 한 LOT으로 합침</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px"><div style="font-weight:600;font-size:13px">🧱 팔레트 구성 <span class="vi">Phân bổ pallet</span> <span style="font-weight:400;font-size:12px;color:#5D6977">— 팔레트마다 LOT 수량만 입력하면 박스(12개·48개)는 자동 계산 · LOT 끝 -0001/-0002는 한 LOT으로 합침</span></div>
       <div style="display:flex;gap:6px"><button onclick="splPalAuto()" title="LOT별 수량을 박스로 나눠 56박스씩 쌓기" style="padding:5px 10px;border-radius:6px;border:1px solid var(--line,#DCE1E7);background:#fff;cursor:pointer;font-size:12.5px">자동 채우기 / Tự động</button>
       <button onclick="splPalKeep();SPL_PAL.push({rows:[]});splPalAddRow(SPL_PAL.length-1)" style="padding:5px 10px;border-radius:6px;border:1px solid #185FA5;background:#fff;color:#185FA5;cursor:pointer;font-size:12.5px">+ 팔레트 / Pallet</button></div></div>
-    ${pals || '<div style="font-size:12.5px;color:#5D6977;margin-bottom:6px">아직 팔레트 구성이 없습니다. "자동 채우기"로 만든 뒤 실제 포장대로 수량만 고치세요.</div>'}
+    ${pals || '<div style="font-size:12.5px;color:#5D6977;margin-bottom:6px">아직 팔레트 구성이 없습니다. "자동 채우기"로 만든 뒤 실제 포장대로 수량만 수정하세요.</div>'}
     ${SPL_PAL.length ? `<div style="font-size:12px;margin-top:4px">${ck.map(c => `<span style="display:inline-block;margin:2px 8px 2px 0;color:${Math.abs(c.need - c.got) > 0.0005 ? '#b91c1c' : '#166534'}">${nm(c.code)} ${splLotName(c.lot)}: ${n(c.got)} / ${n(c.need)} ${Math.abs(c.need - c.got) > 0.0005 ? '⚠️' : '✓'}</span>`).join('')}</div>
       <div style="font-size:12.5px;color:#5D6977;margin-top:2px">팔레트 ${SPL_PAL.length}개 · 박스 ${n(SPL_PAL.reduce((a,p)=>a+splPalBoxN(p),0))}개${bad.length ? ' · <b style="color:#b91c1c">LOT 지정 수량과 팔레트 합계가 다른 LOT이 있습니다</b>' : ''}</div>` : ''}
   </div>`;
@@ -18255,7 +18255,7 @@ function renderShipPlans(){
   const tpOpts = (DB.tp||[]).filter(r => r.active !== false).map(r => `<option value="${r.code}" ${SPL_PICK && SPL_PICK.code===r.code?'selected':''}>${r.name} (${r.code}) — 재고 ${n(r.cur)}</option>`).join('');
   const draft = SPL_DRAFT.map((l,i) => {
     const free = splStock(l.code) - splReserved(l.code, SPL_EDIT);
-    return `<tr><td>${l.name}<div style="font-family:monospace;color:#8A95A3;font-size:11px">${l.code}</div><div style="font-size:11.5px;color:#185FA5">${(l.lots||[]).map(x => `${splLotName(x.lot)} ${n(x.qty)}`).join(' · ')} <a href="javascript:void 0" onclick="splPickModel('${l.code}')">LOT 바꾸기</a></div></td><td style="text-align:right;font-weight:600">${n(l.qty)}</td>
+    return `<tr><td>${l.name}<div style="font-family:monospace;color:#8A95A3;font-size:11px">${l.code}</div><div style="font-size:11.5px;color:#185FA5">${(l.lots||[]).map(x => `${splLotName(x.lot)} ${n(x.qty)}`).join(' · ')} <a href="javascript:void 0" onclick="splPickModel('${l.code}')">LOT 변경</a></div></td><td style="text-align:right;font-weight:600">${n(l.qty)}</td>
       <td style="text-align:right;color:${free < l.qty ? '#b91c1c' : '#5D6977'}">${n(free)}${free < l.qty ? ' ⚠️' : ''}</td><td style="text-align:center"><button onclick="SPL_DRAFT.splice(${i},1);renderShipPlans()" style="border:none;background:none;color:#b91c1c;cursor:pointer">✕</button></td></tr>`;
   }).join('');
   const form = canEdit ? `
@@ -18316,7 +18316,7 @@ function splAddLine(){
   if (!SPL_PICK) { alert('모델을 선택해주세요. / Chọn model.'); return; }
   const lots = SPL_PICK.lots.filter(x => +x.qty > 0).map(x => ({lot:x.lot, qty:+x.qty}));
   const over = SPL_PICK.lots.find(x => +x.qty > x.free + 0.0005);
-  if (!lots.length) { alert('LOT별 출고 수량을 넣어주세요. / Nhập số lượng theo LOT.'); return; }
+  if (!lots.length) { alert('LOT별 출고 수량을 입력해 주세요. / Nhập số lượng theo LOT.'); return; }
   if (over) { alert(`${splLotName(over.lot)}: 지정 가능 수량(${over.free.toLocaleString()})보다 많습니다.`); return; }
   const code = SPL_PICK.code, it = (DB.tp||[]).find(r => r.code === code) || {code, name:code, unit:'Ea'};
   const qty = lots.reduce((s,x)=>s+x.qty,0);
@@ -18337,7 +18337,7 @@ async function splSave(){
   // ✅ [2026-11-20] 납기 준수율 근거: 처음 등록한 출고 예정일을 남기고, 예정일을 바꾸면 사유를 받는다
   //    고객 요청으로 바뀐 날짜만 기준일이 된다 (우리 사정으로 미루면 기준일은 그대로 → 지연으로 계산)
   let dchg = null; { const o0 = SPL_EDIT ? SPL.find(x => x.id === SPL_EDIT) : null;
-    if (o0 && String(o0.date) !== String(date) && o0.status !== 'done') { const ans = prompt(`출고 예정일을 ${o0.date} → ${date}로 바꿉니다.\n\n변경 사유를 고르세요:\n1 = 고객 요청·고객 승인 (기준일도 바뀜)\n2 = 우리 사정 (생산·자재·검사 지연 — 기준일은 그대로)`, '1');
+    if (o0 && String(o0.date) !== String(date) && o0.status !== 'done') { const ans = prompt(`출고 예정일을 ${o0.date} → ${date}로 변경합니다.\n\n변경 사유를 선택하세요:\n1 = 고객 요청·고객 승인 (기준일도 바뀜)\n2 = 우리 사정 (생산·자재·검사 지연 — 기준일은 그대로)`, '1');
       if (ans === null) return; if (!['1','2'].includes(String(ans).trim())) { alert('1 또는 2를 입력하세요.'); return; }
       const why = (prompt('변경 내용을 간단히 적어 주세요 (예: 솔루엠 요청으로 11/16 출고 / 자재 입고 지연)', '') || '').trim();
       dchg = {from: o0.date, to: date, by: CURRENT_USER || '', at: new Date().toISOString(), cust: String(ans).trim() === '1', why}; } }
@@ -18377,7 +18377,7 @@ function splEdit(id){
 }
 async function splCancel(id){
   const p = SPL.find(x => x.id === id); if (!p) return;
-  if (!confirm(`출고 예정 ${p.no}을 취소할까요? / Hủy kế hoạch này?${p.invNo ? `\n\n※ 연결된 인보이스 ${p.invNo}는 지워지지 않습니다. 필요 없으면 인보이스 목록에서 따로 삭제하세요.` : ''}`)) return;
+  if (!confirm(`출고 예정 ${p.no}을 취소할까요? / Hủy kế hoạch này?${p.invNo ? `\n\n※ 연결된 인보이스 ${p.invNo}는 삭제되지 않습니다. 필요 없으면 인보이스 목록에서 따로 삭제하세요.` : ''}`)) return;
   const rec = {...p, status:'cancel', cancelBy: CURRENT_USER||'', cancelAt: new Date().toISOString()};
   const r = await api('saveShipPlan', {rec});
   if (!r || !r.ok) { alert('저장 실패: ' + (r && r.error || '')); return; }
@@ -18395,7 +18395,7 @@ async function splPurge(id){
 async function splUndoConfirm(id){
   const p = SPL.find(x => x.id === id); if (!p || p.status !== 'done' || !isAdmin) return;
   const qty = splLines(p).reduce((s,l) => s + (+l.qty||0), 0);
-  const reason = prompt(`출고 확정을 취소합니다 / Hủy xác nhận xuất\n${p.no} · ${(SPL_DEST[p.dest]||p.dest||'').replace(/^\S+\s/,'')} · ${qty.toLocaleString()}개\n\n- 완제품 출고 이력을 지우고 재고를 되돌립니다(LOT 그대로)\n- 고객 PO 잔량도 되돌립니다\n- 출고 예정은 '${p.invNo ? '인보이스 발행' : '출고 대기'}' 상태로 돌아갑니다\n\n취소 사유를 입력하세요 / Nhập lý do:`, '');
+  const reason = prompt(`출고 확정을 취소합니다 / Hủy xác nhận xuất\n${p.no} · ${(SPL_DEST[p.dest]||p.dest||'').replace(/^\S+\s/,'')} · ${qty.toLocaleString()}개\n\n- 완제품 출고 이력을 삭제하고 재고를 되돌립니다(LOT 그대로)\n- 고객 PO 잔량도 되돌립니다\n- 출고 예정은 '${p.invNo ? '인보이스 발행' : '출고 대기'}' 상태로 돌아갑니다\n\n취소 사유를 입력하세요 / Nhập lý do:`, '');
   if (reason == null) return;
   if (!reason.trim()) { alert('취소 사유를 입력해주세요.'); return; }
   const r = await api('cancelShipConfirm', {no: p.no, reason: reason.trim(), user: CURRENT_USER || '', token: ADMIN_TOKEN});
@@ -18406,7 +18406,7 @@ async function splUndoConfirm(id){
   await splSavePlan(p);
   if (API_URL || IS_GAS) await syncNow();
   renderShipPlans(); try { renderIOTable(); initDashboard(); } catch(e) {}
-  alert(`↩ 출고 확정이 취소됐습니다 (출고 이력 ${r.removed}건 삭제, 재고·PO 잔량 복구).\nĐã hủy xác nhận xuất.`);
+  alert(`↩ 출고 확정이 취소되었습니다 (출고 이력 ${r.removed}건 삭제, 재고·PO 잔량 복구).\nĐã hủy xác nhận xuất.`);
 }
 // 📄 발행된 인보이스 엑셀 내려받기 (창고 직원도 가능 — 서버가 직원 로그인을 확인하고 인보이스 폴더 파일만 보낸다)
 async function splDownloadInv(id){
@@ -18643,7 +18643,7 @@ function cpkHist(v, L, U){
 }
 function qmCpkView(){
   const specs = cpkSpecs(), codes = [...new Map(specs.map(r => [r.code, r.name || r.code])).entries()];
-  if (!specs.length) return `<div class="empty">Cpk 규격이 없습니다. <b>고객사별 검사 기준</b>에 품목별 측정 열(LCR1 등)·LSL·USL을 넣으세요.</div>`;
+  if (!specs.length) return `<div class="empty">Cpk 규격이 없습니다. <b>고객사별 검사 기준</b>에 품목별 측정 열(LCR1 등)·LSL·USL을 입력하세요.</div>`;
   if (!CPK.code || !specs.some(r => r.code === CPK.code)) { CPK.code = codes[0][0]; CPK.key = ''; CPK.data = null; }
   const mine = specs.filter(r => r.code === CPK.code); if (!mine.some(r => r.param === CPK.key)) { CPK.key = mine[0].param; CPK.data = null; }
   const sp = mine.find(r => r.param === CPK.key), L = sp.lsl, U = sp.usl, f = x => x === null || x === undefined || !isFinite(x) ? '-' : (+(+x).toPrecision(4)).toString(), f2 = x => x === null || !isFinite(x) ? '-' : x.toFixed(2);
@@ -18656,7 +18656,7 @@ function qmCpkView(){
     ${CPK.data && CPK.data.length ? `<button onclick="cpkPrint()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">🖨️ 인쇄</button>` : ''}</div>
     <div style="font-size:12.5px;color:#5D6977;margin-bottom:10px">규격: <b>${hqE(sp.spec || '')}</b> → LSL ${f(L)} / USL ${f(U)} · 근거: ${hqE(sp.method || '고객사별 검사 기준')} · 측정값 × ${hqE(sp.scale || 1)}</div>`;
   if (CPK.err) return sel + `<div class="empty" style="color:#b91c1c">${hqE(CPK.err)}</div>`;
-  if (!CPK.data) return sel + '<div class="empty">기간을 고르고 <b>📈 계산</b>을 누르세요. (비우면 전체 기간)</div>';
+  if (!CPK.data) return sel + '<div class="empty">기간을 선택하고 <b>📈 계산</b>을 누르세요. (비우면 전체 기간)</div>';
   if (!CPK.data.length) return sel + '<div class="empty">이 기간에 특성검사 데이터가 없습니다.</div>';
   const all = CPK.data.map(x => x.v), lots = {}; CPK.data.forEach(x => (lots[x.lot] = lots[x.lot] || []).push(x));
   const LS = Object.entries(lots).map(([lot, a]) => ({lot, t: a[0].t, s: cpkStats(a.map(x => x.v), L, U)})).filter(x => x.s).sort((a, b) => String(a.t).localeCompare(String(b.t)));
@@ -18881,7 +18881,7 @@ function qmApprovalBox(rec){
   const ok = rec.approvedAt && String(rec.approvedRev || '') === String(rec.rev || ''), h = rec.approvals || [];
   return `<div style="margin-top:12px;border:1px solid ${ok ? '#86EFAC' : '#FCD34D'};background:${ok ? '#F0FDF4' : '#FFFBEB'};border-radius:9px;padding:10px 12px;font-size:13px">
     <b>🖋 전자 승인</b> ${ok ? `<span style="color:#166534;font-weight:700">✔ 승인 — ${hqE(rec.approvedBy)} · ${hqE(String(rec.approvedAt).slice(0, 16).replace('T', ' '))} · ${hqE(rec.approvedRev)}</span>` : `<span style="color:#92400E;font-weight:700">미승인 ${rec.rev ? '(' + hqE(rec.rev) + ')' : ''}</span>`}
-    <div style="color:#5D6977;margin-top:4px">작성 ${hqE(rec.author || '-')} · 검토 ${hqE(rec.reviewer || '-')} · 승인 ${hqE(ok ? rec.approvedBy : '-')} — 승인은 법인장(마스터)만, 승인 후 내용을 바꾸면 승인이 풀리고 "개정 중"이 됩니다.${isMaster ? '' : ' (승인하려면 마스터로 로그인)'}</div>
+    <div style="color:#5D6977;margin-top:4px">작성 ${hqE(rec.author || '-')} · 검토 ${hqE(rec.reviewer || '-')} · 승인 ${hqE(ok ? rec.approvedBy : '-')} — 승인은 법인장(마스터)만, 승인 후 내용을 변경하면 승인이 풀리고 "개정 중"이 됩니다.${isMaster ? '' : ' (승인하려면 마스터로 로그인)'}</div>
     ${h.length ? `<div style="color:#5D6977;margin-top:4px">승인 이력: ${h.map(x => `${hqE(x.rev)} ${hqE(x.by)} ${hqE(String(x.at).slice(0, 10))}`).join(' · ')}</div>` : ''}</div>`;
 }
 function qmFileField(v){
@@ -19051,7 +19051,7 @@ function qmEcnSet(k, v){ const h = document.getElementById('qm-ecn-ck'); let o =
 function qmPagesField(rec){
   return `<textarea data-k="pages" id="qm-pages" rows="4" placeholder="WCUT=3, WIND=4, LEAD=5, DIP=6 …" style="${HQ_IN};font-family:monospace;font-size:12.5px">${hqE(rec.pages || '')}</textarea>
     <label style="display:inline-block;margin-top:6px;padding:7px 12px;border-radius:7px;border:1px solid #4f46e5;background:#fff;color:#4f46e5;font-size:12.5px;cursor:pointer;font-weight:600">✂ PDF를 공정별로 나눠 올리기<input type="file" accept=".pdf" style="display:none" onchange="qmSplitUpload(this.files[0]);this.value=''"></label>
-    <div id="qm-split-msg" style="font-size:11.5px;color:#5D6977;margin-top:3px">승인할 PDF(전체본)를 고르면 위 표대로 나눠서 올립니다.</div>`;
+    <div id="qm-split-msg" style="font-size:11.5px;color:#5D6977;margin-top:3px">승인할 PDF(전체본)를 선택하면 위 표대로 나눠서 올립니다.</div>`;
 }
 function qmPagesMap(txt){ const m = {}; String(txt || '').split(/[,\n;]+/).forEach(x => { const r = x.trim().match(/^([A-Za-z0-9_\/]+)\s*[=:]\s*([\d\s\-~]+)$/); if (!r) return;
   const pg = []; const seg = r[2].replace(/\s/g, ''); const mm = seg.match(/^(\d+)(?:[-~](\d+))?$/); if (!mm) return;
@@ -19126,8 +19126,8 @@ async function qmSave(approve){
     if (rec.status === '완료' && !rec.closeDate) rec.closeDate = qmToday(); }
   if (e.store === 'qmr' && rec.status !== '작성 중' && !isMaster) { alert('경영검토 승인은 법인장(마스터 ON)만 할 수 있습니다.'); return; }
   if (e.store === 'qmr' && rec.status !== '작성 중' && !String(rec.approver || '').trim()) rec.approver = CURRENT_USER || '';
-  if (e.store === 'qecn') { const left = qmEcnLeft(rec.checks); if (rec.status === '완료' && left.length) { alert('체크리스트가 끝나지 않아 완료할 수 없습니다:\n- ' + left.join('\n- ') + '\n\n해당 없는 항목은 "해당 없음"을 고르세요.'); return; }
-    if (rec.status === '적용' && !String(rec.firstLot || '').trim()) { alert('적용 상태로 바꾸려면 적용 첫 LOT를 적어야 합니다 (추적성).'); return; }
+  if (e.store === 'qecn') { const left = qmEcnLeft(rec.checks); if (rec.status === '완료' && left.length) { alert('체크리스트가 끝나지 않아 완료할 수 없습니다:\n- ' + left.join('\n- ') + '\n\n해당 없는 항목은 "해당 없음"을 선택하세요.'); return; }
+    if (rec.status === '적용' && !String(rec.firstLot || '').trim()) { alert('적용 상태로 변경하려면 적용 첫 LOT를 적어야 합니다 (추적성).'); return; }
     if (rec.status === '완료' && !rec.closeDate) rec.closeDate = qmToday(); }
   if (e.store === 'qfai' && /승인|반려/.test(rec.status) && !rec.approveDate) rec.approveDate = qmToday();
   if (!rec.id) rec.id = e.store + '-' + Date.now();
@@ -19196,7 +19196,7 @@ async function qmPut(store, rec){
 }
 function qmSrcNote(){
   const m = QM.mes || {};
-  return `<div style="font-size:11.5px;color:#5D6977;margin:2px 0 8px">✅ 여기(ERP)가 원본입니다. MES는 이 내용을 받아서 현장 작업 시작 확인에 씁니다 (MES에서는 수정 불가).
+  return `<div style="font-size:11.5px;color:#5D6977;margin:2px 0 8px">✅ 여기(ERP)가 원본입니다. MES는 이 내용을 받아서 현장 작업 시작 확인에 사용합니다 (MES에서는 수정 불가).
     ${m.live ? qmBadge('작업자·공정 명단: MES 실시간', 'g') : m.at ? qmBadge('작업자·공정 명단: MES 사본 ' + String(m.at).slice(0, 10), 'y') : qmBadge('작업자·공정 명단 없음 — 이 브라우저에서 MES에 한 번 로그인하세요', 'r')}</div>`;
 }
 // 최초 1회: MES에 있던 계측기·교정 이력·자격을 ERP로 옮긴다 (MES 로그인 필요)
@@ -19242,7 +19242,7 @@ function qmGaugeEdit(id){
   const g = id ? qmGauges().find(x => String(x.id) === String(id)) : null;
   const r = g ? {...g} : {cycle_months: 12, active: true, cals: []};
   const procs = (QM.mes && QM.mes.procs) || [];
-  const I = (k, t, v) => `<input data-g="${k}" type="${t || 'text'}" value="${hqE(v ?? '')}" style="${HQ_IN}" ${k === 'code' && g ? 'readonly title="관리번호는 바꿀 수 없습니다"' : ''}>`;
+  const I = (k, t, v) => `<input data-g="${k}" type="${t || 'text'}" value="${hqE(v ?? '')}" style="${HQ_IN}" ${k === 'code' && g ? 'readonly title="관리번호는 변경할 수 없습니다"' : ''}>`;
   qmModal(`<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><h3 style="margin:0">📏 계측기 ${g ? '수정' : '추가'}</h3><span style="flex:1"></span><button onclick="qmClose()" style="border:0;background:none;font-size:20px;cursor:pointer">✕</button></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       ${hqFld('관리번호 *', '', I('code', 'text', r.code))}${hqFld('명칭 *', '', I('name', 'text', r.name))}
@@ -19253,7 +19253,7 @@ function qmGaugeEdit(id){
       ${hqFld('최근 교정일', '', I('last_cal', 'date', r.last_cal))}${hqFld('다음 교정일', '', I('next_due', 'date', r.next_due))}
       ${hqFld('상태', '', `<select data-g="active" style="${HQ_IN}"><option value="1" ${r.active !== false ? 'selected' : ''}>사용</option><option value="0" ${r.active === false ? 'selected' : ''}>사용 중지</option></select>`)}
       ${hqFld('비고', '', I('note', 'text', r.note))}</div>
-    <div style="font-size:11.5px;color:#8A95A3;margin-top:8px">최근·다음 교정일은 "교정 등록"을 하면 자동으로 바뀝니다. 기한이 지난 계측기를 쓰는 공정은 MES에서 작업 시작이 막힙니다.</div>
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:8px">최근·다음 교정일은 "교정 등록"을 하면 자동으로 바뀝니다. 기한이 지난 계측기를 사용하는 공정은 MES에서 작업 시작이 차단됩니다.</div>
     <div style="display:flex;gap:8px;margin-top:14px"><span style="flex:1"></span><button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">취소</button><button onclick="qmGaugeSave(${g ? `'${hqE(g.id)}'` : 'null'})" style="padding:8px 18px;border-radius:7px;border:1px solid #0d9488;background:#0d9488;color:#fff;font-weight:700;cursor:pointer">💾 저장</button></div>`);
 }
 async function qmGaugeSave(id){
@@ -19278,7 +19278,7 @@ function qmCalDlg(id){
 async function qmCalSave(id){
   const g = qmGauges().find(x => String(x.id) === String(id)); if (!g) return; const v = k => document.getElementById(k).value.trim();
   const c = {cal_date: v('qc-cd'), result: v('qc-cr'), cal_org: v('qc-co'), cert_no: v('qc-cc'), next_due: v('qc-cr') === '불합격' ? '' : v('qc-cn'), note: v('qc-cx'), by: CURRENT_USER || ''};
-  if (!c.cal_date) { alert('교정일을 넣어주세요.'); return; }
+  if (!c.cal_date) { alert('교정일을 입력해 주세요.'); return; }
   const rec = {...g, cals: (g.cals || []).concat([c])};
   const latest = rec.cals.slice().sort((a, b) => String(b.cal_date).localeCompare(String(a.cal_date)))[0];
   if (latest === c) { rec.last_cal = c.cal_date; rec.next_due = c.next_due; if (c.cal_org) rec.cal_org = c.cal_org; if (c.result === '불합격') rec.active = false; }
@@ -19326,7 +19326,7 @@ async function qmSkillImport(file){
   if (!file) return; if (typeof XLSX === 'undefined') { alert('엑셀 읽기 기능을 불러오지 못했습니다. 새로고침 후 다시 해주세요.'); return; }
   let rows;
   try { const wb = XLSX.read(await file.arrayBuffer(), {type: 'array'}); const sn = wb.SheetNames.find(n => /ERP_자격등록/.test(n));
-    if (!sn) { alert("'ERP_자격등록' 시트가 없습니다. ERP 등록용 자격인증 엑셀을 고르세요."); return; }
+    if (!sn) { alert("'ERP_자격등록' 시트가 없습니다. ERP 등록용 자격인증 엑셀을 선택하세요."); return; }
     rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], {header: 1, defval: '', raw: true}); } catch (e) { alert('엑셀을 읽지 못했습니다: ' + e.message); return; }
   const hi = rows.findIndex(r => r.some(c => /^사번/.test(String(c))) && r.some(c => /^레벨/.test(String(c)))); if (hi < 0) { alert('머리글(사번·레벨)을 찾지 못했습니다.'); return; }
   const H = rows[hi].map(c => String(c).split('\n')[0].trim()), col = k => H.findIndex(h => h.startsWith(k));
@@ -19363,7 +19363,7 @@ function qmSkillDlg(wk, pc){
 async function qmSkillSave(wk, pc, del){
   const id = wk + '|' + pc, old = (HQS.qskill || []).find(x => x.id === id) || {};
   if (del && !confirm('이 자격 기록을 삭제할까요?')) return;
-  if (!del && !QM.skLv) { alert('단계를 고르세요.'); return; }
+  if (!del && !QM.skLv) { alert('단계를 선택하세요.'); return; }
   const v = k => document.getElementById(k).value.trim();
   const rec = del ? {...old, id, removed: true, level: 0} : {id, worker_code: wk, process_code: pc, level: QM.skLv, certified_on: v('qs-c'), valid_until: v('qs-v'), evaluator: v('qs-e'), note: v('qs-n'), link: v('qm-link')};
   if (await qmPut('qskill', rec)) { qmClose(); qmRender(); }
@@ -19408,7 +19408,7 @@ async function qcTesterAuto(file){
     box.innerHTML = `${warn}<b>✅ 특성검사기 데이터 자동 입력</b> — ${n}EA, NG <b style="color:${ng.length ? '#b91c1c' : '#166534'}">${ng.length}</b>, 판정 <b>${ng.length ? '불합격' : '합격'}</b>${m ? `, LOT ${hqE(m[2])}` : ''}, S/N ${hqE(sns[0])}~${hqE(sns[sns.length - 1])}
       <table style="margin-top:6px;font-size:11.5px;border-collapse:collapse"><tr style="color:#5D6977"><td style="padding:1px 8px 1px 0">항목</td><td style="padding:1px 8px">최소</td><td style="padding:1px 8px">평균</td><td style="padding:1px 8px">최대</td></tr>${stat.map(s => `<tr><td style="padding:1px 8px 1px 0;font-weight:700">${hqE(s.k)}</td><td style="padding:1px 8px">${f(s.mn)}</td><td style="padding:1px 8px">${f(s.av)}</td><td style="padding:1px 8px">${f(s.mx)}</td></tr>`).join('')}</table>
       ${ng.length ? `<div style="color:#b91c1c;margin-top:4px">NG 시리얼: ${ng.map(r => hqE(String(r[kSN]).split('-').pop()) + '(' + hqE(r[kRes]) + ')').slice(0, 20).join(', ')}</div>` : ''}
-      <div style="color:#5D6977;margin-top:4px">수량·불량·판정·LOT·비고를 채웠습니다. 필요하면 고쳐서 저장하세요.</div>`;
+      <div style="color:#5D6977;margin-top:4px">수량·불량·판정·LOT·비고를 채웠습니다. 필요하면 수정하여 저장하세요.</div>`;
   } catch (e) { box.style.display = ''; box.innerHTML = '⚠️ 파일을 읽지 못했습니다: ' + hqE(e.message || e); }
 }
 
@@ -19449,7 +19449,7 @@ async function qcLotDocs(id){
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${qmBadge('출하검사 ' + shipN.length, 'b')}${noRep ? qmBadge('성적서 없음 ' + noRep, 'r') : shipN.length ? qmBadge('성적서 첨부 완료', 'g') : ''}${qmBadge('공정검사 ' + own.filter(q => q.inspType === '공정검사').length)}${qmBadge('투입 자재 ' + (wo ? new Set(WO_MAT.filter(m => String(m.workOrderId) === String(wo.id)).map(m => m.code + m.lot)).size : 0) + '종')}</div>
     <h4 style="margin:8px 0 4px">① 출하검사 · 공정검사</h4><div class="tw"><table style="width:100%;font-size:12.5px">${head}<tbody>${own.map(q => row(q)).join('') || '<tr><td colspan="6" class="empty">기록이 없습니다.</td></tr>'}</tbody></table></div>
     <h4 style="margin:14px 0 4px">② 투입 자재 수입검사 성적서 ${wo ? '' : '<span style="font-size:12px;color:#8A95A3;font-weight:400">(작업지시가 없어 알 수 없음)</span>'}</h4><div class="tw"><table style="width:100%;font-size:12.5px">${head}<tbody>${mats.join('') || '<tr><td colspan="6" class="empty">투입 자재 기록이 없습니다.</td></tr>'}</tbody></table></div>
-    <div style="font-size:11.5px;color:#8A95A3;margin-top:8px">파일을 누르면 엑셀·CSV는 ERP 보기 창, PDF는 드라이브로 열립니다. 빨간 줄은 성적서·기록이 빠진 곳입니다.</div>
+    <div style="font-size:11.5px;color:#8A95A3;margin-top:8px">파일을 누르면 엑셀·CSV는 ERP 보기 창, PDF는 드라이브로 열립니다. 빨간 줄은 성적서·기록이 누락된 곳입니다.</div>
     <div style="text-align:right;margin-top:10px"><button onclick="qmClose()" style="padding:8px 14px;border-radius:7px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button></div>`);
   const box = document.querySelector('#qm-modal > div'); if (box) box.style.width = 'min(1000px,100%)';
 }
@@ -19635,7 +19635,7 @@ function vpPick(i, s){ const l = VP.ed.lines[i], q = (l.q || {})[s] || {}; if (q
   l.sup = s; l.price = +q.p || l.price; l.supManual = true; l.supAuto = false; const low = vpLowest(l, VP.ed.qsups); l.why = low && low.s === s ? '최저가' : (l.why && l.why !== '최저가' ? l.why : ''); vpEdRender();
   if (!l.why) setTimeout(() => alert('최저가가 아닌 업체를 선정했습니다. "선정 사유"에 이유를 적어 주세요 (예: 품질, 납기).'), 50); }
 function vpAddSup(){ const v = (document.getElementById('vp-addsup') || {}).value || ''; const s = vpSupCanon(v.trim()); if (!s) return; if (!(VP.ed.qsups || []).includes(s)) VP.ed.qsups = (VP.ed.qsups || []).concat([s]); vpEdRender(); }
-function vpDelSup(k){ const s = VP.ed.qsups[k]; if (!confirm(`${s} 견적 열을 지울까요?`)) return; VP.ed.qsups.splice(k, 1); VP.ed.lines.forEach(l => { if (l.q) delete l.q[s]; if (l.sup === s && !l.supManual) { l.sup = ''; l.price = ''; } }); vpEdRender(); }
+function vpDelSup(k){ const s = VP.ed.qsups[k]; if (!confirm(`${s} 견적 열을 삭제할까요?`)) return; VP.ed.qsups.splice(k, 1); VP.ed.lines.forEach(l => { if (l.q) delete l.q[s]; if (l.sup === s && !l.supManual) { l.sup = ''; l.price = ''; } }); vpEdRender(); }
 // 최근 구매 찾기: 같은 ERP 품목(코드) → 없으면 같은 품명. 발주된 구매(발주·입고중·완료) 중 가장 최근 주문일
 // 품명 단어 (베트남어 성조·대소문자 무시, 한글 포함)
 const vpTok = t => [...new Set(String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().split(/[^0-9a-z가-힣]+/).filter(w => w.length > 1 || /[가-힣]/.test(w)))];
@@ -19658,7 +19658,7 @@ function vpAutoFill(l, force){
   l.why = `최근 구매 ${String(h.od).slice(0, 10)} (${h.no})`; l.supSrc = h.w < 2 ? h.l.name : ''; return true;
 }
 function vpLink(i, v){ const code = String(v).split(' — ')[0].trim(), it = vpItems().find(x => x.code === code); const l = VP.ed.lines[i];
-  if (!v) { l.code = ''; return; } if (!it) { alert('목록에서 ERP 소모품(VTTH)·원자재 VN 품목을 골라 주세요.'); vpEdRender(); return; }
+  if (!v) { l.code = ''; return; } if (!it) { alert('목록에서 ERP 소모품(VTTH)·원자재 VN 품목을 선택해 주세요.'); vpEdRender(); return; }
   l.code = it.code; if (!l.name) l.name = it.name; if (!l.unit) l.unit = it.unit || ''; l.cat = it.cat === 'VN' ? 'NPL' : 'VTTH';
   vpAutoFill(l); vpEdRender(); }
 // 🔎 과거 구매 품목 목록 (엑셀에서 가져온 기록 포함) — 생산용·사무용 구분, 품목별 최근 구매 1건
@@ -19685,7 +19685,7 @@ function vpDeptSeg(){
 }
 function vpCheck(r, strict){
   r.lines = (r.lines || []).filter(l => String(l.name || '').trim() || l.code);
-  if (!r.lines.length) return '품목을 1개 이상 넣어 주세요.';
+  if (!r.lines.length) return '품목을 1개 이상 입력해 주세요.';
   if (r.lines.some(l => !(+l.qty > 0))) return '수량을 확인해 주세요.';
   if (strict) { const bad = r.lines.filter(l => !l.sup || !(+l.price > 0)); if (bad.length) return `업체·단가가 정해지지 않은 품목: ${bad.map(l => l.name).join(', ')}`;
     const why = r.lines.filter(l => { const low = vpLowest(l, r.qsups); return low && low.s !== l.sup && !String(l.why || '').trim(); }); if (why.length) return `최저가가 아닌 업체를 고른 품목은 선정 사유를 적어 주세요: ${why.map(l => l.name).join(', ')}`; }
@@ -19728,15 +19728,15 @@ function vpImgShrink(file, maxW){ return new Promise((res, rej) => { const fr = 
   let q = 0.85, d = cv.toDataURL('image/jpeg', q); while (d.length > 40000 && q > 0.35) { q -= 0.1; d = cv.toDataURL('image/jpeg', q); } res(d); }; im.onerror = rej; im.src = fr.result; }; fr.onerror = rej; fr.readAsDataURL(file); }); }
 function vpSealDlg(){
   const box = (k, t, v) => `<div style="flex:1;min-width:240px"><b>${t}</b><div style="height:130px;border:1px dashed #CBD5E1;border-radius:8px;margin:6px 0;display:flex;align-items:center;justify-content:center;background:#fff">${v ? `<img src="${v}" style="max-height:120px;max-width:100%;mix-blend-mode:multiply">` : '<span class="pl-sub">없음</span>'}</div>
-    <input type="file" accept="image/*" onchange="vpSealSet('${k}',this.files[0])"> ${v ? `<button class="pl-btn" style="padding:3px 10px" onclick="vpSealSet('${k}',null)">지우기</button>` : ''}</div>`;
-  vpModal(`<h3 style="margin:0 0 6px">주문서 도장·서명</h3><div class="pl-sub" style="margin-bottom:10px">법인장 <b>승인이 난 구매 건</b>의 주문서 아래 "XÁC NHẬN CỦA ĐƠN VỊ MUA HÀNG" 칸에 도장과 서명이 찍히고, 결재란 승인 칸에 서명이 들어갑니다. 흰 바탕에 찍은 도장·서명을 스캔하거나 사진으로 올리세요 (자동으로 줄여 저장).</div>
+    <input type="file" accept="image/*" onchange="vpSealSet('${k}',this.files[0])"> ${v ? `<button class="pl-btn" style="padding:3px 10px" onclick="vpSealSet('${k}',null)">삭제</button>` : ''}</div>`;
+  vpModal(`<h3 style="margin:0 0 6px">주문서 도장·서명</h3><div class="pl-sub" style="margin-bottom:10px">법인장 <b>승인이 난 구매 건</b>의 주문서 아래 "XÁC NHẬN CỦA ĐƠN VỊ MUA HÀNG" 칸에 도장과 서명이 찍히고, 결재란 승인 칸에 서명이 들어갑니다. 흰 바탕에 찍은 도장·서명을 스캔하거나 사진으로 업로드하세요 (자동으로 줄여 저장).</div>
     <div style="display:flex;gap:16px;flex-wrap:wrap">${box('vn_seal', '회사 도장·서명', VP.seal)}${box('vn_sig', '서명 (승인란)', VP.sign)}</div>
     <div style="margin-top:10px"><button class="pl-act" style="padding:7px 14px" onclick="vpSealFromInvoice()">회사 도장을 출고 인보이스 것으로 다시 가져오기</button> <span class="pl-sub">승인란 서명은 바뀌지 않습니다.</span></div>
     <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="pl-btn" onclick="vpClose()">닫기</button></div>`, 640);
 }
 async function vpSealSet(id, file){
   if (!(isMaster || isAdmin)) return;
-  if (!file && !confirm('지울까요?')) return;
+  if (!file && !confirm('삭제할까요?')) return;
   const d = file ? await vpImgShrink(file, id === 'vn_seal' ? 360 : 420).catch(() => '') : '';
   if (file && !d) { alert('이미지를 읽지 못했습니다.'); return; }
   if (await qmPut('hqcfg', {id, d, updatedAt: new Date().toISOString(), updatedBy: CURRENT_USER || ''})) { if (id === 'vn_seal') VP.seal = d; else VP.sign = d; vpSealDlg(); renderVP({local: true}); }
@@ -19839,7 +19839,7 @@ function vpPrint(){
 // ③ 지불 요청서 (ĐỀ NGHỊ THANH TOÁN) — 업체별 1줄
 function vpPrintPM(){
   const r = VP.ed; if (!r) return; const by = {}; (r.lines || []).forEach(l => { if (l.sup) (by[l.sup] = by[l.sup] || []).push(l); });
-  const vat = r.vat === '' || r.vat == null ? 10 : +r.vat, rate = prompt('원화(₩) 금액도 적으려면 환율을 넣으세요 (1 KRW = ? VND, 예: 18.5). 비워 두면 ₩ 칸은 비웁니다.', r.krwRate || '');
+  const vat = r.vat === '' || r.vat == null ? 10 : +r.vat, rate = prompt('원화(₩) 금액도 적으려면 환율을 입력하세요 (1 KRW = ? VND, 예: 18.5). 비워 두면 ₩ 칸은 비웁니다.', r.krwRate || '');
   if (rate === null) return; r.krwRate = rate;
   let total = 0; const rows = Object.entries(by).map(([s, L], i) => { const sup = (HQS.vsup || []).find(x => x.name === s) || {}, sub = L.reduce((a, l) => a + vpAmt(l), 0), amt = sub + Math.round(sub * vat / 100); total += amt;
     return `<tr><td class="c">${i + 1}</td><td>${vpE(sup.fullName || s)}<br><span style="font-size:9px">${vpE(L.map(l => l.name).slice(0, 3).join(', '))}${L.length > 3 ? ' …' : ''}</span></td><td class="c">${L.length}</td><td class="r">${vpN(amt)}</td><td class="c">${vpE((r.poNos || {})[s] || '')}</td><td class="c">${vpE(sup.bankAcc || '')}</td><td class="c" colspan="2">${vpE(sup.bank || '')}</td><td>${vat ? 'VAT ' + vat + '% 포함' : ''}</td></tr>`; });
@@ -19862,7 +19862,7 @@ function vpPrintPM(){
 function vpRecv(id){
   const r = (HQS.vpur || []).find(x => String(x.id) === String(id)); if (!r) return; VP.ed = JSON.parse(JSON.stringify(r));
   vpModal(`<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><h3 style="margin:0;font-size:17px">입고 등록 · ${vpE(r.no)}</h3>${hqPill(r.status, VP_ST[r.status])}<span style="flex:1"></span><button class="pl-btn" onclick="vpClose()">닫기</button></div>
-    <div class="pl-sub" style="margin-bottom:8px">이번에 들어온 수량을 넣으세요. ERP 소모품(VTTH)과 연결된 품목은 재고에도 입고됩니다. 원자재(VN·KR)는 수입검사 합격 시 입고되므로 여기서는 기록만 합니다.</div>
+    <div class="pl-sub" style="margin-bottom:8px">이번에 입고된 수량을 입력하세요. ERP 소모품(VTTH)과 연결된 품목은 재고에도 입고됩니다. 원자재(VN·KR)는 수입검사 합격 시 입고되므로 여기서는 기록만 합니다.</div>
     <div style="margin-bottom:8px">입고일 <input type="date" id="vp-rd" value="${vpToday()}" style="padding:5px 8px;border:1px solid #D1D5DB;border-radius:6px"></div>
     <div class="pl-tw"><table class="pl-t vp-t" style="min-width:760px"><thead><tr><th style="text-align:left">품목</th><th>업체</th><th class="num">발주</th><th class="num">입고 누계</th><th class="num">미입고</th><th class="num">이번 입고</th><th>재고 연동</th></tr></thead><tbody>
     ${(r.lines || []).map((l, i) => { const miss = Math.max(0, (+l.qty || 0) - (+l.recvQty || 0)), it = l.code ? allRows().find(x => x.code === l.code) : null;
@@ -19875,7 +19875,7 @@ function vpRecv(id){
 async function vpRecvSave(){
   const r = VP.ed, rd = (document.getElementById('vp-rd') || {}).value || vpToday(), btn = document.getElementById('vp-rbtn'), err = document.getElementById('vp-err');
   const recs = []; (r.lines || []).forEach((l, i) => { const el = document.getElementById('vp-rq' + i), v = el && !el.disabled ? +String(el.value).replace(/[^0-9.]/g, '') : 0; if (v > 0) recs.push({l, v}); });
-  if (!recs.length) { err.textContent = '입고 수량을 넣어 주세요.'; return; }
+  if (!recs.length) { err.textContent = '입고 수량을 입력해 주세요.'; return; }
   const over = recs.filter(x => (+x.l.recvQty || 0) + x.v > (+x.l.qty || 0)); if (over.length && !confirm(`발주보다 많이 입고되는 품목이 있습니다: ${over.map(x => x.l.name).join(', ')}\n그대로 저장할까요?`)) return;
   btn.disabled = true; btn.textContent = '저장 중…';
   const stockErr = [];
@@ -19961,7 +19961,7 @@ function vpSupEdit(name){
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px"><button class="pl-btn" onclick="vpClose()">닫기</button><button class="pl-act" style="padding:8px 16px" onclick="vpSupSave('${vpE(s.id)}','${vpE(name)}')">저장</button></div>`, 620);
 }
 async function vpSupSave(id, oldName){
-  const g = k => (document.getElementById('vs-' + k) || {}).value || ''; const name = g('name').trim(); if (!name) { alert('업체명을 넣어 주세요.'); return; }
+  const g = k => (document.getElementById('vs-' + k) || {}).value || ''; const name = g('name').trim(); if (!name) { alert('업체명을 입력해 주세요.'); return; }
   const cur = (HQS.vsup || []).find(x => x.id === id) || {}, rec = {...cur, id, name, fullName: g('fullName').trim(), aliases: g('aliases').split(',').map(x => x.trim()).filter(Boolean), tax: g('tax').trim(), contact: g('contact').trim(), phone: g('phone').trim(), addr: g('addr').trim(), bankAcc: g('bankAcc').trim(), bank: g('bank').trim(), items: g('items').trim(), updatedAt: new Date().toISOString(), updatedBy: CURRENT_USER || ''};
   if (await qmPut('vsup', rec)) { vpClose(); renderVP({local: true}); }
 }
