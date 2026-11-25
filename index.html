@@ -14541,12 +14541,15 @@ function hqBPView(){
       <td style="text-align:right;font-weight:700;white-space:nowrap">${fmt(r.price, r.cur)}</td><td style="white-space:nowrap">${hqE(r.cur)}</td><td style="font-size:12px;color:#5D6977;max-width:320px;white-space:normal">${hqE(r.note || '')}</td><td style="font-size:12px;color:#8A95A3">${hqE(r.src || '')}</td>
       <td>${hqCan('buy','W') ? `<div class="hq-acts"><button onclick="hqBPEdit('${hqE(r.code)}')">수정</button><button class="del" onclick="hqBPDel('${hqE(r.code)}')">삭제</button></div>` : ''}</td></tr>`).join('')}</tbody></table></div>`
       : `<div class="empty">${Object.keys(items).length ? '기준단가가 등록된 자재 중 검색 결과가 없습니다.' : '등록된 기준 단가가 없습니다. "📥 단가 엑셀 불러오기"로 시작하세요 (자재코드 | 통화 | 단가 | 근거).'}</div>`}
-    ${(() => { // ✅ [2026-11-25] 검색어에 맞는 ERP 자재 중 기준단가가 없는 것도 보여 주고 바로 입력하게 한다
-      if (!q) return ''; const nx = mats.filter(m => !items[m.code] && [m.code, m.name].join(' ').toLowerCase().includes(q)).slice(0, 30);
+    ${(() => { // ✅ [2026-11-25] 기준단가가 없는 ERP 자재도 전부 보여 주고(검색어가 있으면 그에 맞는 것만) 바로 입력하게 한다
+      const ord = {KR: 0, VN: 1, VTTH: 2, BTP: 3}, CLN = {KR: '원자재 KR', VN: '원자재 VN', VTTH: '소모품', BTP: '반제품'};
+      const nx = mats.filter(m => !items[m.code] && (!q || [m.code, m.name].join(' ').toLowerCase().includes(q)))
+        .sort((a, b) => (ord[a.cat] - ord[b.cat]) || String(a.code).localeCompare(String(b.code), 'ko', {numeric: true}));
       if (!nx.length) return '';
-      return `<h4 style="margin:14px 0 6px;font-size:13.5px">기준단가 미등록 자재 <span style="font-weight:400;color:#8A95A3;font-size:12px">— 검색어 "${hqE(HQ.q)}"에 맞는 ERP 자재 ${nx.length}개</span></h4>
-      <div class="tw"><table><thead><tr><th>자재코드</th><th>품명 (ERP)</th><th>구분</th><th>단위</th><th></th></tr></thead><tbody>${nx.map(m => `<tr><td style="font-family:monospace;font-size:12.5px">${hqE(m.code)}</td><td>${hqE(m.name)}</td><td>${hqE(m.cat)}</td><td>${hqE(m.unit || '')}</td>
-        <td>${hqCan('buy','W') ? `<div class="hq-acts"><button onclick="hqBPEdit('','${hqE(m.code)}')">➕ 단가 입력</button></div>` : ''}</td></tr>`).join('')}</tbody></table></div>`; })()}`;
+      const byCat = Object.keys(ord).map(k => [k, nx.filter(m => m.cat === k).length]).filter(x => x[1]).map(([k, n]) => `${CLN[k]} ${n}`).join(' · ');
+      return `<details ${q ? 'open' : ''} style="margin-top:14px"><summary style="cursor:pointer;font-size:13.5px;font-weight:700">기준단가 미등록 자재 ${nx.length}개 <span style="font-weight:400;color:#8A95A3;font-size:12px">— ${q ? `검색어 "${hqE(HQ.q)}" · ` : ''}${byCat} · 눌러서 펼치기</span></summary>
+      <div class="tw" style="margin-top:6px"><table><thead><tr><th>자재코드</th><th>품명 (ERP)</th><th>구분</th><th>단위</th><th></th></tr></thead><tbody>${nx.map(m => `<tr><td style="font-family:monospace;font-size:12.5px">${hqE(m.code)}</td><td>${hqE(m.name)}</td><td style="white-space:nowrap">${hqE(CLN[m.cat] || m.cat)}</td><td>${hqE(m.unit || '')}</td>
+        <td>${hqCan('buy','W') ? `<div class="hq-acts"><button onclick="hqBPEdit('','${hqE(m.code)}')">➕ 단가 입력</button></div>` : ''}</td></tr>`).join('')}</tbody></table></div></details>`; })()}`;
 }
 async function hqBPImport(inp){
   const f = inp.files && inp.files[0]; inp.value = ''; if (!f || !hqCanWrite()) return;
