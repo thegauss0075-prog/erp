@@ -837,6 +837,11 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
           <label>불량 원인 / Lý do NG *</label>
           <input id="otp-ng-reason" placeholder="예: 외관 불량, 치수 불량 등">
         </div>
+        <div class="fr" id="otp-sample-row" style="grid-column:1/-1">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;color:#7c3aed"><input type="checkbox" id="otp-sample" onchange="setSample(this.checked)" style="width:18px;height:18px"> 🧪 샘플 출고 / Xuất mẫu <span style="font-weight:400;font-size:11.5px;color:#888">— 재고는 빠지고, 매출·발주 잔량·출하 실적에는 잡히지 않습니다</span></label>
+          <input id="otp-sample-purpose" list="otp-sample-purpose-list" placeholder="샘플 용도 * (예: 승인용, 신뢰성 시험, 고객 요청) / Mục đích" style="display:none;margin-top:6px">
+          <datalist id="otp-sample-purpose-list"><option value="승인용 / Phê duyệt"><option value="신뢰성 시험 / Thử độ tin cậy"><option value="고객 요청 / Khách yêu cầu"><option value="개발·평가 / Phát triển"></datalist>
+        </div>
         <div class="fr"><label>비고 / Ghi chú</label><input id="otp-note" placeholder="(선택사항)"></div>
       </div>
       <div class="form-actions"><button class="btn-confirm-otp" onclick="showCP('otp')">✅ 등록 확인 / Xác nhận</button></div>
@@ -973,6 +978,7 @@ body:not(.printing-wo) #wo-print-area { display: none !important; }
         <option value="otp">완제품 출고 / Xuất TP</option>
         <option value="btp-in">반제품 입고 / Nhập BTP</option>
         <option value="btp-out">반제품 출고 / Xuất BTP</option>
+        <option value="sample">🧪 샘플 출고 / Xuất mẫu</option>
         <option value="ng-in">불량 입고 / Nhập NG</option>
         <option value="ng-out">불량 출고 / Xuất NG</option>
       </select>
@@ -2325,6 +2331,10 @@ function destText(dest) {
   if (dest === 'NG') return 'NG창고';
   return '솔루엠비나';
 }
+// ✅ [2026-11-25] 샘플 출고: 출고처는 본사(KR)·솔루엠비나 그대로, 메모 앞 "[샘플]"로 구분한다.
+//    재고는 차감하지만 매출·원가 출고수량·PO 차감·판매 미처리·출하 실적에서는 뺀다.
+function isSampleTx(t){ return !!t && t.type === 'otp' && (t.sample === true || /^\[샘플\]/.test(String(t.note || ''))); }
+function sampleBadge(t){ return isSampleTx(t) ? ' <span class="badge" style="background:#ede9fe;color:#6d28d9">🧪 샘플</span>' : ''; }
 
 let txLog=[],acIdx={in:-1,otp:-1,omt:-1},acResults={in:[],otp:[],omt:[]};
 let CP_LOT_ALLOC={}; // ✅ FIFO 다중 LOT 자동 분배 결과 캐시 (showCP → doSubmit 전달용)
@@ -2574,6 +2584,14 @@ function setDest(d){
   // ✅ NG 창고 선택 시 불량 원인 입력란 표시
   const reasonRow = document.getElementById('otp-ng-reason-row');
   if(reasonRow) reasonRow.style.display = (d==='NG') ? 'block' : 'none';
+  // ✅ 샘플 출고는 본사·솔루엠비나로만 (NG 창고 선택 시 숨기고 해제)
+  const smpRow = document.getElementById('otp-sample-row');
+  if(smpRow) smpRow.style.display = (d==='NG') ? 'none' : 'block';
+  if(d==='NG') setSample(false);
+}
+function setSample(on){
+  const cb = document.getElementById('otp-sample'); if(cb) cb.checked = !!on;
+  const pu = document.getElementById('otp-sample-purpose'); if(pu){ pu.style.display = on ? 'block' : 'none'; if(!on) pu.value=''; }
 }
 function setED(d){editDest=d;document.getElementById('edit-dest-kr').classList.toggle('on',d==='KR');document.getElementById('edit-dest-sol').classList.toggle('on',destNorm(d)==='Solum Vina');}
 
@@ -2689,7 +2707,7 @@ function computeShipHistRows(item) {
   let running = 0;
   return all.map(t => {
     running += (+t.qty || 0);
-    return { dt: t.dt, lot: t.lot || '-', qty: +t.qty || 0, dest: destText(t.dest) || '-', cumulative: running, note: t.note || '', inv: shipInvNo(t) };
+    return { dt: t.dt, lot: t.lot || '-', qty: +t.qty || 0, dest: (destText(t.dest) || '-') + (isSampleTx(t) ? ' (샘플)' : ''), cumulative: running, note: t.note || '', inv: shipInvNo(t) };
   });
 }
 // 화면 표시용: 출고 확정 메모의 "[출고예정 SP…]"는 이미 출고된 기록이므로 "[출고 SP…]"로 보여준다 (저장값은 그대로 — 서버가 확정 취소 때 이 표시로 찾는다)
@@ -3002,7 +3020,7 @@ function poShipAlloc() {
     const vnDay = x => { const t = new Date(x || 0).getTime(); return t ? new Date(t + 7 * 3600e3).toISOString().slice(0, 10) : ''; };
     const poAt = r => { const d = vnDay(r.poDate), c = vnDay(r.createdAt); return d && c ? (d < c ? d : c) : (d || c); };
     pos.forEach(r => { deducted[r.id] = 0; });
-    const ships = (typeof txLog !== 'undefined' ? txLog : []).filter(t => t.code === code && t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP')
+    const ships = (typeof txLog !== 'undefined' ? txLog : []).filter(t => t.code === code && t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && !isSampleTx(t))
       .map(t => ({q: +t.qty || 0, d: (typeof plTxDay === 'function' ? plTxDay(t) : String(t.dt || '').slice(0, 10)) || ''})).sort((a, b) => a.d.localeCompare(b.d));
     let over = 0;
     ships.forEach(sh => { let left = sh.q;
@@ -3034,7 +3052,7 @@ function poExcessAfterBase(code) {
   const base = hasOld ? (PO_EXCESS_BASE_REMAIN[code] || 0) : 0;
   const since = hasOld ? PO_EXCESS_BASE_AT : pos.map(r => String(r.createdAt || '')).sort()[0];
   const capacity = base + pos.filter(isNew).reduce((s,r)=>s+(+r.poQty||0),0);
-  const shipped = txLog.filter(t => t.code === code && t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && String(t.dt || '') > since).reduce((s,t)=>s+(+t.qty||0),0);
+  const shipped = txLog.filter(t => t.code === code && t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && !isSampleTx(t) && String(t.dt || '') > since).reduce((s,t)=>s+(+t.qty||0),0);
   return Math.max(0, shipped - capacity);
 }
 // ✅ [2026-11-23] 초과분은 계산·표시하지 않는다 (요청). 잔량은 0에서 멈춘다.
@@ -4019,7 +4037,7 @@ async function drHtml(){
   const day = PL.day || (PL.day = plYmd(new Date())); await drMes(day);
   const n = v => v ? (+v).toLocaleString() : '-', E = hqE;
   const onDay = t => plTxDay(t) === day, tx = (txLog || []).filter(onDay);
-  const prod = tx.filter(t => t.type === 'tp-in' && !/복구/.test(String(t.note || ''))), ng = tx.filter(t => t.type === 'otp' && t.dest === 'NG'), ship = tx.filter(t => t.type === 'otp' && t.dest && t.dest !== 'NG' && !/작업지시|복구/.test(String(t.note || '')));
+  const prod = tx.filter(t => t.type === 'tp-in' && !/복구/.test(String(t.note || ''))), ng = tx.filter(t => t.type === 'otp' && t.dest === 'NG'), ship = tx.filter(t => t.type === 'otp' && t.dest && t.dest !== 'NG' && !isSampleTx(t) && !/작업지시|복구/.test(String(t.note || '')));
   const plan = (HQS.pplan || []).filter(p => p.date === day && +p.qty > 0);
   const codes = [...new Set([...prod, ...ng, ...ship].map(t => t.code).concat(plan.map(p => p.code)))];
   const nm = c => ((prod.concat(ng, ship).find(t => t.code === c) || {}).name) || ((plan.find(p => p.code === c) || {}).name) || c;
@@ -7684,7 +7702,10 @@ function showCP(dir){
   const lot=lotEl?(lotEl.tagName==='SELECT'?lotEl.value:lotEl.value.trim()):'';
   const dest=dir==='otp'?curDest:null;
   // ✅ 이중 출고 주의: 완제품을 솔루엠·본사로 직접 출고하면 확인 후 진행
-  if (dir === 'otp' && catKey(catTxt) === 'TP' && dest !== 'NG' && !otpDirectShipOK(code, name, dest)) return;
+  const isSmp = dir==='otp' && dest!=='NG' && !!(document.getElementById('otp-sample')||{}).checked;
+  const smpPurpose = isSmp ? ((document.getElementById('otp-sample-purpose')||{}).value||'').trim() : '';
+  if (isSmp && smpPurpose.length < 2) { alert('⚠️ 샘플 용도를 2자 이상 입력해주세요.\nVui lòng nhập mục đích xuất mẫu.'); return; }
+  if (dir === 'otp' && catKey(catTxt) === 'TP' && dest !== 'NG' && !isSmp && !otpDirectShipOK(code, name, dest)) return;
 
   // ── 기본 유효성 검사
   if(!code){alert('품목을 먼저 검색·선택하세요.\n먼저 위 검색창에서 품목을 선택해주세요.');return;}
@@ -7766,6 +7787,10 @@ function showCP(dir){
     rows.push(['불량 원인',`<strong style="color:#991b1b">${ngReason}</strong>`]);
   } else if(dest){
     rows.push(['출고처',`<span class="badge ${dest==='KR'?'b-dest-kr':'b-dest-sol'}">${dest==='KR'?'🏠 한국 (KR)':'🏭 솔루엠비나'}</span>`]);
+    if(isSmp){
+      rows.push(['출고 구분','<span class="badge" style="background:#ede9fe;color:#6d28d9">🧪 샘플 출고</span> <span style="font-size:12px;color:#6d28d9">매출·발주 잔량·출하 실적 제외</span>']);
+      rows.push(['샘플 용도',`<strong style="color:#6d28d9">${hqE(smpPurpose)}</strong>`]);
+    }
   }
   // 제조사 (CORE 자재)
   const makerEl = document.getElementById(dir+'-maker');
@@ -7808,6 +7833,13 @@ async function doSubmit(dir){
     ngReason = (document.getElementById('otp-ng-reason')||{}).value?.trim() || '';
     if(!ngReason || ngReason.length<2){ alert('⚠️ NG 창고 이동 시 불량 원인을 2자 이상 입력해주세요.'); return; }
     note = note ? `[NG이동] ${ngReason} / ${note}` : `[NG이동] ${ngReason}`;
+  }
+  // ✅ 샘플 출고: 메모 앞에 [샘플] 용도 (집계 제외 판별용)
+  const isSample = dir==='otp' && !isNGMove && !!(document.getElementById('otp-sample')||{}).checked;
+  if(isSample){
+    const pu = ((document.getElementById('otp-sample-purpose')||{}).value||'').trim();
+    if(pu.length<2){ alert('⚠️ 샘플 용도를 2자 이상 입력해주세요.'); return; }
+    note = note ? `[샘플] ${pu} / ${note}` : `[샘플] ${pu}`;
   }
 
   // ✅ 출고 시 현재 DB 재고로 1차 검증 (서버 호출 전)
@@ -7926,6 +7958,7 @@ async function doSubmit(dir){
     const ngReasonEl=document.getElementById('otp-ng-reason'); if(ngReasonEl) ngReasonEl.value='';
     const ngReasonRow=document.getElementById('otp-ng-reason-row'); if(ngReasonRow) ngReasonRow.style.display='none';
     setDest('KR'); // 출고처 기본값으로 복귀
+    setSample(false);
   }
   // omt/otp 출고 시 LOT 드롭다운 초기화
   if(dir==='omt'||dir==='otp'){
@@ -7967,6 +8000,7 @@ function renderIOTable(){
   const _isBTP = l => String(l.cat||'').toUpperCase() === 'BTP';
   if(tp==='btp-in') logs=logs.filter(l=>l.type==='tp-in'&&_isBTP(l));
   else if(tp==='btp-out') logs=logs.filter(l=>l.type==='otp'&&_isBTP(l));
+  else if(tp==='sample') logs=logs.filter(l=>isSampleTx(l));
   else if(tp==='otp'||tp==='tp-in') logs=logs.filter(l=>l.type===tp&&!_isBTP(l));
   else if(tp) logs=logs.filter(l=>l.type===tp);
   // ✅ 기간 필터
@@ -7986,7 +8020,7 @@ function renderIOTable(){
       <td style="color:#666">${t.unit}</td>
       <td style="text-align:right;font-weight:700" class="${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty}</td>
       <td style="font-family:monospace;font-size:12px;color:#1d4ed8">${(!t.lot || t.lot === '__nolot__') ? 'LOT 미지정' : t.lot}</td>
-      <td>${t.dest?destBadge(t.dest):t.reason||'<span class="dim">—</span>'}</td>
+      <td>${t.dest?destBadge(t.dest)+sampleBadge(t):t.reason||'<span class="dim">—</span>'}</td>
       <td style="font-size:12px;color:#888">${noteView(t.note)||'—'}</td>
       <td style="white-space:nowrap">
         ${isAdmin ? `<button class="edit-btn" onclick="openEditUnified(${t.id},'${t.type}')">✏️</button>
@@ -8258,7 +8292,7 @@ function renderHist(){
     const qty=t.qty%1?t.qty.toFixed(2):t.qty.toLocaleString();
     const catName=CL[t.cat]||t.cat||'';
     const lotBadge = t.lot ? ` <span style="font-size:11px;color:#1d4ed8;font-family:monospace">LOT:${t.lot === '__nolot__' ? '미지정' : t.lot}</span>` : '';
-    return`<div class="hitem" data-code="${t.code}"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle"><span onclick="openTrace('${t.code}','${t.cat||''}')" style="cursor:pointer;font-weight:600" title="이력 추적">${t.name}</span> <code style="font-size:11px;color:#888">${t.code}</code>${t.dest?destBadge(t.dest):lotBadge}</div><div class="hmeta">${typeName}${catName?' · '+catName:''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div>
+    return`<div class="hitem" data-code="${t.code}"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle"><span onclick="openTrace('${t.code}','${t.cat||''}')" style="cursor:pointer;font-weight:600" title="이력 추적">${t.name}</span> <code style="font-size:11px;color:#888">${t.code}</code>${t.dest?destBadge(t.dest)+sampleBadge(t):lotBadge}</div><div class="hmeta">${typeName}${catName?' · '+catName:''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div>
       <button onclick="openTrace('${t.code}','${t.cat||''}')" title="이력 추적" style="padding:2px 7px;border-radius:4px;border:1px solid #7c3aed;background:#faf5ff;color:#7c3aed;cursor:pointer;font-size:11px;margin-left:4px;white-space:nowrap">🔍</button>
     </div>`;
   }).join('');
@@ -8966,7 +9000,7 @@ function initDashboard(){
     const cls=iC[t.type]||'h-in';
     const isIn=!!isInMap[t.type];
     const qty=t.qty%1?t.qty.toFixed(2):t.qty.toLocaleString();
-    return`<div class="hitem"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle">${t.name}${t.dest?destBadge(t.dest):''}</div><div class="hmeta">${CL[t.cat]||t.cat||''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div></div>`;
+    return`<div class="hitem"><div class="hico ${cls}">${icon}</div><div class="hbody"><div class="htitle">${t.name}${t.dest?destBadge(t.dest)+sampleBadge(t):''}</div><div class="hmeta">${CL[t.cat]||t.cat||''} · ${fmtDt(t.dt)}${t.note?' · '+t.note:''}</div></div><div class="hqty ${isIn?'hi':'ngc'}">${isIn?'+':'−'}${qty} ${t.unit||''}</div></div>`;
   }).join('');
 }
 
@@ -9441,7 +9475,7 @@ function costComputeBase(m, basis){
 let _costMemo = {};
 function costMemoClear(){ _costMemo = {}; }
 function costShipQty(code, m){
-  return (txLog||[]).filter(t => t.type==='otp' && t.code===code && String(t.cat||'').toUpperCase()!=='BTP' && t.dest!=='NG' && costYM(t.dt)===m)
+  return (txLog||[]).filter(t => t.type==='otp' && t.code===code && String(t.cat||'').toUpperCase()!=='BTP' && t.dest!=='NG' && !isSampleTx(t) && costYM(t.dt)===m)
     .reduce((s,t)=>s+(+t.qty||0),0);
 }
 function costBaseMemo(m, basis){ const k = m+'|'+basis; return _costMemo[k] || (_costMemo[k] = costComputeBase(m, basis)); }
@@ -14055,7 +14089,7 @@ function hqCPOAlloc(){
     manual.forEach(x => out[x.c.id][x.i] = +x.l.shipped || 0);
     const auto = ls.filter(x => !manual.includes(x) && !linked.includes(x)); if (!auto.length) return;
     const t0 = spoTime(auto[0].c.recvDate);
-    (txLog||[]).filter(t => t.type === 'otp' && t.code === code && String(t.cat||'').toUpperCase() !== 'BTP' && t.dest !== 'NG' && bdTime(t) >= t0)
+    (txLog||[]).filter(t => t.type === 'otp' && t.code === code && String(t.cat||'').toUpperCase() !== 'BTP' && t.dest !== 'NG' && !isSampleTx(t) && bdTime(t) >= t0)
       .sort((a,b) => bdTime(a) - bdTime(b)).forEach(t => {
         let left = +t.qty || 0; const tm = bdTime(t);
         for (const x of auto) { if (!left) break; if (spoTime(x.c.recvDate) > tm) break;
@@ -15002,7 +15036,7 @@ function hqQuoteToCPO(id){
 function hqUnsoldShip(){
   const used = new Set(HQS.sale.flatMap(s => (s.lines||[]).flatMap(l => l.txIds || [])).map(String));
   const since = Date.now() - 120 * 864e5;
-  return (txLog||[]).filter(t => t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && t.dest && t.dest !== 'NG' && !/작업지시|복구/.test(String(t.note||'')) && bdTime(t) > since && !used.has(String(t.id)))
+  return (txLog||[]).filter(t => t.type === 'otp' && String(t.cat||'').toUpperCase() !== 'BTP' && t.dest && t.dest !== 'NG' && !isSampleTx(t) && !/작업지시|복구/.test(String(t.note||'')) && bdTime(t) > since && !used.has(String(t.id)))
     .sort((a,b) => bdTime(b) - bdTime(a));
 }
 function hqSaleView(){
@@ -16956,7 +16990,7 @@ function dsShiftYM(m, k){ let [y,mo] = m.split('-').map(Number); mo += k; while 
 function dsShipByMonth(){
   const out = {};   // out[ym][code] = qty
   (txLog||[]).forEach(t => {
-    if (t.type !== 'otp' || String(t.cat||'').toUpperCase() === 'BTP' || t.dest === 'NG') return;
+    if (t.type !== 'otp' || String(t.cat||'').toUpperCase() === 'BTP' || t.dest === 'NG' || isSampleTx(t)) return;
     const ym = costYM(t.dt); if (!/^\d{4}-\d{2}$/.test(ym)) return;
     const o = out[ym] = out[ym] || {}; o[t.code] = (o[t.code]||0) + (+t.qty||0);
   });
@@ -16966,7 +17000,7 @@ function dsShipByMonth(){
 function dsShipUntilDay(ym, day){
   const o = {};
   (txLog||[]).forEach(t => {
-    if (t.type !== 'otp' || String(t.cat||'').toUpperCase() === 'BTP' || t.dest === 'NG') return;
+    if (t.type !== 'otp' || String(t.cat||'').toUpperCase() === 'BTP' || t.dest === 'NG' || isSampleTx(t)) return;
     const d = Date.parse(t.dt); if (isNaN(d)) return;
     const v = new Date(d + 7*3600e3).toISOString();
     if (v.slice(0,7) !== ym || +v.slice(8,10) > day) return;
@@ -16980,7 +17014,7 @@ function dsCustKey(dest){ dest = String(dest||''); if (dest === 'KR') return 'KR
 function dsShipByCust(){
   const out = {};   // out[ym][cust][code] = qty
   (txLog||[]).forEach(t => {
-    if (t.type !== 'otp' || String(t.cat||'').toUpperCase() === 'BTP' || t.dest === 'NG') return;
+    if (t.type !== 'otp' || String(t.cat||'').toUpperCase() === 'BTP' || t.dest === 'NG' || isSampleTx(t)) return;
     const ym = costYM(t.dt); if (!/^\d{4}-\d{2}$/.test(ym)) return;
     const c = dsCustKey(t.dest), o = ((out[ym] = out[ym] || {})[c] = (out[ym] || {})[c] || {});
     o[t.code] = (o[t.code]||0) + (+t.qty||0);
