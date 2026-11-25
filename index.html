@@ -15765,7 +15765,7 @@ function hqShipGroups(){
         .map(h => ({'발송':'선적(출항)','도착':'도착','통관':'통관','입고 완료':'통관'})[h.status]).filter(Boolean).sort((p,q) => stages.indexOf(q) - stages.indexOf(p))[0];
       if (sst && stages.indexOf(sst) > stages.indexOf(stage)) stage = sst;
     }
-    return {...x, amtBy, route, stages, supplier: f.supplier, orderDate: f.orderDate, dueDate: f.dueDate, cur: f.cur || '', etd: f.etd || '', eta: f.eta || '', blNo: f.blNo || '', invNo: f.invNo || '', incoterm: f.incoterm || '', prNo: f.prNo || '', qty, got, amt, done, stage, late: !done && f.dueDate && f.dueDate < hqToday()};
+    return {...x, amtBy, route, stages, supplier: f.supplier, orderDate: f.orderDate, dueDate: f.dueDate, cur: f.cur || '', etd: f.etd || '', eta: f.eta || '', blNo: f.blNo || '', invNo: f.invNo || '', incoterm: f.incoterm || '', prNo: f.prNo || '', qty, got, amt, done, stage, late: !done && x.rows.some(r => r.status === 'late'), nextDate: x.rows.filter(r => r.status !== 'done' && r.nextDate).map(r => r.nextDate).sort()[0] || ''};
   });
 }
 function hqShipView(){
@@ -15783,12 +15783,27 @@ function hqShipView(){
       gs.map(x => `<tr><td style="font-family:monospace;font-size:12px">${hqE(x.poNo)}${x.prNo ? `<div style="color:#8A95A3;font-size:11px">${hqE(x.prNo)}</div>` : ''}</td><td>${(() => { const ss = [...new Set(x.rows.map(r => r.supplier || ''))]; return ss.length > 1 ? ss.map(v => hqE(v || '미정')).join('<br>') : hqE(ss[0] || '-'); })()}<div style="font-size:11px;color:${x.route === 'direct' ? '#0f766e' : '#7c3aed'}">${x.route === 'wire' ? '🧵 와이어 → 외주업체 ' + hqE(x.rows[0].shipTo || '') : x.rows.some(r => r.kind === 'proc') && x.route === 'direct' ? '🔁 외주 가공 → 베트남' : x.route === 'hq' ? '🏢 본사 경유' : x.route === 'mix' ? `🔀 직송 ${x.rows.filter(r => r.route !== 'hq').length} · 본사 경유 ${x.rows.filter(r => r.route === 'hq').length}` : '➡️ 직송'}</div></td><td style="white-space:nowrap">${hqE(x.orderDate||'')}</td>
         <td>${hqE(x.rows[0].name)}${x.rows.length > 1 ? ` <span style="color:#8A95A3">외 ${x.rows.length-1}</span>` : ''}</td>
         <td style="text-align:right;white-space:nowrap">${hqN(x.got)} / ${hqN(x.qty)}</td><td style="text-align:right;white-space:nowrap">${Object.keys(x.amtBy).length ? Object.entries(x.amtBy).map(([c, v]) => hqM(v, c)).join('<br>') : '-'}</td>
-        <td style="white-space:nowrap">${hqE(x.etd||'-')}</td><td style="white-space:nowrap;${x.late ? 'color:#b91c1c;font-weight:700' : ''}">${hqE(x.eta || (x.dueDate ? '(예정 ' + x.dueDate + ')' : '-'))}</td>
+        <td style="white-space:nowrap">${hqE(x.etd||'-')}</td><td style="white-space:nowrap;${x.late ? 'color:#b91c1c;font-weight:700' : ''}">${x.eta ? hqE(x.eta) : x.rows.some(r => Array.isArray(r.sched) && r.sched.length > 1) ? x.rows.filter(r => r.route !== 'wire').map(r => spoSchedView(r)).join('') : hqE(x.dueDate ? '(예정 ' + x.dueDate + ')' : '-')}</td>
         <td style="font-size:12px">${hqE(x.blNo||'')}${x.invNo ? `<div>${hqE(x.invNo)}</div>` : ''}</td><td>${step(x.stage, x.stages)}</td>
         <td style="white-space:nowrap"><div class="hq-acts"><button onclick="hqShipEdit('${hqE(x.poNo)}')" title="단계·서류 수정">✏️ 수정</button><button onclick="hqPOPrint('${hqE(x.poNo)}')" title="공급사별 발주서 인쇄">🖨️ 발주서</button><button onclick="hqPOExcel('${hqE(x.poNo)}')" title="발주서 엑셀">📄 엑셀</button>${x.rows.some(r => r.route !== 'wire' && hqVNAvail(r) > 0) ? `<button class="inv" onclick="hqVNShipEdit(null,'${hqE(x.poNo)}')" title="이 발주로 베트남 발송 인보이스 작성">🧾 인보이스</button>` : ''}${hqCan('buy','D') ? `<button class="del" onclick="hqShipDelete('${hqE(x.poNo)}')" title="발주 삭제">🗑️</button>` : ''}</div></td></tr>`).join('')}</tbody></table></div>`
       : '<div class="empty">진행 중인 자재 발주가 없습니다.</div>'}
     <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">입고 수량은 법인 입출고 탭의 자재 입고를 등록하면 같은 자재의 오래된 발주부터 자동으로 채워집니다. 다 들어오면 "입고 완료"가 됩니다.</div>`;
 }
+// 📅 [2026-11-25] 본사 발주·선적 수정에서 자재 줄마다 입고 일정(분할 가능)을 넣는다. 합계 = 발주 수량.
+let HQSE_SCH = {};
+function hqseSchInit(ri, r){
+  HQSE_SCH[ri] = (Array.isArray(r.sched) && r.sched.length > 1) ? r.sched.map(x => ({qty: x.qty, date: x.date || ''})) : [{qty: r.q, date: r.dueDate || ''}];
+  HQSE_SCH[ri].q = r.q;
+  return `<div id="hqse-sch-${ri}">${hqseSchHtml(ri)}</div>`;
+}
+function hqseSchHtml(ri){
+  const L = HQSE_SCH[ri], one = L.length === 1, tot = L.reduce((a, x) => a + (+x.qty || 0), 0), ok = Math.abs(tot - L.q) < 1e-6;
+  return L.map((x, k) => `<div style="display:flex;gap:4px;align-items:center;margin-bottom:3px">${one ? '' : `<span style="font-size:11px;color:#8A95A3;width:24px">${k + 1}차</span><input type="number" min="0" step="any" value="${x.qty}" placeholder="수량" oninput="HQSE_SCH[${ri}][${k}].qty=this.value;hqseSchSum(${ri})" style="${HQ_IN};width:80px">`}<input type="date" value="${x.date}" onchange="HQSE_SCH[${ri}][${k}].date=this.value" style="${HQ_IN};width:130px">${one ? '' : `<button type="button" onclick="HQSE_SCH[${ri}].splice(${k},1);hqseSchRe(${ri})" style="border:none;background:none;color:#b91c1c;cursor:pointer;font-size:15px">×</button>`}</div>`).join('')
+    + `<div style="display:flex;gap:8px;align-items:center"><button type="button" onclick="hqseSchAdd(${ri})" style="padding:2px 8px;border-radius:6px;border:1px dashed #185FA5;background:#fff;color:#185FA5;font-size:11.5px;cursor:pointer">+ 분할</button><span id="hqse-sum-${ri}" style="font-size:11.5px;color:${ok ? '#166534' : '#b91c1c'}">${one ? '' : `합계 ${hqN(tot)} / ${hqN(L.q)}${ok ? ' ✔' : ''}`}</span></div>`;
+}
+function hqseSchRe(ri){ const el = document.getElementById('hqse-sch-' + ri); if (el) el.innerHTML = hqseSchHtml(ri); }
+function hqseSchSum(ri){ const L = HQSE_SCH[ri], el = document.getElementById('hqse-sum-' + ri); if (!el || L.length < 2) return; const tot = L.reduce((a, x) => a + (+x.qty || 0), 0), ok = Math.abs(tot - L.q) < 1e-6; el.textContent = `합계 ${hqN(tot)} / ${hqN(L.q)}${ok ? ' ✔' : ''}`; el.style.color = ok ? '#166534' : '#b91c1c'; }
+function hqseSchAdd(ri){ const L = HQSE_SCH[ri]; if (L.length === 1 && (+L[0].qty || 0) === L.q) L[0].qty = ''; L.push({qty: '', date: ''}); hqseSchRe(ri); }
 function hqShipEdit(poNo){
   const x = hqShipGroups().find(g => g.poNo === poNo); if (!x) return;
   hqModal('hq-sh', `<h3 style="margin:0 0 10px;font-size:16px">✏️ ${hqE(poNo)} <span style="font-weight:400;color:#5D6977;font-size:12.5px">${hqE(x.supplier||'')}</span></h3>
@@ -15799,11 +15814,11 @@ function hqShipEdit(poNo){
       ${hqFld('B/L · AWB No','', `<input id="hqs-bl" value="${hqE(x.blNo)}" style="${HQ_IN}">`)}
       ${hqFld('Invoice No','', `<input id="hqs-inv" value="${hqE(x.invNo)}" style="${HQ_IN}">`)}
     </div>
-    <div class="tw" style="margin-top:10px"><datalist id="hqs-sups">${hqsSupNames().map(v => `<option value="${hqE(v)}">`).join('')}</datalist><table><thead><tr><th>자재</th><th style="text-align:right">발주</th><th style="text-align:right">입고</th><th>공급사</th><th>배송 경로</th><th>단가 · 통화</th></tr></thead><tbody>${
-      x.rows.map((r, ri) => `<tr><td style="min-width:220px;white-space:normal;line-height:1.35">${hqE(r.name)} <span style="font-size:11px;color:#8A95A3">${hqE(r.code)}</span></td><td style="text-align:right;white-space:nowrap">${hqN(r.q)} ${hqE(r.unit||'')}</td><td style="text-align:right">${hqN(r.got)}</td>
+    <div class="tw" style="margin-top:10px"><datalist id="hqs-sups">${hqsSupNames().map(v => `<option value="${hqE(v)}">`).join('')}</datalist><table><thead><tr><th>자재</th><th style="text-align:right">발주</th><th style="text-align:right">입고</th><th>공급사</th><th>배송 경로</th><th>단가 · 통화</th><th>입고 일정 <span class="vi">Lịch nhập</span></th></tr></thead><tbody>${
+      (HQSE_SCH = {}, '') + x.rows.map((r, ri) => `<tr><td style="min-width:220px;white-space:normal;line-height:1.35">${hqE(r.name)} <span style="font-size:11px;color:#8A95A3">${hqE(r.code)}</span></td><td style="text-align:right;white-space:nowrap">${hqN(r.q)} ${hqE(r.unit||'')}</td><td style="text-align:right">${hqN(r.got)}</td>
         <td><input class="hqs-sup" data-id="${hqE(r.id)}" list="hqs-sups" value="${hqE(r.supplier || '')}" placeholder="공급사" style="${HQ_IN};width:140px"></td>
         <td>${r.route === 'wire' ? `<span style="font-size:12px;color:#7c3aed">🧵 → ${hqE(r.shipTo || '외주업체')}</span>` : HQ_ROUTE_SEL('hqs-route', r.kind === 'proc' ? 'sub' : r.route === 'hq' ? 'hq' : 'direct', `data-id="${hqE(r.id)}" data-i="${ri}" onchange="const t=document.getElementById('hqse-sub-${ri}');if(t)t.style.display=this.value==='sub'?'':'none'"`, true)}${r.kind === 'proc' ? (w => w ? `<div style="font-size:11px;color:#7c3aed;margin-top:3px">🧵 ${hqE(w.poNo)} ${hqE(w.supplier)} ${hqN(w.qty)}kg</div>` : '')(SPO.find(q => q.linkId === r.linkId && q.kind === 'wire')) : ''}</td>
-        <td style="white-space:nowrap"><input class="hqs-price" data-id="${hqE(r.id)}" type="number" step="0.0001" value="${hqE(r.price ?? '')}" style="${HQ_IN};width:96px"> <select class="hqs-lcur" data-id="${hqE(r.id)}" style="${HQ_IN};width:70px">${HQ_PR_CURS.map(c => `<option ${(r.cur || 'USD')===c?'selected':''}>${c}</option>`).join('')}</select></td></tr>${r.route !== 'wire' && r.kind !== 'proc' ? hqSubRow({...r, supplier: ''}, ri, 6, 'hqse') : ''}`).join('')}</tbody></table></div>
+        <td style="white-space:nowrap"><input class="hqs-price" data-id="${hqE(r.id)}" type="number" step="0.0001" value="${hqE(r.price ?? '')}" style="${HQ_IN};width:96px"> <select class="hqs-lcur" data-id="${hqE(r.id)}" style="${HQ_IN};width:70px">${HQ_PR_CURS.map(c => `<option ${(r.cur || 'USD')===c?'selected':''}>${c}</option>`).join('')}</select></td><td style="min-width:250px">${r.route === 'wire' ? '<span style="font-size:12px;color:#8A95A3">-</span>' : hqseSchInit(ri, r)}</td></tr>${r.route !== 'wire' && r.kind !== 'proc' ? hqSubRow({...r, supplier: ''}, ri, 7, 'hqse') : ''}`).join('')}</tbody></table></div>
     <div style="font-size:11.5px;color:#8A95A3;margin-top:6px">🔁 외주 가공으로 바꾸면 와이어 발주서가 새로 만들어지고, 이 줄의 공급사는 외주업체로 바뀝니다 (단가 = 가공비). "입고 완료"는 베트남 법인 자재 입고가 다 들어오면 자동으로 표시됩니다. 본사 경유는 "🏢 본사 입고·베트남 발송" 탭에서 본사 입고·발송을 등록하면 단계가 자동으로 바뀝니다.</div>
     <div id="hqs-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
     <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px"><button onclick="hqClose('hq-sh')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
@@ -15827,6 +15842,16 @@ async function hqShipSave(poNo){
     if (!o.proc) { err.textContent = `${nm}: 외주업체를 넣어주세요.`; return; }
     if (!o.wsup) { err.textContent = `${nm}: 와이어 공급사를 넣어주세요.`; return; }
     if (!(+o.wqty > 0)) { err.textContent = `${nm}: 와이어 발주 수량(kg)을 넣어주세요.`; return; } }
+  // 📅 입고 일정 확인 (저장 전에 전부 검사 — 일부만 저장되는 것 방지)
+  const schOf = {};
+  for (let ri = 0; ri < x.rows.length; ri++) { const r = x.rows[ri], L = HQSE_SCH[ri]; if (!L || r.route === 'wire') continue;
+    const c = L.filter(e => +e.qty > 0 || e.date).map(e => ({qty: L.length === 1 ? r.q : +e.qty || 0, date: e.date || ''}));
+    if (c.length > 1) {
+      if (c.some(e => !(e.qty > 0) || !e.date)) { err.textContent = `${r.name}: 분할 입고 일정은 줄마다 수량과 날짜를 넣어주세요.`; return; }
+      const tot = c.reduce((a, e) => a + e.qty, 0); if (Math.abs(tot - r.q) > 1e-6) { err.textContent = `${r.name}: 입고 일정 합계(${hqN(tot)})가 발주 수량(${hqN(r.q)})과 같아야 합니다.`; return; }
+      c.sort((a, b) => a.date.localeCompare(b.date)); schOf[r.id] = {sched: c, dueDate: c[c.length - 1].date};
+    } else schOf[r.id] = {sched: [], dueDate: c.length ? c[0].date : (r.dueDate || '')};
+  }
   btn.disabled = true; btn.textContent = '⏳ 저장 중…';
   const wireNos = {};
   for (const r of x.rows) {
@@ -15845,7 +15870,7 @@ async function hqShipSave(poNo){
     }
     const rsel = routes[p.id] || (p.kind === 'proc' ? 'sub' : p.route) || 'direct';
     if (p.kind === 'proc' && rsel !== 'sub') extra = {kind: '', linkId: ''};   // 외주 가공 해제 (와이어 발주는 그대로 남음)
-    const rec = {...p, stage, route: rsel === 'sub' ? 'direct' : rsel, etd: v('hqs-etd'), eta: v('hqs-eta'), blNo: v('hqs-bl').trim(), invNo: v('hqs-inv').trim(), cur: curs[p.id] || p.cur || 'USD', supplier: sups[p.id] ?? p.supplier ?? '', price: prices[p.id] === '' ? '' : +prices[p.id], ...extra};
+    const rec = {...p, stage, route: rsel === 'sub' ? 'direct' : rsel, etd: v('hqs-etd'), eta: v('hqs-eta'), blNo: v('hqs-bl').trim(), invNo: v('hqs-inv').trim(), cur: curs[p.id] || p.cur || 'USD', supplier: sups[p.id] ?? p.supplier ?? '', price: prices[p.id] === '' ? '' : +prices[p.id], ...(schOf[p.id] || {}), ...extra};
     if (p.stage !== stage) rec.stageLog = (p.stageLog || []).concat([{stage, at: new Date().toISOString(), by: CURRENT_USER||''}]);
     const res = await retrySafe(() => api('saveSupplyPO', {rec}));
     if (!res || !res.ok) { btn.disabled = false; btn.textContent = '💾 저장'; err.textContent = '저장 실패: ' + ((res && res.error) || ''); return; }
