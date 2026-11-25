@@ -14541,7 +14541,7 @@ function hqBPView(){
       ${hqCan('buy','W') ? `<button onclick="document.getElementById('hq-bp-file').click()" style="padding:7px 14px;border-radius:8px;border:1px solid #b45309;background:#b45309;color:#fff;font-weight:600;cursor:pointer">📥 단가 엑셀 불러오기</button><input type="file" id="hq-bp-file" accept=".xlsx,.xls" style="display:none" onchange="hqBPImport(this)">
       <button onclick="hqBPEdit('')" style="padding:7px 14px;border-radius:8px;border:1px solid #b45309;background:#fff;color:#b45309;font-weight:600;cursor:pointer">➕ 단가 추가</button>` : ''}
       <div class="sw"><span class="si">🔍</span><input placeholder="자재코드·품명·근거 검색" value="${hqE(HQ.q)}" oninput="HQ.q=this.value;clearTimeout(window._hqT);window._hqT=setTimeout(()=>{renderHQ();const i=document.querySelector('#hq-body .sw input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length)}},250)"></div>
-      <span style="font-size:12px;color:#8A95A3">${Object.keys(items).length}개 자재${last ? ' · 최근 수정 ' + hqE(String(last).slice(0, 10)) : ''}${unknown ? ` · <b style="color:#b45309">ERP에 없는 코드 ${unknown}개</b>` : ''}</span>
+      <span style="font-size:12px;color:#8A95A3">기준단가 등록 ${Object.keys(items).length}개${(n => n ? ` · <a href="javascript:void 0" onclick="const d=document.getElementById('hq-bp-unreg');if(d){d.open=true;d.scrollIntoView({behavior:'smooth'})}" style="color:#b45309;font-weight:700">미등록 ${n}개 ↓</a>` : '')(mats.filter(m => !items[m.code]).length)}${last ? ' · 최근 수정 ' + hqE(String(last).slice(0, 10)) : ''}${unknown ? ` · <b style="color:#b45309">ERP에 없는 코드 ${unknown}개</b>` : ''}</span>
     </div>
     ${rows.length ? `<div class="tw"><table><thead><tr><th>자재코드</th><th>품명 (ERP)</th><th>단위</th><th style="text-align:right">단가</th><th>통화</th><th>근거</th><th>출처</th><th></th></tr></thead><tbody>${rows.map(r => `<tr>
       <td style="font-family:monospace;font-size:12.5px">${hqE(r.code)}</td><td>${r.it ? hqE(r.it.name) : '<span style="color:#b45309">ERP에 없음</span>'}</td><td>${hqE((r.it || {}).unit || '')}</td>
@@ -14554,7 +14554,7 @@ function hqBPView(){
         .sort((a, b) => (ord[a.cat] - ord[b.cat]) || String(a.code).localeCompare(String(b.code), 'ko', {numeric: true}));
       if (!nx.length) return '';
       const byCat = Object.keys(ord).map(k => [k, nx.filter(m => m.cat === k).length]).filter(x => x[1]).map(([k, n]) => `${CLN[k]} ${n}`).join(' · ');
-      return `<details ${q ? 'open' : ''} style="margin-top:14px"><summary style="cursor:pointer;font-size:13.5px;font-weight:700">기준단가 미등록 자재 ${nx.length}개 <span style="font-weight:400;color:#8A95A3;font-size:12px">— ${q ? `검색어 "${hqE(HQ.q)}" · ` : ''}${byCat} · 눌러서 펼치기</span></summary>
+      return `<details id="hq-bp-unreg" ${q ? 'open' : ''} style="margin-top:14px"><summary style="cursor:pointer;font-size:13.5px;font-weight:700">기준단가 미등록 자재 ${nx.length}개 <span style="font-weight:400;color:#8A95A3;font-size:12px">— ${q ? `검색어 "${hqE(HQ.q)}" · ` : ''}${byCat} · 눌러서 펼치기</span></summary>
       <div class="tw" style="margin-top:6px"><table><thead><tr><th>자재코드</th><th>품명 (ERP)</th><th>구분</th><th>단위</th><th></th></tr></thead><tbody>${nx.map(m => `<tr><td style="font-family:monospace;font-size:12.5px">${hqE(m.code)}</td><td>${hqE(m.name)}</td><td style="white-space:nowrap">${hqE(CLN[m.cat] || m.cat)}</td><td>${hqE(m.unit || '')}</td>
         <td>${hqCan('buy','W') ? `<div class="hq-acts"><button onclick="hqBPEdit('','${hqE(m.code)}')">➕ 단가 입력</button></div>` : ''}</td></tr>`).join('')}</tbody></table></div></details>`; })()}`;
 }
