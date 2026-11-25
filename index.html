@@ -13888,12 +13888,14 @@ async function loadHQ(force){
   // ✅ [2026-11-09 속도] 본사 데이터는 서버 1회 호출(getHQBundle)로 받는다. BOM·투입자재·품질검사는 비어 있을 때만 같이 받는다.
   const extra = [(BOM && BOM.length) ? null : loadBOM().catch(()=>{}), (WO_MAT && WO_MAT.length) ? null : loadWOMaterials().catch(()=>{}), (QC && QC.length) ? null : loadQC().catch(()=>{})];
   hqsCostKick();   // 판매 단가 기본값용 (제조원가 ② 판매가)
+  // ✅ [2026-11-25 속도] BOM·투입자재·품질검사는 뒤에서 받는다 — 자재 소요·품질·출력물 탭과 고객 PO 확정 때만 기다린다(hqExtraReady)
+  HQ.extraP = Promise.all(extra).then(() => { HQ.extraP = null; });
   const bd = await api('getHQBundle', {});
   if (bd && bd.ok) {
     HQ.cpo = bd.cpo || []; HQ.pr = bd.pr || [];
     ['cust','quote','sale','pay','sup','purch','ppay','hqship','hqcfg'].forEach(k => { HQS[k] = (bd.stores || {})[k] || []; }); HQS.loaded = true;
     MATCFG = (bd.stores || {}).matcfg || []; SPO = bd.spo || []; _spoLoaded = true; _spoTried = true;
-    await Promise.all(extra); HQ.err = ''; HQ.loaded = true; return;
+    HQ.err = ''; HQ.loaded = true; return;
   }
   // 서버가 옛 버전이면 예전 방식
   const [a, b] = await Promise.all([api('getHQCPO', {}), api('getHQPR', {}), loadSupplyPO(true).catch(()=>{}), loadMatCfg().catch(()=>{}), ...extra]);
@@ -14052,10 +14054,14 @@ function hqNav(){
     return `<button onclick="hqSetDept('${x.k}')" style="padding:9px 18px;border-radius:10px;border:2px solid ${x.col};background:${on ? x.col : '#fff'};color:${on ? '#fff' : x.col};font-weight:700;font-size:14px;cursor:pointer">${x.l} ${cnt[x.k] ? ` <span style="background:${on ? '#fff' : x.col};color:${on ? x.col : '#fff'};border-radius:999px;padding:0 7px;font-size:11.5px;margin-left:2px">${cnt[x.k]}</span>` : ''}</button>`; }).join('');
   te.innerHTML = d.tabs.length > 1 ? d.tabs.map(([k, l]) => `<button class="period-btn ${HQ.tab === k ? 'on' : ''}" onclick="hqSetTab('${k}')">${l}</button>`).join('') : '';
 }
+// BOM·투입자재·품질검사가 필요한 곳에서만 기다린다
+function hqNeedsExtra(){ return HQ.tab === 'mrp' || HQ.tab === 'rep' || HQ.dept === 'qa'; }
+async function hqExtraReady(){ if (HQ.extraP) { try { await HQ.extraP; } catch (e) {} } }
 async function renderHQ(opts){
   const el = document.getElementById('hq-body'); if (!el) return;
   if (!HQ._deptInit) { HQ._deptInit = true; try { const k = localStorage.getItem('hq_dept'); if (k && HQ_DEPTS.some(x => x.k === k)) { HQ.dept = k; HQ.tab = HQ_DEPTS.find(x => x.k === k).tabs[0][0]; } } catch(e) {} }
   if (!HQ.loaded || (opts && opts.reload)) { el.innerHTML = '<div class="empty">⏳ 불러오는 중…</div>'; await loadHQ(true); }
+  if (HQ.extraP && hqNeedsExtra()) { el.innerHTML = '<div class="empty">⏳ BOM·작업지시·품질 기록 불러오는 중…</div>'; await hqExtraReady(); }
   if ((HQ.dept === 'qa') && (!_loadedAt.qc || (opts && opts.reload))) { el.innerHTML = '<div class="empty">⏳ 품질검사 기록 불러오는 중…</div>'; await loadQC().catch(()=>{}); }
   if ((HQ.tab === 'sale' || HQ.tab === 'rep') && !txLog.length) { try { const b = await api('getFullSyncBundle', {}); const arr = v => Array.isArray(v) ? v : (v && v.data) || []; if (!txLog.length) txLog = arr(b.tx).map(r => ({...r, id:+r.id||0, qty:+r.qty||0})); } catch(e) {} }
   // 불량률은 입출고·불량 이력이 필요 — 아직 동기화 전이면(본사 열람 화면 등) 직접 받아온다
@@ -14280,6 +14286,7 @@ async function hqCPOSave(){
   //    (구매요청서는 구매부가 자재 소요 계산에서 여러 PO를 묶어 직접 만든다 — 중복 요청 방지)
   const nowConfirmed = r.status === '확정' && !(old && ['확정','출하중','완료'].includes(old.status));
   const autoPR = null;
+  if (nowConfirmed) await hqExtraReady();   // 자재 소요 계산에 BOM·투입자재가 필요
   if (nowConfirmed) {
     const keep = HQ.cpo, fc = HQ.mrpFc, ts = HQ.mrpTpStock;
     HQ.cpo = keep.filter(x => String(x.id) !== String(r.id)).concat([r]); HQ.mrpFc = false; HQ.mrpTpStock = true;
