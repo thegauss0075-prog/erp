@@ -16149,6 +16149,14 @@ async function hqNameSave(){
   }
   hqClose('hq-nm'); renderHQ(); hqToast(n ? `🏷️ 본사 품명 ${n}건 저장` : '바뀐 내용이 없습니다');
 }
+// 📅 [2026-11-25] 분할 입고 일정이 있는 발주: 인보이스 기본 수량 = 아직 인보이스하지 않은 다음 차수 수량 (보낼 수 있는 수량 이내)
+function hqVNNextChunk(p, avail, exceptId){
+  if (!(Array.isArray(p.sched) && p.sched.length > 1)) return null;
+  const sent = hqSentQty(p.id, exceptId); let cum = 0;
+  const L = p.sched.slice().sort((a, b) => String(a.date||'').localeCompare(String(b.date||'')));
+  for (let k = 0; k < L.length; k++) { cum += +L[k].qty || 0; if (cum > sent + 1e-9) return {k: k + 1, n: L.length, date: L[k].date || '', qty: Math.min(+(cum - sent).toFixed(4), avail)}; }
+  return null;
+}
 function hqVNDefLine(p){
   const l = hqVNLast(p.code) || {}, nm = hqNameOf(p.code, p.name) || {};
   return {qty: '', hs: l.hs || '', item: hqIS(p.code, p.name).item, spec: hqIS(p.code, p.name).spec, origin: l.origin || (c => ({'한국':'KOREA','중국':'CHINA','베트남':'VIETNAM','일본':'JAPAN','대만':'TAIWAN','미국':'USA','독일':'GERMANY'})[c] || (c ? String(c).toUpperCase() : HQ_CIPL.origin))((hqsSup(p.supplier || '') || {}).country), nw: '', box: 1};
@@ -16162,7 +16170,7 @@ function hqVNShipEdit(id, poNo, route){
     route: route || (poNo && SPO.some(p => p.poNo === poNo && p.route !== 'hq' && p.route !== 'wire' && hqVNAvail(p) > 0) ? 'direct' : 'hq')};
   if (h && HQS.ed.route === 'direct' && HQS.ed.sup == null) HQS.ed.sup = ((h.lines || [])[0] || {}).supplier || '';
   if (!h && HQS.ed.route === 'direct') { const f = poNo ? SPO.find(p => p.poNo === poNo && p.route !== 'hq' && p.route !== 'wire') : hqVNDirectSups()[0] && SPO.find(p => p.route !== 'hq' && p.route !== 'wire' && (p.supplier || '') === hqVNDirectSups()[0]); HQS.ed.sup = f ? f.supplier || '' : ''; Object.assign(HQS.ed, {loadPort: f ? hqSupCountryEn(f.supplier) : '', destPort: HQ_CIPL.destDirect, contact: HQ_CIPL.contactDirect}); }
-  if (!h && poNo) SPO.filter(p => p.poNo === poNo && p.route !== 'wire' && (p.route === 'hq' ? 'hq' : 'direct') === HQS.ed.route).forEach(p => { const a = hqVNAvail(p); if (a > 0) HQS.ed.sel[p.id] = {...hqVNDefLine(p), qty: a}; });   // 발주서 화면의 🧾 버튼: 그 발주 자재를 미리 채움
+  if (!h && poNo) SPO.filter(p => p.poNo === poNo && p.route !== 'wire' && (p.route === 'hq' ? 'hq' : 'direct') === HQS.ed.route).forEach(p => { const a = hqVNAvail(p); if (a > 0) { const c = hqVNNextChunk(p, a); HQS.ed.sel[p.id] = {...hqVNDefLine(p), qty: c ? c.qty : a}; } });   // 발주서 화면의 🧾 버튼: 그 발주 자재를 미리 채움
   hqVNRender();
 }
 // 직송 인보이스는 공급사(출발지)마다 따로 — 보낼 수량이 남은 직송 발주의 공급사 목록
@@ -16195,7 +16203,7 @@ function hqVNRender(){
     <h4 style="margin:14px 0 6px;font-size:13.5px">자재 <span style="font-weight:400;color:#8A95A3;font-size:12px">— Item·Spec·HS·원산지는 같은 자재를 지난번에 보낼 때 쓴 값이 미리 들어갑니다</span></h4>
     <div class="tw"><table style="font-size:12px"><thead><tr><th>발주번호 · 자재</th><th style="text-align:right">보낼 수 있는</th><th>이번 발송</th><th>Item</th><th>Spec</th><th>HS Code</th><th>Origin</th><th>N.W (kg)</th><th>포장 No</th></tr></thead><tbody>${
       cand.length ? cand.map(x => `<tr><td style="min-width:170px;max-width:230px;white-space:normal;line-height:1.35"><span style="font-family:monospace;font-size:11px;color:#8A95A3">${hqE(x.p.poNo||'')}</span> <span style="font-size:10.5px;font-weight:700;color:${x.p.route === 'hq' ? '#7c3aed' : '#0f766e'}">${x.p.route === 'hq' ? '🏢 본사 보관' : '➡️ 직송 · ' + hqE(x.p.supplier || '')}</span><br>${hqE(x.p.name)}</td>
-        <td style="text-align:right;white-space:nowrap">${hqN(x.avail)} ${hqE(x.p.unit||'')}</td>
+        <td style="text-align:right;white-space:nowrap">${hqN(x.avail)} ${hqE(x.p.unit||'')}${(c => c ? `<div style="font-size:11px;color:#185FA5">📅 ${c.k}/${c.n}차 ${hqE(c.date.slice(5).replace('-', '/'))} · ${hqN(c.qty)}</div>` : '')(hqVNNextChunk(x.p, x.avail, e.id))}</td>
         <td style="white-space:nowrap">${li(x, 'qty', 80, 'number')} <button onclick="this.previousElementSibling.value='${x.avail}'" style="font-size:11px;padding:2px 5px;border:1px solid #DCE1E7;border-radius:6px;background:#fff;cursor:pointer">전량</button></td>
         <td>${li(x, 'item', 90)}</td><td>${li(x, 'spec', 150)}</td><td>${li(x, 'hs', 85)}</td><td><select class="hqv-l" data-id="${hqE(x.p.id)}" data-k="origin" style="${SI};width:92px">${[...new Set([...HQ_ORIGINS, x.l.origin || 'KOREA'])].map(v => `<option ${(x.l.origin || 'KOREA')===v?'selected':''}>${hqE(v)}</option>`).join('')}</select></td><td>${li(x, 'nw', 65, 'number')}</td>
         <td><select class="hqv-l" data-id="${hqE(x.p.id)}" data-k="box" style="${SI};width:56px">${boxes.map(b => `<option ${+x.l.box===+b?'selected':''}>${b}</option>`).join('')}</select></td></tr>`).join('')
