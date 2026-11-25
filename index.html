@@ -14540,7 +14540,13 @@ function hqBPView(){
       <td style="font-family:monospace;font-size:12.5px">${hqE(r.code)}</td><td>${r.it ? hqE(r.it.name) : '<span style="color:#b45309">ERP에 없음</span>'}</td><td>${hqE((r.it || {}).unit || '')}</td>
       <td style="text-align:right;font-weight:700;white-space:nowrap">${fmt(r.price, r.cur)}</td><td style="white-space:nowrap">${hqE(r.cur)}</td><td style="font-size:12px;color:#5D6977;max-width:320px;white-space:normal">${hqE(r.note || '')}</td><td style="font-size:12px;color:#8A95A3">${hqE(r.src || '')}</td>
       <td>${hqCan('buy','W') ? `<div class="hq-acts"><button onclick="hqBPEdit('${hqE(r.code)}')">수정</button><button class="del" onclick="hqBPDel('${hqE(r.code)}')">삭제</button></div>` : ''}</td></tr>`).join('')}</tbody></table></div>`
-      : `<div class="empty">${Object.keys(items).length ? '검색 결과가 없습니다.' : '등록된 기준 단가가 없습니다. "📥 단가 엑셀 불러오기"로 시작하세요 (자재코드 | 통화 | 단가 | 근거).'}</div>`}`;
+      : `<div class="empty">${Object.keys(items).length ? '기준단가가 등록된 자재 중 검색 결과가 없습니다.' : '등록된 기준 단가가 없습니다. "📥 단가 엑셀 불러오기"로 시작하세요 (자재코드 | 통화 | 단가 | 근거).'}</div>`}
+    ${(() => { // ✅ [2026-11-25] 검색어에 맞는 ERP 자재 중 기준단가가 없는 것도 보여 주고 바로 입력하게 한다
+      if (!q) return ''; const nx = mats.filter(m => !items[m.code] && [m.code, m.name].join(' ').toLowerCase().includes(q)).slice(0, 30);
+      if (!nx.length) return '';
+      return `<h4 style="margin:14px 0 6px;font-size:13.5px">기준단가 미등록 자재 <span style="font-weight:400;color:#8A95A3;font-size:12px">— 검색어 "${hqE(HQ.q)}"에 맞는 ERP 자재 ${nx.length}개</span></h4>
+      <div class="tw"><table><thead><tr><th>자재코드</th><th>품명 (ERP)</th><th>구분</th><th>단위</th><th></th></tr></thead><tbody>${nx.map(m => `<tr><td style="font-family:monospace;font-size:12.5px">${hqE(m.code)}</td><td>${hqE(m.name)}</td><td>${hqE(m.cat)}</td><td>${hqE(m.unit || '')}</td>
+        <td>${hqCan('buy','W') ? `<div class="hq-acts"><button onclick="hqBPEdit('','${hqE(m.code)}')">➕ 단가 입력</button></div>` : ''}</td></tr>`).join('')}</tbody></table></div>`; })()}`;
 }
 async function hqBPImport(inp){
   const f = inp.files && inp.files[0]; inp.value = ''; if (!f || !hqCanWrite()) return;
@@ -14562,15 +14568,37 @@ async function hqBPImport(inp){
   if (!confirm(`본사 구매 기준단가 — 새로 ${add}개` + (chg.length ? `, 변경 ${chg.length}개:\n` + chg.slice(0, 10).join('\n') + (chg.length > 10 ? '\n…' : '') : '') + `\n\n· VND 자재 ${skipVND}개는 베트남 법인 현지 구매이므로 입력하지 않습니다` + (bad ? `\n· 통화·단가가 비어 있거나 잘못된 줄 ${bad}개 건너뜀` : '') + (unknown.length ? `\n· ERP에 없는 자재코드 ${unknown.length}개 (그대로 저장, 목록에 표시): ${unknown.slice(0, 5).join(', ')}` : '') + '\n\n저장할까요?')) return;
   await hqBPSave(items, `✅ 기준단가 저장 — 새로 ${add}개 · 변경 ${chg.length}개`);
 }
-function hqBPEdit(code){
+// ✅ [2026-11-25] 단가 추가·수정: 프롬프트 대신 입력 창 (자재는 코드·품명으로 검색해서 선택)
+function hqBPEdit(code, pre){
   if (!hqCanWrite()) return;
-  const v = (hqBPRec().items || {})[code] || {cur: 'USD'};
-  const c = code || (prompt('자재코드') || '').trim(); if (!c) return;
-  const pr = prompt(`${c} 단가 (ERP 자재 단위 1개당)`, v.price ?? ''); if (pr === null) return;
-  const cur = (prompt('통화 (USD 또는 KRW)', v.cur || 'USD') || '').trim().toUpperCase(); if (!['USD','KRW'].includes(cur)) { alert('USD 또는 KRW만 입력할 수 있습니다 (VND 자재는 베트남 법인 구매).'); return; }
-  const note = prompt('근거 (선택)', v.note || ''); if (note === null) return;
-  if (!(+pr > 0)) { alert('단가를 숫자로 입력해 주세요.'); return; }
-  hqBPSave({...(hqBPRec().items || {}), [c]: {...v, cur, price: +pr, note: note.trim(), src: v.src || '직접 입력', at: new Date().toISOString(), by: CURRENT_USER || ''}});
+  const v = (hqBPRec().items || {})[code] || {cur: 'USD'}, mats = allRows().filter(r => ['KR','VN','VTTH','BTP'].includes(r.cat));
+  const c0 = code || pre || '', it = mats.find(m => m.code === c0), lbl = m => `${m.code} — ${m.name}${m.unit ? ' (' + m.unit + ')' : ''}`;
+  hqModal('hq-bp', `<h3 style="margin:0 0 12px;font-size:16px">${code ? '✏️ 기준단가 수정' : '➕ 기준단가 추가'}</h3>
+    <datalist id="hq-bp-mats">${mats.map(m => `<option value="${hqE(lbl(m))}">`).join('')}</datalist>
+    ${hqFld('자재 * <span style="font-weight:400;color:#8A95A3">코드나 품명 일부를 입력하면 목록이 나옵니다</span>', '', `<input id="hq-bp-mat" list="hq-bp-mats" value="${hqE(it ? lbl(it) : c0)}" ${code ? 'readonly' : ''} placeholder="예: BAR 또는 NPL08" style="${HQ_IN};width:100%" oninput="hqBPUnit()">`)}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+      ${hqFld('단가 * <span id="hq-bp-unit" style="font-weight:400;color:#8A95A3">ERP 자재 단위 1개당</span>', '', `<input id="hq-bp-price" type="number" min="0" step="any" value="${hqE(v.price ?? '')}" style="${HQ_IN};width:100%">`)}
+      ${hqFld('통화 *', 'VND 자재는 베트남 법인 구매', `<select id="hq-bp-cur" style="${HQ_IN};width:100%">${['USD','KRW'].map(k => `<option ${v.cur === k ? 'selected' : ''}>${k}</option>`).join('')}</select>`)}
+    </div>
+    <div style="margin-top:8px">${hqFld('근거', '선택 (견적서·공급사 등)', `<input id="hq-bp-note" value="${hqE(v.note || '')}" style="${HQ_IN};width:100%">`)}</div>
+    <div id="hq-bp-err" style="color:#b91c1c;font-size:12.5px;margin-top:8px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:12px"><button onclick="hqClose('hq-bp')" style="padding:7px 14px;border-radius:8px;border:1px solid #DCE1E7;background:#fff;cursor:pointer">닫기</button>
+      <button onclick="hqBPSubmit('${hqE(code || '')}')" style="padding:7px 16px;border-radius:8px;border:1px solid #b45309;background:#b45309;color:#fff;font-weight:600;cursor:pointer">💾 저장</button></div>`, 560);
+  hqBPUnit(); setTimeout(() => { const e = document.getElementById(code ? 'hq-bp-price' : 'hq-bp-mat'); if (e) e.focus(); }, 50);
+}
+function hqBPCodeOf(txt){ txt = String(txt || '').trim(); const k = txt.indexOf(' — '); return (k >= 0 ? txt.slice(0, k) : txt).trim(); }
+function hqBPUnit(){ const el = document.getElementById('hq-bp-unit'), inp = document.getElementById('hq-bp-mat'); if (!el || !inp) return; const m = allRows().find(r => r.code === hqBPCodeOf(inp.value)); el.textContent = m && m.unit ? `${m.unit} 1개당` : 'ERP 자재 단위 1개당'; }
+function hqBPSubmit(code){
+  const err = document.getElementById('hq-bp-err'), c = code || hqBPCodeOf(document.getElementById('hq-bp-mat').value);
+  const pr = +document.getElementById('hq-bp-price').value, cur = document.getElementById('hq-bp-cur').value, note = document.getElementById('hq-bp-note').value.trim();
+  if (!c) { err.textContent = '자재를 선택해 주세요.'; return; }
+  if (!(pr > 0)) { err.textContent = '단가를 숫자로 입력해 주세요.'; return; }
+  const items = hqBPRec().items || {};
+  if (!code && items[c] && !confirm(`${c}는 이미 기준단가(${items[c].price} ${items[c].cur})가 있습니다. 새 값으로 바꿀까요?`)) return;
+  if (!allRows().some(r => r.code === c) && !confirm(`${c}는 ERP 자재 목록에 없는 코드입니다. 그대로 저장할까요?`)) return;
+  const v = items[c] || {};
+  hqClose('hq-bp');
+  hqBPSave({...items, [c]: {...v, cur, price: pr, note, src: v.src || '직접 입력', at: new Date().toISOString(), by: CURRENT_USER || ''}});
 }
 function hqBPDel(code){ if (!hqCanWrite() || !confirm(`${code} 기준단가를 삭제할까요?`)) return; const it = {...(hqBPRec().items || {})}; delete it[code]; hqBPSave(it); }
 function hqPRAutoPrice(l){
