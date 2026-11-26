@@ -3317,8 +3317,8 @@ function renderPOShortageCard() {
         <div onclick="go('inv');document.getElementById('inv-q').value='${m.materialCode}';renderInv()" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:3px 0 3px 12px">
           <span style="font-size:12px;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="badge ${CB[m.materialCat]}" style="margin-right:6px">${CL[m.materialCat]}</span>${m.materialName} <span style="color:#aaa;font-size:10px;font-family:monospace">${m.materialCode}</span></span>
           <span style="font-size:12px;font-weight:700;color:#92400e;flex-shrink:0;text-align:right">부족 / Thiếu ${fmt(m.shortQty)}${m.materialUnit || ''}${(() => { const sc = (typeof spoOpenSched === 'function') ? spoOpenSched(m.materialCode) : [], o = sc.reduce((a, x) => a + x.qty, 0); if (!(o > 0)) return '';
-            const md = d => d ? d.slice(5).replace('-', '/') : '날짜 미정', dates = sc.some(x => x.date) ? ' ' + sc.map(x => `${fmt(x.qty)} (${md(x.date)})`).join(' · ') : ' ' + fmt(o);
-            return ` <span style="font-weight:600;color:${o >= m.shortQty ? '#166534' : '#185FA5'}">· 입고예정${dates}${o >= m.shortQty ? ' ✔' : ''}</span>`; })()}</span>
+            const md = d => !d ? '날짜 미정' : d.slice(0, 4) === String(new Date().getFullYear()) ? d.slice(5).replace('-', '/') : d.slice(2).replace(/-/g, '/'), dates = sc.some(x => x.date) ? ' ' + sc.map(x => `${fmt(x.qty)} (${md(x.date)})`).join(' · ') : ' ' + fmt(o);
+            return ` <span title="${String(spoOpenDetail(m.materialCode)).replace(/"/g, '&quot;')}" style="font-weight:600;cursor:help;color:${o >= m.shortQty ? '#166534' : '#185FA5'}">· 입고예정${dates}${o >= m.shortQty ? ' ✔' : ''}</span>`; })()}</span>
         </div>`;
   // ✅ 반제품(BTP) 부족분 — 완제품 BOM에 등록된 소요량(qtyPerUnit) 비율 그대로 계산된
   //    반제품 부족 수량이다(완제품 1개당 반제품 1개라고 가정하지 않음 — 예: 3.2KW OUT-L은
@@ -16457,6 +16457,14 @@ async function loadSupplyPO(force){
   _spoLoading = (async () => { const r = await api('getSupplyPO', {}); if (r && r.ok) { SPO = r.data || []; _spoLoaded = true; } })();
   try { await _spoLoading; } finally { _spoLoading = null; }
 }
+// [2026-11-26] 발주 입고로 세는 기록은 "자재 입고"뿐이다. 작업지시 투입·반납·실적·삭제 되돌림처럼
+//    생산 쪽에서 재고가 늘어난 기록은 본사 발주의 입고 수량(=입고예정)에 영향을 주면 안 된다.
+const SPO_NON_PURCHASE_RE = /작업지시|실적|반납|자재투입|자재차감|삭제|되돌|복원|취소|Trả|WO[-_ ]?\d/i;
+function spoIsPurchaseIn(t){
+  if (!t || t.type !== 'in') return false;
+  if (t.workOrderId || t.woId || t.orderNo) return false;
+  return !SPO_NON_PURCHASE_RE.test(String(t.note || '') + ' ' + String(t.reason || ''));
+}
 function spoTime(ymd){ return ymd ? Date.UTC(+ymd.slice(0,4), +ymd.slice(5,7)-1, +ymd.slice(8,10)) - 7*3600e3 : 0; }
 function spoAlloc(){
   // 같은 자재의 입고를 시간 순으로, "그 입고 시점에 이미 발주돼 있던" 가장 오래된 미충족 발주에 채운다.
@@ -16468,7 +16476,7 @@ function spoAlloc(){
     ps.sort((a,b) => String(a.orderDate||'').localeCompare(String(b.orderDate||'')) || String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
     const [code, cat] = k.split('|');
     const t0 = spoTime(ps[0].orderDate);
-    (txLog||[]).filter(t => t.type === 'in' && t.code === code && (!cat || !t.cat || String(t.cat).toUpperCase() === cat) && bdTime(t) >= t0)
+    (txLog||[]).filter(t => spoIsPurchaseIn(t) && t.code === code && (!cat || !t.cat || String(t.cat).toUpperCase() === cat) && bdTime(t) >= t0)
       .sort((a,b) => bdTime(a) - bdTime(b)).forEach(t => {
         const tm = bdTime(t); let left = +t.qty || 0;
         for (const p of ps) {
@@ -16500,6 +16508,13 @@ function spoOpenSched(code){
   SPO.filter(p => p.code === code && p.route !== 'wire' && !p.closed).forEach(p => { const r = spoRow(p, a); if (r.remain <= 0) return;
     spoSchedFill(p, r.got).forEach(x => { if (x.left > 1e-9) by[x.date] = (by[x.date] || 0) + x.left; }); });
   return Object.entries(by).map(([date, qty]) => ({date, qty})).sort((x, y) => (x.date || '9').localeCompare(y.date || '9'));
+}
+// 입고예정 숫자에 마우스를 올리면 보이는 계산 내역 (발주별 발주·입고·남음)
+function spoOpenDetail(code){
+  if (!SPO.length) return '';
+  const a = spoAlloc(), n = v => (+v||0).toLocaleString(undefined,{maximumFractionDigits:3});
+  return SPO.filter(p => p.code === code && p.route !== 'wire' && !p.closed).map(p => spoRow(p, a)).filter(r => r.remain > 0)
+    .map(r => `${r.poNo || '(번호 없음)'} · 발주 ${n(r.q)} − 입고 ${n(r.got)} = 남음 ${n(r.remain)}${r.nextDate ? ' · ' + r.nextDate : ''}`).join('\n');
 }
 function spoRow(p, alloc){
   if (p.route === 'wire') {   // 외주 가공용 와이어: 베트남에 입고되지 않는다 → "외주업체 입고" 단계면 완료
