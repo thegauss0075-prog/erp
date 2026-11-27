@@ -5346,6 +5346,9 @@ async function openEditQC(id) {
 function apiAuto(action, body = {}) { return JSON.stringify(body).length > 1500 && API_URL ? apiPost(action, body) : api(action, body); }
 async function apiPost(action, body = {}) {
   if (!API_URL) return { ok: false, error: 'API URL 없음' };
+  return _withLockRetry(() => _apiPostOnce(action, body));   // 잠금 시간초과는 잠시 후 자동 재시도 (api() 위 설명 참고)
+}
+async function _apiPostOnce(action, body) {
   try {
     const res = await fetch(API_URL, {
       method: 'POST',
@@ -9146,9 +9149,26 @@ async function _apiPostWrite(action, body){
   } catch (e) { return { ok: false, error: 'timeout' }; }
   finally { if (tid) clearTimeout(tid); }
 }
+// ✅ [2026-11-27] 서버(Apps Script)가 "잠금 시간초과(Lock timeout)"로 거절한 경우
+//    = 다른 요청(다른 사용자의 저장·동기화 등)이 서버 잠금을 오래 쥐고 있어서 이 요청은 시작도 못 한 것.
+//    처리 전에 거절된 것이므로 몇 초 기다렸다가 자동으로 다시 보낸다(3초 → 6초 → 10초, 최대 3번).
+//    그래도 안 되면 원문 대신 알아듣기 쉬운 안내 문구로 바꿔 돌려준다.
+const _LOCK_BUSY_RE = /잠금\s*시간\s*초과|잠금 상태를 너무 오래|lock timeout|holding the lock|lock.*too long/i;
+const LOCK_BUSY_MSG = '다른 작업(다른 사용자의 저장·동기화 등)이 서버에서 진행 중이라 처리하지 못했습니다. 잠시 후 다시 시도해주세요. (변경된 내용은 없습니다)\nMáy chủ đang bận xử lý tác vụ khác. Vui lòng thử lại sau giây lát.';
+function isLockBusy(r) { return !!(r && r.ok === false && (r.lockBusy || _LOCK_BUSY_RE.test(String(r.error || '')))); }
+async function _withLockRetry(doCall) {
+  const waits = [3000, 6000, 10000];
+  let r = await doCall();
+  for (let i = 0; i < waits.length && isLockBusy(r); i++) {
+    await new Promise(ok => setTimeout(ok, waits[i]));
+    r = await doCall();
+  }
+  if (isLockBusy(r)) r = { ...r, ok: false, error: LOCK_BUSY_MSG, lockBusy: true };
+  return r;
+}
 async function api(action, body={}) {
   const usePost = API_URL && !IS_GAS && _API_WRITE_RE.test(action) && !(typeof google !== 'undefined' && google.script && google.script.run);
-  const r = usePost ? await _apiPostWrite(action, body) : await _apiRaw(action, body);
+  const r = await _withLockRetry(() => usePost ? _apiPostWrite(action, body) : _apiRaw(action, body));
   if (action !== 'adminLogin' && action !== 'staffLogin' && isAuthError(r)) promptReLogin();
   return r;
 }
@@ -9269,7 +9289,8 @@ function withButtonGuard(selector, busyLabel) {
 }
 async function retrySafe(doCall) {
   let res = await doCall();
-  if ((!res || !res.ok) && !(res && res.error === 'timeout')) {
+  // 잠금 시간초과(lockBusy)는 api()가 이미 기다렸다가 여러 번 다시 시도했으므로 여기서 또 반복하지 않는다
+  if ((!res || !res.ok) && !(res && (res.error === 'timeout' || res.lockBusy))) {
     res = await doCall();
   }
   return res;
