@@ -17966,9 +17966,9 @@ async function invMakeExcel(){
     if (gp.length && !confirm(`⚠️ ${gp.join(', ')}번 팔레트는 박스 수만 변경하고 LOT별 수량을 입력하지 않아 끝수 박스 구성을 알 수 없습니다.\n팔레트 번호 옆 LOT 버튼으로 LOT별 수량을 입력하면 패킹리스트가 LOT별로 나옵니다.\n\n그래도 이대로 만들까요?`)) return;
     invPrepareRev();
     const wb = new EX.Workbook();
-    const wsI = wb.addWorksheet('invoice', {pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0}});
-    const wsP = wb.addWorksheet('pkl', {pageSetup:{paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0}});
-    invSheetInvoice(wsI); invSheetPacking(wsP);
+    const wsI = wb.addWorksheet('invoice', {pageSetup:INV_PAGE()});
+    const wsP = wb.addWorksheet('pkl', {pageSetup:INV_PAGE()});
+    invSheetInvoice(wsI); invSheetPacking(wsP); invPrintArea(wsI); invPrintArea(wsP);
     if (INV.stamp !== false) {
       const seal = invImg('seal'), title = invImg('title');
       // addImage는 첫 그림에 0번을 주므로 "있음/없음"은 null로 구분한다
@@ -18001,12 +18001,22 @@ async function invMakeExcel(){
 }
 // ── 엑셀 공통 서식
 const INV_FONT = 'Times New Roman';
+// ✅ [2026-11-28] 인쇄 여백: A4 세로, 좌우 1cm·위아래 1.3cm, 가로 가운데 정렬, 폭 1페이지 맞춤 (높이는 내용대로)
+function INV_PAGE(){ return {paperSize:9, orientation:'portrait', fitToPage:true, fitToWidth:1, fitToHeight:0, horizontalCentered:true,
+  margins:{left:0.4, right:0.4, top:0.5, bottom:0.5, header:0.2, footer:0.2}}; }
+// 인쇄 영역 = 실제 쓴 칸까지 (도장 그림 아래 몇 줄 포함) — 빈 열·행이 인쇄돼 글자가 작아지는 것을 막는다
+function invPrintArea(ws){
+  let lastC = 1; ws.columns.forEach((c, i) => { if (c && c.width) lastC = i + 1; });
+  const lastR = Math.max(ws.rowCount, ws._signAt ? ws._signAt.row + 8 : 0);
+  ws.pageSetup.printArea = `A1:${String.fromCharCode(64 + lastC)}${lastR}`;
+}
 // 엑셀 날짜는 UTC 자정으로 넣어야 PC 시간대와 상관없이 같은 날짜로 보인다
 function invXDate(ymd){ if (!ymd) return ''; const [y,m,d] = ymd.split('-').map(Number); return new Date(Date.UTC(y, m-1, d)); }
 function invCell(ws, addr, v, o){
   const c = ws.getCell(addr); c.value = v;
   c.font = {name:INV_FONT, size:(o&&o.size)||10, bold:!!(o&&o.bold), italic:!!(o&&o.italic)};
-  c.alignment = {vertical:'middle', horizontal:(o&&o.h)||'left', wrapText: !!(o&&o.wrap)};
+  const h = (o&&o.h)||'left';
+  c.alignment = {vertical:'middle', horizontal:h, wrapText: !!(o&&o.wrap), indent: h === 'center' ? 0 : 1};   // ✅ 글자가 테두리에 붙지 않게 안쪽 여백
   if (o && o.fmt) c.numFmt = o.fmt;
   if (o && o.fill) c.fill = {type:'pattern', pattern:'solid', fgColor:{argb:o.fill}};
   return c;
@@ -18020,9 +18030,9 @@ function invBox(ws, r1, c1, r2, c2, style){
   }
 }
 function invGrid(ws, r1, c1, r2, c2){ for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) ws.getRow(r).getCell(c).border = {top:{style:'thin'},left:{style:'thin'},bottom:{style:'thin'},right:{style:'thin'}}; }
-function invHeader(ws, title, lastCol){
+function invHeader(ws, title, lastCol, midCol){
   const L = n => String.fromCharCode(64+n);
-  const mid = Math.ceil(lastCol/2);
+  const mid = midCol || Math.ceil(lastCol/2);   // 왼쪽(주소) 칸 끝 열 — 주소가 잘리지 않게 양식마다 지정 가능
   ws.mergeCells(`A1:${L(lastCol)}1`); invCell(ws, 'A1', title, {size:18, bold:true, h:'center'}); ws.getRow(1).height = 30;
   const kr = INV.kind === 'KR';
   const consignee = kr ? INV_CO.hq : INV_CO.solVina;
@@ -18037,7 +18047,10 @@ function invHeader(ws, title, lastCol){
   if (!kr) right.push(['(10) BUYER', true], ...INV_CO.solCo.map((t,i)=>[t, i===0]));
   right.forEach(([t,b,fmt], i) => { const r = 2+i; ws.mergeCells(`${L(mid+1)}${r}:${L(lastCol)}${r}`); invCell(ws, `${L(mid+1)}${r}`, t, {bold:b, fmt}); });
   const top = 2, bot = 1 + left.length;
-  invBox(ws, top, 1, bot, mid); invBox(ws, top, mid+1, bot, lastCol);
+  // ✅ [2026-11-28] (1)·(2)·(3) / (8)·(9)·(10) 칸마다 테두리를 따로 그려 구역이 보이게
+  const secL = [0, 6, 7 + consignee.length], secR = kr ? [0, 3] : [0, 3, 4];
+  const boxes = (secs, c1, c2) => secs.forEach((st, k) => invBox(ws, top + st, c1, k + 1 < secs.length ? top + secs[k+1] - 1 : bot, c2, 'thin'));
+  boxes(secL, 1, mid); boxes(secR, mid+1, lastCol);
   let r = bot + 1;
   const third = Math.max(2, Math.floor(lastCol/3));
   const rowPair = (labels, values) => {
@@ -18058,8 +18071,8 @@ function invHeader(ws, title, lastCol){
 function invSheetInvoice(ws){
   const kr = INV.kind === 'KR';
   if (kr) {
-    ws.columns = [{width:10},{width:12},{width:20},{width:10},{width:5},{width:18},{width:12},{width:13},{width:46}];
-    let r = invHeader(ws, 'COMMERCIAL INVOICE', 8) + 1;
+    ws.columns = [{width:10},{width:11},{width:18},{width:10},{width:5},{width:17},{width:12},{width:13},{width:36}];
+    let r = invHeader(ws, 'COMMERCIAL INVOICE', 9, 6) + 1;   // ✅ 표가 I열(베트남어)까지라 머리말도 I열까지
     const hd = ['Item','HS','DESCRIPTION',"Q'ty/EA",'No','Description','UNIT PRICE\n(USD/PCE)','AMOUNT\n(USD)','Mô tả (khai báo hải quan)'];
     hd.forEach((h,i) => invCell(ws, `${String.fromCharCode(65+i)}${r}`, h, {bold:true, h:'center', wrap:true, fill:'FFF2F2F2'}));
     ws.getRow(r).height = 30; invGrid(ws, r, 1, r, 9); r++;
@@ -18071,6 +18084,7 @@ function invSheetInvoice(ws){
         invCell(ws, `E${r}`, k+1, {h:'center'}); invCell(ws, `F${r}`, d, {h:'center'});
         invCell(ws, `G${r}`, p, {h:'right', fmt:'#,##0.00##'}); invCell(ws, `H${r}`, {formula:`D${k===0?r:r-1}*G${r}`, result:q*p}, {h:'right', fmt:'#,##0.00'});
         invCell(ws, `I${r}`, `${l.en||l.code}#&${l.vi||''}#&VN`, {wrap:true, size:8});
+        ws.getRow(r).height = 44;   // 베트남어 품명 4줄이 잘리지 않게
         r++;
       });
       ['A','B','C','D'].forEach(c => ws.mergeCells(`${c}${r-2}:${c}${r-1}`));
@@ -18082,7 +18096,7 @@ function invSheetInvoice(ws){
     invGrid(ws, r, 1, r, 8); r += 2;
     r = invWeights(ws, r, 'C');
   } else {
-    ws.columns = [{width:5},{width:15},{width:11},{width:46},{width:11},{width:10},{width:14},{width:15},{width:13},{width:15}];
+    ws.columns = [{width:5},{width:14},{width:10},{width:36},{width:12},{width:9},{width:12},{width:13},{width:12},{width:13}];
     let r = invHeader(ws, 'COMMERCIAL INVOICE', 10) + 1;
     const hd = ['No','Code No','HS','DESCRIPTION (Vietnamese)','DESCRIPTION',"Quantity/\nEA",'UNIT PRICE PROCESSING\n(USD/PCE)','TOTAL UNIT PRICE INCLUDING PROCESSING\n(USD/PCE)','AMOUNT PROCESSING\n(USD)','AMOUNT INCLUDING PROCESSING\n(USD)'];
     hd.forEach((h,i) => invCell(ws, `${String.fromCharCode(65+i)}${r}`, h, {bold:true, h:'center', wrap:true, fill:'FFF2F2F2', size:9}));
@@ -18095,7 +18109,7 @@ function invSheetInvoice(ws){
       invCell(ws, `F${r}`, q, {h:'center', fmt:'#,##0'}); invCell(ws, `G${r}`, +l.fee||0, {h:'right', fmt:'#,##0.00'}); invCell(ws, `H${r}`, +l.sale||0, {h:'right', fmt:'#,##0.00'});
       invCell(ws, `I${r}`, {formula:`F${r}*G${r}`, result:q*(+l.fee||0)}, {h:'right', fmt:'#,##0.00'});
       invCell(ws, `J${r}`, {formula:`F${r}*H${r}`, result:q*(+l.sale||0)}, {h:'right', fmt:'#,##0.00'});
-      ws.getRow(r).height = 48; r++;
+      ws.getRow(r).height = 54; r++;
     });
     invGrid(ws, start, 1, r-1, 10);
     ws.mergeCells(`A${r}:E${r}`); invCell(ws, `A${r}`, 'TOTAL:', {bold:true});
